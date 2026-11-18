@@ -1,0 +1,133 @@
+import SandproofUnloadBaseSnapshot.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std Result
+
+namespace RevisionReadErrors
+open SandproofUnloadBaseSnapshot
+open controller.lifecycle_inbox.model (Inbox Session Entry)
+open controller.internal_inbox.model (InternalLocalBinding)
+open controller.lifecycle_inbox.readiness (NativeCreateSnapshot CreateReadiness)
+open controller.lifecycle_inbox.readiness.snapshot (ReadyCandidate base_snapshot first_entry_at_version)
+open sandproof_protocol.lifecycle.authority (AcceptedLifecycleIntent AuthenticatedCenterContext)
+open sandbox_controller_core.model (World SandboxRecord OperationResult)
+
+variable [Representations] [ops : Operations]
+
+/-- Observations through the original readiness computation. Later loads and
+    allocator observations are absent from this prefix. -/
+structure BeforeRevision (tx : rusqlite.transaction.Transaction) (ns : Str)
+    (world : World) (intent : AcceptedLifecycleIntent) (context : AuthenticatedCenterContext) where
+  connection : rusqlite.Connection
+  inbox : Inbox
+  session : Session
+  entry : Entry
+  localBinding : InternalLocalBinding
+  record : SandboxRecord
+  native : NativeCreateSnapshot
+  history : Option OperationResult
+  ready : CreateReadiness
+  s : Usize
+  e : Usize
+  createOrResume :
+      (∃ binding incarnation, intent.request.operation = .Create binding incarnation) ∨
+      (∃ source capture target digest, intent.request.operation = .Resume source capture target digest)
+  derefOk : ops.deref tx = .ok connection
+  loaded : ops.loadInbox connection = .ok (.Ok (some inbox))
+  authOk : ops.authenticate inbox intent context = .ok (.Ok ())
+  found : ops.findIntent inbox intent = .ok (.Ok (some (s, e)))
+  indexed : alloc.vec.Vec.index_usize inbox.sessions s = .ok session
+  entryFound : first_entry_at_version (alloc.vec.Vec.deref session.entries) session.current_version
+      = .ok (some entry)
+  localEq : session.«local» = some localBinding
+  cloneOk : ops.cloneIntent entry.intent = .ok entry.intent
+  recordFound : ops.sandboxRecord world localBinding.sandbox = .ok (some record)
+  nativeOk : ops.nativeSnapshot tx ns world localBinding record = .ok (.Ok native)
+  historyOk : ops.originalResult world localBinding = .ok (.Ok history)
+  readyOk : ops.readiness intent entry.intent entry session (some native) = .ok ready
+
+abbrev revisionQuery (connection : rusqlite.Connection) (key : Str) :=
+  rusqlite.Connection.query_row
+    (ArrayT1.Insts.RusqliteParamsParams
+      (Shared0T.Insts.RusqliteTypesTo_sqlToSql Str.Insts.RusqliteTypesTo_sqlToSql))
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure_2.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error
+    connection (SandproofUnloadBaseSnapshot.toStr "SELECT revision FROM sandboxes WHERE sandbox_id=?1")
+    (Array.make 1#usize [key]) ()
+
+theorem revision_mapper_reads_column_zero (row : rusqlite.row.Row) :
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure_2.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error.call_once
+      () row =
+      rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex
+        I64.Insts.RusqliteTypesFrom_sqlFromSql row 0#usize :=
+  rfl
+
+variable {tx : rusqlite.transaction.Transaction} {ns : Str} {world : World}
+variable {intent : AcceptedLifecycleIntent} {context : AuthenticatedCenterContext}
+
+theorem revision_identity_error (reads : BeforeRevision tx ns world intent context)
+    (error : JournalError)
+    (failed : ops.sandboxId ns reads.localBinding.sandbox = .ok (.Err error)) :
+    base_snapshot tx ns world intent context = .ok (.Err error) := by
+  rcases reads.createOrResume with ⟨binding, incarnation, operation⟩ |
+    ⟨source, capture, target, digest, operation⟩
+  all_goals
+    simp [base_snapshot, reads.derefOk, reads.loaded, reads.authOk, reads.found,
+      reads.indexed, reads.entryFound, reads.localEq, reads.cloneOk, reads.recordFound,
+      reads.nativeOk, reads.historyOk, reads.readyOk, operation,
+      controller.identity.sandbox_id, failed, core.option.Option.ok_or, core.option.Option.map,
+      core.option.OptionResult.transpose, core.option.OptionOption.flatten, core.option.Option.filter,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingResultOptionOperationResultJournalError.call_once,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedInternalLocalBindingBool.call_once]
+
+theorem revision_sql_error (reads : BeforeRevision tx ns world intent context)
+    (id : sandproof_protocol.SandboxId) (key : Str) (error : rusqlite.error.Error)
+    (idOk : ops.sandboxId ns reads.localBinding.sandbox = .ok (.Ok id))
+    (textOk : ops.sandboxIdText id = .ok key)
+    (failed : revisionQuery reads.connection key = .ok (.Err error)) :
+    base_snapshot tx ns world intent context = .ok (.Err (.Sqlite error)) := by
+  rcases reads.createOrResume with ⟨binding, incarnation, operation⟩ |
+    ⟨source, capture, target, digest, operation⟩
+  all_goals
+    simp [base_snapshot, reads.derefOk, reads.loaded, reads.authOk, reads.found,
+      reads.indexed, reads.entryFound, reads.localEq, reads.cloneOk, reads.recordFound,
+      reads.nativeOk, reads.historyOk, reads.readyOk, operation,
+      controller.identity.sandbox_id, idOk, sandproof_protocol.SandboxId.as_str, textOk,
+      failed, core.option.Option.ok_or, core.option.Option.map,
+      core.option.OptionResult.transpose, core.option.OptionOption.flatten, core.option.Option.filter,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      JournalError.Insts.CoreConvertFromError.from,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingResultOptionOperationResultJournalError.call_once,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedInternalLocalBindingBool.call_once]
+
+theorem revision_negative_error (reads : BeforeRevision tx ns world intent context)
+    (id : sandproof_protocol.SandboxId) (key : Str) (revision : I64)
+    (idOk : ops.sandboxId ns reads.localBinding.sandbox = .ok (.Ok id))
+    (textOk : ops.sandboxIdText id = .ok key)
+    (queried : revisionQuery reads.connection key = .ok (.Ok revision))
+    (negative : revision.val < 0) :
+    base_snapshot tx ns world intent context = .ok (.Err .CorruptStore) := by
+  rcases reads.createOrResume with ⟨binding, incarnation, operation⟩ |
+    ⟨source, capture, target, digest, operation⟩
+  all_goals
+    simp [base_snapshot, reads.derefOk, reads.loaded, reads.authOk, reads.found,
+      reads.indexed, reads.entryFound, reads.localEq, reads.cloneOk, reads.recordFound,
+      reads.nativeOk, reads.historyOk, reads.readyOk, operation,
+      controller.identity.sandbox_id, idOk, sandproof_protocol.SandboxId.as_str, textOk,
+      queried, core.option.Option.ok_or, core.option.Option.map,
+      core.option.OptionResult.transpose, core.option.OptionOption.flatten, core.option.Option.filter,
+      core.result.Result.Insts.CoreOpsTry.branch, core.result.Result.map_err,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from, Int.not_le_of_gt negative,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingResultOptionOperationResultJournalError.call_once,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedInternalLocalBindingBool.call_once,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure_3.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError.call_once]
+
+end RevisionReadErrors
+
+#audit_controller_proof RevisionReadErrors.revision_mapper_reads_column_zero
+#audit_controller_proof RevisionReadErrors.revision_identity_error
+#audit_controller_proof RevisionReadErrors.revision_sql_error
+#audit_controller_proof RevisionReadErrors.revision_negative_error

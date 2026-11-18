@@ -147,7 +147,38 @@ bash scripts/python-entry.sh "$package/diagnose.py" \
 ```
 
 该入口只装配当前真实类型及表示定理。原 `base_snapshot` 与父函数体之间的调用、
-当前 revision 查询的首错、以及同一 SQLite 事务仍待连接。
+当前 revision 查询的首错由下面的独立入口检查。
+
+### 当前父调用和 revision 首错
+
+[prepare_revision_call.py](prepare_revision_call.py) 从
+[输入清单](revision-call/inputs.json) 的两份原始生成函数装配独立项目，复用表示入口。
+函数视图只接入显式表示和操作字典。反向变换恢复原字节。SQL 字面量沿用原
+内核检查的 `toStr` 绑定；rusqlite 的操作继续按符号提供。
+
+- `RevisionParentCall` 把真实 `base_snapshot` 装进实际父函数的调用字典，传递同一个
+  Transaction、命名空间、World、来源意图和认证上下文。父函数的连接读取与 base
+  共用同一个 deref 操作。正常回执完整传给父调用。错误结果保留原首错，任意替换
+  最终观察请求编码器都不改变结果。
+- `RevisionReadErrors` 验证原 SQL、唯一绑定键和第一列读取。到达 revision 读取前缀后，
+  身份键构造错误、原 SQLite 错误和负 revision 各有首错定理。负值经同一父调用返回
+  `CorruptStore`，后续编码不被求值。这些定理无需后续分配器返回成功。
+- `BeforeRevision` 和原父调用前缀逐操作记录所需返回，保留 V4/V5 已登记生产义务。
+  实际 SQLite 活动事务、同一物理快照和读错误后的帧仍需 V5 提供证明。
+
+```sh
+package=verification/experiments/stage1-protocol/unload-parent-link
+bash scripts/python-entry.sh "$package/prepare_revision_call.py" \
+  --base "$base_evidence/generated/SandproofUnloadBaseSnapshot" \
+  --parent "$parent_evidence/generated/SandproofUnloadFirstObservation" \
+  --lake-packages "$fixed_lake_packages" --lean-mcp "$fixed_lean_mcp" \
+  --output "$new_call_project"
+# 在原重锁和四核预算内构建，再通过注册 Lean 服务检查 plan.json 中所有文件。
+(cd "$new_call_project" && lake build RevisionParentCall)
+```
+
+固定后端的 `__bind_in` 名称保留原 rusqlite 拼写及命名警告。整套封口还需修正驱动的
+独立重抽配对、ning 原生回执及完整登记审计。
 
 主控使用 [登记候选](registration-candidate.json) 和 [公共覆盖候选](public-registration.patch)
 接入全部实际输入和审计；先解决 #776 已列的旧输入/原件阻断，不能只跑旧根报告本包通过。
