@@ -99,6 +99,63 @@ class NamespaceInputTests(unittest.TestCase):
             with self.assertRaises(FileExistsError): native.runner.preserve_binary(admitted, root, 'correct')
             with self.assertRaises(ValueError): native.runner.preserve_binary(admitted, root, 'wrong-digest')
 
+    def test_private_libtest_descriptor_keeps_the_preserved_program_across_replacement(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target, evidence = root / 'target', root / 'evidence'
+            target.mkdir()
+            evidence.mkdir()
+            compiled = target / 'compiled'
+            original = b'original approved libtest bytes'
+            compiled.write_bytes(original)
+            binary = dict(path=str(compiled), sha256=native.runner.sha(compiled))
+            binary['preserved'] = native.runner.preserve_binary(binary, evidence, 'correct')
+            with native.runner.pinned_libtest(binary, target, 'correct') as fd:
+                execution = binary['execution']
+                program = Path(execution['path'])
+                self.assertEqual(program.parent.parent, target)
+                self.assertNotEqual(program, compiled)
+                self.assertEqual(os.fstat(fd).st_ino, execution['inode'])
+                self.assertEqual(os.fstat(fd).st_dev, execution['device'])
+                self.assertEqual(execution['sha256'], binary['sha256'])
+                self.assertEqual(program.stat().st_mode & 0o777, 0o500)
+                compiled.write_bytes(b'other cargo cache program')
+                program.rename(program.with_name('original-inode'))
+                program.write_bytes(b'replaced execution pathname')
+                self.assertEqual(os.pread(fd, len(original), 0), original)
+            self.assertFalse(program.parent.exists())
+            self.assertEqual(Path(binary['preserved']['path']).read_bytes(), original)
+            self.assertEqual(compiled.read_bytes(), b'other cargo cache program')
+
+    def test_private_libtest_requires_exact_bytes_before_and_after_use(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target, evidence = root / 'target', root / 'evidence'
+            target.mkdir()
+            evidence.mkdir()
+            compiled = target / 'compiled'
+            original = b'original approved libtest bytes'
+            compiled.write_bytes(original)
+            binary = dict(path=str(compiled), sha256=native.runner.sha(compiled))
+            binary['preserved'] = native.runner.preserve_binary(binary, evidence, 'correct')
+            archived = Path(binary['preserved']['path'])
+            archived.write_bytes(b'changed archive')
+            with self.assertRaisesRegex(ValueError, 'differs from compiler admission'):
+                with native.runner.pinned_libtest(binary, target, 'correct'):
+                    self.fail('changed archive admitted before the test')
+            archived.write_bytes(original)
+
+            with self.assertRaisesRegex(ValueError, 'descriptor changed'):
+                with native.runner.pinned_libtest(binary, target, 'correct'):
+                    program = Path(binary['execution']['path'])
+                    program.chmod(0o700)
+                    program.write_bytes(b'changed inode contents')
+                    program.chmod(0o500)
+
+            with self.assertRaisesRegex(ValueError, 'Preserved libtest differs'):
+                with native.runner.pinned_libtest(binary, target, 'correct'):
+                    archived.write_bytes(b'changed archive during test')
+
     def test_runtime_libtest_must_be_fresh_and_bound_to_its_actual_package_target_and_cache(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary); project = root / 'source'; target = root / 'target'; target.mkdir()

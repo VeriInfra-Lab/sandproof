@@ -1,5 +1,6 @@
 """Native checks of the actual journal release wrapper; no VM or Lean run."""
 import argparse
+from contextlib import contextmanager
 import fcntl
 import hashlib
 import json
@@ -10,6 +11,7 @@ import shutil
 import stat
 import subprocess
 import tarfile
+import tempfile
 import time
 import traceback
 from urllib.parse import unquote, urlparse
@@ -130,9 +132,41 @@ def preserve_binary(binary, output, variant):
     with Path(binary['path']).open('rb') as source, path.open('xb') as destination:
         shutil.copyfileobj(source, destination)
     os.chmod(path, 0o700)
-    if sha(path) != binary['sha256']:
+    digest = sha(path)
+    if digest != binary['sha256']:
         raise ValueError('Preserved actual test binary differs from compiler admission')
-    return dict(path=str(path), sha256=sha(path))
+    return dict(path=str(path), sha256=digest)
+
+
+def libtest_identity(stream):
+    info = os.fstat(stream.fileno())
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+            or stat.S_IMODE(info.st_mode) != 0o500 or info.st_nlink != 1):
+        raise ValueError('Require the original owner-only execution file')
+    stream.seek(0)
+    return dict(device=info.st_dev, inode=info.st_ino,
+                sha256=hashlib.file_digest(stream, 'sha256').hexdigest())
+
+
+@contextmanager
+def pinned_libtest(binary, target, variant):
+    # Keep execution on Cargo's original executable mount. The evidence
+    # directory need only store the byte-identical copy.
+    with tempfile.TemporaryDirectory(prefix='.sandproof-libtest-', dir=target) as directory:
+        execution = preserve_binary(binary['preserved'], Path(directory), variant)
+        path = Path(execution['path'])
+        path.chmod(0o500)
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK)
+        with os.fdopen(fd, 'rb') as program:
+            identity = libtest_identity(program)
+            if identity['sha256'] != binary['sha256']:
+                raise ValueError('Execution file differs from actual Cargo libtest')
+            binary['execution'] = dict(path=str(path), **identity)
+            yield program.fileno()
+            if libtest_identity(program) != identity:
+                raise ValueError('Actual libtest descriptor changed during execution')
+            if sha(Path(binary['preserved']['path'])) != identity['sha256']:
+                raise ValueError('Preserved libtest differs from the executed program')
 
 
 def source_directories(files):
@@ -265,22 +299,27 @@ def run(args, *, case=None):
         result['seconds'] = time.monotonic() - started
         (out / 'result.json').write_text(json.dumps(result, indent=2) + '\n')
 
-    def command(label, argv, project, env):
+    def command(label, argv, project, env, *, program_fd=None):
         begin = time.monotonic()
+        launch = {}
+        row = dict(label=label, argv=argv, cwd=str(project))
+        if program_fd is not None:
+            executable = f'/proc/self/fd/{program_fd}'
+            launch = dict(executable=executable, pass_fds=(program_fd,))
+            row['executable'] = executable
         try:
             done = subprocess.run(argv, cwd=project, env=env, stdin=subprocess.DEVNULL,
-                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1800)
+                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1800,
+                                  **launch)
         except subprocess.TimeoutExpired as error:
             (out / (label + '.stdout')).write_bytes(error.stdout or b'')
             (out / (label + '.stderr')).write_bytes(error.stderr or b'')
-            result['commands'].append(dict(label=label, argv=argv, timed_out=True,
-                                           seconds=time.monotonic() - begin))
+            result['commands'].append(dict(row, timed_out=True, seconds=time.monotonic() - begin))
             save()
             raise
         (out / (label + '.stdout')).write_bytes(done.stdout)
         (out / (label + '.stderr')).write_bytes(done.stderr)
-        row = dict(label=label, argv=argv, cwd=str(project), exit_code=done.returncode, timed_out=False,
-                   seconds=time.monotonic() - begin,
+        row.update(exit_code=done.returncode, timed_out=False, seconds=time.monotonic() - begin,
                    stdout_sha256=sha(out / (label + '.stdout')),
                    stderr_sha256=sha(out / (label + '.stderr')))
         result['commands'].append(row)
@@ -341,13 +380,15 @@ def run(args, *, case=None):
                     package_dir=case.PACKAGE_DIR, crate=case.CRATE)
                 binary['preserved'] = preserve_binary(binary, out, variant)
                 line = case.rejection_line(project)
-                for index, name in enumerate(case.TESTS):
-                    execution = command(variant + '-test-' + str(index),
-                                        [binary['path'], name, '--exact'], project, env)
-                    case.checked_execution(execution.stdout, execution.stderr, execution.returncode,
-                                           name, variant == case.MUTANT and name == case.PROPERTY, line)
+                with pinned_libtest(binary, target, variant) as program:
+                    for index, name in enumerate(case.TESTS):
+                        execution = command(variant + '-test-' + str(index),
+                                            [binary['execution']['path'], name, '--exact'],
+                                            project, env, program_fd=program)
+                        case.checked_execution(execution.stdout, execution.stderr, execution.returncode,
+                                               name, variant == case.MUTANT and name == case.PROPERTY, line)
                 if sha(binary['path']) != binary['sha256']:
-                    raise ValueError('Actual libtest changed during execution')
+                    raise ValueError('Original Cargo libtest changed during execution')
                 check_inputs(project, inputs, changed, source=case.SOURCE)
                 if case.fixture_digest(project) != original_fixture:
                     raise ValueError('The full original test fixture changed during execution')
