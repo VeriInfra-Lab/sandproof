@@ -26,6 +26,8 @@ INBOX = CONTROLLER + '::lifecycle_inbox'
 WORK = INBOX + '::source_work'
 TRANSACTION = CONTROLLER + '::transaction'
 ROOT = WORK + '::{' + CONTROLLER + '::ControllerJournal}::prepare_lifecycle_source_work'
+START_FROM = CONTROLLER + '::ControllerJournal::prepare_lifecycle_source_work'
+RETAIN = WORK + '::*::prepare_lifecycle_source_work'
 MODULE = 'SandproofUnloadPrepareTransaction'
 SHAPES = {
     WORK + '::SourceWorkRecord': ['work', 'observation', 'capture', 'restore', 'retirement', 'material_release'],
@@ -35,9 +37,10 @@ SHAPES = {
 
 def configuration(parent):
     return dict(
-        roots=[ROOT],
+        roots=[START_FROM],
+        retained_roots=[RETAIN],
         include=[
-            ROOT,
+            RETAIN,
             CONTROLLER + '::ControllerJournal',
             CRATE + '::journal::Journal',
             TRANSACTION + '::WorldTransaction',
@@ -77,7 +80,7 @@ def method(rows, module, member):
     return matches[0]
 
 
-def admit(ir, generated, cfg, target):
+def checked_translation(ir, cfg, target, root, retained_root):
     raw = json.loads(ir.read_bytes())
     translated = raw['translated']
     options = translated['options']
@@ -89,9 +92,15 @@ def admit(ir, generated, cfg, target):
             or any(options[key] != cfg[selector] for key, selector in (
                 ('start_from', 'roots'), ('include', 'include'), ('opaque', 'opaque'),
             ))
-            or cfg['roots'] != [ROOT]
+            or cfg['roots'] != [root] or cfg['retained_roots'] != [retained_root]
+            or options['start_from_if_exists'] != cfg['retained_roots']
             or {row['key'] for row in translated['target_information']} != {target}):
-        raise ValueError('actual prepare capture options or target differ')
+        raise ValueError('actual capture options or target differ')
+    return translated
+
+
+def admit(ir, generated, cfg, target):
+    translated = checked_translation(ir, cfg, target, START_FROM, RETAIN)
 
     functions = translated['fun_decls']
     prepare = method(functions, WORK, 'prepare_lifecycle_source_work')

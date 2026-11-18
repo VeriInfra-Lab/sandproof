@@ -45,6 +45,7 @@ def fixture(cfg):
     return dict(has_errors=False, translated=dict(
         options=dict(skip_borrowck=False, no_typecheck=False, remove_unused_clauses=False,
                      monomorphize=False, exclude=[], start_from=cfg['roots'],
+                     start_from_if_exists=cfg['retained_roots'],
                      include=cfg['include'], opaque=cfg['opaque']),
         target_information=[{'key': 'x86_64-unknown-linux-gnu'}],
         fun_decls=functions, type_decls=types,
@@ -81,6 +82,11 @@ class PrepareAdmissionTests(unittest.TestCase):
 
     def test_borrow_check_bypass_is_rejected(self):
         self.translated['options']['skip_borrowck'] = True
+        with self.assertRaisesRegex(ValueError, 'capture options'):
+            self.admit()
+
+    def test_typed_lookup_without_retaining_the_impl_is_rejected(self):
+        self.translated['options']['start_from_if_exists'] = []
         with self.assertRaisesRegex(ValueError, 'capture options'):
             self.admit()
 
