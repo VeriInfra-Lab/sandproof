@@ -422,14 +422,23 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH="$proof_checkout/$package" \
   bash scripts/python-entry.sh - "$variant" <<'PY'
 from pathlib import Path
 import sys
+import frontier_capture
 import probe_prepare_iterators as probe
 
 path = Path(probe.prepare.SOURCE)
 assert probe.digest(path) == probe.prepare.SOURCE_INPUTS[probe.prepare.SOURCE]
 variant = sys.argv[1]
-if variant == 'candidate':
-    path.write_text(probe.rewrite(path.read_text(), 'json-boundary'))
-    assert probe.digest(path) == '4b433e2be3337db97e9fb7e8d9b868d159c3e2cb8c894a2a0ec78ea4867489fd'
+if variant in ('candidate', 'factored', 'factored-reordered'):
+    candidate = probe.rewrite(path.read_text(), 'json-boundary')
+    if variant.startswith('factored'):
+        candidate = frontier_capture.factor(candidate, reordered=variant == 'factored-reordered')
+    path.write_text(candidate)
+    expected = {
+        'candidate': '4b433e2be3337db97e9fb7e8d9b868d159c3e2cb8c894a2a0ec78ea4867489fd',
+        'factored': 'da11e9e7e8f9aab90b4ef6911169f62ba2f5cab1b2066491903045d90a83dbf6',
+        'factored-reordered': '650362a8fc2dfb2811152c13b8514af907c05af3fb5dfdcec9ce6eccf31ab009',
+    }
+    assert probe.digest(path) == expected[variant]
 elif variant == 'reordered':
     opening = '    pub fn prepare_lifecycle_source_work'
     following = '    /// Inspect the original finite responsibilities'
@@ -454,7 +463,7 @@ git fetch --no-tags --no-write-fetch-head origin refs/pull/929/head
   cat "$proof_checkout/$package/current-inputs/native-first-errors.rs.in"
 } >> "$target"
 native=(cargo test --locked --offline -p sandproof-controller-service --features rusqlite/hooks --lib)
-if test "$variant" = reordered; then
+if test "$variant" = reordered || test "$variant" = factored-reordered; then
   "${native[@]}" --no-run
   rc=0
   "${native[@]}" proof_first_unload_prepare_orders_inbox_authentication_and_source_decode \
@@ -466,6 +475,56 @@ else
   "${native[@]}" controller::lifecycle_inbox::source_work::tests::
 fi
 ```
+
+### 首次登记前缀的 Lean 对应
+
+在同一个 `6fd08520` 候选副本中，从原父方法提取 `open_source_work_inputs`。原 Begin、
+读 Inbox、认证和读来源仍在同一事务内顺序执行。父方法的来源读取字典只转发原
+`source_work::codec::load`。辅助函数接受来源解码值的实际类型参数并完整返回该值，
+避免重定义来源表和 V3 协议类型。成功时返回原事务及两次读取的值。
+
+两份正确版抽取来自同一候选源码。窄视图逐分支证明首错，复用 #930 的实际 Begin 定理与
+已物化的原 Inbox 认证函数。全父方法视图核对真实字典、原 `codec::load` 调用、实际前缀
+结果的 `ControlFlow` 分支，以及构造观察请求只位于成功分支。调换认证和读来源的错误版
+独立重抽，在同一认证拒绝条件下，Lean 证实实际返回来源的 SQLite 错误而非 `Conflict`。
+原生错行由 [上一节](#当前基线的重抽取与-sqlite-首错) 的同一测试命中。
+
+证明从解码的 Inbox 与来源结果开始。V5 须提供原事务中的两种读取及其返回值关系，V7
+负责独立认证上下文的来源。正确版定理保留原错误及连接，覆盖 Begin 拒绝、Inbox
+缺项/错误、认证拒绝、来源缺项/错误和成功携原事务。外层完整 Lean、来源 JSON 编解码
+对应、持久保存及提交/回退组合仍是后续义务。
+
+```bash
+package=verification/experiments/stage1-protocol/unload-parent-link
+latest=6fd0852025468e2583c436d37af18383bf2e71ea
+export SANDPROOF_ACCEPTANCE_ROLE=formal
+for mode in prefix parent reordered; do
+  bash scripts/python-entry.sh "$package/probe_prepare_iterators.py" \
+    --variant json-boundary --frontier "$mode" --source-commit "$latest" \
+    --output "$new_frontier_capture/$mode" --tools "$fixed_aeneas" --lock "$SANDPROOF_LOCK_FILE"
+done
+for mode in prefix reordered; do
+  flags=()
+  root=UnloadFrontier
+  if test "$mode" = reordered; then
+    flags=(--reordered)
+    root=UnloadFrontierReordered
+  fi
+  bash scripts/python-entry.sh "$package/prepare_unload_frontier.py" \
+    --prefix "$new_frontier_capture/$mode" --parent "$new_frontier_capture/parent" \
+    --begin "$original_begin_capture" --output "$new_frontier_lean/$mode" \
+    --lake-packages "$fixed_lake_packages" --lean-mcp "$fixed_lean_mcp" "${flags[@]}"
+  (cd "$new_frontier_lean/$mode" && LEAN_NUM_THREADS=4 flock -n "$SANDPROOF_LOCK_FILE" \
+    taskset -c "$four_cpus" lake build "$root")
+  bash scripts/python-entry.sh "$package/diagnose.py" --project "$new_frontier_lean/$mode" \
+    --output "$new_frontier_audit/$mode" --lock "$SANDPROOF_LOCK_FILE"
+done
+```
+
+各输出父目录事先创建，子目录须全新。证明机保留三份原抽取、两份 `plan.json` 和实际
+文件审计。ning 在两个原生临时副本使用上一节命令，分别设置 `variant=factored` 与
+`variant=factored-reordered`，核对 121 项来源组件测试和错误版的实际首错。主控按
+两个计划提取公共登记候选；活动工程闭包仍以最终采用的源码和正式验收为准。
 
 主控使用 [登记候选](registration-candidate.json) 和 [公共覆盖候选](public-registration.patch)
 接入全部实际输入和审计；先解决 #776 已列的旧输入/原件阻断，不能只跑旧根报告本包通过。
