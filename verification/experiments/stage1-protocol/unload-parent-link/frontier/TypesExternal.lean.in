@@ -1,0 +1,38 @@
+import UnloadWorldBegin
+
+open Aeneas Aeneas.Std
+
+namespace SandproofUnloadFrontier
+
+abbrev core.cell.RefCell := SandproofStage1RequestRust.core.cell.RefCell
+abbrev core.io.error.Error := SandproofStage1RequestRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofStage1RequestRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofStage1RequestRust.serde_json.error.Error
+abbrev sandbox_controller_core.model.World := SandproofStage1RequestRust.sandbox_controller_core.model.World
+abbrev sandbox_controller_core.controller.ControllerReject :=
+  SandproofStage1RequestRust.sandbox_controller_core.controller.ControllerReject
+abbrev sandproof_protocol.ContractError := SandproofStage1RequestRust.sandproof_protocol.ContractError
+abbrev sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent :=
+  SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+abbrev sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext :=
+  SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
+abbrev controller.lifecycle_inbox.model.Inbox :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox
+abbrev controller.transaction.CommittedWorld := SandproofUnloadWorldBegin.controller.transaction.CommittedWorld
+abbrev CrashPoint := SandproofStage1RequestRust.sandproof_controller_service.CrashPoint
+abbrev OriginalError := SandproofStage1RequestRust.sandproof_controller_service.JournalError
+abbrev OriginalConnection := SandproofStage1RequestRust.rusqlite.Connection
+
+/-- V5 supplies the decoded Inbox reply on this same transaction connection. -/
+abbrev ReadInbox := OriginalConnection → Result
+  (core.result.Result (Option controller.lifecycle_inbox.model.Inbox) OriginalError)
+
+structure rusqlite.Connection where
+  origin : SandproofUnloadWorldBegin.rusqlite.Connection
+  readInbox : ReadInbox
+
+structure rusqlite.transaction.Transaction where
+  origin : SandproofUnloadWorldBegin.rusqlite.transaction.Transaction
+  readInbox : ReadInbox
+
+end SandproofUnloadFrontier

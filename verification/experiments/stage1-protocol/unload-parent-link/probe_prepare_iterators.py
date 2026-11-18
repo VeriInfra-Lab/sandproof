@@ -14,6 +14,7 @@ import tarfile
 import time
 
 import prepare_transaction_capture as prepare
+import frontier_capture
 from revision_capture import declaration, regular_calls
 
 
@@ -199,7 +200,7 @@ def check_encoder_wrapper(translated, encoder):
     return to_vec['def_id']
 
 
-def probe(variant, output, tools, lock, wrapper_ir, source_commit):
+def probe(variant, output, tools, lock, wrapper_ir, source_commit, frontier=None):
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal':
         raise ValueError('extraction probe belongs to the existing proof role')
     if shutil.disk_usage(ROOT).free < 80 * GIB:
@@ -215,6 +216,9 @@ def probe(variant, output, tools, lock, wrapper_ir, source_commit):
                   cpus=cpus, development_probe=True, original_implementation=False,
                   commands=[], generated=False, wrapper_ir=wrapper_ir, native_acceptance=False,
                   driver_sha256=digest(Path(__file__)))
+    if frontier is not None:
+        report['frontier'] = frontier
+        report['frontier_driver_sha256'] = digest(Path(frontier_capture.__file__))
     try:
         fixed = json.loads((ROOT / 'verification/foundations-environment.json').read_bytes())
         charon, aeneas = tools / 'charon/bin/charon', tools / 'bin/aeneas'
@@ -238,6 +242,8 @@ def probe(variant, output, tools, lock, wrapper_ir, source_commit):
         path = source / prepare.SOURCE
         original = path.read_text()
         changed = rewrite(original, variant)
+        if frontier is not None:
+            changed = frontier_capture.factor(changed, reordered=frontier == 'reordered')
         path.write_text(changed)
         patch = ''.join(difflib.unified_diff(original.splitlines(keepends=True), changed.splitlines(keepends=True),
                         fromfile='a/' + prepare.SOURCE, tofile='b/' + prepare.SOURCE))
@@ -252,6 +258,8 @@ def probe(variant, output, tools, lock, wrapper_ir, source_commit):
             report['transparent_request_carriers'] = list(REQUEST_CARRIERS)
         if wrapper_ir:
             cfg.update(roots=[ENCODER], retained_roots=[], include=[ENCODER])
+        if frontier is not None:
+            cfg = frontier_capture.configure(cfg, frontier)
         selectors = [item for flag, key in [
             ('--start-from', 'roots'), ('--start-from-if-exists', 'retained_roots'),
             ('--include', 'include'), ('--opaque', 'opaque'),
@@ -281,11 +289,13 @@ def probe(variant, output, tools, lock, wrapper_ir, source_commit):
                     report['ir_sha256'] = digest(ir)
         if digest(ir) != report['ir_sha256']:
             raise ValueError('extracted IR changed')
-        if variant == 'json-boundary':
+        if variant == 'json-boundary' and frontier in (None, 'parent'):
             translated = json.loads(ir.read_bytes())['translated']
             encoder = declaration(translated['fun_decls'], ENCODER)
             report['encoder_id'] = encoder['def_id']
-        if wrapper_ir:
+        if frontier is not None:
+            report['frontier_admission'] = frontier_capture.admit(ir, output / 'generated', cfg, fixed['target'], frontier)
+        elif wrapper_ir:
             report['serde_to_vec_id'] = check_encoder_wrapper(translated, encoder)
         else:
             loops = 1 if variant == 'replay-only' else 2
@@ -297,6 +307,7 @@ def probe(variant, output, tools, lock, wrapper_ir, source_commit):
                 calls = list(regular_calls(caller['body']['Structured']['body']))
                 if calls.count(encoder['def_id']) != 1:
                     raise ValueError('parent must call the concrete encoding boundary once')
+        if not wrapper_ir:
             report['generated_sha256'] = {
                 str(path.relative_to(output / 'generated')): digest(path)
                 for path in (output / 'generated').rglob('*') if path.is_file()
@@ -315,10 +326,13 @@ if __name__ == '__main__':
     parser.add_argument('--variant', choices=VARIANTS, required=True)
     parser.add_argument('--source-commit', choices=tuple(BASELINES), default=prepare.SOURCE_COMMIT)
     parser.add_argument('--wrapper-ir', action='store_true', help='check the concrete encoder body with Charon only')
+    parser.add_argument('--frontier', choices=tuple(frontier_capture.MODULES))
     for name in ('output', 'tools', 'lock'):
         parser.add_argument('--' + name, type=Path, required=True)
     args = parser.parse_args()
     if args.wrapper_ir and args.variant != 'json-boundary':
         parser.error('--wrapper-ir requires the json-boundary variant')
+    if args.frontier is not None and (args.variant != 'json-boundary' or args.wrapper_ir):
+        parser.error('--frontier requires an ordinary json-boundary capture')
     raise SystemExit(probe(args.variant, args.output.resolve(), args.tools.resolve(strict=True),
-                           args.lock.resolve(strict=True), args.wrapper_ir, args.source_commit))
+                           args.lock.resolve(strict=True), args.wrapper_ir, args.source_commit, args.frontier))

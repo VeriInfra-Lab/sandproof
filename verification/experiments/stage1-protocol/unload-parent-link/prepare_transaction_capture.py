@@ -93,7 +93,7 @@ def checked_translation(ir, cfg, target, root, retained_root):
             or any(options[key] != cfg[selector] for key, selector in (
                 ('start_from', 'roots'), ('include', 'include'), ('opaque', 'opaque'),
             ))
-            or cfg['roots'] != [root] or cfg['retained_roots'] != [retained_root]
+            or cfg['roots'] != [root] or cfg['retained_roots'] != ([] if retained_root is None else [retained_root])
             or options['start_from_if_exists'] != cfg['retained_roots']
             or {row['key'] for row in translated['target_information']} != {target}):
         raise ValueError('actual capture options or target differ')

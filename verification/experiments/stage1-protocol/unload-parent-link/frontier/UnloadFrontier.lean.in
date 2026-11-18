@@ -1,0 +1,139 @@
+import UnloadFrontierInputs
+
+open Aeneas Aeneas.Std SandproofUnloadFrontier
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.UnloadFrontier
+
+local notation "openInputs" => controller.lifecycle_inbox.source_work.open_source_work_inputs
+
+theorem begin_error {Rows : Type} (reader : Reader Rows)
+    (connection : Conn) (memo : Memo) (intent : Intent) (context : Context)
+    (after : SandproofUnloadWorldBegin.rusqlite.Connection) (error : OriginalError)
+    (began : UnloadWorldBegin.begin connection.origin memo = .ok (.Err error, after)) :
+    openInputs reader connection memo intent context =
+      .ok (.Err (fromOriginalError error), ⟨after, connection.readInbox⟩) := by
+  unfold controller.lifecycle_inbox.source_work.open_source_work_inputs
+  simp [controller.transaction.WorldTransaction.begin, began,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem world_read_error {Rows : Type} (reader : Reader Rows)
+    (connection : Conn) (memo : Memo) (intent : Intent) (context : Context) (error : OriginalError)
+    (read : connection.origin.calls.world (SandproofUnloadWorldBegin.committedView memo) connection.origin.base =
+      .ok (.Err error)) :
+    openInputs reader connection memo intent context = .ok (.Err (fromOriginalError error), connection) :=
+  begin_error reader connection memo intent context connection.origin error
+    (UnloadWorldBegin.world_error_precedes_later_calls connection.origin memo error read)
+
+theorem inbox_error {Rows : Type} (reader : Reader Rows)
+    (connection : Conn) (memo : Memo) (intent : Intent) (context : Context)
+    (start : Started connection memo) (error : OriginalError)
+    (found : connection.readInbox start.tx.base.conn = .ok (.Err error)) :
+    openInputs reader connection memo intent context =
+      .ok (.Err (fromOriginalError error), ⟨start.after, connection.readInbox⟩) := by
+  unfold controller.lifecycle_inbox.source_work.open_source_work_inputs
+  simp [controller.transaction.WorldTransaction.begin, start.began,
+    controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    fromOriginalOwner, start.transaction, controller.lifecycle_inbox.codec.load, found,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    SandproofUnloadWorldBegin.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    fromOriginalReply, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem missing_inbox {Rows : Type} (reader : Reader Rows)
+    (connection : Conn) (memo : Memo) (intent : Intent) (context : Context)
+    (start : Started connection memo)
+    (found : connection.readInbox start.tx.base.conn = .ok (.Ok none)) :
+    openInputs reader connection memo intent context =
+      .ok (.Err .UnsupportedStore, ⟨start.after, connection.readInbox⟩) := by
+  unfold controller.lifecycle_inbox.source_work.open_source_work_inputs
+  simp [controller.transaction.WorldTransaction.begin, start.began,
+    controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    fromOriginalOwner, start.transaction, controller.lifecycle_inbox.codec.load, found,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    SandproofUnloadWorldBegin.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    fromOriginalReply, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem authentication_error {Rows : Type} (reader : Reader Rows)
+    (connection : Conn) (memo : Memo) (intent : Intent) (context : Context)
+    (start : Started connection memo) (inbox : Inbox) (error : OriginalError)
+    (found : connection.readInbox start.tx.base.conn = .ok (.Ok (some inbox)))
+    (denied : authenticate inbox intent context = .ok (.Err error)) :
+    openInputs reader connection memo intent context =
+      .ok (.Err (fromOriginalError error), ⟨start.after, connection.readInbox⟩) := by
+  unfold controller.lifecycle_inbox.source_work.open_source_work_inputs
+  simp [controller.transaction.WorldTransaction.begin, start.began,
+    controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    fromOriginalOwner, start.transaction, controller.lifecycle_inbox.codec.load, found,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    SandproofUnloadWorldBegin.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    controller.lifecycle_inbox.authenticated, denied,
+    fromOriginalReply, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+/-- Interpret only the particular returned storage result, after authorization.
+    The generated call supplies the original transaction to both reads. -/
+theorem source_read {Rows : Type}
+    (read : OriginalConnection → Result (core.result.Result (Option Rows) OriginalError))
+    (connection : Conn) (memo : Memo) (intent : Intent) (context : Context)
+    (start : Started connection memo) (inbox : Inbox)
+    (found : connection.readInbox start.tx.base.conn = .ok (.Ok (some inbox)))
+    (allowed : authenticate inbox intent context = .ok (.Ok ()))
+    (reply : core.result.Result (Option Rows) OriginalError)
+    (source : read start.tx.base.conn = .ok reply) :
+    openInputs (sourceReader read) connection memo intent context =
+      .ok ((match reply with
+            | .Err error => core.result.Result.Err (fromOriginalError error)
+            | .Ok none => .Err .UnsupportedStore
+            | .Ok (some rows) => .Ok (fromOriginalOwner connection.readInbox start.owner, inbox, rows)),
+           ⟨start.after, connection.readInbox⟩) := by
+  unfold controller.lifecycle_inbox.source_work.open_source_work_inputs
+  cases reply
+  case' Ok result => cases result
+  all_goals
+    simp [controller.transaction.WorldTransaction.begin, start.began,
+      controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+      fromOriginalOwner, start.transaction, controller.lifecycle_inbox.codec.load, found,
+      rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+      SandproofUnloadWorldBegin.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+      controller.lifecycle_inbox.authenticated, allowed,
+      sourceReader, source,
+      fromOriginalReply, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+open UnloadStartedTransaction in
+def started_from_begin (connection : Conn) (memo : Memo)
+    (world : World) (prepared after : OriginalConnection) (raw : Raw) (start : U64)
+    (read : connection.origin.calls.world (SandproofUnloadWorldBegin.committedView memo) connection.origin.base =
+      .ok (.Ok world))
+    (preparedWrite : connection.origin.calls.prepareWrite connection.origin.base world
+      (SandproofUnloadWorldBegin.committedView memo) = .ok (.Ok (), prepared))
+    (opened : connection.origin.calls.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Ok raw, after))
+    (frontier : connection.origin.calls.readAllocator raw.conn UnloadWorldBegin.inputKind
+      UnloadWorldBegin.inputScope = .ok (.Ok start))
+    (version : readVersion raw.conn = .ok (.Ok (SandproofUnloadWorldBegin.committedView memo).data_version)) :
+    Started connection memo :=
+  { owner := SandproofUnloadWorldBegin.startedView connection.origin.calls
+      (initialOwner raw (SandproofUnloadWorldBegin.committedView memo) start world)
+    after := ⟨after, connection.origin.calls⟩
+    tx := ⟨raw, connection.origin.calls⟩
+    began := UnloadWorldBegin.begin_success_keeps_original_owner connection.origin memo world prepared after
+      raw start read preparedWrite opened frontier version
+    transaction := rfl }
+
+theorem owner_uses_the_original_transaction (connection : Conn) (memo : Memo) (start : Started connection memo) :
+    (fromOriginalOwner connection.readInbox start.owner).transaction =
+      some ⟨start.tx, connection.readInbox⟩ := by
+  simp [fromOriginalOwner, start.transaction]
+
+end SandboxModel.Stage1Protocol.UnloadFrontier
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFrontier.begin_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFrontier.world_read_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFrontier.inbox_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFrontier.missing_inbox
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFrontier.authentication_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFrontier.source_read
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFrontier.owner_uses_the_original_transaction
