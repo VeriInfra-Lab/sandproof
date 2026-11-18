@@ -45,3 +45,42 @@ cargo test --locked --offline -p sandproof-controller-service --lib proof_first_
 定向记录应包含 `proof_first_unload_prepare_writer_and_visibility` 与
 `proof_first_unload_prepare_first_error_and_replay` 两条真实用例。完整普通与 V3 原生
 验收继续使用[证明工作流](../../../../docs/proof-workflow.md)原入口。
+
+## 真实 `BEGIN IMMEDIATE` 的写锁首错
+
+`begin-contention.rs.in` 为同一原入口补第三条用例。用例先由原连接把输入前沿设为
+无效字符串，然后用 SQLite authorizer 在准备原 `BEGIN` 语句时，
+让独立连接取得同一个数据库的写锁。此前的 WAL 截断和容量维护仍执行原实现。
+原连接零等待，须在读输入前沿前返回原 SQLite `SQLITE_BUSY`。另一只读连接核对
+原 Inbox 字节与空工作集合仍相同。释放竞争锁后，原入口报告原前沿错误；恢复前沿后
+才登记唯一完整工作，重放取得同一条工作。此用例没有调用真实来源 provider。
+
+从干净的独立工作树开始，另开一个同提交工作树给错误版。两者都追加相同夹具，
+`rusqlite/hooks` 仅在此次测试命令启用，提交内无 Cargo 配置变更。
+
+```bash
+set -euo pipefail
+test -z "$(git status --porcelain)"
+target=controller-service/src/controller/lifecycle_inbox/source_work/tests.rs
+cases=verification/experiments/stage1-protocol/unload-prepare-transaction
+sha256sum Cargo.lock "$target" "$cases/native-tests.rs.in" "$cases/begin-contention.rs.in"
+{
+    printf '\n'
+    cat "$cases/native-tests.rs.in" "$cases/begin-contention.rs.in"
+} >> "$target"
+sha256sum "$target"
+cargo test --locked --offline -p sandproof-controller-service --features rusqlite/hooks \
+  --lib proof_first_unload_prepare_begin_busy -- --list
+cargo test --locked --offline -p sandproof-controller-service --features rusqlite/hooks \
+  --lib proof_first_unload_prepare_begin_busy -- --nocapture
+```
+
+错误版在追加相同夹具之后，仅把 `controller/transaction.rs` 中 `WorldTransaction::begin`
+的 `TransactionBehavior::Immediate` 改为 `TransactionBehavior::Deferred`。保留其它
+BEGIN 和全部断言。先用同组选项执行 `cargo test --no-run`，再运行同一个用例并保留
+实际失败日志。编译须成功，错误版须在原 `SQLITE_BUSY` 断言处报告 `Err(CorruptStore)`。
+错误版能打开 Deferred 读事务，随后读到同一错误前沿，这会违反原首错要求。
+编译失败、超时或其他失败均不计为性质拒绝。
+
+这项有限原生对照绑定同一固定 Rust 输入和追加的夹具。事务开始的
+真实抽取、连接到 `from_started_transaction` 的形式证明，以及完整 V3 验收仍分别取证。
