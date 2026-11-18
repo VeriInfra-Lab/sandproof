@@ -1,4 +1,5 @@
 """Ordinary controlled tests for retained deployment exclusion; no root/VM/CI effects."""
+from contextlib import contextmanager
 import importlib.util
 import json
 import os
@@ -18,6 +19,112 @@ SPEC.loader.exec_module(runtime)
 SCENE_SPEC=importlib.util.spec_from_file_location('unload_scenario_checks',SYSTEM/'lifecycle_unload_scenario.py')
 scene=importlib.util.module_from_spec(SCENE_SPEC)
 SCENE_SPEC.loader.exec_module(scene)
+
+
+class ProtectedJsonReadTests(unittest.TestCase):
+    @staticmethod
+    def root_metadata(meta):
+        names = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns', 'st_ctime_ns',
+                 'st_mode', 'st_nlink')
+        return SimpleNamespace(st_uid=0, **{name: getattr(meta, name) for name in names})
+
+    @contextmanager
+    def protected_metadata(self, *, before_path_check=None):
+        stat_file, stat_fd = os.stat, os.fstat
+        checks = 0
+
+        def path_stat(*args, **kwargs):
+            nonlocal checks
+            checks += 1
+            if checks == 2 and before_path_check is not None:
+                before_path_check()
+            return self.root_metadata(stat_file(*args, **kwargs))
+
+        with patch.object(runtime.os, 'stat', side_effect=path_stat), \
+                patch.object(runtime.os, 'fstat', side_effect=lambda fd: self.root_metadata(stat_fd(fd))):
+            yield
+
+    def test_material_value_and_measurement_come_from_one_private_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'manifest.json'
+            raw = b'{"fields":[1,2]}\n'
+            path.write_bytes(raw)
+            path.chmod(0o400)
+            expected = path.stat()
+            real_open = os.open
+            with self.protected_metadata(), \
+                    patch.object(runtime.os, 'open', wraps=real_open) as opened, \
+                    patch.object(Path, 'read_bytes', side_effect=AssertionError('path reopened')):
+                value, measurement = runtime._measured_original_json(path, len(raw))
+            self.assertEqual(value, {'fields': [1, 2]})
+            self.assertEqual(measurement, dict(bytes=len(raw), device=expected.st_dev,
+                inode=expected.st_ino, sha256=list(runtime.hashlib.sha256(raw).digest())))
+            opened.assert_called_once()
+            flags = opened.call_args.args[1]
+            self.assertTrue(flags & os.O_NOFOLLOW)
+            self.assertTrue(flags & os.O_NONBLOCK)
+
+    def test_equal_bytes_at_replaced_path_are_not_the_observed_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'receipt.json'
+            replacement = path.with_suffix('.replacement')
+            for file in (path, replacement):
+                file.write_bytes(b'{}')
+                file.chmod(0o600)
+            self.assertNotEqual(path.stat().st_ino, replacement.stat().st_ino)
+            with self.protected_metadata(before_path_check=lambda: replacement.replace(path)):
+                with self.assertRaisesRegex(ValueError, 'changed during protected read'):
+                    runtime.original_json(path, 16)
+
+    def test_private_json_bound_mode_and_duplicate_key_checks_survive(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'receipt.json'
+            path.write_bytes(b'{"k":1,"k":2}')
+            path.chmod(0o600)
+            with self.protected_metadata():
+                with self.assertRaisesRegex(ValueError, 'bounded private JSON'):
+                    runtime.original_json(path, 4)
+                with self.assertRaisesRegex(ValueError, 'bounded private JSON'):
+                    runtime._measured_original_json(path, 32)
+                with self.assertRaises(ValueError):
+                    runtime.original_json(path, 32)
+
+    def test_prepare_checks_the_digest_of_both_consumed_receipts(self):
+        import lifecycle_unload_quota as quota
+        from tools import capture_acceptance
+
+        for changed in ('none', 'quota', 'deployment'):
+            with self.subTest(changed=changed), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                receipts = {name: root / (name + '.json') for name in ('quota', 'deployment')}
+                values = {name: {'receipt': name} for name in receipts}
+                digests = {}
+                for name, path in receipts.items():
+                    raw = json.dumps(values[name]).encode()
+                    digests[name] = runtime.hashlib.sha256(raw).hexdigest()
+                    path.write_bytes(b'{"receipt":"changed"}' if changed == name else raw)
+                    path.chmod(0o600)
+                args = SimpleNamespace(run_root=root, fixture=root / 'fixture.json',
+                    capture_settings=root / 'captures.json',
+                    quota_receipt=receipts['quota'], deployment_receipt=receipts['deployment'],
+                    quota_receipt_sha256=digests['quota'], deployment_receipt_sha256=digests['deployment'])
+                reached_validation = RuntimeError('original receipt validator reached')
+                with self.protected_metadata(), patch.object(runtime.os, 'geteuid', return_value=0), \
+                        patch.object(runtime.os, 'umask'), patch.object(runtime, 'private_path',
+                            side_effect=lambda path, **_: path), \
+                        patch.object(runtime, 'json_file', return_value=[]), \
+                        patch.object(capture_acceptance, 'validate_settings', return_value=['capture']), \
+                        patch.object(quota, 'validate_run_receipt', side_effect=reached_validation) as validate:
+                    if changed == 'none':
+                        with self.assertRaises(RuntimeError) as caught:
+                            runtime.prepare(args)
+                        self.assertIs(caught.exception, reached_validation)
+                        validate.assert_called_once_with(values['quota'], values['deployment'],
+                                                         ['capture'], digests['deployment'])
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'independently approved fingerprint'):
+                            runtime.prepare(args)
+                        validate.assert_not_called()
 
 
 class CaptureMeasurementProtocolTests(unittest.TestCase):

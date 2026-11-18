@@ -17,7 +17,9 @@ from pathlib import Path
 import stat
 
 from lifecycle_unload_capture_faults import CaptureHandoffProbe
-from lifecycle_unload_runtime import checked_file, original_json, original_process, pidfd_exited, remaining
+from lifecycle_unload_runtime import (
+    _measured_original_json, checked_file, original_process, pidfd_exited, remaining,
+)
 from tools.system_acceptance import private_path
 from tools.template_build_guest import equal
 
@@ -134,8 +136,7 @@ class PublishConflictProbe(CaptureHandoffProbe):
                 or stat.S_IMODE(before.st_mode) != 0o500
                 or set(os.listdir(stage)) != {'state.bin', 'memory.bin', 'disk-0.img', 'manifest.json'}):
             raise ValueError('complete original stage must remain after publication refusal')
-        manifest_file = stage / 'manifest.json'
-        manifest = original_json(manifest_file, 262144)
+        manifest, manifest_measurement = _measured_original_json(stage / 'manifest.json', 262144)
         if (type(manifest) is not dict or set(manifest) != {'format_version', 'binding', 'compatibility', 'files'}
                 or not equal(manifest['format_version'], 1)
                 or not equal(manifest['binding'], full['pause']['binding'])
@@ -168,7 +169,7 @@ class PublishConflictProbe(CaptureHandoffProbe):
             raise ValueError('original stage changed or acquired a success completion')
         self.obstacle.unchanged()
         self.conflict = dict(original_returned_end=result, complete_stage_files=files,
-            manifest=checked_file(manifest_file, 262144, mode=0o400),
+            manifest=manifest_measurement,
             obstacle=self.obstacle.evidence(), callback_released_normally=True,
             syscall_errno='not separately traced in system scene; exact EEXIST checked by original Runtime unit test',
             full_adopted=False, capacity_released=False)

@@ -86,6 +86,7 @@ E11/E4 的显式 `--scenario capture-publish-conflict` 复用上述同步后调�
 上述单磁盘场景核对原清单格式版本、完整绑定和兼容配置的 JSON 类型，并按原 State、
 Memory、Disk 顺序比较整个文件条目。Disk 的 drive ID 来自已接受 Full 的磁盘配置，
 条目的长度和摘要来自对应文件的实际读回。
+清单解析和报告中的清单摘要、长度及 inode 来自同一个受保护的只读文件描述符。
 
 公开回到原 Running、RAM/文件/授权/寿命继续且物理 VMM 保持后，观察器另核原正材料
 预留、无 Stop，再只移除本测试创建且完整身份未变的空目录并同步父目录；未知、非空、
@@ -257,6 +258,9 @@ CPU 秒差继续接受与原计算相等的整数/浮点数值，布尔值不能
 3. 由[原存储工具](../tools/single_host_storage.py)准备独立工作卷，使用原 HostLease 排除冲突任务，
    再经[配额读回](../tests/system/lifecycle_unload_quota.py)核对实际内核额度及原文件系统身份。
    保留原服务/VM cgroup、独立角色账号、镜像摘要、TLS 和启动检查，失败不自动缩小预算或延长期限。
+   入口使用一次受保护的限长读取核对并解析各份批准回执。运行中校验材料清单和完成记录时，
+   解析值、摘要与文件身份也来自同一文件描述符。路径被替换、读取期间身份或大小改变时，
+   该次观察失败并按原规则保留现场。
 4. 执行原生命周期入口 `--scenario normal`，完整保留三轮保存与恢复；记录全部 CLI 参数、
    SDK/Redis/Firecracker/宿主版本和部署期限。不同部署期限的结果不能直接拿来做延迟排名。
 5. 核对 `complete`、三项 `cycles`、每轮 `cow_source_after_guest_write` 的源文件未改写及原 backing pin；
