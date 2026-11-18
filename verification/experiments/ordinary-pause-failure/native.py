@@ -82,17 +82,13 @@ def rejection_line(project):
 def checked_execution(stdout, stderr, code, name, rejected, line):
     if not rejected:
         return runner.checked_execution(stdout, stderr, code, name, False, line)
-    text = stdout.decode(errors='replace')
-    if (name != PROPERTY or code != 101
-            or re.findall(r'^test (\S+) \.\.\. (ok|FAILED|ignored)$', text, re.M) != [(name, 'FAILED')]
-            or 'running 1 test\n' not in text or '0 passed; 1 failed; 0 ignored;' not in text):
+    if name != PROPERTY:
         raise ValueError('The one original ordinary-Pause property did not fail as required')
-    combined = stdout + stderr
-    location = (str(FIXTURE) + ':' + str(line) + ':').encode()
-    if (b'panicked at ' not in combined or location not in combined
-            or b'assertion `left == right` failed' not in combined
-            or not re.search(rb'^\s*left: Revoking\s*$', combined, re.M)
-            or not re.search(rb'^\s*right: Pausing\s*$', combined, re.M)):
+    message = runner.checked_execution(stdout, stderr, code, name, True, line,
+        fixture=FIXTURE, assertion=b'left: Revoking',
+        assertion_header=b'assertion `left == right` failed')
+    if (not re.search(rb'^[ \t]*left: Revoking[ \t]*$', message, re.M)
+            or not re.search(rb'^[ \t]*right: Pausing[ \t]*$', message, re.M)):
         raise ValueError('Require the original phase assertion observing Revoking instead of Pausing')
 
 

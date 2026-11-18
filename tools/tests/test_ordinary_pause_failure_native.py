@@ -117,6 +117,7 @@ class OrdinaryPauseExecutionTests(unittest.TestCase):
             (good.replace(b'assertion `left == right` failed', b'called Result::unwrap(): CorruptStore'), 101),
             (good.replace(b'left: Revoking', b'left: Paused'), 101),
             (good.replace(b'right: Pausing', b'right: Destroyed'), 101),
+            (good.replace(b'right: Pausing', b'right: Destroyed') + b'\nright: Pausing\n', 101),
             (good.replace(native.PROPERTY.encode(), b'other_test'), 101),
             (self.output(False), 0),
         ):
