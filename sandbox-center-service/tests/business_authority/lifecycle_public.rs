@@ -277,9 +277,9 @@ fn unknown_public_commit_fences_query_then_recovers_original_key_and_deadline() 
     assert_eq!(create.startup_deadline_ms, 1100);
 }
 
-const OWNER_KEY: &str = "lifecycle-http-owner-fixture-only-key-0001";
+pub(super) const OWNER_KEY: &str = "lifecycle-http-owner-fixture-only-key-0001";
 const OTHER_KEY: &str = "lifecycle-http-other-fixture-only-key-0002";
-fn public_credentials() -> Vec<sandproof_api::ApiCredential> {
+pub(super) fn public_credentials() -> Vec<sandproof_api::ApiCredential> {
     vec![
         sandproof_api::ApiCredential {
             tenant: "8".into(),
@@ -291,7 +291,7 @@ fn public_credentials() -> Vec<sandproof_api::ApiCredential> {
         },
     ]
 }
-async fn send_public(
+pub(super) async fn send_public(
     router: &axum::Router,
     method: &str,
     path: &str,
@@ -316,7 +316,9 @@ async fn send_public(
         .await
         .unwrap()
 }
-async fn read_public<T: serde::de::DeserializeOwned>(response: axum::response::Response) -> T {
+pub(super) async fn read_public<T: serde::de::DeserializeOwned>(
+    response: axum::response::Response,
+) -> T {
     serde_json::from_slice(
         &axum::body::to_bytes(response.into_body(), 4096)
             .await
