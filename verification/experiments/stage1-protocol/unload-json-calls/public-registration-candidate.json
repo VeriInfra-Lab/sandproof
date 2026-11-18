@@ -18,7 +18,7 @@
   "shared_native_registered": false,
   "required_owner_work": [
     "Review original complete LLBC and nested field dictionary providers before A6/B4 adoption.",
-    "Run all three fresh admissions, all eleven LLBC admission regressions and all four source inventory checks; do not count a capture/compiler failure as a rejected property.",
+    "Run all three fresh admissions, all eleven LLBC admission regressions, all four source inventory checks, all four named-mutant binding checks, and both native assertion parser checks; distinguish the exact field and assertion from capture/compiler failures.",
     "Run the same four-source native entry on ning and retain real complete-value assertion failures.",
     "Only after review register these exact entries in the original Stage1/source-admission and shared native suite; reuse same content, do not run the old roots as evidence for these files.",
     "Keep original Aeneas recursive-trait failure and all unresolved ParentCalls/JSON/SHA/transaction conditions."
