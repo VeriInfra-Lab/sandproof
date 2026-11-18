@@ -235,6 +235,7 @@ class ResourceReportTests(SamplerFixture):
             self.completed_timing('unload', 'unloaded', 9),
             self.completed_timing('unload', 'original_continued', 2)))
         text = render(report, self.probe.path)
+        self.assertNotIn('| resume | 4 | 2.000000 | 20.000000 |', text)
         self.assertIn('| create | running | 1 | 0.300000 | 0.300000 |', text)
         self.assertIn('| resume | running | 3 | 2.000000 | 3.000000 |', text)
         self.assertIn('| resume | state_lost | 1 | 20.000000 | 20.000000 |', text)
