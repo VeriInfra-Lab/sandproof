@@ -1,4 +1,4 @@
-//! The original application with a controlled Host receipt and real SQLite.
+//! The original application with a controlled Host receipt and real `SQLite`.
 use super::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
