@@ -8,7 +8,7 @@ from prepare_revision_transport import BASE, PARENT, BASE_PROOF, PARENT_PROOF, m
 
 
 PACKAGE = HERE / 'revision-call'
-PROOFS = ('RevisionReadErrors', 'RevisionParentPrefix', 'RevisionParentCall')
+PROOFS = ('RevisionReadErrors', 'RevisionReadSuccess', 'RevisionParentPrefix', 'RevisionParentCall')
 
 
 def before_and_after(text, first, last):
@@ -33,14 +33,17 @@ abbrev Intent := sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
     prefix = before_and_after(errors, '/-- Changing the final', 'structure FirstBase')
     proof = before_and_after(errors, 'theorem base_error_skips_question',
                              '#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.base_error_skips_question')
+    missing = before_and_after(errors, 'theorem missing_native_skips_question',
+                               '#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.missing_native_skips_question')
     variables = """variable {E : Type} {host : host_contract.HostEvidence E} {serde : serde_core.de.DeserializeOwned E}
 variable {tx : rusqlite.transaction.Transaction} {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
 
 """
     return (
         header + before_and_after(aliases, 'abbrev SourceSnapshot :=', 'abbrev Process :=') + '\n'
-        + prefix + variables + proof
+        + prefix + variables + proof + missing
         + 'end RevisionParentPrefix\n\n#audit_controller_proof RevisionParentPrefix.base_error_skips_question\n'
+        + '#audit_controller_proof RevisionParentPrefix.missing_native_skips_question\n'
     )
 
 
@@ -75,7 +78,7 @@ def prepare_call(base, parent, packages, lean_mcp, output):
     files['RevisionParentPrefix.lean'] = parent_prefix(
         original(PARENT_PROOF / 'ParentSuccess.lean.in'), original(HERE / 'ParentErrors.lean.in'),
     ).encode()
-    for name in ('RevisionReadErrors', 'RevisionParentCall'):
+    for name in ('RevisionReadErrors', 'RevisionReadSuccess', 'RevisionParentCall'):
         files[f'{name}.lean'] = (PACKAGE / f'{name}.lean.in').read_bytes()
 
     materialize(base / 'Types.lean', parent / 'Types.lean', packages, lean_mcp, output)

@@ -14,19 +14,14 @@ open sandbox_controller_core.model (World SandboxRecord OperationResult)
 
 variable [Representations] [ops : Operations]
 
-/-- Observations through the original readiness computation. Later loads and
-    allocator observations are absent from this prefix. -/
-structure BeforeRevision (tx : rusqlite.transaction.Transaction) (ns : Str)
+/-- The original authenticated selection, before reflecting the local binding
+    and World record. -/
+structure BeforeLocalRead (tx : rusqlite.transaction.Transaction) (ns : Str)
     (world : World) (intent : AcceptedLifecycleIntent) (context : AuthenticatedCenterContext) where
   connection : rusqlite.Connection
   inbox : Inbox
   session : Session
   entry : Entry
-  localBinding : InternalLocalBinding
-  record : SandboxRecord
-  native : NativeCreateSnapshot
-  history : Option OperationResult
-  ready : CreateReadiness
   s : Usize
   e : Usize
   createOrResume :
@@ -39,8 +34,19 @@ structure BeforeRevision (tx : rusqlite.transaction.Transaction) (ns : Str)
   indexed : alloc.vec.Vec.index_usize inbox.sessions s = .ok session
   entryFound : first_entry_at_version (alloc.vec.Vec.deref session.entries) session.current_version
       = .ok (some entry)
-  localEq : session.«local» = some localBinding
   cloneOk : ops.cloneIntent entry.intent = .ok entry.intent
+
+/-- Observations through the original readiness computation with a native
+    record. Later loads and allocator observations are absent. -/
+structure BeforeRevision (tx : rusqlite.transaction.Transaction) (ns : Str)
+    (world : World) (intent : AcceptedLifecycleIntent) (context : AuthenticatedCenterContext)
+    extends BeforeLocalRead tx ns world intent context where
+  localBinding : InternalLocalBinding
+  record : SandboxRecord
+  native : NativeCreateSnapshot
+  history : Option OperationResult
+  ready : CreateReadiness
+  localEq : session.«local» = some localBinding
   recordFound : ops.sandboxRecord world localBinding.sandbox = .ok (some record)
   nativeOk : ops.nativeSnapshot tx ns world localBinding record = .ok (.Ok native)
   historyOk : ops.originalResult world localBinding = .ok (.Ok history)
