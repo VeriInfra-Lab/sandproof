@@ -457,7 +457,9 @@ SIGCONT 和门命令本身均不表示 VM 已暂停、已激活、已退出或�
 实际 API 的 `NoRequest` 回执，不能要求该合法责任终结字段永远为空。
 
 随后在原 Cleanup 成功、SQL 尚无回执的退出点，核对原 Stop 完整回执及同一 pidfd 的
-内核退出；旧 Freeze 可仍未知或已获同源迟到观察，不伪造成功。重开后经原 Cleanup/GC
+内核退出。Stop 门初次取证、同伴推进后、发放行字节前和 Cleanup 退出点须关联同一
+完整 Stop 动作，包含 logical action、attempt 和命令。同 VM、同 epoch 的另一动作也须拒绝。
+旧 Freeze 可仍未知或已获同源迟到观察，不伪造成功。重开后经原 Cleanup/GC
 达到公开 Cleaned，分别在 Terminating/Cleaned 重放原 Create/Unload 并拒绝同键改写，
 另一 owner 保持原候选和来宾进展后才显式收尾，最后核对原产品资源结算。未决、超时或
 错身份保留原接受、材料责任及 HostLease，不重发业务请求或自动继续进程来掩盖失败。
