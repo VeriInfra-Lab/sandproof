@@ -76,6 +76,392 @@ fn finish_destroy(journal: &mut ControllerJournal, sandbox: core::SandboxId) {
     panic!("bounded original termination did not converge")
 }
 
+struct PendingRestoredFreeze {
+    journal: ControllerJournal,
+    backing: SourceWorkRecord,
+    source: SourceWorkRecord,
+    freeze: WorkAction<core::EffectId>,
+}
+
+fn pending_restored_freeze(path: &Path, unknown_receipt: bool) -> PendingRestoredFreeze {
+    let (mut journal, first, resume) = running_successor(path);
+    let sandbox = first.work.anchor.local.sandbox;
+    let backing = journal
+        .lifecycle_source_work(&v3::config().node)
+        .unwrap()
+        .into_iter()
+        .find(|record| record.work == first.work)
+        .unwrap();
+    assert!(backing.restore.as_ref().unwrap().material_use);
+    assert!(super::super::retirement::material_charge(&backing).unwrap() > 0);
+    let unload = second_unload(&resume);
+    journal
+        .record_lifecycle_intent(&unload, &v3::context(), &mut NeverCrash)
+        .unwrap();
+    let source = journal
+        .prepare_lifecycle_source_work::<FullEvidence>(&unload, &v3::context(), 10, &mut NeverCrash)
+        .unwrap();
+    journal
+        .save_source_observation::<FullEvidence>(
+            &source.work,
+            &v3::context(),
+            observation(source.work.requirement()),
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    journal
+        .admit_lifecycle_full_capture::<FullEvidence>(
+            &source.work,
+            &v3::context(),
+            &full_request(&source),
+            10,
+            &mut NeverCrash,
+        )
+        .unwrap();
+    let fence = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        fence.command.command(),
+        core::Command::InstallFence {
+            terminal: false,
+            ..
+        }
+    ));
+    success(&mut journal, &fence);
+    let freeze = next_claim(&mut journal, sandbox).unwrap();
+    assert!(matches!(
+        freeze.command.command(),
+        core::Command::FreezeVm { .. }
+    ));
+    if unknown_receipt {
+        journal
+            .complete::<FullEvidence>(
+                &WorkReceipt {
+                    identity: freeze.identity.clone(),
+                    outcome: WorkOutcome::Unknown {
+                        reason: sandproof_protocol::UnknownReason::ObservationUnavailable,
+                        last_observation: None,
+                    },
+                },
+                &mut NeverCrash,
+            )
+            .unwrap();
+    }
+    let mut terminal = unload.clone();
+    terminal.accepted_version += 1;
+    terminal.request.binding.expected = ExpectedSession::Version(unload.accepted_version);
+    terminal.request.binding.key.sequence = (unload.request.binding.key.sequence.get() + 1)
+        .try_into()
+        .unwrap();
+    terminal.request.operation = LifecycleOperation::Destroy {};
+    journal
+        .record_lifecycle_intent(&terminal, &v3::context(), &mut NeverCrash)
+        .unwrap();
+    PendingRestoredFreeze {
+        journal,
+        backing,
+        source,
+        freeze,
+    }
+}
+
+fn assert_original_backing_held(journal: &ControllerJournal, backing: &SourceWorkRecord) {
+    let saved = journal.lifecycle_source_work(&v3::config().node).unwrap();
+    let matching: Vec<_> = saved
+        .iter()
+        .filter(|record| record.work == backing.work)
+        .collect();
+    assert_eq!(matching, vec![backing]);
+    assert!(matching[0].restore.as_ref().unwrap().material_use);
+    assert_eq!(
+        super::super::retirement::material_charge(matching[0]).unwrap(),
+        super::super::retirement::material_charge(backing).unwrap()
+    );
+}
+
+fn ready_terminal_fence(
+    journal: &ControllerJournal,
+    sandbox: core::SandboxId,
+) -> WorkAction<core::EffectId> {
+    let world = journal.world().unwrap();
+    let expected = core::Command::InstallFence {
+        sandbox,
+        epoch: world.sandbox_record(sandbox).unwrap().epoch,
+        terminal: true,
+    };
+    let mut query = journal
+        .journal
+        .connection
+        .prepare(
+            "SELECT action_json FROM outbox WHERE dispatch_state='ready' AND receipt_json IS NULL",
+        )
+        .unwrap();
+    let rows = query
+        .query_map([], |row| row.get::<_, Vec<u8>>(0))
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let mut matching = rows
+        .into_iter()
+        .map(|raw| serde_json::from_slice::<WorkAction<core::EffectId>>(&raw).unwrap())
+        .filter(|action| *action.command.command() == expected);
+    let action = matching
+        .next()
+        .expect("original current terminal Fence must already be ready");
+    assert!(matching.next().is_none());
+    action
+}
+
+#[test]
+fn unknown_second_freeze_keeps_current_terminal_fence_unclaimed_and_original_backing_held() {
+    for unknown_receipt in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let PendingRestoredFreeze {
+            journal,
+            backing,
+            source,
+            freeze,
+        } = pending_restored_freeze(&path, unknown_receipt);
+        let sandbox = source.source_sandbox();
+        drop(journal);
+        let mut journal = v3::open(&path);
+        bootstrap(&mut journal);
+        let before = journal.world().unwrap();
+        let row = before.sandbox_record(sandbox).unwrap();
+        assert!(row.terminal && row.phase == core::Phase::Revoking);
+        assert_eq!(
+            row.current_operation.unwrap().kind,
+            core::OperationKind::Kill
+        );
+        assert_eq!(row.desired, core::Authority::Closed);
+        assert_eq!(row.effective, core::Authority::Closed);
+        assert_eq!(journal.uncertain_actions().unwrap(), vec![freeze.clone()]);
+        let fence = ready_terminal_fence(&journal, sandbox);
+        assert!(
+            journal
+                .claim_next(Some(sandbox), &mut NeverCrash)
+                .unwrap()
+                .is_none()
+        );
+        let mut observed = Vec::new();
+        assert_eq!(
+            journal
+                .reconcile_uncertain::<FullEvidence, _>(&mut |action| {
+                    observed.push(action.clone());
+                    None
+                })
+                .unwrap(),
+            0
+        );
+        assert_eq!(observed, vec![freeze]);
+        assert_eq!(journal.world().unwrap(), before);
+        assert!(
+            journal
+                .claim_next(Some(sandbox), &mut NeverCrash)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(ready_terminal_fence(&journal, sandbox), fence);
+        assert_original_backing_held(&journal, &backing);
+        assert!(matches!(
+            journal.lifecycle_material_retirement_questions(sandbox),
+            Err(JournalError::UnresolvedAction)
+        ));
+    }
+}
+
+#[test]
+fn original_second_freeze_observation_precedes_current_terminal_fence_and_stop() {
+    for unknown_receipt in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let PendingRestoredFreeze {
+            journal,
+            backing,
+            source,
+            freeze,
+        } = pending_restored_freeze(&path, unknown_receipt);
+        let sandbox = source.source_sandbox();
+        drop(journal);
+        let mut journal = v3::open(&path);
+        bootstrap(&mut journal);
+        let ready_fence = ready_terminal_fence(&journal, sandbox);
+        assert!(
+            journal
+                .claim_next(Some(sandbox), &mut NeverCrash)
+                .unwrap()
+                .is_none()
+        );
+        // Controlled, exact original host evidence represents a queryable
+        // Paused VMM. It does not execute Freeze again or attest a real VMM.
+        let receipt = WorkReceipt {
+            identity: freeze.identity.clone(),
+            outcome: WorkOutcome::ObservedSuccess(FullEvidence {
+                resource: freeze.identity.resource.clone(),
+                command: freeze.command.command().clone(),
+            }),
+        };
+        assert_eq!(
+            journal
+                .reconcile_uncertain(&mut |action| {
+                    assert_eq!(action, &freeze);
+                    Some(receipt.clone())
+                })
+                .unwrap(),
+            1
+        );
+        let world = journal.world().unwrap();
+        let row = world.sandbox_record(sandbox).unwrap();
+        assert!(row.terminal && row.phase == core::Phase::Revoking);
+        assert_eq!(row.desired, core::Authority::Closed);
+        assert_eq!(row.effective, core::Authority::Closed);
+        let epoch = row.epoch;
+        assert_original_backing_held(&journal, &backing);
+        let fence = journal
+            .claim_next(Some(sandbox), &mut NeverCrash)
+            .unwrap()
+            .unwrap();
+        assert_eq!(fence, ready_fence);
+        assert_eq!(
+            *fence.command.command(),
+            core::Command::InstallFence {
+                sandbox,
+                epoch,
+                terminal: true
+            }
+        );
+        success(&mut journal, &fence);
+        assert_original_backing_held(&journal, &backing);
+        let stop = next_claim(&mut journal, sandbox).unwrap();
+        let core::Command::FreezeVm { generation, vm, .. } = *freeze.command.command() else {
+            panic!("original restored Freeze required");
+        };
+        assert_eq!(
+            *stop.command.command(),
+            core::Command::StopVm {
+                sandbox,
+                epoch,
+                generation,
+                vm
+            }
+        );
+        assert_original_backing_held(&journal, &backing);
+        success(&mut journal, &stop);
+        let stopped = journal.world().unwrap();
+        assert_eq!(
+            stopped.vm_record(vm).unwrap().status,
+            core::VmStatus::Stopped
+        );
+        assert_eq!(
+            journal
+                .reconcile_uncertain::<FullEvidence, _>(&mut |_| {
+                    panic!("acknowledged original Freeze must not be observed or executed again")
+                })
+                .unwrap(),
+            0
+        );
+        assert_eq!(journal.world().unwrap(), stopped);
+    }
+}
+
+#[test]
+fn application_observes_original_second_freeze_before_executing_terminal_work() {
+    for unknown_receipt in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let PendingRestoredFreeze {
+            journal,
+            backing,
+            source,
+            freeze,
+        } = pending_restored_freeze(&path, unknown_receipt);
+        let sandbox = source.source_sandbox();
+        let ready_fence = ready_terminal_fence(&journal, sandbox);
+        let epoch = journal
+            .world()
+            .unwrap()
+            .sandbox_record(sandbox)
+            .unwrap()
+            .epoch;
+        let state = Arc::new(Mutex::new(State {
+            epoch: TestEpoch::Matching,
+            source: Some(source.work.requirement().source.clone()),
+            actions: vec![freeze.clone()],
+            observe_unavailable: true,
+            lose_stop: Some(sandbox),
+            ..State::default()
+        }));
+        drop(journal);
+        let app = v3::application(&path, state.clone(), false);
+        app.establish_lifecycle_host_epoch().unwrap();
+        let unavailable = app.recover_on_startup().unwrap();
+        assert_eq!(unavailable.receipts_recovered, 0);
+        drop(app);
+        {
+            let journal = v3::open(&path);
+            assert_eq!(journal.uncertain_actions().unwrap(), vec![freeze.clone()]);
+            assert_eq!(ready_terminal_fence(&journal, sandbox), ready_fence);
+            assert_original_backing_held(&journal, &backing);
+        }
+        {
+            let observed = state.lock().unwrap();
+            assert!(observed.recovery_observations > 0);
+            assert_eq!(observed.actions, vec![freeze.clone()]);
+            assert!(observed.released_slots.is_empty());
+        }
+        state.lock().unwrap().observe_unavailable = false;
+        let app = v3::application(&path, state.clone(), false);
+        app.establish_lifecycle_host_epoch().unwrap();
+        let available = app.recover_on_startup().unwrap();
+        assert!(available.receipts_recovered > 0);
+        drop(app);
+        let journal = v3::open(&path);
+        let world = journal.world().unwrap();
+        let row = world.sandbox_record(sandbox).unwrap();
+        assert!(
+            row.terminal && matches!(row.phase, core::Phase::Revoking | core::Phase::Destroyed)
+        );
+        assert_eq!(row.desired, core::Authority::Closed);
+        assert_eq!(row.effective, core::Authority::Closed);
+        let observed = state.lock().unwrap();
+        assert_eq!(
+            observed
+                .actions
+                .iter()
+                .filter(|action| *action == &freeze)
+                .count(),
+            1
+        );
+        let fence_position = observed
+            .actions
+            .iter()
+            .position(|action| action == &ready_fence)
+            .unwrap();
+        let core::Command::FreezeVm { generation, vm, .. } = *freeze.command.command() else {
+            panic!("original restored Freeze required");
+        };
+        let expected_stop = core::Command::StopVm {
+            sandbox,
+            epoch,
+            generation,
+            vm,
+        };
+        let stop_position = observed
+            .actions
+            .iter()
+            .position(|action| *action.command.command() == expected_stop)
+            .unwrap();
+        assert!(fence_position < stop_position);
+        assert!(!observed.actions.iter().any(|action| matches!(
+            action.command.command(),
+            core::Command::PrepareVm { .. }
+                | core::Command::ActivateVm { .. }
+                | core::Command::SealSnapshot { .. }
+        )));
+    }
+}
+
 #[test]
 fn ordinary_stop_waits_for_persisted_end_and_recovers_at_dispatch_and_receipt() {
     for receipt_before_restart in [false, true] {

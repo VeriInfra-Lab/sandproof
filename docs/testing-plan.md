@@ -53,6 +53,14 @@
 
 E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确认，才能排除“重载旧快照也能通过”的伪测试。E10 包含 load 返回后、VMM 仍运行的时段；E1 包含旧 slot 被另一个会话实际复用。观测 oracle 接受临时两库差异，检查最终事实、责任和禁止状态，不要求每瞬间强一致。RAM/文件见证使用明确屏障或描述允许捕获点；不能把应用的两个非原子写入强行要求为永远相等，从而误报协议错误。
 
+E8 的[原 journal/应用回归](../controller-service/src/controller/lifecycle_inbox/source_work/tests/end_pipeline.rs)
+区分第二次 Unload 的 Freeze 仍为 dispatched/OutcomeUnknown，以及原 Freeze 成功观察已保存两种情况。
+真实 SQLite 重开后，观察不可用不能代替成功、派发当前终止围栏或释放原恢复 backing/pin/额度；
+成功分支由受控提供方返回完整原 Freeze 观察，检查先保存该观察，再派发同一当前 Kill 的围栏和同源 Stop，
+Stop 前 backing 责任保持。原应用恢复协调器另检查观察不可用时不执行新动作，解除观察故障后只重查原 Freeze，
+再执行当前终止动作；Host 观察与效果仍由受控提供方给出。它没有执行真实 VMM 查询或 SIGSTOP，不证明不响应的 VMM 已能终止，
+不能用该组件结果改判实机故障场景或代替完整 E8/E15 验收。
+
 ### 从性质定位测试与缺口
 
 下表定位已有入口及需要检查的覆盖范围，不代表执行结果。每批在 issue/PR 逐项记录：
