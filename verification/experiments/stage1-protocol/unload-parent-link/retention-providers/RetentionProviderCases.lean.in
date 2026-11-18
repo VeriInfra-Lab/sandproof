@@ -1,0 +1,39 @@
+import FirstMatchInputs
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.Values
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Core
+
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders alloc.vec
+open controller.lifecycle_inbox.source_work controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRetentionProviders.Cases
+
+abbrev Binding := Array U8 32#usize
+
+def keyPort : SavedKeyCheck Unit Unit := ⟨fun _ _ => .ok true⟩
+
+def known (_ : Unit) (_ : Binding) : Bool := true
+
+def old : SourceWorkRecord := ⟨SourceWorkMatch.Values.base, none, none, none, none, ⟨none, none⟩⟩
+
+def changed : SourceWorkRecord := { old with work := SourceWorkMatch.Values.changedLimits }
+
+def inventory (record : SourceWorkRecord) : Vec SourceWorkRecord := Vec.from [record] (by scalar_tac)
+
+noncomputable def expected (next : SourceWorkRecord) : Bool :=
+  (inventory old).val.all (SourceFirstMatch.retained (fun keys row => known keys row.work.requirement.work_binding)
+    (SourceFirstMatch.completeMatch SourceWorkRecord.work) SourcePreservation.Expected () (inventory next).val)
+
+theorem unchanged_expected : expected old = true := by
+  simp [expected, inventory, SourceFirstMatch.retained, SourceFirstMatch.firstPreserves,
+    SourceFirstMatch.completeMatch, SourcePreservation.Expected, SourcePreservation.Preserves,
+    SourcePreservation.Retains, SourcePreservation.RetainsState, known, old]
+
+theorem changed_expected : expected changed = false := by
+  simp [expected, inventory, SourceFirstMatch.retained, SourceFirstMatch.firstPreserves,
+    SourceFirstMatch.completeMatch, known, old, changed, Ne.symm SourceWorkMatch.Values.limits_differ]
+
+end SandboxModel.Stage1Protocol.SourceRetentionProviders.Cases
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetentionProviders.Cases.unchanged_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetentionProviders.Cases.changed_expected

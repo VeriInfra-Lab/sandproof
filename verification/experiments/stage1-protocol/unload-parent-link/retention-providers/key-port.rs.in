@@ -1,0 +1,48 @@
+trait SavedRecordChecks<R, Keys> {
+    fn has_key(keys: &Keys, record: &R) -> bool;
+    fn same_work(next: &R, record: &R) -> bool;
+    fn same_binding(next: &R, record: &R) -> bool;
+    fn preserves(record: &R, next: &R) -> bool;
+}
+
+trait SavedKeyCheck<Keys> {
+    fn contains(keys: &Keys, binding: &[u8; 32]) -> bool;
+}
+
+struct JournalSavedKeys;
+
+impl SavedKeyCheck<BTreeSet<[u8; 32]>> for JournalSavedKeys {
+    fn contains(keys: &BTreeSet<[u8; 32]>, binding: &[u8; 32]) -> bool {
+        keys.contains(binding)
+    }
+}
+
+impl<Keys, Check: SavedKeyCheck<Keys>> SavedRecordChecks<SourceWorkRecord, Keys> for Check {
+    fn has_key(keys: &Keys, record: &SourceWorkRecord) -> bool {
+        Check::contains(keys, record.work.requirement.work_binding.as_bytes())
+    }
+
+    fn same_work(next: &SourceWorkRecord, record: &SourceWorkRecord) -> bool {
+        next.work == record.work
+    }
+
+    fn same_binding(next: &SourceWorkRecord, record: &SourceWorkRecord) -> bool {
+        next.work.requirement.work_binding == record.work.requirement.work_binding
+    }
+
+    fn preserves(record: &SourceWorkRecord, next: &SourceWorkRecord) -> bool {
+        super::retirement::preserves_saved_facts(record, next)
+    }
+}
+
+fn retains_saved_records(current: &Sources, sources: &Sources, keys: &BTreeSet<[u8; 32]>) -> bool {
+    retains_with_saved_keys::<_, JournalSavedKeys>(&current.records, &sources.records, keys)
+}
+
+fn retains_with_saved_keys<Keys, Check: SavedKeyCheck<Keys>>(
+    current: &Vec<SourceWorkRecord>,
+    sources: &Vec<SourceWorkRecord>,
+    keys: &Keys,
+) -> bool {
+    retains_inventory_using::<_, _, Check>(current, sources, keys)
+}
