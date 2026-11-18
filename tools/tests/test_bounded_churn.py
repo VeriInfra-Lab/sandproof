@@ -139,21 +139,42 @@ class ConfigurationTests(unittest.TestCase):
         self.assertNotIn('max_data_routes_per_slot', value['bounded_host'])
 
     def test_missing_or_partial_rust_probe_result_is_not_success(self):
-        report = dict(version=1, context_rejected=True, release_rejected=True,
-                      all_actions_rejected=True, checked_actions=9)
-        probe.validate_stale_report(report, 9)
+        actions = [
+            dict(identity=dict(logical_action='effect-12', attempt=0)),
+            dict(identity=dict(logical_action='effect-13', attempt=1)),
+        ]
+        successor = dict(position=1, expected_previous=10,
+                         binding=dict(vm=11, owner=2, sandbox=2, generation=1, network=11))
+        failure = dict(status='definitive_failure', code='invalid_resource', retryable=False)
+        outcomes = [
+            dict(actions[0]['identity'], outcome=dict(status='unknown', reason='observation_unavailable')),
+            dict(actions[1]['identity'], outcome=failure),
+        ]
+        report = dict(version=2, context_rejected=True, release_rejected=True,
+                      occupied_successor=successor, action_outcomes=outcomes)
+        probe.validate_stale_report(report, actions, successor)
+        legacy = dict(version=1, context_rejected=True, release_rejected=True,
+                      all_actions_rejected=True, checked_actions=2)
+        with self.assertRaises(AssertionError):
+            probe.validate_stale_report(legacy, actions, successor)
         for field in report:
             bad = report.copy()
             del bad[field]
             with self.subTest(field=field), self.assertRaises(AssertionError):
-                probe.validate_stale_report(bad, 9)
-        for field in ('context_rejected', 'release_rejected', 'all_actions_rejected'):
+                probe.validate_stale_report(bad, actions, successor)
+        for field in ('context_rejected', 'release_rejected'):
             bad = report | {field: False}
             with self.assertRaises(AssertionError):
-                probe.validate_stale_report(bad, 9)
-        for count in (8, True, '9'):
-            with self.assertRaises(AssertionError):
-                probe.validate_stale_report(report | {'checked_actions': count}, 9)
+                probe.validate_stale_report(bad, actions, successor)
+        for changes in (
+                {'version': 1}, {'version': 2.0}, {'occupied_successor': successor | {'position': True}},
+                {'action_outcomes': outcomes[:1]}, {'action_outcomes': outcomes[::-1]},
+                {'action_outcomes': [outcomes[0] | {'attempt': False}, outcomes[1]]},
+                {'action_outcomes': [outcomes[0] | {'outcome': {'status': 'observed_success'}}, outcomes[1]]},
+                {'action_outcomes': [outcomes[0], outcomes[1] | {'outcome': failure | {'partial': {}}}]},
+                {'action_outcomes': [outcomes[0], outcomes[1] | {'outcome': failure | {'retryable': 0}}]}):
+            with self.subTest(changes=changes), self.assertRaises(AssertionError):
+                probe.validate_stale_report(report | changes, actions, successor)
 
 
 class ObservationTests(unittest.TestCase):

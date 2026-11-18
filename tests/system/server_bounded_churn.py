@@ -38,6 +38,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tools import check_kvm_host as host
+from tools.template_build_guest import equal
 from tools.template_physical_storage import activation_budget, envelope
 from tools.bounded_acceptance import require_bounded_host_tools
 
@@ -323,12 +324,31 @@ def audit_absent(settings, identity, ticks):
     # resources are checked; a separate old-holder experiment is not claimed.
 
 
-def validate_stale_report(report, count):
-    if (not isinstance(report, dict) or report.get('version') != 1
-            or any(report.get(field) is not True for field in (
-                'context_rejected', 'release_rejected', 'all_actions_rejected'))
-            or type(report.get('checked_actions')) is not int or report['checked_actions'] != count):
+def validate_stale_report(report, actions, successor):
+    if (type(report) is not dict or set(report) != {
+            'version', 'occupied_successor', 'context_rejected', 'release_rejected', 'action_outcomes'}
+            or not equal(report['version'], 2) or not equal(report['occupied_successor'], successor)
+            or report['context_rejected'] is not True or report['release_rejected'] is not True):
         raise AssertionError('late host-action probe failed or incomplete')
+    outcomes = report['action_outcomes']
+    if type(outcomes) is not list or not actions or len(outcomes) != len(actions):
+        raise AssertionError('one outcome per original late action required')
+    for value, action in zip(outcomes, actions, strict=True):
+        identity = action['identity']
+        if (type(value) is not dict or set(value) != {'logical_action', 'attempt', 'outcome'}
+                or not equal(value['logical_action'], identity['logical_action'])
+                or not equal(value['attempt'], identity['attempt'])):
+            raise AssertionError('late host outcome differs from the original action identity')
+        outcome = value['outcome']
+        if type(outcome) is not dict:
+            raise AssertionError('typed late host outcome required')
+        if (outcome.get('status') == 'unknown' and set(outcome) == {'status', 'reason'}
+                and type(outcome['reason']) is str and outcome['reason']):
+            continue
+        if (outcome.get('status') == 'definitive_failure' and set(outcome) == {'status', 'code', 'retryable'}
+                and type(outcome['code']) is str and outcome['code'] and type(outcome['retryable']) is bool):
+            continue
+        raise AssertionError('late host action yielded a successful, partial or malformed outcome')
 
 
 def exercise(args):
@@ -567,7 +587,7 @@ def exercise_on_services(services,key,foreign_key,evidence_root,*,stale_probe,
                                         env={'PATH': '/usr/bin:/bin', 'LANG': 'C'})
                 assert result.returncode == 0 and len(result.stdout) <= 65536, 'late host-action driver failed'
                 stale = json.loads(result.stdout, object_pairs_hook=host.unique_keys)
-                validate_stale_report(stale, len(old_actions))
+                validate_stale_report(stale, old_actions, context)
                 assert tree_records((settings['node_state_dir'], Path(settings['chroot_base']) / '.claims')) == before
                 assert live_identity(settings, context, process_start_ticks) == identity
                 assert live_identity(settings, survivor_context, process_start_ticks) == survivor_identity

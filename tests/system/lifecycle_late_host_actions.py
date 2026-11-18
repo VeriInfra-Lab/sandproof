@@ -1,6 +1,6 @@
 """One E9 late duplicate of original StopVm/CleanupVm after product slot reuse.
 
-Only the existing root-only Node probe executes old actions. Its refusal report
+Only the existing root-only Node probe executes old actions. Its outcome report
 is paired with independent SQL/kernel/metadata observations and guest I/O. This
 does not claim arbitrary late unlink, CleanupSlot, or the complete E9 matrix.
 """
@@ -247,7 +247,7 @@ class LateHostActionsProbe:
         self.replayed = True
         result = bounded_json_command([stamp['path'], str(config), str(actions)],
             {'PATH':'/usr/bin:/bin', 'LANG':'C'}, timeout=min(30, remaining(self.deadline)), max_bytes=65536)
-        validate_stale_report(result, 2)
+        validate_stale_report(result, self.actions, new)
         if (tree_records(roots) != before
                 or live_identity(self.native, new, process_start_ticks) != identity):
             raise ValueError('late stop/delete mutated metadata or current occupant resources')
@@ -302,6 +302,6 @@ def exercise_late_stop_delete(runtime, client, control, saved, deadline, report,
         final_destroy_send_to_settled_seconds=finished-control.timings[-1]['sent_monotonic'],
         completion_condition='both original public Destroy/GC plus zero reservations/material charge/backing pins')
     report['acceptance_cases'] = dict(E9='two original terminal StopVm/CleanupVm commands replayed after '
-        'other-owner immediate slot reuse; refusal plus unchanged SQL/kernel/claims and same guest I/O',
+        'other-owner immediate slot reuse; original action outcomes plus unchanged SQL/kernel/claims and same guest I/O',
         other_cases='one late-duplicate representative; not arbitrary late deletion or complete E9/E12/E13')
     report['phase'], report['complete'] = 'accepted-scenario', True
