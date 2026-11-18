@@ -219,6 +219,27 @@ def failure_details(error, client, phase):
                        for frame in traceback.extract_tb(error.__traceback__, limit=16)])
 
 
+def record_known_sessions(report, client, control, window_successors):
+    report['known_sessions'] = [
+        dict(owner=value.owner, session=value.session, acceptance=value.current_acceptance)
+        for value in (client, control, *window_successors)
+        if value is not None and value.session is not None
+    ]
+    if report['complete'] or not window_successors:
+        return
+    successor = window_successors[0]
+    if not successor.timings:
+        return
+    attempt = successor.timings[-1]
+    operation = attempt['operation']
+    request = successor.create_request if operation == 'create' else successor.destroy_request
+    report['expired_window_successor_write_attempt'] = dict(
+        operation=operation,
+        key=dict(successor.key(request['sequence']), window=request['window']),
+        acceptance=copy.deepcopy(attempt.get('acceptance')),
+    )
+
+
 class PublicUnloadScenario:
     """One known owner/window and two saved complete requests, not a client SDK."""
     def __init__(self, base_url, owner_key, foreign_key, deployment, deadline, *, owner='1'):
@@ -866,6 +887,7 @@ def exercise(args):
                   scenario=args.scenario,
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
+    window_successors = []
     capture_probe = data_probe = cow_probe = retirement_probe = receipt_probe = None
     expiry_probe = command_probe = None
     terminal_destroy_done = False
@@ -1447,7 +1469,8 @@ def exercise(args):
         if expired_window_replay:
             from lifecycle_window_replay import exercise as exercise_expired_window
             report['phase'] = 'expired-window-replay'
-            report['expired_window_replay'] = exercise_expired_window(client, runtime)
+            report['expired_window_replay'] = exercise_expired_window(
+                client, runtime, register_successor=window_successors.append)
 
         report['acceptance_cases']={
             'E1':'normal RAM/disk/process continuity and actual slot reuse observed',
@@ -1600,11 +1623,7 @@ def exercise(args):
     finally:
         if client is not None:
             report['known_session'] = client.session
-        # Preserve both exact public identities on failure; an uncertain
-        # request is never replaced by a new key or a broad cleanup action.
-        report['known_sessions']=[dict(owner=value.owner,session=value.session,
-            acceptance=value.current_acceptance) for value in (client,control)
-            if value is not None and value.session is not None]
+        record_known_sessions(report, client, control, window_successors)
         report['operation_timings']=[sample for value in (client,control) if value is not None
             for sample in value.timing_report()]
         report['operation_timing_summary']={}
