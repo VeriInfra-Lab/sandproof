@@ -1,8 +1,8 @@
-"""One E9 late duplicate of original StopVm/CleanupVm after product slot reuse.
+"""E9 replay of original StopVm/CleanupVm or CleanupSlot after product slot reuse.
 
 Only the existing root-only Node probe executes old actions. Its outcome report
 is paired with independent SQL/kernel/metadata observations and guest I/O. This
-does not claim arbitrary late unlink, CleanupSlot, or the complete E9 matrix.
+does not claim arbitrary late unlink or the complete E9 matrix.
 """
 import runpy as _runpy
 from pathlib import Path as _GuardPath
@@ -105,6 +105,10 @@ def original_actions(rows, prior, native, resource):
 
 
 class LateHostActionsProbe:
+    cut_action = 'cleanup_vm'
+    artifact_prefix = 'late-stop-delete'
+    replay_scope = 'two original StopVm/CleanupVm duplicates; not arbitrary unlink or CleanupSlot'
+
     def __init__(self, runtime, client, prior, resume, helper, deadline):
         if prior['session'] != client.session or not equal(resume, client.current_acceptance):
             raise ValueError('original restored execution and Resume acceptance required')
@@ -171,19 +175,29 @@ class LateHostActionsProbe:
         self.entry, _, rows = self._read(self.resume, terminal=False)
         if self.entry['intent']['request']['operation']['kind'] != 'resume':
             raise ValueError('original admitted Resume required')
+        self.resource = self._original_resource(rows)
+        self.runtime.services.processes.stop('host-0')
+        self._configuration()
+        self.host = self.runtime.services.processes.start('host-0',
+            env={'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': self.cut_action})
+        self.runtime.services.wait_ready(timeout=min(remaining(self.deadline), 900), for_admission=False)
+        return dict(cut=self.cut_action+'-success-before-SQL-receipt', preparatory_host_restart=True)
+
+    def _original_resource(self, rows):
         prepared = [row[0] for row in rows if 'PrepareVm' in row[0]['command']['logical']['command']]
         binding = self.prior['context']['binding']
         if (len(prepared) != 1 or any(
                 not equal(prepared[0]['command']['logical']['command']['PrepareVm'][field], binding[field])
                 for field in ('sandbox', 'generation', 'vm'))):
             raise ValueError('one original persisted Prepare for the restored execution required')
-        self.resource = copy.deepcopy(prepared[0]['identity']['resource'])
-        self.runtime.services.processes.stop('host-0')
-        self._configuration()
-        self.host = self.runtime.services.processes.start('host-0',
-            env={'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': 'cleanup_vm'})
-        self.runtime.services.wait_ready(timeout=min(remaining(self.deadline), 900), for_admission=False)
-        return dict(cut='cleanup_vm-success-before-SQL-receipt', preparatory_host_restart=True)
+        return copy.deepcopy(prepared[0]['identity']['resource'])
+
+    def _cut_actions(self, rows, native):
+        return original_actions(rows, self.prior, native, self.resource)
+
+    def _cut_evidence(self):
+        return dict(actual_commands=['StopVm', 'CleanupVm'], original_stop_receipted=True,
+                    original_cleanup_executed_receipt_pending=True)
 
     def capture(self, accepted):
         if (self.host is None or self.actions is not None or not equal(accepted, self.client.current_acceptance)
@@ -204,12 +218,11 @@ class LateHostActionsProbe:
         expected['request']['operation'] = dict(kind='destroy')
         if not equal(entry['intent'], expected) or equal(accepted['key'], self.resume['key']):
             raise ValueError('complete original Destroy intent differs from the accepted successor')
-        actions = original_actions(rows, self.prior, native, self.resource)
+        actions = self._cut_actions(rows, native)
         if original_process(self.prior['source']):
             raise ValueError('original stopped VM still live')
         self.actions = actions
-        return dict(actual_commands=['StopVm', 'CleanupVm'], original_stop_receipted=True,
-            original_cleanup_executed_receipt_pending=True, original_vmm_exited=True,
+        return dict(self._cut_evidence(), original_vmm_exited=True,
             actions_sha256=hashlib.sha256(json.dumps(actions, sort_keys=True).encode()).hexdigest())
 
     def recover(self):
@@ -228,6 +241,8 @@ class LateHostActionsProbe:
                 or new['expected_previous'] != old['binding']['vm']
                 or new['binding']['vm'] <= old['binding']['vm']):
             raise ValueError('one actual immediate reuse by the other owner required')
+        if self.cut_action == 'cleanup_slot' and _u64(new['binding']['network']) <= _u64(old['binding']['network']):
+            raise ValueError('fresh successor network slot required before old CleanupSlot replay')
         self._configuration()
         self.runtime.services.processes.stop('host-0')
         self._configuration()
@@ -237,7 +252,8 @@ class LateHostActionsProbe:
         before = tree_records(roots)
         identity = live_identity(self.native, new, process_start_ticks)
         directory = private_path(self.runtime.root, directory=True)
-        config, actions = directory/'late-stop-delete-node.json', directory/'late-stop-delete-actions.json'
+        config = directory/(self.artifact_prefix+'-node.json')
+        actions = directory/(self.artifact_prefix+'-actions.json')
         write_private(config, node_configuration(self.native))
         write_private(actions, dict(version=1, old_context=old, actions=self.actions))
         # Same approved executable, rechecked immediately before any old command.
@@ -259,22 +275,65 @@ class LateHostActionsProbe:
         observer.verify()
         return dict(probe=result, helper_sha256=stamp['sha256'], occupant=observation,
             metadata_and_claims_unchanged=True, same_kernel_identity=True, guest=guest,
-            scope='two original StopVm/CleanupVm duplicates; not arbitrary unlink or CleanupSlot')
+            scope=self.replay_scope)
 
 
-def exercise_late_stop_delete(runtime, client, control, saved, deadline, report, helper):
+class LateSlotCloseProbe(LateHostActionsProbe):
+    cut_action = 'cleanup_slot'
+    artifact_prefix = 'late-slot-close'
+    replay_scope = 'one original CleanupSlot duplicate after successor network slot admission'
+
+    def _original_resource(self, rows):
+        binding = self.prior['context']['binding']
+        configured = [row for row in rows if 'ConfigureNetwork' in row[0]['command']['logical']['command']]
+        if len(configured) != 1:
+            raise ValueError('one original persisted ConfigureNetwork required')
+        row = configured[0]
+        command = row[0]['command']['logical']['command']
+        fields = command['ConfigureNetwork']
+        slot = _u64(binding['network'])
+        resource = dict(kind='network_slot', id=f"slot-{self.native['namespace']}-{slot}")
+        if (set(command) != {'ConfigureNetwork'} or not equal(fields['slot'], slot)
+                or any(not equal(fields[field], binding[field]) for field in ('sandbox', 'generation', 'vm'))
+                or not equal(row[0]['identity']['resource'], resource)):
+            raise ValueError('original ConfigureNetwork binding differs from restored execution')
+        observation = CaptureHandoffProbe._success_observation(row, 'Network')
+        if type(observation) is not dict or set(observation) != {'namespace_inode'}:
+            raise ValueError('original successful ConfigureNetwork receipt required')
+        _u64(observation['namespace_inode'], positive=True)
+        return copy.deepcopy(row[0]['identity']['resource'])
+
+    def _cut_actions(self, rows, native):
+        pending = [row for row in rows if 'CleanupSlot' in row[0]['command']['logical']['command']]
+        if len(pending) != 1 or pending[0][1:] != ('dispatched', None):
+            raise ValueError('one original dispatched CleanupSlot with no SQL receipt required')
+        action = pending[0][0]
+        binding = self.prior['context']['binding']
+        cmd = dict(sandbox=binding['sandbox'], generation=binding['generation'], slot=binding['network'])
+        if (not equal(action['command']['logical']['command'], {'CleanupSlot': cmd})
+                or not equal(action['identity']['epoch'], _u64(native['epoch']))
+                or not equal(action['identity']['resource'], self.resource)):
+            raise ValueError('original CleanupSlot binding differs from the terminal slot')
+        return [copy.deepcopy(action)]
+
+    def _cut_evidence(self):
+        return dict(actual_commands=['CleanupSlot'], original_slot_close_executed_receipt_pending=True)
+
+
+def exercise_late_host_actions(runtime, client, control, saved, deadline, report, helper, *, slot_close):
     report['phase'] = 'late-actions-original-resume'
     accepted = client.resume(saved)
     resumed = client.wait_running()
     running = runtime.record_running(client.session, deadline, resume_acceptance=accepted)
     report['late_actions_resumed_workload'] = client.assert_resumed_workload(resumed)
     client.operation_evidence_completed()
-    probe = LateHostActionsProbe(runtime, client, running, accepted, helper, deadline)
-    report['phase'] = 'late-actions-arm-original-cleanup-cut'
+    probe_class = LateSlotCloseProbe if slot_close else LateHostActionsProbe
+    probe = probe_class(runtime, client, running, accepted, helper, deadline)
+    report['phase'] = 'late-actions-arm-original-slot-close-cut' if slot_close else 'late-actions-arm-original-cleanup-cut'
     report['late_actions_arm'] = probe.arm()
     report['destroy'] = client.destroy(resumed)
     client.assert_data_closed()
-    report['phase'] = 'late-actions-capture-original-stop-cleanup'
+    report['phase'] = 'late-actions-capture-original-slot-close' if slot_close else 'late-actions-capture-original-stop-cleanup'
     report['late_actions_capture'] = probe.capture(report['destroy'])
     probe.recover()
     client.wait_cleaned()
@@ -289,8 +348,9 @@ def exercise_late_stop_delete(runtime, client, control, saved, deadline, report,
     report['slot_occupant_workload'] = control.run_public_workload(current)
     control.operation_evidence_completed()
     report['slot_reuse'] = dict(occupant_session=control.session, position=occupant['context']['position'])
-    report['phase'] = 'late-actions-replay-old-stop-cleanup'
-    report['late_stop_delete'] = probe.replay(occupant, lambda:control.assert_running_workload(current))
+    report['phase'] = 'late-actions-replay-old-slot-close' if slot_close else 'late-actions-replay-old-stop-cleanup'
+    report['late_slot_close' if slot_close else 'late_stop_delete'] = probe.replay(
+        occupant, lambda:control.assert_running_workload(current))
     report['phase'] = 'late-actions-other-owner-destroy-gc'
     from lifecycle_unload_scenario import finish_slot_occupant
     finish_slot_occupant(control, current, runtime, deadline, report)
@@ -301,7 +361,8 @@ def exercise_late_stop_delete(runtime, client, control, saved, deadline, report,
     report['settlement_timing'] = dict(check_seconds=finished-started,
         final_destroy_send_to_settled_seconds=finished-control.timings[-1]['sent_monotonic'],
         completion_condition='both original public Destroy/GC plus zero reservations/material charge/backing pins')
-    report['acceptance_cases'] = dict(E9='two original terminal StopVm/CleanupVm commands replayed after '
+    commands = 'one original terminal CleanupSlot command' if slot_close else 'two original terminal StopVm/CleanupVm commands'
+    report['acceptance_cases'] = dict(E9=commands+' replayed after '
         'other-owner immediate slot reuse; original action outcomes plus unchanged SQL/kernel/claims and same guest I/O',
         other_cases='one late-duplicate representative; not arbitrary late deletion or complete E9/E12/E13')
     report['phase'], report['complete'] = 'accepted-scenario', True
