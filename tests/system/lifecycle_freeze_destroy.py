@@ -216,17 +216,32 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
             result['current_pause_observed']=False
         return result
 
+    def _destroy_window_facts(self, conn, local, capacity):
+        registered = action_is_registered(conn, self.action, capacity)
+        return registered, self._read_native(conn, local, capacity)
+
     def observe_destroy_window(self, deadline):
         """Re-read the original cut on either side of the public Destroy."""
         deadline = min(deadline, self.deadline)
         self._configuration()
-        entry, rows, actions, registered = self._read(
-            deadline, extra=lambda conn, _local, capacity: action_is_registered(conn, self.action, capacity))
+        entry, rows, actions, (registered, native) = self._read(
+            deadline, extra=self._destroy_window_facts, require_nonterminal=True)
         action = self._original_action(actions, entry)
         if not equal(entry, self.unload_entry) or not equal(action, self.action):
             raise ValueError('original Unload or complete Freeze changed at public Destroy')
         if not registered:
             raise ValueError('original Freeze logical registration differs at public Destroy')
+        binding = self.prior['context']['binding']
+        epoch = action['identity']['epoch']
+        pause = dict(id=entry['local_operation'], epoch=epoch, kind='Pause', status='Pending')
+        if (native['terminal'] is not False or native['phase'] != 'Pausing'
+                or not equal(native['current_operation'], pause)
+                or not equal(native['owner'], self.prior['local']['owner'])
+                or not equal(native['epoch'], epoch)
+                or not equal(native['generation'], binding['generation'])
+                or not equal(native['current_vm'], binding['vm'])
+                or not equal(native['net_slot'], binding['network'])):
+            raise ValueError('original nonterminal native Pause must remain current at public Destroy')
         if any(CAPTURE_COMMANDS & saved['command']['logical']['command'].keys()
                for saved, _, _ in actions):
             raise ValueError('original Unload outbox contains a capture action at public Destroy')
@@ -243,6 +258,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
                     unload_accepted_version=entry['intent']['accepted_version'],
                     freeze_identity=action['identity'], freeze_sql_receipt_pending=True,
                     freeze_logical_action_registered=registered,
+                    host_nonterminal_pause=pause,
                     original_pin_and_positive_charge_retained=True,
                     capture_outbox_actions_absent=True)
 

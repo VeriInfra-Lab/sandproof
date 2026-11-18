@@ -95,6 +95,7 @@ def freeze_window_journal(f):
         conn.execute('CREATE TABLE controller_lifecycle_inbox(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER)')
         conn.execute('CREATE TABLE outbox(id INTEGER PRIMARY KEY,sandbox_id TEXT,operation_id TEXT,action_json BLOB,dispatch_state TEXT,receipt_json BLOB)')
         conn.execute('CREATE TABLE controller_effect_keys(id INTEGER PRIMARY KEY,logical_json BLOB NOT NULL UNIQUE)')
+        conn.execute('CREATE TABLE sandboxes(sandbox_id TEXT PRIMARY KEY,owner_id TEXT,state_blob BLOB)')
         conn.execute('INSERT INTO controller_lifecycle_inbox VALUES(1,?,?,?)',
                      (raw, hashlib.sha256(raw).digest(), 65536))
         conn.execute('INSERT INTO outbox VALUES(1,?,?,?,?,NULL)',
@@ -102,8 +103,15 @@ def freeze_window_journal(f):
                       json.dumps(f.freeze).encode(), 'dispatched'))
         conn.execute('INSERT INTO controller_effect_keys VALUES(1,?)',
                      (json.dumps(f.freeze['command']['logical']).encode(),))
+        conn.execute('INSERT INTO sandboxes VALUES(?,?,?)',
+                     (p.config['sandbox'], f.freeze['identity']['owner'], json.dumps(pending_pause(f)).encode()))
     path.chmod(0o600)
     return path
+
+
+def pending_pause(f):
+    return dict(f.snapshot['native'], owner=1, terminal=False, phase='Pausing', epoch=3,
+                current_operation=dict(id=4, epoch=3, kind='Pause', status='Pending'))
 
 
 class FrozenFactsTests(unittest.TestCase):
@@ -375,6 +383,80 @@ class FrozenFactsTests(unittest.TestCase):
                 self.assertEqual(p.observe_destroy_window(p.deadline), before)
                 self.assertEqual(held.call_count, 2)
                 self.assertIs(before['original_pin_and_positive_charge_retained'], True)
+
+    def test_destroy_window_requires_original_nonterminal_host_inbox(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = fixture(Path(directory))
+            p = f.probe
+            path = freeze_window_journal(f)
+            original = dict(f.inbox['sessions'][0], current_version=4, terminal=False,
+                            entries=[p.unload_entry])
+            with closing(sqlite3.connect(path)) as writer, \
+                    patch.object(capture, 'checked_source_records', return_value=f.rows), \
+                    patch.object(p, '_check_source_hold') as held:
+                before = p.observe_destroy_window(p.deadline)
+                for variant in (
+                        dict(original, terminal=True),
+                        dict(original, terminal=0),
+                        dict(original, entries=f.inbox['sessions'][0]['entries'])):
+                    with self.subTest(terminal=variant['terminal'], entries=len(variant['entries'])):
+                        raw = json.dumps({'sessions': [variant]}).encode()
+                        with writer:
+                            writer.execute('UPDATE controller_lifecycle_inbox SET state_json=?, sha256=?',
+                                           (raw, hashlib.sha256(raw).digest()))
+                        with self.assertRaisesRegex(ValueError, 'Host inbox must remain nonterminal'):
+                            p.observe_destroy_window(p.deadline)
+                held.assert_called_once()
+                self.assertEqual(before['unload_accepted_version'], 4)
+
+    def test_destroy_window_rejects_a_different_native_pause(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = fixture(Path(directory))
+            p = f.probe
+            path = freeze_window_journal(f)
+            pause = pending_pause(f)
+            with closing(sqlite3.connect(path)) as writer, \
+                    patch.object(capture, 'checked_source_records', return_value=f.rows), \
+                    patch.object(p, '_check_source_hold') as held:
+                before = p.observe_destroy_window(p.deadline)
+                for field, value in (
+                        ('terminal', True), ('phase', 'Paused'), ('owner', 1.0), ('epoch', 4),
+                        ('generation', 2.0), ('current_vm', 10), ('net_slot', 11),
+                        ('current_operation', None),
+                        ('current_operation', dict(pause['current_operation'], id=5, kind='Kill')),
+                        ('current_operation', dict(pause['current_operation'], status='Succeeded'))):
+                    with self.subTest(field=field, value=value):
+                        with writer:
+                            writer.execute('UPDATE sandboxes SET state_blob=?',
+                                           (json.dumps(dict(pause, **{field: value})).encode(),))
+                        with self.assertRaisesRegex(ValueError, 'native Pause must remain current'):
+                            p.observe_destroy_window(p.deadline)
+                held.assert_called_once()
+                self.assertEqual(before['host_nonterminal_pause'], pause['current_operation'])
+
+    def test_destroy_window_reads_native_pause_in_the_freeze_sql_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = fixture(Path(directory))
+            p = f.probe
+            path = freeze_window_journal(f)
+            with closing(sqlite3.connect(path)) as writer, patch.object(p, '_check_source_hold') as held:
+                self.assertEqual(writer.execute('PRAGMA journal_mode=WAL').fetchone(), ('wal',))
+
+                def record_terminal_on_another_connection(reader, _config, _deadline):
+                    self.assertTrue(reader.in_transaction)
+                    with writer:
+                        writer.execute('UPDATE sandboxes SET state_blob=?',
+                                       (json.dumps(dict(f.snapshot['native'], owner=1)).encode(),))
+                    return f.rows
+
+                with patch.object(capture, 'checked_source_records',
+                                  side_effect=record_terminal_on_another_connection):
+                    before = p.observe_destroy_window(p.deadline)
+                with patch.object(capture, 'checked_source_records', return_value=f.rows):
+                    with self.assertRaisesRegex(ValueError, 'native Pause must remain current'):
+                        p.observe_destroy_window(p.deadline)
+                held.assert_called_once()
+                self.assertEqual(before['host_nonterminal_pause'], pending_pause(f)['current_operation'])
 
     def test_complete_destroy_history_context_and_window_are_correlated(self):
         with tempfile.TemporaryDirectory() as directory:
