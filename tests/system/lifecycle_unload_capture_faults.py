@@ -199,7 +199,7 @@ class CaptureHandoffProbe:
             if (digest, identity) != expected:
                 raise ValueError('original sealed measurement gate file changed')
 
-    def _read(self, deadline, *, current_version=None, extra=None):
+    def _read(self, deadline, *, current_version=None, extra=None, require_nonterminal=False):
         expected_version = self.accepted['accepted_version'] if current_version is None else current_version
         if type(expected_version) is not int or not 0 < expected_version < 2**64:
             raise ValueError('one exact current version required')
@@ -221,7 +221,13 @@ class CaptureHandoffProbe:
             sessions = [s for s in inbox['sessions'] if s['id'] == self.accepted['session']]
             if len(sessions) != 1 or not equal(sessions[0]['current_version'], expected_version):
                 raise ValueError('exact current accepted session required')
-            entries = [e for e in sessions[0]['entries'] if
+            session = sessions[0]
+            if require_nonterminal and (
+                    session['terminal'] is not False or any(
+                        type(version) is not int or not 0 < version <= expected_version
+                        for version in (entry['intent']['accepted_version'] for entry in session['entries']))):
+                raise ValueError('original Host inbox must remain nonterminal at the observed version')
+            entries = [e for e in session['entries'] if
                 e['intent']['accepted_version'] == self.accepted['accepted_version']
                 and e['intent']['request']['binding']['key'] == self.accepted['key']]
             if len(entries) != 1 or entries[0]['local_operation'] is None:
@@ -231,7 +237,7 @@ class CaptureHandoffProbe:
             if (binding['session'] != self.accepted['session']
                     or binding['node'] != self.runtime.services.host_configs[0]['inbox']['node']):
                 raise ValueError('accepted intent differs from original session/node')
-            local = sessions[0]['local']
+            local = session['local']
             if any(local[k] != self.prior['local'][k] for k in ('sandbox', 'owner')):
                 raise ValueError('original public/native mapping changed')
             ident = 'sb-' + native['namespace'] + '-' + str(local['sandbox'])
