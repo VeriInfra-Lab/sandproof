@@ -17,10 +17,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
+import stat
 import time
 
-from _internal_fault_relay import _fields, accepted_request
+from _internal_fault_relay import _fields, _u64, accepted_request
 from lifecycle_unload_capture_faults import CaptureHandoffProbe
 from lifecycle_unload_runtime import (checked_source_records, material_source_charge,
     open_original_candidate_pidfd, original_json, original_process, pidfd_exited, remaining)
@@ -415,6 +417,97 @@ class ExpiryPrepareProbe(CaptureHandoffProbe):
         return dict(expiry=expiry,recovery=recovery)
 
 
+MAX_MAPS_BYTES = 1024 * 1024
+MAP_ENTRY = re.compile(
+    rb'([0-9a-f]{1,16})-([0-9a-f]{1,16}) +([r-][w-][x-][ps]) +([0-9a-f]{1,16}) +'
+    rb'([0-9a-f]{1,8}):([0-9a-f]{1,8}) +([0-9]{1,20})(?: +.*)?')
+
+
+def _mapped_private_bytes(data, backing, sealed, size):
+    """Use kernel device/inode and file offsets, regardless of pathname rendering."""
+    if len(data) > MAX_MAPS_BYTES or not data.endswith(b'\n'):
+        raise ValueError('complete bounded original VMM maps required')
+    intervals = []
+    previous_end = 0
+    for line in data[:-1].split(b'\n'):
+        entry = MAP_ENTRY.fullmatch(line)
+        if entry is None:
+            raise ValueError('invalid original VMM maps entry')
+        start, end = int(entry[1], 16), int(entry[2], 16)
+        if start < previous_end or end <= start:
+            raise ValueError('original VMM maps address ranges overlap or are empty')
+        previous_end = end
+        identity = (int(entry[5], 16), int(entry[6], 16), _u64(int(entry[7])))
+        if identity == sealed:
+            raise ValueError('VMM maps the sealed source memory inode')
+        if identity == backing:
+            if entry[3] != b'rw-p':
+                raise ValueError('original memory mapping must be writable and private')
+            offset = int(entry[4], 16)
+            intervals.append((offset, offset + end - start))
+    covered = 0
+    for start, end in sorted(intervals):
+        if start != covered or end > size:
+            raise ValueError('original private memory map has a gap, overlap, or range beyond EOF')
+        covered = end
+    if covered != size:
+        raise ValueError('original private memory map does not cover the complete backing file')
+    return covered
+
+
+def observe_restore_file_mapping(runtime, running, pidfd, deadline):
+    """Observe the live restored process and its exact private File backing."""
+    remaining(deadline)
+    source = running['source']
+    native = runtime.services.native_pools[0]
+    context = running['context']
+    resource = f"vm-{native['namespace']}-{_u64(context['binding']['vm'], positive=True)}"
+    if source['resource_id'] != resource or pidfd_exited(pidfd) or not original_process(source):
+        raise ValueError('original live restored VMM required for private memory observation')
+    memory = [value for value in running['running_backing']['materials'] if value['name'] == 'memory.bin']
+    if len(memory) != 1:
+        raise ValueError('one original sealed memory file measurement required')
+    memory = memory[0]
+    size = _u64(memory['bytes'], positive=True)
+    sealed = (_u64(memory['device']), _u64(memory['inode'], positive=True))
+    uid = native['bounded_host']['uid_base'] + _u64(context['position'])
+    path = (Path(native['chroot_base']) / Path(native['firecracker']).name / resource /
+            'root/restore/restore-memory.bin')
+    if path.resolve(strict=True) != path:
+        raise ValueError('canonical original restore memory path required')
+
+    def stamp(value):
+        return (value.st_dev, value.st_ino, value.st_size, value.st_mode, value.st_nlink,
+                value.st_uid, value.st_gid, value.st_mtime_ns, value.st_ctime_ns)
+
+    backing = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC)
+    try:
+        old = os.fstat(backing)
+        if (not stat.S_ISREG(old.st_mode) or stat.S_IMODE(old.st_mode) != 0o400
+                or old.st_nlink != 1 or old.st_uid != uid or old.st_size != size
+                or old.st_ino == 0 or (old.st_dev, old.st_ino) == sealed or stamp(path.lstat()) != stamp(old)):
+            raise ValueError('distinct original private restore memory inode required')
+        proc = Path('/proc') / str(_u64(source['pid'], positive=True))
+        proc_fd = os.open(proc, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            maps = os.open('maps', os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=proc_fd)
+            with os.fdopen(maps, 'rb') as stream:
+                raw = stream.read(MAX_MAPS_BYTES + 1)
+        finally:
+            os.close(proc_fd)
+        mapped_bytes = _mapped_private_bytes(raw,
+            (os.major(old.st_dev), os.minor(old.st_dev), old.st_ino),
+            (os.major(sealed[0]), os.minor(sealed[0]), sealed[1]), size)
+        if (stamp(os.fstat(backing)) != stamp(old) or stamp(path.lstat()) != stamp(old)
+                or pidfd_exited(pidfd) or not original_process(source)):
+            raise ValueError('original VMM or its private memory file changed during observation')
+        remaining(deadline)
+        return dict(device=old.st_dev, inode=old.st_ino, mapped_bytes=mapped_bytes,
+                    permissions='rw-p', sealed_source_mapped=False)
+    finally:
+        os.close(backing)
+
+
 class RunningExpiryProbe:
     """Hold the real Stop dispatch before its side effect with the original exit87 hook."""
     def __init__(self,runtime,client,running,resume,lifetime,deadline):
@@ -428,6 +521,8 @@ class RunningExpiryProbe:
         self.pidfd = open_original_candidate_pidfd(running['source'])
 
     def arm(self,deadline):
+        self.file_mapping_before = observe_restore_file_mapping(self.runtime,self.running,self.pidfd,deadline)
+        require_before_expiry(self.lifetime)
         self.runtime.services.processes.stop('host-0')
         self.host = self.runtime.services.processes.start('host-0',env={'SANDPROOF_TEST_EXIT_BEFORE_HOST_ACTION':'stop_vm'})
         self.runtime.services.wait_ready(timeout=min(remaining(deadline),900),for_admission=False)
@@ -503,10 +598,15 @@ class RunningExpiryProbe:
         physical = self.runtime._materials(source['capture']['full'],source['capture'])
         if any(physical[k]!=self.running['running_backing'][k] for k in ('materials','manifest','completion','material_paths')):
             raise ValueError('live backing changed or was deleted at expiry')
+        mapping = observe_restore_file_mapping(self.runtime,self.running,self.pidfd,deadline)
+        if mapping != self.file_mapping_before:
+            raise ValueError('original VMM private memory file mapping changed before Stop')
         if pidfd_exited(self.pidfd) or not original_process(self.running['source']):
             raise ValueError('original VMM exited during material observation')
         return dict(original_vmm_live=True,original_stop_dispatched_without_receipt=True,
                     original_material_files_unchanged=True,material_use_pin=True,
+                    private_memory_mapping_before_expiry=self.file_mapping_before,
+                    private_memory_mapping_before_stop=mapping,
                     material_charge=material_source_charge(source),physical_exit=False)
 
     def recover(self,deadline):

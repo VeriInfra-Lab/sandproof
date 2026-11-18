@@ -2,6 +2,8 @@
 import copy
 import hashlib
 import json
+import mmap
+import os
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -534,6 +536,75 @@ class PrepareExpiryBarrierTests(unittest.TestCase):
             probe._terminal_inventory(snapshot)
 
 
+class RestoreMemoryMapParsingTests(unittest.TestCase):
+    def test_only_private_ranges_of_the_original_inode_cover_the_file(self):
+        unrelated = b'1000-2000 r--p 00000000 08:02 10 /restore/restore-memory.bin\n'
+        second = b'3000-4000 rw-p 00001000 08:02 11 /rendered path may differ\n'
+        first = b'5000-6000 rw-p 00000000 08:02 11\n'
+        valid = unrelated + second + first
+        arguments = ((8, 2, 11), (8, 2, 12), 8192)
+        self.assertEqual(expiry._mapped_private_bytes(valid, *arguments), 8192)
+        for case, raw in (
+                ('no mapping', unrelated),
+                ('different device', valid.replace(b'08:02 11', b'08:03 11')),
+                ('sealed inode also mapped', valid.replace(b'08:02 10', b'08:02 12')),
+                ('private but not writable', valid.replace(b'rw-p', b'r--p')),
+                ('shared mapping', valid.replace(b'rw-p', b'rw-s')),
+                ('overlapping file offsets', valid.replace(b'00001000', b'00000000')),
+                ('gap and beyond EOF', valid.replace(b'00001000', b'00002000')),
+                ('overlapping virtual addresses', unrelated + first + second),
+                ('partial output', valid[:-1]),
+                ('over byte bound', valid + b' ' * expiry.MAX_MAPS_BYTES)):
+            with self.subTest(case=case),self.assertRaises(ValueError):
+                expiry._mapped_private_bytes(raw, *arguments)
+
+
+class LinuxRestoreFileMappingTests(unittest.TestCase):
+    def test_original_private_mapping_and_same_byte_replacement_use_actual_procfs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            resource = 'vm-expiry-2'
+            backing = root/'firecracker'/resource/'root/restore/restore-memory.bin'
+            backing.parent.mkdir(parents=True)
+            source_file = root/'memory.bin'
+            contents = b'x' * os.sysconf('SC_PAGE_SIZE')
+            for path in (source_file, backing):
+                path.write_bytes(contents)
+                path.chmod(0o400)
+            source_stat = source_file.stat()
+            pid = os.getpid()
+            start = (Path('/proc')/str(pid)/'stat').read_text().rsplit(')', 1)[1].split()[19]
+            source = dict(resource_id=resource, pid=pid, start_time_ticks=int(start),
+                          boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip())
+            runtime = SimpleNamespace(services=SimpleNamespace(native_pools=[dict(namespace='expiry',
+                firecracker='/fixed/firecracker', chroot_base=str(root), bounded_host=dict(uid_base=os.geteuid()))]))
+            running = dict(source=source, context=dict(position=0, binding=dict(vm=2)),
+                running_backing=dict(materials=[dict(name='memory.bin', bytes=len(contents),
+                    device=source_stat.st_dev, inode=source_stat.st_ino)]))
+            pidfd = expiry.open_original_candidate_pidfd(source)
+            self.addCleanup(os.close, pidfd)
+
+            def observe():
+                return expiry.observe_restore_file_mapping(runtime, running, pidfd, time.monotonic()+5)
+
+            with backing.open('rb') as file, mmap.mmap(file.fileno(), len(contents), access=mmap.ACCESS_COPY) as memory:
+                original = backing.stat()
+                evidence = dict(device=original.st_dev, inode=original.st_ino, mapped_bytes=len(contents),
+                                permissions='rw-p', sealed_source_mapped=False)
+                self.assertEqual(observe(), evidence)
+                memory[0] = 0
+                self.assertEqual(observe(), evidence)
+                self.assertEqual(backing.read_bytes(), contents)
+                with source_file.open('rb') as sealed, mmap.mmap(sealed.fileno(), len(contents), access=mmap.ACCESS_COPY):
+                    with self.assertRaisesRegex(ValueError, 'sealed source memory inode'):
+                        observe()
+                backing.rename(backing.with_suffix('.original'))
+                backing.write_bytes(contents)
+                backing.chmod(0o400)
+                with self.assertRaisesRegex(ValueError, 'does not cover the complete backing file'):
+                    observe()
+
+
 class RunningExpiryStopAttributionTests(unittest.TestCase):
     """Real readonly SQLite; process/material/root-fence facts are controlled."""
     def setUp(self):
@@ -569,6 +640,12 @@ class RunningExpiryStopAttributionTests(unittest.TestCase):
         self.probe._source=Mock(side_effect=lambda _:copy.deepcopy(self.probe.before))
         self.probe.lifetime=dict(end_at_ms=1);self.probe.pidfd=41
         self.probe.host=Mock();self.probe.host.wait.return_value=87
+        self.probe.file_mapping_before = dict(device=1,inode=2,mapped_bytes=8192,
+            permissions='rw-p',sealed_source_mapped=False)
+        patcher = patch.object(expiry, 'observe_restore_file_mapping',
+                               return_value=copy.deepcopy(self.probe.file_mapping_before))
+        self.mapping = patcher.start()
+        self.addCleanup(patcher.stop)
         for patcher in [patch.object(expiry,'pidfd_exited',return_value=False),
                         patch.object(expiry,'original_process',return_value=True),
                         patch.object(expiry,'material_source_charge',return_value=100),
@@ -607,8 +684,22 @@ class RunningExpiryStopAttributionTests(unittest.TestCase):
         result=self.observe()
         self.assertTrue(result['original_stop_dispatched_without_receipt'])
         self.assertTrue(result['original_vmm_live']);self.assertFalse(result['physical_exit'])
+        self.assertEqual(result['private_memory_mapping_before_expiry'], self.probe.file_mapping_before)
+        self.assertEqual(result['private_memory_mapping_before_stop'], self.probe.file_mapping_before)
         self.assertEqual(result['material_charge'],100)
         self.assertEqual(self.database.read_bytes(),before)
+        self.probe.runtime.services.processes.assert_not_called()
+
+    def test_changed_private_memory_during_expiry_does_not_restart_the_host(self):
+        self.mapping.return_value = dict(self.probe.file_mapping_before, inode=3)
+        with self.assertRaisesRegex(ValueError, 'memory file mapping changed before Stop'):
+            self.observe()
+        self.probe.runtime.services.processes.assert_not_called()
+
+    def test_missing_baseline_mapping_does_not_arm_the_stop_exit_hook(self):
+        self.mapping.side_effect = ValueError('private memory unavailable')
+        with self.assertRaisesRegex(ValueError, 'private memory unavailable'):
+            self.probe.arm(time.monotonic()+5)
         self.probe.runtime.services.processes.assert_not_called()
 
     def test_another_dispatched_stop_cannot_be_attributed_to_the_original_exit87(self):
