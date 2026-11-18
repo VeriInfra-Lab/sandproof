@@ -13,6 +13,8 @@ _require_assertions()
 import copy
 import time
 
+from tools.template_build_guest import equal
+
 PREFIX = '/sandproof/lifecycle'
 
 
@@ -117,11 +119,11 @@ def exercise(client, runtime):
     client.step('e2-fresh-window-full-replay', 202)
     replay = fresh.read_json('POST', PREFIX + '/create', key=fresh.owner_key,
                              body=copy.deepcopy(fresh.create_request), status=202)
-    if replay != accepted or fresh.query() != running:
+    if not equal(replay, accepted) or not equal(fresh.query(), running):
         raise ValueError('new-window replay changed its original acceptance or current result')
     same_candidate = runtime.confirm_running(fresh.session, physical, client.deadline)
     rejected_with_successor = rejected_original_requests(client)
-    if fresh.query() != running:
+    if not equal(fresh.query(), running):
         raise ValueError('retired request changed the successor session')
     successor_after_rejection = runtime.confirm_running(fresh.session, physical, client.deadline)
     client.step('e2-fresh-window-product-cleanup')

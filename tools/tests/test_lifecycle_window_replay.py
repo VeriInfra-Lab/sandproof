@@ -1,12 +1,15 @@
 """E2 observer rejection checks; fixtures do not stand for VM execution."""
 import copy
+import json
 from pathlib import Path
 import sys
+import time
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 SYSTEM = Path(__file__).resolve().parents[2] / 'tests/system'
 sys.path.insert(0, str(SYSTEM))
+import lifecycle_unload_scenario as scene
 import lifecycle_window_replay as probe
 
 
@@ -102,6 +105,87 @@ class WindowRetirementTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             probe.exercise(client(),runtime)
         runtime.restart_managers.assert_not_called()
+
+    def exercise_fresh_window(self, *, change=None):
+        original = scene.PublicUnloadScenario(
+            'http://127.0.0.1:1', 'owner-fixture', 'foreign-fixture',
+            'deployment', time.monotonic() + 60)
+        original.create_request = dict(window=1, sequence=1, parameters=dict(timeout_ms=1000))
+        key = dict(deployment='deployment', owner='1', window=3, sequence=1)
+        original.create_acceptance = dict(session='original', key=dict(key, window=1), accepted_version=1)
+        accepted = dict(session='successor', key=key, accepted_version=1)
+        running = dict(session='successor', operation=key, current_version=1, phase='running',
+                       unload_outcome=None, create_refusal=None)
+        destroy_key = dict(key, sequence=2)
+        destroy = dict(session='successor', key=destroy_key, accepted_version=2)
+        cleaned = dict(running, operation=destroy_key, current_version=2, phase='cleaned')
+
+        def reordered(value):
+            if not isinstance(value, dict):
+                return value
+            return {name: reordered(item) for name, item in reversed(list(value.items()))}
+
+        replies = [
+            (200, {'window': 3}),  # Original client after reopen
+            (200, {'window': 3}),  # Successor before Create
+            (202, accepted),
+            (200, running),
+            (202, reordered(accepted)),
+            (200, reordered(running)),
+            (200, reordered(running)),
+            (202, destroy),
+            (200, cleaned),
+        ]
+        if change is not None:
+            index, fields, value = change
+            target = replies[index][1]
+            for field in fields[:-1]:
+                target = target[field]
+            target[fields[-1]] = value
+
+        runtime = Mock(gc_complete=True)
+        runtime.record_running.return_value = {'original': 'physical-candidate'}
+        runtime.confirm_running.return_value = runtime.record_running.return_value
+        with patch.object(probe, 'wait_retired_window', return_value={'current_window': 3}), \
+                patch.object(probe, 'rejected_original_requests', return_value=[]) as reject, \
+                patch.object(scene, 'fetch', side_effect=[
+                    (status, json.dumps(body).encode()) for status, body in replies]) as fetch, \
+                patch.object(scene.PublicUnloadScenario, 'run_public_workload', return_value={}), \
+                patch.object(scene.PublicUnloadScenario, 'assert_data_closed'):
+            if change is None:
+                result = probe.exercise(original, runtime)
+                self.assertEqual(result['fresh_acceptance'], accepted)
+                self.assertEqual(result['successor_after_rejection'], runtime.record_running.return_value)
+                self.assertEqual(fetch.call_count, len(replies))
+                self.assertEqual(reject.call_args_list, [call(original)] * 3)
+                runtime.destroy_evidence.assert_called_once_with('successor', original.deadline)
+                self.assertEqual(runtime.settlement_evidence.call_count, 3)
+                return
+            expected = ('retired request changed the successor session' if index == 6
+                        else 'new-window replay changed')
+            with self.assertRaisesRegex(ValueError, expected):
+                probe.exercise(original, runtime)
+            self.assertEqual(fetch.call_count, index + 1)
+            self.assertEqual(reject.call_count, 3 if index == 6 else 2)
+            self.assertEqual(runtime.confirm_running.call_count, 1 if index == 6 else 0)
+            runtime.destroy_evidence.assert_not_called()
+            self.assertEqual(runtime.settlement_evidence.call_count, 2)
+
+    def test_exercise_accepts_same_fresh_identity_with_reordered_json(self):
+        self.exercise_fresh_window()
+
+    def test_exercise_rejects_aliases_in_fresh_replay_and_both_queries(self):
+        for index in (4, 5, 6):
+            if index == 4:
+                fields = [('accepted_version',), ('key', 'sequence')]
+                window = ('key', 'window')
+            else:
+                fields = [('current_version',), ('operation', 'sequence')]
+                window = ('operation', 'window')
+            for field, values in [(name, (True, 1.0)) for name in fields] + [(window, (3.0,))]:
+                for value in values:
+                    with self.subTest(response=index, field=field, value=value):
+                        self.exercise_fresh_window(change=(index, field, value))
 
 
 if __name__ == '__main__':
