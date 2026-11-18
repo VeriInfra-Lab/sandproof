@@ -241,7 +241,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         registered = action_is_registered(conn, self.action, capacity)
         return registered, self._read_native(conn, local, capacity)
 
-    def _observe_destroy_endpoint(self, deadline):
+    def _observe_frozen_endpoint(self, deadline):
         with original_vmm_endpoint(self.runtime, self.prior, deadline) as (_, uid, identity):
             endpoint = dict(identity, uid=uid)
             if (self.frozen['state'] != 'Paused'
@@ -283,7 +283,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         host = self.runtime.services.processes.children.get('host-0')
         if host is None or host is not self.host or host.poll() != self._cut_exit_code():
             raise ValueError('original Freeze cut Host must remain exited at public Destroy')
-        endpoint = self._observe_destroy_endpoint(deadline)
+        endpoint = self._observe_frozen_endpoint(deadline)
         remaining(deadline)
         return dict(host_pid=host.pid, host_exit_code=self._cut_exit_code(),
                     unload_accepted_version=entry['intent']['accepted_version'],
@@ -539,6 +539,7 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
     or Stop whose scheduling itself needs the original Freeze observation.
     """
     response_restore_snapshot = None
+    response_restore_endpoint = None
 
     def _read_kill_ledger(self, conn, local, terminal, capacity):
         namespace = self.runtime.services.native_pools[0]['namespace']
@@ -583,6 +584,9 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
             raise ValueError('original backing responsibility changed before VMM response restored')
         self._check_source_hold(deadline)
         self.response_restore_snapshot=copy.deepcopy(snapshot)
+        endpoint = self._observe_frozen_endpoint(deadline)
+        self._check_source_hold(deadline)
+        self.response_restore_endpoint = endpoint
         signal.pidfd_send_signal(self.pidfd,signal.SIGCONT);self.continue_sent=True
         while self._source_state(deadline)=='T':time.sleep(min(.01,remaining(deadline)))
         self.hold_source_process=False
@@ -592,12 +596,15 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
         result['original_pidfd_continued_after_fence']=False
         result['source_continued_after_terminal_acceptance']=True
         result['terminal_acceptance_before_response_restored']=self.response_restore_snapshot
+        result['original_vmm_endpoint_before_response_restored'] = self.response_restore_endpoint
         return result
 
     def terminal_failure_state(self):
         result = super().terminal_failure_state()
         if self.response_restore_snapshot is not None:
             result['terminal_acceptance_before_response_restored'] = copy.deepcopy(self.response_restore_snapshot)
+        if self.response_restore_endpoint is not None:
+            result['original_vmm_endpoint_before_response_restored'] = copy.deepcopy(self.response_restore_endpoint)
         return result
 
 
