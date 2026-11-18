@@ -1,0 +1,86 @@
+--- a/controller-service/src/controller/lifecycle_inbox/source_work/codec.rs
++++ b/controller-service/src/controller/lifecycle_inbox/source_work/codec.rs
+@@ -170,0 +171,2 @@
++type EncodedSourceRow = ([u8; 32], Vec<u8>);
++
+@@ -186,0 +189,10 @@
++    let (keys, encoded) = encode_candidate_records(sources)?;
++    if !retains_saved_records(&current, sources, &keys) {
++        return Err(JournalError::Conflict);
++    }
++    write_candidate_records(connection, encoded)
++}
++
++fn encode_candidate_records(
++    sources: &Sources,
++) -> Result<(BTreeSet<[u8; 32]>, Vec<EncodedSourceRow>), JournalError> {
+@@ -203,0 +216,4 @@
++    Ok((keys, encoded))
++}
++
++fn retains_saved_records(current: &Sources, sources: &Sources, keys: &BTreeSet<[u8; 32]>) -> bool {
+@@ -206 +222 @@
+-    if current.records.iter().any(|record| {
++    !current.records.iter().any(|record| {
+@@ -213,3 +229,7 @@
+-    }) {
+-        return Err(JournalError::Conflict);
+-    }
++    })
++}
++
++fn write_candidate_records(
++    connection: &Connection,
++    encoded: Vec<EncodedSourceRow>,
++) -> Result<(), JournalError> {
+@@ -217 +237,20 @@
+-        let existing: Option<i64> = connection
++        write_candidate_record(connection, key, bytes)?;
++    }
++    Ok(())
++}
++
++fn write_candidate_record(
++    connection: &Connection,
++    key: [u8; 32],
++    bytes: Vec<u8>,
++) -> Result<(), JournalError> {
++    let existing: Option<i64> = connection
++        .query_row(
++            "SELECT id FROM controller_source_work_records WHERE work_key=?1",
++            [key.as_slice()],
++            |row| row.get(0),
++        )
++        .optional()?;
++    let id = match existing {
++        Some(id) => id,
++        None => connection
+@@ -219,16 +258,12 @@
+-                "SELECT id FROM controller_source_work_records WHERE work_key=?1",
+-                [key.as_slice()],
+-                |row| row.get(0),
+-            )
+-            .optional()?;
+-        let id = match existing {
+-            Some(id) => id,
+-            None => connection
+-                .query_row(
+-                    "SELECT min(id) FROM controller_source_work_records WHERE work_key IS NULL",
+-                    [],
+-                    |row| row.get::<_, Option<i64>>(0),
+-                )?
+-                .ok_or(JournalError::MaintenanceCapacity)?,
+-        };
+-        if connection.execute("UPDATE controller_source_work_records SET state_json=?1,sha256=?2,work_key=?3 WHERE id=?4 AND (work_key IS NULL OR work_key=?3)", params![bytes,Sha256::digest(&bytes).as_slice(),key.as_slice(),id])? != 1 { return Err(JournalError::CorruptStore); }
++                "SELECT min(id) FROM controller_source_work_records WHERE work_key IS NULL",
++                [],
++                |row| row.get::<_, Option<i64>>(0),
++            )?
++            .ok_or(JournalError::MaintenanceCapacity)?,
++    };
++    if connection.execute(
++        "UPDATE controller_source_work_records SET state_json=?1,sha256=?2,work_key=?3 WHERE id=?4 AND (work_key IS NULL OR work_key=?3)",
++        params![bytes, Sha256::digest(&bytes).as_slice(), key.as_slice(), id],
++    )? != 1
++    {
++        return Err(JournalError::CorruptStore);
