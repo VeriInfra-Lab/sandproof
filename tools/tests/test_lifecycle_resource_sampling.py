@@ -207,8 +207,11 @@ class ResourceReportTests(SamplerFixture):
                     send_to_accept_seconds=0.25, accept_to_public_completion_seconds=seconds-0.25,
                     send_to_public_completion_seconds=seconds)
 
-    def report(self):
-        self.add_vm();self.probe.sample();resources=self.probe.close()
+    def report(self, *, single_sample=False):
+        self.add_vm()
+        if not single_sample:
+            self.probe.sample()
+        resources = self.probe.close()
         return dict(schema=1,complete=True,scenario='normal',resource_measurements=resources,
             measurement_identity=dict(candidate=dict(candidate='a'*40)),
             operation_timings=[self.completed_timing('resume', 'running', seconds)
@@ -231,6 +234,67 @@ class ResourceReportTests(SamplerFixture):
         self.assertIn('不是完整 E16',text)
         self.assertNotIn('original-private-path',text)
         self.assertNotIn('/private/',text)
+
+    def test_report_recovers_cgroup_window_and_peak_from_original_samples(self):
+        from tools.lifecycle_measurement_report import render
+
+        self.add_vm()
+        self.probe.sample()
+        self.group.update(cpu_stat={'usage_usec': 200_100}, memory_current=3*1024**2,
+                          memory_peak=4*1024**2)
+        self.probe.sample()
+        self.group.update(cpu_stat={'usage_usec': 500_100}, memory_current=2*1024**2,
+                          memory_peak=5*1024**2)
+        report = self.report()
+        rows = [json.loads(line) for line in self.probe.path.read_bytes().splitlines()]
+        times = [row['at_monotonic_ns'] for row in rows]
+        gap = max(right-left for left, right in zip(times, times[1:]))
+        output = render(report, self.probe.path)
+        self.assertIn('| 原服务组 | 0.500000 | 3.000000 | 5.000000 |', output)
+        self.assertIn(f'最长采样间隔 {gap/10**9:.6f} 秒。', output)
+        self.assertNotIn('observed_cpu_usage_delta_usec', report['resource_measurements']['service_group'])
+
+    def test_single_sample_has_peaks_but_no_measured_group_delta_or_gap(self):
+        from tools.lifecycle_measurement_report import render
+
+        output = render(self.report(single_sample=True), self.probe.path)
+        self.assertIn('| 原服务组 | 未知 | 0.003906 | 0.007812 |', output)
+        self.assertIn('只有一个采样点，最长采样间隔未知。', output)
+
+    def test_resealed_middle_cgroup_counter_regression_is_rejected(self):
+        from tools.lifecycle_measurement_report import render
+
+        self.add_vm()
+        self.probe.sample()
+        self.probe.sample()
+        report = self.report()
+        rows = [json.loads(line) for line in self.probe.path.read_bytes().splitlines()]
+        for field in ('cpu_usage_usec', 'kernel_group_peak_memory_bytes'):
+            with self.subTest(field=field):
+                changed = copy.deepcopy(rows)
+                changed[1]['service_group'][field] -= 1
+                self.reseal_samples(report, changed)
+                with self.assertRaisesRegex(ValueError, 'service cgroup counter regressed'):
+                    render(report, self.probe.path)
+
+    def test_report_rejects_changed_maximum_gap_and_unbounded_phase(self):
+        from tools.lifecycle_measurement_report import render
+
+        report = self.report()
+        measurements = report['resource_measurements']
+        observer = measurements['observer_overhead']
+        original = observer['max_observed_gap_ns']
+        for changed in (original+1, float(original)):
+            with self.subTest(gap=changed):
+                observer['max_observed_gap_ns'] = changed
+                with self.assertRaisesRegex(ValueError, 'longest observation gap'):
+                    render(report, self.probe.path)
+        observer['max_observed_gap_ns'] = original
+        rows = [json.loads(line) for line in self.probe.path.read_bytes().splitlines()]
+        rows[0]['phase'] = 'x'*129
+        self.reseal_samples(report, rows)
+        with self.assertRaisesRegex(ValueError, 'lifecycle phase name'):
+            render(report, self.probe.path)
 
     def test_report_keeps_distinct_public_completion_conditions_out_of_each_others_percentiles(self):
         from tools.lifecycle_measurement_report import render

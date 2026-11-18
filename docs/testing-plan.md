@@ -191,6 +191,9 @@ StateLost 分列，Unload 的 Unloaded 与 OriginalContinued 分列。检查发�
 未完成样本或复制异常/配置/凭据。
 资源流逐行核对原服务角色组与 VM 序段。每行保留各原服务角色，已登记 VM 继续记录其
 `observed`、`not_live` 或采样未知状态。服务与 VM 样本不能交换，每个序段都须在原流中出现。
+报告器还逐行重核服务 cgroup 的累计 CPU 与内核内存峰值，拒绝中途倒退。它从原始样本
+计算 cgroup CPU 秒差、采样内存峰值和最长采样间隔，并单列内核内存峰值。只有一个
+采样点时，CPU 差与采样间隔记为未知。最长间隔用于说明采样覆盖，内部阶段耗时仍另行计量。
 
 ```sh
 bash scripts/python-entry.sh -m tools.lifecycle_measurement_report \
