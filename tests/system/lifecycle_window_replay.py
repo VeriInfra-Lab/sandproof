@@ -88,7 +88,7 @@ def check_fresh_acceptance(original, fresh, window):
         raise ValueError('same owner/sequence in the new window must have one fresh session')
 
 
-def exercise(client, runtime):
+def exercise(client, runtime, *, register_successor):
     if runtime.gc_complete is not True:
         raise ValueError('original product settlement must precede window retirement checks')
     retirement = wait_retired_window(client)
@@ -106,6 +106,7 @@ def exercise(client, runtime):
     # the new window with the SAME original owner/sequence and parameters.
     fresh = type(client)(client.base_url, client.owner_key, client.foreign_key,
                          client.deployment, client.deadline, owner=client.owner)
+    register_successor(fresh)
     runtime.gc_complete = False
     runtime.physical_complete = False
     client.step('e2-fresh-window-create', 202)

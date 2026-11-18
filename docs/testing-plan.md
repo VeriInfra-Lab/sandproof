@@ -252,6 +252,11 @@ Cleaned 与产品结算完成收尾，不用缺失记录或测试信号冒充成
 查询。字段顺序可以变化，数值相等的布尔或浮点值必须拒绝。观察器回归从原场景入口
 读取受控 JSON 回执，覆盖回执与查询中的这些差异以及提前失败后保留现场的路径。
 
+报告的 `known_sessions` 纳入已取得合法接受回执的后继会话及其当前已知接受。
+窗口扩展失败时，`expired_window_successor_write_attempt` 保存后继最近一次 Create 或
+Destroy 的完整操作键。尝试记录只说明客户端进入了发送路径。回执未知时该次接受记录
+为 `null`，仍可从会话清单看到此前已核准的接受。失败后按已知身份保留现场。
+
 [HTTP/Redis 组件](../sandbox-center-service/tests/business_authority/lifecycle_window_replay.rs)
 另覆盖确认/保留期限/准确关窗回执三个独立门、同一 owner 尚被保留的旧窗口请求、不同
 owner 的独立键域，以及原 Redis 权威重新打开后的拒绝前沿。其宿主终局证据是受控输入，
