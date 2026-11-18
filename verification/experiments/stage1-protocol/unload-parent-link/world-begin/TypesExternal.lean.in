@@ -1,0 +1,33 @@
+import UnloadStartedTransaction
+
+open Aeneas Aeneas.Std
+
+namespace SandproofUnloadWorldBegin
+
+abbrev core.cell.RefCell := SandproofStage1RequestRust.core.cell.RefCell
+abbrev rusqlite.error.Error := SandproofStage1RequestRust.rusqlite.error.Error
+abbrev sandbox_controller_core.model.World := SandproofStage1RequestRust.sandbox_controller_core.model.World
+abbrev JournalError := SandproofStage1RequestRust.sandproof_controller_service.JournalError
+
+open SandboxModel.Stage1Protocol.UnloadStartedTransaction in
+structure BeginCalls where
+  world : Committed → SandproofStage1RequestRust.rusqlite.Connection →
+    Result (core.result.Result World JournalError)
+  prepareWrite : SandproofStage1RequestRust.rusqlite.Connection → World → Committed →
+    Result (core.result.Result Unit JournalError × SandproofStage1RequestRust.rusqlite.Connection)
+  beginSqlite : SandproofStage1RequestRust.rusqlite.Connection → String →
+    Result (core.result.Result Raw rusqlite.error.Error × SandproofStage1RequestRust.rusqlite.Connection)
+  readAllocator : SandproofStage1RequestRust.rusqlite.Connection → Str → Str →
+    Result (core.result.Result U64 JournalError)
+
+/-- A view of the original connection and the required observations of its calls.
+    The original V5 transaction frame must supply the call conditions. -/
+structure rusqlite.Connection where
+  base : SandproofStage1RequestRust.rusqlite.Connection
+  calls : BeginCalls
+
+structure rusqlite.transaction.Transaction where
+  base : SandboxModel.Stage1Protocol.UnloadStartedTransaction.Raw
+  calls : BeginCalls
+
+end SandproofUnloadWorldBegin
