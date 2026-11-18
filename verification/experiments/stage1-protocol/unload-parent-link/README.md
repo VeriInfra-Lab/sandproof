@@ -115,7 +115,39 @@ LLBC、所有生成文件及原准入。base 的真实 LLBC 含一处 revision S
 Aeneas 把原查询展开到六条分支，每条查询的 SQL 参数均须相等。parent 核对对原
 `base_snapshot` 的唯一调用。两个生成视图的 `ReadyCandidate` 字段清单须一致。
 它只接受有原始文件的开发证据。生成编号可不同，跨视图类型和同一实际 SQLite 事务的
-表示关系仍需 Lean 检查；配对报告也不签发原生或公共证明封口。
+表示关系另外检查。配对报告只用于开发。
+
+### 当前生成类型的表示连接
+
+独立入口 [prepare_revision_transport.py](prepare_revision_transport.py) 从
+[输入清单](revision-transport/inputs.json) 的两个原始 `Types.lean` 物化隔离项目。
+保留原生成文件。组合视图引入各自的显式表示字典，并在 base 视图隔离两个冲突的
+判别实例，正反检查字节。沿用历史请求和创建观察转换，显式传递当前
+`ReadyCandidate.native_revision`。
+
+- `RevisionReadyTransport.intentRoundtrip` 核对完整原请求和接受上下文的往返。
+- `RevisionReadyTransport.projectionTransport` 核对全部候选字段和嵌套观察。包括
+  原 `Option U64`、动作、回执、凭据、选项和 ready 事实。独立生成的 readiness
+  仍使用具名转换参数。
+- `RevisionReadyTransport.sharedInputCarriers` 核对 Transaction、Connection、
+  World 和认证上下文的表示类型相同。这个等式只涉及类型。实际父调用借用和同一
+  SQLite 事务的读框架由原调用连接及 V5 条件继续提供。
+
+```sh
+package=verification/experiments/stage1-protocol/unload-parent-link
+bash scripts/python-entry.sh "$package/prepare_revision_transport.py" \
+  --base "$base_evidence/generated/SandproofUnloadBaseSnapshot/Types.lean" \
+  --parent "$parent_evidence/generated/SandproofUnloadFirstObservation/Types.lean" \
+  --lake-packages "$fixed_lake_packages" --lean-mcp "$fixed_lean_mcp" \
+  --output "$new_type_project"
+# 在原重锁和四核预算内构建，再释放该锁供 diagnose.py 取得。
+(cd "$new_type_project" && lake build RevisionReadyTransport)
+bash scripts/python-entry.sh "$package/diagnose.py" \
+  --project "$new_type_project" --output "$new_type_diagnostics" --lock "$SANDPROOF_LOCK_FILE"
+```
+
+该入口只装配当前真实类型及表示定理。原 `base_snapshot` 与父函数体之间的调用、
+当前 revision 查询的首错、以及同一 SQLite 事务仍待连接。
 
 主控使用 [登记候选](registration-candidate.json) 和 [公共覆盖候选](public-registration.patch)
 接入全部实际输入和审计；先解决 #776 已列的旧输入/原件阻断，不能只跑旧根报告本包通过。

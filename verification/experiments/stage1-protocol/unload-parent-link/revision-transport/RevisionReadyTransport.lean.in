@@ -1,0 +1,40 @@
+theorem sharedInputCarriers :
+    let b := baseRepresentations Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation
+    @SandproofUnloadBaseSnapshot.rusqlite.transaction.Transaction b =
+      SandproofUnloadFirstObservation.rusqlite.transaction.Transaction ∧
+    @SandproofUnloadBaseSnapshot.rusqlite.Connection b =
+      SandproofUnloadFirstObservation.rusqlite.Connection ∧
+    @SandproofUnloadBaseSnapshot.sandbox_controller_core.model.World b =
+      SandproofUnloadFirstObservation.sandbox_controller_core.model.World ∧
+    @SandproofUnloadBaseSnapshot.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext b =
+      SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext :=
+  ⟨rfl, rfl, rfl, rfl⟩
+
+theorem projectionTransport
+    (readiness : BReadiness Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation → PReadiness)
+    (candidate : BReady Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation) :
+    letI : SandproofUnloadBaseSnapshot.Representations :=
+      baseRepresentations Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation
+    let result := fromBaseReady Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation readiness candidate
+    result.view.request = fromBaseIntent Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation candidate.view.request ∧
+    result.view.current_request = fromBaseIntent Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation candidate.view.current_request ∧
+    result.view.«local» = candidate.view.«local».map (fromBaseLocal Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation) ∧
+    result.view.historical_result = candidate.view.historical_result ∧
+    result.view.native_input_high_water = candidate.view.native_input_high_water ∧
+    result.view.native = candidate.view.native.map (fromBaseNative Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation) ∧
+    result.view.readiness = readiness candidate.view.readiness ∧
+    result.actions = candidate.actions ∧
+    result.continuation = candidate.continuation ∧
+    result.native_revision = candidate.native_revision ∧
+    result.receipts = candidate.receipts ∧
+    result.source = candidate.source ∧
+    result.credential = candidate.credential ∧
+    result.options = candidate.options ∧
+    result.ready_fact = candidate.ready_fact :=
+  ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+end RevisionReadyTransport
+
+#audit_controller_proof RevisionReadyTransport.intentRoundtrip
+#audit_controller_proof RevisionReadyTransport.projectionTransport
+#audit_controller_proof RevisionReadyTransport.sharedInputCarriers
