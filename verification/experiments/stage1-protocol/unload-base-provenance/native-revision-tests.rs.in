@@ -1,0 +1,78 @@
+// Append only to controller/lifecycle_inbox/readiness/tests.rs in a private
+// test checkout. The corrupt rows below stay in one rolled-back SQLite
+// transaction. This exercises the base_snapshot leaf and its original error.
+#[test]
+fn proof_base_snapshot_revision_error_precedes_allocator_cursor() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (app, _) = running(&path);
+    drop(app);
+    let journal = v3::open(&path);
+    let world = journal.world().unwrap();
+    let intent = v3::request();
+    let context = v3::context();
+    let read_base = |tx: &rusqlite::Transaction<'_>| {
+        super::snapshot::base_snapshot(tx, &journal.namespace, &world, &intent, &context)
+    };
+    let tx = journal.journal.connection.unchecked_transaction().unwrap();
+    let original = read_base(&tx).unwrap().view;
+    let local = original.local.unwrap();
+    assert!(original.native.is_some());
+    let sandbox_id = journal.sandbox_id(local.sandbox).unwrap();
+    let revision: i64 = tx
+        .query_row(
+            "SELECT revision FROM sandboxes WHERE sandbox_id=?1",
+            [sandbox_id.as_str()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(revision > 0);
+
+    assert_eq!(
+        tx.execute(
+            "UPDATE controller_id_highwaters SET high_water='invalid' WHERE kind='input' AND scope=''",
+            [],
+        )
+        .unwrap(),
+        1
+    );
+    assert!(matches!(
+        read_base(&tx),
+        Err(crate::JournalError::CorruptStore)
+    ));
+    assert_eq!(
+        tx.execute(
+            "UPDATE sandboxes SET revision=1.5 WHERE sandbox_id=?1",
+            [sandbox_id.as_str()],
+        )
+        .unwrap(),
+        1
+    );
+    let result = read_base(&tx);
+    assert!(
+        matches!(
+            &result,
+            Err(crate::JournalError::Sqlite(rusqlite::Error::InvalidColumnType(
+                0,
+                column,
+                rusqlite::types::Type::Real,
+            ))) if column == "revision"
+        ),
+        "the original revision read must reject before the allocator cursor: {result:?}"
+    );
+    tx.rollback().unwrap();
+
+    let reopened = journal.journal.connection.unchecked_transaction().unwrap();
+    assert_eq!(read_base(&reopened).unwrap().view, original);
+    assert_eq!(
+        reopened
+            .query_row(
+                "SELECT revision FROM sandboxes WHERE sandbox_id=?1",
+                [sandbox_id.as_str()],
+                |row| row.get::<_, i64>(0),
+            )
+            .unwrap(),
+        revision
+    );
+    reopened.rollback().unwrap();
+}
