@@ -540,6 +540,18 @@ class FrozenFactsTests(unittest.TestCase):
                     else:
                         with self.assertRaises((ValueError,capture._AwaitTerminal)):p._stop_barrier(s)
 
+    def test_terminal_fence_receipt_must_name_the_original_sandbox_resource(self):
+        for resource in ({'kind': 'sandbox', 'id': 'sb-other'}, {'kind': 'vm'}):
+            with self.subTest(resource=resource), tempfile.TemporaryDirectory() as directory:
+                f = fixture(Path(directory))
+                fence = f.snapshot['terminal_actions'][0][0]
+                fence['identity']['resource'].update(resource)
+                f.snapshot['terminal_actions'][0] = (
+                    fence, 'receipted', f.receipt(fence, 'Fence', dict(epoch=4, terminal=True)))
+                with patch.object(frozen, 'original_json', return_value=dict(epoch=4, terminal=True)):
+                    with self.assertRaisesRegex(ValueError, 'terminal fence must name the original sandbox'):
+                        f.probe._stop_barrier(f.snapshot)
+
     def test_original_never_released_end_is_allowed_without_inventing_an_api_no_request(self):
         for fault in ('none','initial-end','binding','seal','worker','completed','material','returned','full-changed'):
             with tempfile.TemporaryDirectory() as directory:
@@ -572,7 +584,8 @@ class FrozenFactsTests(unittest.TestCase):
     def test_cleanup_needs_original_stop_receipt_kernel_exit_and_pending_cleanup(self):
         for probe_type in (frozen.FreezeDestroyProbe,frozen.UnresponsiveFreezeDestroyProbe):
             for fault in ('none','pid','start-ticks','stop-pending','stop-attempt','stop-logical-action',
-                          'no-exit','still-live','cleanup-saved','cleanup-epoch','freeze-missing','extra-full'):
+                          'fence-missing','fence-replacement','fence-receipt','no-exit','still-live',
+                          'cleanup-saved','cleanup-epoch','freeze-missing','extra-full'):
                 with self.subTest(probe=probe_type.__name__,fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                     f=fixture(Path(directory));p=f.probe;p.__class__=probe_type
                     p.recovered=p.stop_released=True;p.continue_sent=p.continue_source_before_stop
@@ -591,6 +604,14 @@ class FrozenFactsTests(unittest.TestCase):
                         else:
                             action['identity']['logical_action']='effect-13'
                         receipt['identity']=copy.deepcopy(action['identity'])
+                    if fault == 'fence-missing':
+                        del s['terminal_actions'][0]
+                    if fault == 'fence-replacement':
+                        fence, _, receipt = s['terminal_actions'][0]
+                        fence['identity']['logical_action'] = 'effect-12'
+                        receipt['identity'] = copy.deepcopy(fence['identity'])
+                    if fault == 'fence-receipt':
+                        s['terminal_actions'][0][2]['outcome'] = {'status': 'unknown'}
                     if fault=='cleanup-saved':s['terminal_actions'][2]=(s['terminal_actions'][2][0],'receipted',{})
                     if fault=='cleanup-epoch':s['terminal_actions'][2][0]['identity']['epoch']+=1
                     if fault=='freeze-missing':s['original_actions']=[]
@@ -607,6 +628,11 @@ class FrozenFactsTests(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError,'Cleanup does not retain the complete Stop'):
                             p.assert_terminal_before_gc(p.deadline)
                         p.runtime.services.processes.start.assert_not_called();self.assertIsNone(p.terminal_cut)
+                    elif fault in ('fence-missing', 'fence-replacement', 'fence-receipt'):
+                        with self.assertRaisesRegex(ValueError, 'original terminal fence'):
+                            p.assert_terminal_before_gc(p.deadline)
+                        p.runtime.services.processes.start.assert_not_called()
+                        self.assertIsNone(p.terminal_cut)
                     else:
                         with self.assertRaises(ValueError):p.assert_terminal_before_gc(p.deadline)
                         p.runtime.services.processes.start.assert_not_called();self.assertIsNone(p.terminal_cut)
@@ -878,12 +904,13 @@ class FreezeStopWiringTests(unittest.TestCase):
     def test_actual_stop_socket_is_released_only_after_checks_and_peer_progress(self):
         import lifecycle_freeze_dispatch as dispatched
         for fault in ('dispatch-none','dispatch-peer-progress','dispatch-global-stop','none','peer-progress','global-stop','unregistered-stop',
-                      'peer-stop-replacement','final-stop-replacement',
+                      'peer-stop-replacement','final-stop-replacement','peer-fence-replacement','final-fence-replacement',
                       'automatic-none','automatic-peer-progress','automatic-global-stop','responsive-none','responsive-peer-progress','responsive-global-stop',
                       'unresponsive-none','unresponsive-peer-progress','unresponsive-global-stop',
                       'ordered-automatic-none','ordered-automatic-peer-progress','ordered-automatic-global-stop',
+                      'ordered-automatic-final-fence-replacement',
                       'unresponsive-automatic-none','unresponsive-automatic-peer-progress','unresponsive-automatic-global-stop'):
-            with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
+            with self.subTest(scenario=fault), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
                 dispatch=fault.startswith('dispatch-')
                 fault=fault.removeprefix('dispatch-')
                 unresponsive=fault.startswith('unresponsive-')
@@ -940,6 +967,17 @@ class FreezeStopWiringTests(unittest.TestCase):
                         stop['identity']['logical_action']='effect-13'
                         p._read_terminal.side_effect=[f.snapshot,f.snapshot,replaced]
                     replaced['global_pending_stops']=[copy.deepcopy(stop)]
+                if fault in ('peer-fence-replacement', 'final-fence-replacement'):
+                    replaced = copy.deepcopy(f.snapshot)
+                    fence, _, receipt = replaced['terminal_actions'][0]
+                    if fault == 'peer-fence-replacement':
+                        fence['identity']['logical_action'] = 'effect-12'
+                    else:
+                        fence['identity']['attempt'] = fence['command']['attempt'] = 1
+                    receipt['identity'] = copy.deepcopy(fence['identity'])
+                    middle = replaced if fault.startswith('peer-') else f.snapshot
+                    snapshots = [f.snapshot, middle, replaced]
+                    p._read_terminal.side_effect = [accepted_snapshot, *snapshots] if ordered else snapshots
                 queried=stack.enter_context(patch.object(frozen,'paused_source',side_effect=lambda *_:events.append('paused') or {'original':'paused'}))
                 running=stack.enter_context(patch.object(dispatched,'paused_source',side_effect=lambda *_,**__:events.append('running') or {'state':'Running'}))
                 p._source_state=Mock(side_effect=lambda _: 'S' if responsive or dispatch or p.continue_sent else 'T')
@@ -992,6 +1030,18 @@ class FreezeStopWiringTests(unittest.TestCase):
                         self.assertEqual(events.count('peer'),1)
                         self.assertEqual(p.continue_sent,fault=='final-stop-replacement')
                         self.assertFalse(p.terminal_failure_state()['capacity_released'])
+                    elif fault in ('peer-fence-replacement', 'final-fence-replacement'):
+                        with self.assertRaisesRegex(ValueError, 'complete original terminal fence changed'):
+                            recovery(accepted, p.deadline, observe_peer=progress)
+                        self.assertFalse(p.stop_released)
+                        self.assertFalse(p.recovered)
+                        self.assertEqual(events.count('peer'), 1)
+                        self.assertEqual(p.continue_sent, fault == 'final-fence-replacement')
+                        failed = p.terminal_failure_state()
+                        self.assertFalse(failed['capacity_released'])
+                        if ordered:
+                            self.assertEqual(failed['terminal_acceptance_before_response_restored'], accepted_snapshot)
+                            self.assertFalse(failed['stop_gate_release_sent'])
                     elif fault=='unregistered-stop':
                         with self.assertRaisesRegex(ValueError,'complete logical effect registration'):
                             recovery(accepted,p.deadline,observe_peer=progress)
