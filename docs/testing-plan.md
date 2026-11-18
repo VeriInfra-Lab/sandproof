@@ -642,6 +642,9 @@ PID/start 回执及尚未记录的 Cleanup 回执；动作缺失、退出码不�
 接续旧 VM（expected_previous），否则不能算覆盖此代表。
 生命周期请求的协议4与原生 WorkAction 的协议1分别核对，不能用前者充当后者。
 原 Prepare/Stop/Cleanup 的资源必须是同一来源 VM，与原来源的 resource_id 一致。
+保存动作时，公开接受、Host 版本、本地操作、终止 epoch、命令及 Stop 回执中的身份字段
+须保持 JSON 整数类型。Cleanup 的未记录回执要求原列为 SQL NULL；存储的 JSON `null`
+须拒绝并保留原故障现场。
 
 重放期间所属 Host 保持停止，助手初始化、传输、超时或格式失败不能算拒绝。必须同时
 核对两条原动作均被拒绝、原 node/claim 元数据逐文件身份与摘要不变、原 B 的 PID/start/

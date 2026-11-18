@@ -1,6 +1,6 @@
 """Finite scene wiring, real SQLite capture and fail-closed observer composition."""
 import copy
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 import hashlib
 import json
 from pathlib import Path
@@ -45,7 +45,8 @@ def fixture():
         command = dict(sandbox=1,generation=2,vm=2)
         if kind == 'StopVm': command['epoch']=5
         return dict(identity=dict(owner='tenant-1',sandbox='sb-original-1',operation='op-original-1-4',
-            protocol_version=1,generation=2,epoch=5,resource=resource,attempt=1),
+            protocol_version=1,generation=2,epoch=5,resource=resource,attempt=1,
+            logical_action='effect-1' if kind == 'StopVm' else 'effect-2'),
             command=dict(attempt=1,logical=dict(command={kind:command})))
     stop, cleanup = action('StopVm'),action('CleanupVm')
     result = dict(identity=copy.deepcopy(stop['identity']),outcome=dict(status='observed_success',
@@ -87,6 +88,7 @@ class OriginalLateActionsTests(unittest.TestCase):
         selected[0]['identity']['attempt']=8
         self.assertEqual(rows[0][0]['identity']['attempt'],1)
         for fault in ('missing','duplicate','vm','generation','resource','epoch','command',
+                      'vm-float','sandbox-bool','epoch-float','receipt-ticks-float',
                       'receipt-pid','receipt-identity','receipt-command','unknown','cleanup-receipted'):
             bad=copy.deepcopy(rows)
             if fault=='missing': bad.pop()
@@ -94,6 +96,10 @@ class OriginalLateActionsTests(unittest.TestCase):
             elif fault in ('vm','generation'): bad[1][0]['command']['logical']['command']['CleanupVm'][fault]+=1
             elif fault in ('resource','epoch'): bad[1][0]['identity'][fault]='foreign'
             elif fault=='command': bad[0][0]['command']['logical']['command']['StopVm']['epoch']=8
+            elif fault=='vm-float': bad[1][0]['command']['logical']['command']['CleanupVm']['vm']=2.0
+            elif fault=='sandbox-bool': bad[1][0]['command']['logical']['command']['CleanupVm']['sandbox']=True
+            elif fault=='epoch-float': bad[1][0]['identity']['epoch']=5.0
+            elif fault=='receipt-ticks-float': bad[0][2]['outcome']['details']['result']['Stopped']['start_ticks']=11.0
             elif fault=='receipt-pid': bad[0][2]['outcome']['details']['result']['Stopped']['pid']=42
             elif fault=='receipt-identity': bad[0][2]['identity']['attempt']=2
             elif fault=='receipt-command': bad[0][2]['outcome']['details']['command']={}
@@ -107,20 +113,27 @@ class OriginalLateActionsTests(unittest.TestCase):
         node=original['intent']['request']['binding']['node']
         entry,local=late.accepted_entry(inbox,accepted,prior,node,terminal=True)
         self.assertEqual(local,prior['local'])
-        for fault in ('current-version','terminal','local','key','session','node','operation-missing'):
+        for fault in ('current-version','terminal','local','key','session','node','operation-missing',
+                      'current-version-float','entry-version-float','local-owner-bool','key-sequence-float',
+                      'operation-float'):
             bad=copy.deepcopy(inbox); current=bad['sessions'][0]
             if fault=='current-version': current['current_version']+=1
             elif fault=='terminal': current['terminal']=False
             elif fault=='local': current['local']['sandbox']=2
             elif fault=='key': current['entries'][-1]['intent']['request']['binding']['key']['sequence']+=1
             elif fault in ('session','node'): current['entries'][-1]['intent']['request']['binding'][fault]='foreign'
+            elif fault=='current-version-float': current['current_version']=4.0
+            elif fault=='entry-version-float': current['entries'][-1]['intent']['accepted_version']=4.0
+            elif fault=='local-owner-bool': current['local']['owner']=True
+            elif fault=='key-sequence-float': current['entries'][-1]['intent']['request']['binding']['key']['sequence']=4.0
+            elif fault=='operation-float': current['entries'][-1]['local_operation']=4.0
             else: current['entries'][-1]['local_operation']=None
             with self.subTest(fault=fault),self.assertRaises(ValueError):
                 late.accepted_entry(bad,accepted,prior,node,terminal=True)
         client=NS(session=prior['session'],current_acceptance=resume,
             destroy_request=dict(window=1,sequence=4,expected_version=3))
         runner=NS(services=NS(native_pools=[{}],host_configs=[{}],processes=Mock()))
-        for fault in ('none','center','retention','expected','protocol','operation','local-operation',
+        for fault in ('none','center','retention','expected','protocol','retention-float','operation','local-operation',
                       'host-exit','host-replaced','old-live'):
             probe=late.LateHostActionsProbe(runner,client,prior,resume,{},time.monotonic()+5)
             probe.entry=original;probe.resource=resource;probe.host=Mock()
@@ -128,6 +141,7 @@ class OriginalLateActionsTests(unittest.TestCase):
             runner.services.processes.children={'host-0':probe.host}
             bad=copy.deepcopy(entry); badrows=copy.deepcopy(rows)
             if fault in ('center','retention'): bad['intent'][fault]={'foreign':True}
+            elif fault=='retention-float': bad['intent']['retention']['window']=1.0
             elif fault in ('expected','protocol'):
                 bad['intent']['request']['binding']['expected' if fault=='expected' else 'protocol_version']=0
             elif fault=='operation': bad['intent']['request']['operation']={'kind':'unload'}
@@ -140,7 +154,31 @@ class OriginalLateActionsTests(unittest.TestCase):
                 if fault=='none': self.assertEqual(probe.capture(accepted)['actual_commands'],['StopVm','CleanupVm'])
                 else:
                     with self.assertRaises(ValueError):probe.capture(accepted)
+                    self.assertIsNone(probe.actions)
             client.current_acceptance=resume
+
+    def test_prepare_identity_types_are_checked_before_restarting_the_host(self):
+        prior, resume, original, _, _, rows, _ = fixture()
+        for vm in (2, 2.0):
+            with self.subTest(vm=vm):
+                processes = Mock()
+                runner = NS(services=NS(native_pools=[{}], host_configs=[{}], processes=processes,
+                                        wait_ready=Mock()))
+                client = NS(session=prior['session'], current_acceptance=resume)
+                probe = late.LateHostActionsProbe(runner, client, prior, resume, {}, time.monotonic()+5)
+                prepare = copy.deepcopy(rows[0][0])
+                prepare['command']['logical']['command'] = {'PrepareVm': dict(sandbox=1, generation=2, vm=vm)}
+                probe._read = Mock(return_value=(original, {}, [(prepare, 'receipted', None)]))
+                probe._configuration = Mock()
+                if type(vm) is int:
+                    self.assertTrue(probe.arm()['preparatory_host_restart'])
+                    processes.stop.assert_called_once_with('host-0')
+                    processes.start.assert_called_once()
+                else:
+                    with self.assertRaisesRegex(ValueError, 'original persisted Prepare'):
+                        probe.arm()
+                    processes.stop.assert_not_called()
+                    processes.start.assert_not_called()
 
     def test_approved_helper_is_checked_before_services_can_start(self):
         for extra in ({},{'stale_probe':'/other/stale_host_actions','stale_probe_sha256':'a'*64},
@@ -157,7 +195,7 @@ class LateActionsSqlTests(unittest.TestCase):
         prior,resume,_,accepted,inbox,rows,_=fixture()
         with tempfile.TemporaryDirectory() as directory:
             database=Path(directory)/'db'
-            with sqlite3.connect(database) as conn:
+            with closing(sqlite3.connect(database)) as conn, conn:
                 conn.executescript('CREATE TABLE controller_lifecycle_inbox(id,state_json,reserve_bytes,sha256);'
                     'CREATE TABLE sandboxes(sandbox_id,state_blob);'
                     'CREATE TABLE outbox(id,sandbox_id,operation_id,action_json,dispatch_state,receipt_json);')
@@ -179,18 +217,38 @@ class LateActionsSqlTests(unittest.TestCase):
             with patch.object(late,'private_path',side_effect=Path):
                 self.assertEqual(probe._read(accepted,terminal=True)[2],rows)
                 self.assertEqual(database.read_bytes(),before)
+                for stored in ('null', b'null'):
+                    with self.subTest(receipt=stored):
+                        with closing(sqlite3.connect(database)) as conn, conn:
+                            conn.execute('UPDATE outbox SET receipt_json=? WHERE id=1',(stored,))
+                        with self.assertRaisesRegex(ValueError, 'stored outbox receipt cannot be JSON null'):
+                            probe._read(accepted,terminal=True)
+                with closing(sqlite3.connect(database)) as conn, conn:
+                    conn.execute('UPDATE outbox SET receipt_json=NULL WHERE id=1')
+                self.assertEqual(probe._read(accepted,terminal=True)[2],rows)
                 state=dict(owner=1,generation=2,epoch=5,terminal=True,current_operation=dict(kind='Kill',id=4,epoch=5))
-                for fault in ('checksum','bound','attempt','owner','operation','protocol_version','generation','native-kill'):
-                    with sqlite3.connect(database) as conn:
+                for fault in ('checksum','bound','attempt','owner','operation','protocol_version','generation',
+                              'native-kill','native-owner-bool','native-epoch-float','native-kill-id-float',
+                              'attempt-float'):
+                    with closing(sqlite3.connect(database)) as conn, conn:
                         conn.execute('UPDATE controller_lifecycle_inbox SET sha256=?,reserve_bytes=16384',
                             (hashlib.sha256(raw).digest(),))
                         conn.execute('UPDATE outbox SET action_json=? WHERE id=0',(json.dumps(rows[0][0]),))
                         conn.execute('UPDATE sandboxes SET state_blob=?',(json.dumps(state),))
                         if fault=='checksum':conn.execute('UPDATE controller_lifecycle_inbox SET sha256=zeroblob(32)')
                         elif fault=='bound':conn.execute('UPDATE controller_lifecycle_inbox SET reserve_bytes=1')
-                        elif fault=='native-kill':
-                            bad=copy.deepcopy(state);bad['current_operation']['id']=5
+                        elif fault.startswith('native-'):
+                            bad=copy.deepcopy(state)
+                            if fault=='native-kill': bad['current_operation']['id']=5
+                            elif fault=='native-owner-bool': bad['owner']=True
+                            elif fault=='native-epoch-float':
+                                bad['epoch']=bad['current_operation']['epoch']=5.0
+                            elif fault=='native-kill-id-float': bad['current_operation']['id']=4.0
                             conn.execute('UPDATE sandboxes SET state_blob=?',(json.dumps(bad),))
+                        elif fault=='attempt-float':
+                            bad=copy.deepcopy(rows[0][0])
+                            bad['identity']['attempt']=bad['command']['attempt']=1.0
+                            conn.execute('UPDATE outbox SET action_json=? WHERE id=0',(json.dumps(bad),))
                         else:
                             bad=copy.deepcopy(rows[0][0]);bad['identity'][fault]='foreign'
                             conn.execute('UPDATE outbox SET action_json=? WHERE id=0',(json.dumps(bad),))
