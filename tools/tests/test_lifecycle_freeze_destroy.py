@@ -348,7 +348,6 @@ class FrozenFactsTests(unittest.TestCase):
             with patch.object(capture, 'checked_source_records', return_value=f.rows) as records, \
                     patch.object(p, '_check_source_hold') as held:
                 before = p.observe_destroy_window(p.deadline)
-                self.assertIs(before['original_pin_and_positive_charge_retained'], True)
                 held.assert_called_once()
 
                 for change in ('missing backing', 'closed pin', 'changed charge', 'changed work'):
@@ -375,6 +374,7 @@ class FrozenFactsTests(unittest.TestCase):
                 records.return_value = [unrelated, *rows]
                 self.assertEqual(p.observe_destroy_window(p.deadline), before)
                 self.assertEqual(held.call_count, 2)
+                self.assertIs(before['original_pin_and_positive_charge_retained'], True)
 
     def test_complete_destroy_history_context_and_window_are_correlated(self):
         with tempfile.TemporaryDirectory() as directory:
