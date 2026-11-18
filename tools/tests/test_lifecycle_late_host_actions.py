@@ -2,6 +2,7 @@
 import copy
 from contextlib import ExitStack, closing
 import hashlib
+from itertools import product
 import json
 from pathlib import Path
 import sqlite3
@@ -22,7 +23,7 @@ from tools.tests.test_lifecycle_late_material_receipt import LateMaterialFixture
 
 
 def fixture():
-    context = dict(position=0, expected_previous=1, binding=dict(owner=1,sandbox=1,generation=2,vm=2))
+    context = dict(position=0, expected_previous=1, binding=dict(owner=1,sandbox=1,generation=2,vm=2,network=9))
     prior = dict(session='session-A',context=context,local=dict(owner=1,sandbox=1),
         source=dict(pid=41,start_time_ticks=11,resource_id='vm-original-2'))
     node = dict(deployment='deployment',node='node')
@@ -56,7 +57,99 @@ def fixture():
     return prior,resume,original,accepted,inbox,rows,resource
 
 
+def slot_rows(rows):
+    configured = copy.deepcopy(rows[0][0])
+    configured['identity'].update(operation='op-original-1-3', epoch=4, logical_action='effect-3',
+                                  resource=dict(kind='network_slot', id='slot-original-9'))
+    configured['command']['logical']['command'] = {'ConfigureNetwork':
+        dict(sandbox=1, generation=2, vm=2, slot=9, epoch=4)}
+    success = dict(identity=copy.deepcopy(configured['identity']), outcome=dict(status='observed_success',
+        details=dict(resource=copy.deepcopy(configured['identity']['resource']),
+                     command=copy.deepcopy(configured['command']['logical']['command']),
+                     result={'Network': {'namespace_inode': 25}})))
+    close = copy.deepcopy(rows[1][0])
+    close['identity'].update(logical_action='effect-4', resource=copy.deepcopy(configured['identity']['resource']))
+    close['command']['logical']['command'] = {'CleanupSlot': dict(sandbox=1, generation=2, slot=9)}
+    return (configured, 'receipted', success), (close, 'dispatched', None)
+
+
 class OriginalLateActionsTests(unittest.TestCase):
+    def test_cleanup_slot_arms_from_the_successful_original_network_configuration(self):
+        prior, resume, original, _, _, rows, _ = fixture()
+        for fault in (None, 'missing', 'wrong-slot', 'float-inode', 'unknown'):
+            with self.subTest(fault=fault):
+                configured, _ = slot_rows(rows)
+                processes = Mock()
+                runner = NS(services=NS(native_pools=[dict(namespace='original')], host_configs=[{}],
+                                        processes=processes, wait_ready=Mock()))
+                client = NS(session=prior['session'], current_acceptance=resume)
+                probe = late.LateSlotCloseProbe(runner, client, prior, resume, {}, time.monotonic()+5)
+                if fault == 'wrong-slot':
+                    configured[0]['command']['logical']['command']['ConfigureNetwork']['slot'] = 10
+                if fault == 'float-inode':
+                    configured[2]['outcome']['details']['result']['Network']['namespace_inode'] = 25.0
+                if fault == 'unknown':
+                    configured[2]['outcome']['status'] = 'unknown'
+                probe._read = Mock(return_value=(original, {}, [] if fault == 'missing' else [configured]))
+                probe._configuration = Mock()
+                if fault is None:
+                    self.assertEqual(probe.arm()['cut'], 'cleanup_slot-success-before-SQL-receipt')
+                    self.assertEqual(probe.resource, dict(kind='network_slot', id='slot-original-9'))
+                    processes.stop.assert_called_once_with('host-0')
+                    processes.start.assert_called_once_with('host-0',
+                        env={'SANDPROOF_TEST_EXIT_AFTER_HOST_ACTION': 'cleanup_slot'})
+                else:
+                    with self.assertRaises(ValueError):
+                        probe.arm()
+                    processes.stop.assert_not_called()
+                    processes.start.assert_not_called()
+
+    def test_cleanup_slot_capture_requires_the_original_dispatched_slot_and_exit86(self):
+        prior, resume, original, accepted, inbox, rows, _ = fixture()
+        for fault in (None, 'missing', 'duplicate', 'wrong-slot', 'float-slot', 'wrong-resource',
+                      'wrong-epoch', 'present-receipt', 'ready', 'old-live', 'wrong-exit'):
+            with self.subTest(fault=fault):
+                configured, pending = slot_rows(rows)
+                client = NS(session=prior['session'], current_acceptance=resume,
+                            destroy_request=dict(window=1, sequence=4, expected_version=3))
+                runner = NS(services=NS(native_pools=[dict(namespace='original')], host_configs=[{}], processes=Mock()))
+                probe = late.LateSlotCloseProbe(runner, client, prior, resume, {}, time.monotonic()+5)
+                probe.entry = original
+                probe.resource = probe._original_resource([configured])
+                probe.host = Mock()
+                probe.host.poll.return_value = 87 if fault == 'wrong-exit' else 86
+                runner.services.processes.children = {'host-0': probe.host}
+                action, state, result = pending
+                if fault in ('wrong-slot', 'float-slot'):
+                    action['command']['logical']['command']['CleanupSlot']['slot'] = 10 if fault == 'wrong-slot' else 9.0
+                if fault == 'wrong-resource':
+                    action['identity']['resource']['id'] = 'slot-original-10'
+                if fault == 'wrong-epoch':
+                    action['identity']['epoch'] = 5.0
+                if fault == 'present-receipt':
+                    result = {}
+                if fault == 'ready':
+                    state = 'ready'
+                saved = [(action, state, result)]
+                if fault == 'duplicate':
+                    saved.append(copy.deepcopy(saved[0]))
+                if fault == 'missing':
+                    saved.clear()
+                entry = inbox['sessions'][0]['entries'][-1]
+                probe._read = Mock(return_value=(entry, {'epoch': 5}, [*rows, *saved]))
+                client.current_acceptance = accepted
+                with patch.object(late, 'original_process', return_value=fault == 'old-live'):
+                    if fault is None:
+                        evidence = probe.capture(accepted)
+                        self.assertEqual(evidence['actual_commands'], ['CleanupSlot'])
+                        self.assertIs(evidence['original_slot_close_executed_receipt_pending'], True)
+                        self.assertEqual(probe.actions, [action])
+                        self.assertIsNot(probe.actions[0], action)
+                    else:
+                        with self.assertRaises(ValueError):
+                            probe.capture(accepted)
+                        self.assertIsNone(probe.actions)
+
     def test_native_protocol_and_source_vm_are_independent_of_lifecycle_version(self):
         prior,_,original,_,_,rows,resource=fixture()
         self.assertEqual(original['intent']['request']['binding']['protocol_version'],4)
@@ -273,22 +366,25 @@ class LateActionsReplayTests(unittest.TestCase):
     def test_refusal_requires_independent_resources_and_actual_guest_callback(self):
         prior,resume,_,_,_,rows,_=fixture()
         occupant=dict(session='B',context=dict(position=0,expected_previous=2,
-            binding=dict(owner=2,sandbox=2,generation=1,vm=3)))
+            binding=dict(owner=2,sandbox=2,generation=1,vm=3,network=10)))
         stamp=dict(path='/fixed/helper',sha256='a'*64,expected_sha256='a'*64)
-        valid = dict(version=2, context_rejected=True, release_rejected=True,
-            occupied_successor=occupant['context'], action_outcomes=[
-                dict(logical_action=action['identity']['logical_action'], attempt=action['identity']['attempt'],
-                     outcome=dict(status='unknown', reason='observation_unavailable'))
-                for action, _, _ in rows])
-        for fault in ('none','helper-failed','incomplete','observed-success','wrong-successor','wrong-action',
-                      'metadata','kernel','sql','guest','reuse','helper-changed'):
-            with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
+        faults = ('none','helper-failed','incomplete','observed-success','wrong-successor','wrong-action',
+                  'metadata','kernel','sql','guest','reuse','helper-changed')
+        for slot_close, fault in product((False, True), faults):
+            selected = [slot_rows(rows)[1]] if slot_close else rows
+            valid = dict(version=2, context_rejected=True, release_rejected=True,
+                occupied_successor=occupant['context'], action_outcomes=[
+                    dict(logical_action=action['identity']['logical_action'], attempt=action['identity']['attempt'],
+                         outcome=dict(status='unknown', reason='observation_unavailable'))
+                    for action, _, _ in selected])
+            with self.subTest(slot_close=slot_close,fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 processes=Mock();runner=NS(root=Path(directory),services=NS(processes=processes,
                     wait_ready=Mock(),native_pools=[dict(node_state_dir='original-state',chroot_base='original-jail')],
                     host_configs=[{}]))
-                probe=late.LateHostActionsProbe(runner,NS(session='session-A',current_acceptance=resume),
+                probe_type = late.LateSlotCloseProbe if slot_close else late.LateHostActionsProbe
+                probe=probe_type(runner,NS(session='session-A',current_acceptance=resume),
                     prior,resume,stamp,time.monotonic()+10)
-                probe._configuration=Mock();probe.recovered=True;probe.actions=[row[0] for row in rows]
+                probe._configuration=Mock();probe.recovered=True;probe.actions=[row[0] for row in selected]
                 observer=Mock();observer.verify.return_value={}
                 if fault=='sql':observer.verify.side_effect=ValueError('original SQL changed')
                 stack.enter_context(patch.object(late,'SlotOccupantObserver',return_value=observer))
@@ -303,7 +399,7 @@ class LateActionsReplayTests(unittest.TestCase):
                 if fault=='incomplete':result['action_outcomes'].pop()
                 if fault=='observed-success':result['action_outcomes'][0]['outcome']={'status':'observed_success'}
                 if fault=='wrong-successor':result['occupied_successor']['binding']['vm']+=1
-                if fault=='wrong-action':result['action_outcomes'][1]['logical_action']='effect-99'
+                if fault=='wrong-action':result['action_outcomes'][-1]['logical_action']='effect-99'
                 command=stack.enter_context(patch.object(late,'bounded_json_command',return_value=result,
                     side_effect=ValueError('helper initialization failed') if fault=='helper-failed' else None))
                 guest=Mock(return_value={'original':'guest'},side_effect=ValueError('guest changed') if fault=='guest' else None)
@@ -315,7 +411,8 @@ class LateActionsReplayTests(unittest.TestCase):
                     self.assertEqual(evidence['probe']['action_outcomes'], valid['action_outcomes'])
                     guest.assert_called_once();self.assertEqual(observer.verify.call_count,2)
                     self.assertEqual(command.call_args.args[0][0],stamp['path'])
-                    self.assertEqual(json.loads((Path(directory)/'late-stop-delete-actions.json').read_bytes())['actions'],probe.actions)
+                    actions_path = Path(directory)/(probe.artifact_prefix+'-actions.json')
+                    self.assertEqual(json.loads(actions_path.read_bytes())['actions'],probe.actions)
                     self.assertEqual(tree.call_count,2)
                     with self.assertRaises(ValueError):probe.replay(current,guest)
                 else:
@@ -323,6 +420,22 @@ class LateActionsReplayTests(unittest.TestCase):
                     if fault not in ('guest',):guest.assert_not_called()
                     if fault=='reuse':command.assert_not_called();processes.stop.assert_not_called()
                     if fault not in ('guest','reuse'):processes.start.assert_not_called()
+
+    def test_cleanup_slot_replay_requires_fresh_typed_successor_network_before_host_stop(self):
+        prior, resume, _, _, _, _, _ = fixture()
+        for slot in (9, 8, 10.0, True):
+            with self.subTest(slot=slot):
+                processes = Mock()
+                runner = NS(services=NS(processes=processes, native_pools=[{}], host_configs=[{}]))
+                client = NS(session=prior['session'], current_acceptance=resume)
+                probe = late.LateSlotCloseProbe(runner, client, prior, resume, {}, time.monotonic()+5)
+                probe.recovered = True
+                successor = dict(position=0, expected_previous=2,
+                                 binding=dict(owner=2, sandbox=2, generation=1, vm=3, network=slot))
+                with self.assertRaises(ValueError):
+                    probe.replay({'context': successor}, Mock())
+                processes.stop.assert_not_called()
+                self.assertFalse(probe.replayed)
 
     def test_bounded_real_child_failures_are_not_refusal_evidence(self):
         env={'PATH':'/usr/bin:/bin','LANG':'C'}
@@ -334,8 +447,9 @@ class LateActionsReplayTests(unittest.TestCase):
 
 class LateStopDeleteSceneTests(unittest.TestCase):
     def test_scene_waits_for_product_gc_before_other_owner_and_preserves_failures(self):
-        for failed in (False,True):
-            with self.subTest(failed=failed),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
+        scenarios = ('slot-reuse-late-stop-delete', 'slot-reuse-late-slot-close')
+        for scenario, failed in product(scenarios, (False, True)):
+            with self.subTest(scenario=scenario,failed=failed),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 events=[]; lifetime=dict(started_at_ms=1,end_at_ms=100,max_end_at_ms=200,startup_deadline_ms=20)
                 clients={}
                 for owner in ('1','2'):
@@ -368,12 +482,14 @@ class LateStopDeleteSceneTests(unittest.TestCase):
                     if failed:raise ValueError('controlled stale action failure')
                     guest();return {}
                 probe.replay.side_effect=replay
-                stack.enter_context(patch.object(late,'LateHostActionsProbe',return_value=probe))
+                slot_close = scenario == 'slot-reuse-late-slot-close'
+                probe_name = 'LateSlotCloseProbe' if slot_close else 'LateHostActionsProbe'
+                stack.enter_context(patch.object(late,probe_name,return_value=probe))
                 stack.enter_context(patch.object(late,'approved_probe',return_value={}))
                 stack.enter_context(patch.object(runtime,'prepare',return_value=runner))
                 stack.enter_context(patch.object(scene,'PublicUnloadScenario',side_effect=lambda *_,owner='1':clients[owner]))
                 stack.enter_context(patch.object(scene,'check_center_configuration',return_value=dict(deployment='original')))
-                args=NS(scenario='slot-reuse-late-stop-delete',scenario_timeout=60,activation_gate_timeout_ms=60000)
+                args=NS(scenario=scenario,scenario_timeout=60,activation_gate_timeout_ms=60000)
                 if failed:
                     with self.assertRaises(ValueError):scene.exercise(args)
                     report=json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
@@ -387,6 +503,7 @@ class LateStopDeleteSceneTests(unittest.TestCase):
                     self.assertLess(events.index('zero-quota'),events.index('create-2'))
                     self.assertLess(events.index('late-stop-delete'),events.index('destroy-2'))
                     self.assertEqual(events[-1],'zero-quota');self.assertIn('E9',report['acceptance_cases'])
+                    self.assertIn('late_slot_close' if slot_close else 'late_stop_delete', report)
                 self.assertLess(events.index('destroy-1'),events.index('late-stop-delete'))
                 runner.finish.assert_called_once()
 
@@ -394,4 +511,5 @@ class LateStopDeleteSceneTests(unittest.TestCase):
         result=subprocess.run([sys.executable,scene.__file__,'--help'],capture_output=True,text=True,timeout=10)
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertIn('slot-reuse-late-stop-delete',result.stdout)
+        self.assertIn('slot-reuse-late-slot-close',result.stdout)
         self.assertIn('--stale-probe-sha256',result.stdout)

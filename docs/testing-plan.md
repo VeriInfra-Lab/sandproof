@@ -145,7 +145,7 @@ Cleaned/GC/额度结算；在 Terminating/Cleaned 重放历史 Create/Unload，�
 | E6 / G1、G2、G4 | `restore-prepare-receipt`、`restore-prepare-destroy` | LoadPaused 与可能执行标记两侧分别检查；加载未知时不能重新分配另一个候选。 |
 | E7 / G1、G2、G4 | `restore-activation-loss`、`restore-candidate-exit` | 存活分支必须保留激活后新增 RAM；死亡分支明确 StateLost，不能重载旧来源假装恢复。 |
 | E8 / G2、G4、G6 | `restore-prepare-destroy`、`restore-activation-destroy`、`capture-freeze-destroy`、`capture-freeze-expiry`、`capture-sync-before/after-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 激活前、实际激活后及冻结卸载的终止是不同窗口；有限代表分别验收，同源余责继续收尾，不完成全部 Destroy/到期竞争。 |
-| E9 / G2、G3、G4 | `normal` 的实际位置复用、`material-retirement-late-receipt`、`slot-reuse-late-stop-delete`；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs)、[迟到材料回执组合](../controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement/application.rs)、[复用观察器与回执门](../tests/system/lifecycle_late_material_receipt.py)、[原 Stop/Cleanup 迟到重放](../tests/system/lifecycle_late_host_actions.py) | 回执代表压住原删除后的结算；动作代表保存原 Destroy 的 StopVm/CleanupVm，在另一 owner 实际复用后重放并独立检查资源和 guest 连续性。当前组合入口已接、自测及实机仍待验收，也不覆盖任意 unlink、CleanupSlot 或完整 E9。 |
+| E9 / G2、G3、G4 | `normal` 的实际位置复用、`material-retirement-late-receipt`、`slot-reuse-late-stop-delete`、`slot-reuse-late-slot-close`；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs)、[迟到材料回执组合](../controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement/application.rs)、[复用观察器与回执门](../tests/system/lifecycle_late_material_receipt.py)、[原 Stop/Cleanup 迟到重放](../tests/system/lifecycle_late_host_actions.py) | 回执代表压住原删除后的结算；动作代表分别重放原 Destroy 的 StopVm/CleanupVm 或 CleanupSlot，独立检查另一 owner 实际复用后的资源和 guest 连续性。当前组合入口及自测待 ning 执行，实机结果单列。 |
 | E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
 | E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`、`capture-sync-before/after`、`capture-publish-conflict`；[发布冲突观察](../tests/system/lifecycle_capture_publish_conflict.py)、[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync、发布目标冲突、删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。目标冲突不是任意 rename 故障覆盖。 |
 | E12 / G1、G2、G3、G5 | `normal` 的两 owner/两会话/三代保存点；[同伴采样](../tests/system/lifecycle_peer_probe.py) | 两会话有限代表不等于长期容量或开放并发压力；记录逻辑额度、物理峰值和最后实际残留。 |
@@ -606,6 +606,7 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 
 | `material-retirement-late-receipt` | 另一 owner 保持占用旧位置；旧材料实际删除后，压住原回执并验证占用者的原 guest RAM/进程/凭据和文件读写，放行后同一计划结算，再沿两会话原 Destroy/GC 退额（E9 的回执代表） |
 | `slot-reuse-late-stop-delete` | A 卸载后恢复，经原 Destroy 在 CleanupVm 成功、SQL 回执未记录的退出点保存真实 StopVm/CleanupVm；恢复并完成 A 的产品 GC/退额后，B 实际复用该位置。停下原 Host，用同候选的受信助手重放两条旧命令，独立核对 B 与账本，再恢复原 Host、读写原 guest，最后销毁 B 并退额（E9 的动作重复代表） |
+| `slot-reuse-late-slot-close` | 同一 A/B 编排独立使用 CleanupSlot 成功且 SQL 回执未记录的退出点，保存原网络槽动作。B 实际复用原物理位置并取得新网络槽后，只重放那条原 CleanupSlot，沿用账本、内核、guest 及最终结算检查（E9；实机待验收） |
 
 迟到材料回执代表沿原两会话与两位置预算执行：来源会话恢复到另一位置后再次卸载，
 另一 owner 一直保持原占用。原门先核对实际删除完成、完整 work/plan、已采纳的后继材料
@@ -645,6 +646,13 @@ PID/start 回执及尚未记录的 Cleanup 回执；动作缺失、退出码不�
 保存动作时，公开接受、Host 版本、本地操作、终止 epoch、命令及 Stop 回执中的身份字段
 须保持 JSON 整数类型。Cleanup 的未记录回执要求原列为 SQL NULL；存储的 JSON `null`
 须拒绝并保留原故障现场。
+
+`slot-reuse-late-slot-close` 使用同一助手和制备要求。门只在原 CleanupSlot 返回
+成功观察后让 Host 退出 86。门前从已完成的原 Resume 的 ConfigureNetwork 及其成功
+回执取得网络槽资源，门后在只读 Host SQLite 快照中要求当前原 Destroy 和唯一完整
+CleanupSlot 匹配该网络槽、来源代和终止 epoch，状态为 dispatched，回执列为 SQL NULL。
+先由产品完成原 A 的清理和结算。B 须在同一物理位置接续旧 VM 并拥有新分配的网络槽。
+旧动作结果、B 的槽绑定、namespace、cgroup、磁盘与 guest 都由原检查独立观察。
 
 重放期间所属 Host 保持停止。助手报告 v2 核对旧上下文绑定和释放被拒绝，记录实际
 占用者完整上下文，并按输入顺序分别记录每条动作的 logical action、attempt 及原执行结果。

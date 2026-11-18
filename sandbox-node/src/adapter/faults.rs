@@ -94,6 +94,7 @@ pub(super) fn after_execute(
                 | (Some("activate_vm"), core::Command::ActivateVm { .. })
                 | (Some("abort_prepare"), core::Command::AbortPrepare { .. })
                 | (Some("cleanup_vm"), core::Command::CleanupVm { .. })
+                | (Some("cleanup_slot"), core::Command::CleanupSlot { .. })
         ) {
             std::process::exit(86);
         }

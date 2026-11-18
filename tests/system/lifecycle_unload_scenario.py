@@ -785,7 +785,8 @@ def exercise(args):
     command_disconnect = args.scenario == 'command-disconnect'
     retirement_restart = args.scenario == 'material-retirement-restart'
     retirement_late_receipt = args.scenario == 'material-retirement-late-receipt'
-    late_stop_delete = args.scenario == 'slot-reuse-late-stop-delete'
+    late_slot_close = args.scenario == 'slot-reuse-late-slot-close'
+    late_host_actions = args.scenario == 'slot-reuse-late-stop-delete' or late_slot_close
     receipt_restart = args.scenario == 'unload-receipt-restart'
     resume_receipt_restart = args.scenario == 'resume-receipt-restart'
     normal_chain = args.scenario == 'normal' or command_disconnect or receipt_restart or resume_receipt_restart
@@ -793,7 +794,7 @@ def exercise(args):
     expired_window_replay = getattr(args, 'expired_window_replay', False)
     if expired_window_replay and args.scenario != 'normal':
         raise ValueError('expired-window replay extends only the original complete normal scenario')
-    if not normal_chain and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or expiry_case or freeze_terminal or retirement_late_receipt or late_stop_delete):
+    if not normal_chain and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or expiry_case or freeze_terminal or retirement_late_receipt or late_host_actions):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -805,7 +806,7 @@ def exercise(args):
     from lifecycle_resource_sampling import options as resource_options
     measure_resources, resource_interval = resource_options(args)
     helper = None
-    if late_stop_delete:
+    if late_host_actions:
         from lifecycle_late_host_actions import approved_probe
         helper = approved_probe(args)
     runtime = prepare(args)
@@ -925,9 +926,10 @@ def exercise(args):
         report['phase']='actual-slot-reuse'
         control=PublicUnloadScenario(runtime.services.sdk_url,runtime.foreign_key,
             runtime.owner_key,report['registration']['deployment'],deadline,owner='2')
-        if late_stop_delete:
-            from lifecycle_late_host_actions import exercise_late_stop_delete
-            exercise_late_stop_delete(runtime, client, control, saved, deadline, report, helper)
+        if late_host_actions:
+            from lifecycle_late_host_actions import exercise_late_host_actions
+            exercise_late_host_actions(runtime, client, control, saved, deadline, report, helper,
+                                       slot_close=late_slot_close)
             return report  # Common finally still preserves sessions and finishes runtime.
         control.create(runtime.create_parameters(owner=2))
         control_running=control.wait_running()
@@ -1741,7 +1743,7 @@ def main():
         'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-responsive-destroy','capture-freeze-receipt-destroy','capture-freeze-expiry','capture-freeze-receipt-expiry','capture-freeze-unresponsive-destroy','capture-freeze-unresponsive-expiry','capture-measurement-partial','capture-sync-before','capture-sync-after','capture-seal-receipt',
         'capture-publish-conflict','capture-sync-before-destroy','capture-sync-after-destroy',
         'capture-stop-receipt','capture-stop-pending','restore-prepare-receipt','restore-prepare-destroy',
-        'material-retirement-restart','material-retirement-late-receipt','slot-reuse-late-stop-delete','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
+        'material-retirement-restart','material-retirement-late-receipt','slot-reuse-late-stop-delete','slot-reuse-late-slot-close','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     parser.add_argument('--stale-probe',type=Path)
     parser.add_argument('--stale-probe-sha256')
