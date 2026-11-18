@@ -163,6 +163,13 @@ SQLite/Redis 责任、实际 VM/文件/网络及额度。产品收尾通过之�
 
 E14 的显式 `--scenario command-disconnect` 保留同一正常链的两 owner、实际位置复用、三轮保存/恢复、源文件核对、旧代材料回收与最终 Destroy/结算，实际执行与收尾结果按对应候选的 issue/PR 记录。它只对原 RAM witness 的唯一公开 PID 调用固定 SDK 2.51.0 的 `commands.connect`，在首个 Start 事件返回后由同一线程单次 `handle.disconnect`；不并发关闭正在执行的生成器，不调用 kill/close_stdin，也不重发未知 Connect 或改用 Start。首次 Unload 前及每次 Resume 后各执行一次，并用原受保护 helper route 和原 pidfd 确认对应 host relay 的内核退出，再经独立有限命令确认原 guest PID/start ticks/RAM nonce 不变、RAM counter 与磁盘标记继续进展。每轮恢复仍先由原场景核对新元数据/激活 RAM 与旧凭据拒绝，再用新授权连接原 PID。客户端关闭返回不等于内核退出，relay 退出也不表示 guest 退出或全部服务端登记已退休。报告不保存 bearer 或原 RAM nonce。这一静默命令订阅代表不覆盖任意 stdout/stderr 中断、卸载撤销时仍持有的命令流或网络连接连续性；普通自测的 SDK/受保护 route 提供方是受控输入，真实 Linux 子进程与 pidfd 检查也不代替 KVM 验收。
 
+`--scenario command-drain` 保持原 SDK 静默命令订阅到第一次 Unload 接受后。用原
+数据排空门和 helper route 的 pidfd 持住同一个 relay，观察原驱动因未排空返回 Busy、
+没有派发 Freeze/Seal 且旧授权拒绝。放行同一 relay 后先观察真实内核退出，再单次
+关闭原 SDK 订阅。原恢复链需以新授权重新连接同一 RAM witness PID，并核对原进程、
+RAM 和磁盘继续；新订阅的 relay 也须退出。实机回执另记。范围为静默 Start 订阅，
+不包含任意输出中断或连接延续。
+
 正常链复现与收尾按下列顺序记录，不能用测试环境卸载工作卷来代替产品回收：
 
 1. 固定干净源码提交和实际 Center/Host 二进制清单；保留优化构建的调试断言及溢出检查。

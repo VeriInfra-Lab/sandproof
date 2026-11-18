@@ -747,7 +747,8 @@ def exercise(args):
     expiry_case = expiry_prepare or expiry_running
     prepare_destroy = args.scenario == 'restore-prepare-destroy' or expiry_prepare
     prepare_fault = args.scenario in ('restore-prepare-receipt', 'restore-prepare-destroy') or expiry_prepare
-    data_drain = args.scenario == 'data-drain'
+    command_drain = args.scenario == 'command-drain'
+    data_drain = args.scenario == 'data-drain' or command_drain
     command_disconnect = args.scenario == 'command-disconnect'
     retirement_restart = args.scenario == 'material-retirement-restart'
     receipt_restart = args.scenario == 'unload-receipt-restart'
@@ -812,11 +813,15 @@ def exercise(args):
             report['unload_receipt_restart'] = receipt_probe.arm(
                 client.create_acceptance, report['running'], deadline)
         if data_drain:
-            from lifecycle_unload_data_drain import InflightDataDrain
             gate = runtime.arm_data_drain(deadline)
-            data_probe = InflightDataDrain(client, report['running'],
-                runtime.services.native_pools[0], runtime.services.host_configs[0],
-                gate, runtime.lease.identity)
+            if command_drain:
+                from lifecycle_command_disconnect import InflightCommandDrain
+                data_probe = InflightCommandDrain(runtime, client, report['running'], gate)
+            else:
+                from lifecycle_unload_data_drain import InflightDataDrain
+                data_probe = InflightDataDrain(client, report['running'],
+                    runtime.services.native_pools[0], runtime.services.host_configs[0],
+                    gate, runtime.lease.identity)
             report['data_drain_begin'] = data_probe.begin()
         report['phase'] = 'public-unload'
         report['unload'] = client.unload(running,concurrent_duplicate=True)
@@ -829,7 +834,9 @@ def exercise(args):
         if data_probe is not None:
             report['phase'] = 'original-inflight-drain-held'
             report['data_drain_held'] = data_probe.wait_held(client.unload_acceptance)
-            data_probe.release()
+            release = data_probe.release()
+            if command_drain:
+                report['data_drain_released'] = release
         client.assert_data_closed()
         if receipt_restart:
             report['phase'] = 'unload-receipt-center-interruption'
@@ -1073,7 +1080,8 @@ def exercise(args):
             if cycle == 1 and prepare_fault:
                 report['capture_handoff_same_candidate'] = capture_probe.assert_restored_candidate(physical_running)
             if cycle == 1 and data_probe is not None:
-                report['data_drain_resumed'] = data_probe.assert_resumed()
+                report['data_drain_resumed'] = (data_probe.assert_resumed(physical_running)
+                    if command_drain else data_probe.assert_resumed())
             if command_probe is not None:
                 report['phase'] = 'original-command-reconnect-' + str(cycle)
                 report['command_disconnect'].append(command_probe.observe(resumed, physical_running, cycle=cycle))
@@ -1355,6 +1363,11 @@ def exercise(args):
             }
         if data_probe is not None:
             report['data_drain_gate_cleanup'] = data_probe.cleanup_after_success(runtime)
+        if command_drain:
+            report['acceptance_cases']['E14'] = (
+                'original SDK command subscription open at Unload; exact native Busy and no dispatched '
+                'Freeze/Seal while the original relay was held; pidfd exit before local disconnect; '
+                'new authorization reconnects the same resumed guest PID and RAM')
         if command_probe is not None:
             report['acceptance_cases']['E14'] = (
                 'four original SDK Connect subscriptions to one RAM-only guest PID; '
@@ -1471,7 +1484,7 @@ def main():
         help='extend complete normal with natural window retirement/replay; original deadline retained')
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit','restore-activation-destroy',
         'continued-after-capture-exit','continued-before-admission-exit',
-        'data-drain','command-disconnect','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
+        'data-drain','command-drain','command-disconnect','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)

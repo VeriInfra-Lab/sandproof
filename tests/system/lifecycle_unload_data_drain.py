@@ -201,7 +201,6 @@ class InflightDataDrain:
 
     def begin(self):
         """Actual guest bytes plus the exact live durable route are the barrier."""
-        from lifecycle_unload_runtime import open_original_candidate_pidfd
         sdk = self.client.sdk()
         baseline = _live_routes(self.native, self.running)
         address = urlsplit(self.client.base_url)
@@ -245,6 +244,13 @@ class InflightDataDrain:
             raise RuntimeError('one exact newly accepted live upload route not observed')
         if select.select([connection.sock], [], [], 0)[0]:
             raise RuntimeError('partial upload already has a reply/EOF; no in-flight work inferred')
+        self._hold_original_route()
+        self.report.update(guest_prefix_observed=True,
+                           actual_admission='guest exact prefix + original durable live route')
+        return self.report.copy()
+
+    def _hold_original_route(self):
+        from lifecycle_unload_runtime import open_original_candidate_pidfd
         self.source = self.route['process']
         self.pidfd = open_original_candidate_pidfd(self.source)
         self._bound_source = self.source.copy()
@@ -261,9 +267,7 @@ class InflightDataDrain:
             output.flush()
             os.fsync(output.fileno())
         self._remember_control('selected.arm', self.arm_bytes)
-        self.report.update(guest_prefix_observed=True, original_route=self.route,
-                           actual_admission='guest exact prefix + original durable live route')
-        return self.report.copy()
+        self.report['original_route'] = self.route
 
     def _relay_state(self):
         from lifecycle_unload_runtime import pidfd_exited
@@ -332,7 +336,7 @@ class InflightDataDrain:
                 raise AssertionError('held original relay exited before gate release')
             self._require_paused_relay()
             if original_json(self.marker, 16384) != self.route:
-                raise ValueError('original upload route changed while held')
+                raise ValueError('original data relay changed while held')
             state, actions = _capture_state(self.native, self.running, gate_deadline)
             actions = [row for row in actions if json.dumps(row['action'], sort_keys=True)
                        not in self.baseline_actions]
@@ -371,6 +375,11 @@ class InflightDataDrain:
         return self.report.copy()
 
     def release(self):
+        self._release_relay()
+        self.connection.close()
+        self.connection = None
+
+    def _release_relay(self):
         if self.peer is None or self.accepted is None:
             raise RuntimeError('original accepted Unload and reached gate required')
         _remaining(self.deadline)
@@ -382,8 +391,6 @@ class InflightDataDrain:
         from lifecycle_unload_runtime import pidfd_exited
         while not pidfd_exited(self.pidfd, min(1000, int(_remaining(self.deadline) * 1000))):
             _remaining(self.deadline)
-        self.connection.close()
-        self.connection = None
         self.report.update(original_relay_exit_observed=True, gate_released=True)
 
     def assert_resumed(self):
