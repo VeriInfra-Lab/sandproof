@@ -1,6 +1,6 @@
 """Original audit DTO and inherited frozen consumers; no VM or clock changes."""
 import copy
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 import hashlib
 import json
 from pathlib import Path
@@ -15,6 +15,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'tests/system'))
 import lifecycle_freeze_expiry as expiry
 import lifecycle_freeze_destroy as frozen
+import lifecycle_unload_capture_faults as capture
 from tools.tests import test_lifecycle_freeze_destroy as original
 from tools.tests import test_internal_fault_relay as transport
 
@@ -69,6 +70,7 @@ def fixture(root):
     p.expiry_baseline = expiry.frozen_baseline(before,p.client.create_acceptance,intents,f.node,lifetime)
     p.automatic_acceptance = None
     p._source_state = Mock(return_value='T')
+    p.observe_destroy_window = Mock(return_value={'freeze_sql_receipt_pending': True})
     center = Mock();center.poll.return_value = None
     processes = Mock();processes.children = {'center':center}
     processes.bindings = p.runtime.services.processes.bindings
@@ -366,13 +368,15 @@ class FrozenExpiryObservationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
             f=fixture(Path(directory));p=f.probe;events=[]
             def clock():
-                events.append('clock');return 999 if len(events)==1 else 1000
+                events.append('clock');return 999 if events.count('clock') <= 2 else 1000
+            p.observe_destroy_window.side_effect = lambda _: events.append('freeze-window') or {'held': True}
             f.processes.stop.side_effect=lambda *_:events.append('stop-center')
             f.processes.audit.side_effect=lambda *_:events.append('audit') or f.after
             f.processes.start.side_effect=lambda *_:events.append('start-center')
             stack.enter_context(patch.object(expiry,'now_ms',side_effect=clock))
             result=p.observe_expiry(p.deadline)
-            self.assertEqual(events[:5],['clock','clock','stop-center','audit','start-center'])
+            self.assertEqual(events, ['clock', 'freeze-window', 'clock', 'clock', 'stop-center',
+                                      'audit', 'start-center', 'clock', 'clock', 'freeze-window'])
             self.assertEqual(result['acceptance'],f.accepted)
             self.assertEqual(p.client.current_acceptance,f.accepted)
             self.assertFalse(result['explicit_destroy_sent'])
@@ -387,14 +391,73 @@ class FrozenExpiryObservationTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
             f=fixture(Path(directory));p=f.probe
             f.processes.audit.side_effect=[f.before,f.after]
-            stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,1000,1000,1000,1000]))
+            stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,999,1000,1000,1000,1000]))
             sleep=stack.enter_context(patch.object(expiry.time,'sleep'))
             result=p.observe_expiry(p.deadline)
             self.assertEqual(result['center_audits'],2);sleep.assert_called_once()
             self.assertEqual(f.processes.start.call_count,2)
 
+    def test_expiry_audit_brackets_the_original_unacknowledged_freeze_in_sqlite(self):
+        for fault in (None, 'receipt-before-expiry', 'receipt-after-audit'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+                f = fixture(Path(directory))
+                p = f.probe
+                del p.observe_destroy_window
+                database = original.freeze_window_journal(f)
+                f.processes.children['host-0'] = p.host
+                endpoint = original.controlled_frozen_endpoint(p)
+                stack.enter_context(patch.object(capture, 'checked_source_records', return_value=f.rows))
+                stack.enter_context(patch.object(expiry, 'now_ms', side_effect=[999, 999, 1000, 1000, 1000]))
+
+                def save_receipt():
+                    source = p.prior['source']
+                    receipt = f.receipt(f.freeze, 'Frozen', dict(pid=source['pid'],
+                        start_ticks=source['start_time_ticks'], boot_id=source['boot_id']))
+                    with closing(sqlite3.connect(database)) as conn, conn:
+                        conn.execute("UPDATE outbox SET dispatch_state='receipted',receipt_json=? WHERE id=1",
+                                     (json.dumps(receipt).encode(),))
+
+                def audit(_):
+                    if fault == 'receipt-after-audit':
+                        save_receipt()
+                    return f.after
+
+                f.processes.audit.side_effect = audit
+                if fault == 'receipt-before-expiry':
+                    save_receipt()
+                if fault is None:
+                    result = p.observe_expiry(p.deadline)
+                    window = result['freeze_receipt_window']
+                    self.assertEqual(window['before'], window['after'])
+                    self.assertTrue(window['after']['freeze_sql_receipt_pending'])
+                    self.assertEqual(window['after']['host_nonterminal_pause'], original.pending_pause(f)['current_operation'])
+                    self.assertEqual(window['after']['original_vmm_endpoint'], endpoint.return_value)
+                    self.assertEqual(endpoint.call_count, 2)
+                    f.processes.audit.assert_called_once_with('center')
+                else:
+                    with self.assertRaisesRegex(ValueError, 'one exact dispatched action with no SQL receipt'):
+                        p.observe_expiry(p.deadline)
+                    failure = p.terminal_failure_state()
+                    if fault == 'receipt-before-expiry':
+                        f.processes.audit.assert_not_called()
+                        self.assertIsNone(failure['observed_automatic_acceptance'])
+                        self.assertEqual(p.client.current_acceptance, p.accepted)
+                    else:
+                        f.processes.audit.assert_called_once_with('center')
+                        f.processes.start.assert_called_once_with('center')
+                        self.assertEqual(failure['observed_automatic_acceptance'], f.accepted)
+                        self.assertEqual(set(failure['freeze_receipt_window']), {'before'})
+                        self.assertEqual(p.client.current_acceptance, f.accepted)
+                    with self.assertRaisesRegex(ValueError, 'only the audited automatic terminal acceptance'):
+                        p._bind_destroy(f.accepted)
+                    self.assertIsNone(p.terminal_accepted)
+                    self.assertFalse(failure['source_os_continue_sent'])
+                    self.assertFalse(failure['stop_gate_release_sent'])
+                p.client.query.assert_not_called()
+                p.client.destroy.assert_not_called()
+
     def test_explicit_destroy_early_expiry_or_dead_center_cannot_certify_autonomous_expiry(self):
-        for fault in ('destroy','early','center','host','source','changed-current'):
+        for fault in ('destroy','early','window-crossed-expiry','center','host','source','changed-current'):
             with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 f=fixture(Path(directory));p=f.probe
                 if fault=='destroy':p.client.destroy_request={}
@@ -402,16 +465,19 @@ class FrozenExpiryObservationTests(unittest.TestCase):
                 if fault=='host':p.host.poll.return_value=0
                 if fault=='source':p._source_state.return_value='R'
                 if fault=='changed-current':p.client.current_acceptance={}
-                stack.enter_context(patch.object(expiry,'now_ms',side_effect=[1000] if fault=='early' else [999,1000]))
+                times = {'early': [1000], 'window-crossed-expiry': [999, 1000]}
+                stack.enter_context(patch.object(expiry, 'now_ms', side_effect=times.get(fault, [999, 999, 1000])))
                 with self.subTest(fault=fault),self.assertRaises(ValueError):p.observe_expiry(p.deadline)
                 f.processes.audit.assert_not_called();p.client.query.assert_not_called();p.client.destroy.assert_not_called()
                 self.assertIsNone(p.automatic_acceptance);self.assertFalse(p.stop_released)
+                if fault == 'window-crossed-expiry':
+                    self.assertEqual(set(p.terminal_failure_state()['freeze_receipt_window']), {'before'})
 
     def test_audit_failure_restarts_center_and_keeps_original_unload_and_hold(self):
         with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
             f=fixture(Path(directory));p=f.probe;prior=copy.deepcopy(p.client.current_acceptance)
             f.processes.audit.side_effect=ValueError('invalid original audit')
-            stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,1000]))
+            stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,999,1000]))
             with self.assertRaises(ValueError):p.observe_expiry(p.deadline)
             f.processes.start.assert_called_once_with('center')
             self.assertEqual(p.client.current_acceptance,prior)
@@ -465,7 +531,7 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                 with self.subTest(probe=probe_type.__name__,fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                     f=fixture(Path(directory));p=f.probe;p.__class__=probe_type
                     if fault!='unobserved':
-                        stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,1000,1000,1000]))
+                        stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,999,1000,1000,1000]))
                         p.observe_expiry(p.deadline)
                     value=copy.deepcopy(f.accepted)
                     if fault=='destroy':p.client.destroy_request={}
@@ -485,7 +551,7 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
             with self.subTest(fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                 f=fixture(Path(directory));p=f.probe;p.__class__=expiry.OrderedFreezeExpiryProbe
                 endpoint=original.controlled_frozen_endpoint(p)
-                stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,1000,1000,1000]))
+                stack.enter_context(patch.object(expiry,'now_ms',side_effect=[999,999,1000,1000,1000]))
                 accepted=p.observe_expiry(p.deadline)['acceptance'];p._bind_destroy(accepted)
                 snapshot=copy.deepcopy(f.snapshot)
                 fence=snapshot['terminal_actions'][0][0]
