@@ -135,11 +135,15 @@ def preserve_binary(binary, output, variant):
     return dict(path=str(path), sha256=sha(path))
 
 
+def source_directories(files):
+    return {parent.as_posix() for name in files for parent in Path(name).parents
+            if parent != Path('.')}
+
+
 def unpack(archive, project, tree):
     inputs = {}
     seen = set()
-    directories = {str(parent) for name in tree for parent in Path(name).parents
-                   if str(parent) != '.'}
+    directories = source_directories(tree)
     with tarfile.open(archive) as stream:
         for item in stream.getmembers():
             path = Path(item.name)
@@ -166,13 +170,38 @@ def unpack(archive, project, tree):
 
 
 def check_inputs(project, inputs, changed=None, *, source=SOURCE):
-    for name, expected in inputs.items():
-        path = project / name
-        info = path.lstat()
-        digest = changed if name == str(source) and changed else expected['sha256']
-        if (not stat.S_ISREG(info.st_mode) or sha(path) != digest
-                or stat.S_IMODE(info.st_mode) != expected['mode']):
-            raise ValueError('Source inputs changed during the check: ' + name)
+    source_name = str(source)
+    if changed is not None:
+        baseline = inputs.get(source_name)
+        if baseline is None or changed == baseline['sha256']:
+            raise ValueError('Require a changed digest for the registered mutation source')
+    if not stat.S_ISDIR(project.lstat().st_mode):
+        raise ValueError('Require the actual extracted source directory')
+
+    directories = source_directories(inputs)
+    pending = [project]
+    checked = set()
+    while pending:
+        with os.scandir(pending.pop()) as entries:
+            for entry in entries:
+                path = Path(entry.path)
+                name = path.relative_to(project).as_posix()
+                info = entry.stat(follow_symlinks=False)
+                if stat.S_ISDIR(info.st_mode):
+                    if name not in directories:
+                        raise ValueError('Unexpected directory in extracted source: ' + name)
+                    pending.append(path)
+                    continue
+                expected = inputs.get(name)
+                if expected is None:
+                    raise ValueError('Unexpected input in extracted source: ' + name)
+                digest = changed if name == source_name and changed is not None else expected['sha256']
+                if (not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                        or stat.S_IMODE(info.st_mode) != expected['mode'] or sha(path) != digest):
+                    raise ValueError('Source inputs changed during the check: ' + name)
+                checked.add(name)
+    if missing := inputs.keys() - checked:
+        raise ValueError('Missing input in extracted source: ' + min(missing))
 
 
 def mark_actual_lib_for_rebuild(project, *, package_dir=PACKAGE_DIR):
@@ -271,9 +300,10 @@ def run(args, *, case=None):
         original = work / 'original'
         original.mkdir(mode=0o700)
         inputs = unpack(args.archive, original, tree)
+        result['inputs'] = inputs
+        check_inputs(original, inputs)
         if sha(original / case.HERE / 'native.py') != sha(Path(case.__file__)):
             raise ValueError('Driver differs from archived candidate')
-        result['inputs'] = inputs
         original_fixture = case.fixture_digest(original)
         lock_fd = os.open(args.lock, os.O_RDWR | os.O_NOFOLLOW | os.O_CLOEXEC)
         with os.fdopen(lock_fd, 'r+') as lock:
@@ -306,6 +336,7 @@ def run(args, *, case=None):
                     project, env)
                 if build.returncode != 0:
                     raise ValueError('Compilation failed, not a property rejection: ' + variant)
+                check_inputs(project, inputs, changed, source=case.SOURCE)
                 binary = checked_binary(build.stdout, project, target,
                     package_dir=case.PACKAGE_DIR, crate=case.CRATE)
                 binary['preserved'] = preserve_binary(binary, out, variant)
