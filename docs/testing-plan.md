@@ -385,6 +385,14 @@ cargo test -p sandbox-runtime --locked --lib \
 保留。原双路径的配额负例仍可独立运行。本对照只验证文件层克隆与保留责任，产品继续运行、
 数据库记账和最终回收须由各自实机场景取证。
 
+E11 的[清单短写对照](../sandbox-runtime/src/snapshot_store_tests.rs)以单独子进程运行
+`actual_manifest_short_write_retains_stage_and_allows_healthy_publication`。原 XFS 三件
+材料可写入并克隆，同一子进程的 `RLIMIT_FSIZE=128` 与忽略 SIGXFSZ 只作用于该进程。
+原发布入口须留下清单的 128 字节前缀并返回 EFBIG，原 staging 和已测材料保持，旧键
+不能打开或重新接管。提高该子进程上限后，以独立新键用同一源材料完成发布及读回。
+重开 store 后用原有计划精确回收残件，保留新包和原来源。只验证文件层短写及收尾，
+主机空间/配额、数据库责任和真实 VM 的结果各自验收。
+
 捕获故障点须对应真实克隆前后、目标摘要读取、同步与发布窗口；不能将摘要读取进度
 标成复制写入。恢复失败不得发布 Loaded/Ready、解除 source pin 或回退另一个 capture。
 事件选择使用同一 `SnapshotArtifactEvent` 及原 artifact/work 身份；`Cloned` 不等于
