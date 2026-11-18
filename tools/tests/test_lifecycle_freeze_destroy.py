@@ -408,7 +408,7 @@ class FrozenFactsTests(unittest.TestCase):
                         else:
                             rows[0]['work']['anchor']['local']['operation'] += 1
                         records.return_value = rows
-                        with self.assertRaisesRegex(ValueError, 'material responsibility changed at public Destroy'):
+                        with self.assertRaisesRegex(ValueError, 'material responsibility changed in the receipt window'):
                             p.observe_destroy_window(p.deadline)
                 held.assert_called_once()
 
@@ -926,7 +926,7 @@ class FreezeStopWiringTests(unittest.TestCase):
                     f=automatic_fixture(Path(directory));p=f.probe
                     if ordered:p.__class__=automatic_expiry.OrderedFreezeExpiryProbe
                     if unresponsive:p.__class__=automatic_expiry.UnresponsiveFreezeExpiryProbe
-                    with patch.object(automatic_expiry,'now_ms',side_effect=[999,1000,1000,1000]):
+                    with patch.object(automatic_expiry,'now_ms',side_effect=[999,999,1000,1000,1000]):
                         accepted=p.observe_expiry(p.deadline)['acceptance']
                     recovery=p.recover_after_expiry
                     fault=fault.removeprefix('automatic-')

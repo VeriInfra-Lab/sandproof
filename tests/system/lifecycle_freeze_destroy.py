@@ -251,16 +251,16 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         return endpoint
 
     def observe_destroy_window(self, deadline):
-        """Re-read the original cut on either side of the public Destroy."""
+        """Re-read the original Host cut around public Destroy or audited expiry."""
         deadline = min(deadline, self.deadline)
         self._configuration()
         entry, rows, actions, (registered, native) = self._read(
             deadline, extra=self._destroy_window_facts, require_nonterminal=True)
         action = self._original_action(actions, entry)
         if not equal(entry, self.unload_entry) or not equal(action, self.action):
-            raise ValueError('original Unload or complete Freeze changed at public Destroy')
+            raise ValueError('original Unload or complete Freeze changed in the receipt window')
         if not registered:
-            raise ValueError('original Freeze logical registration differs at public Destroy')
+            raise ValueError('original Freeze logical registration differs in the receipt window')
         binding = self.prior['context']['binding']
         epoch = action['identity']['epoch']
         pause = dict(id=entry['local_operation'], epoch=epoch, kind='Pause', status='Pending')
@@ -271,18 +271,18 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
                 or not equal(native['generation'], binding['generation'])
                 or not equal(native['current_vm'], binding['vm'])
                 or not equal(native['net_slot'], binding['network'])):
-            raise ValueError('original nonterminal native Pause must remain current at public Destroy')
+            raise ValueError('original nonterminal native Pause must remain current in the receipt window')
         if any(CAPTURE_COMMANDS & saved['command']['logical']['command'].keys()
                for saved, _, _ in actions):
-            raise ValueError('original Unload outbox contains a capture action at public Destroy')
+            raise ValueError('original Unload outbox contains a capture action in the receipt window')
         self._no_full(rows)
         if not equal(self._responsibilities(rows), self._responsibilities(self.initial_sources)):
-            raise ValueError('original work, backing pin or material responsibility changed at public Destroy')
+            raise ValueError('original work, backing pin or material responsibility changed in the receipt window')
         self._backing(rows)
         self._check_source_hold(deadline)
         host = self.runtime.services.processes.children.get('host-0')
         if host is None or host is not self.host or host.poll() != self._cut_exit_code():
-            raise ValueError('original Freeze cut Host must remain exited at public Destroy')
+            raise ValueError('original Freeze cut Host must remain exited in the receipt window')
         endpoint = self._observe_frozen_endpoint(deadline)
         remaining(deadline)
         return dict(host_pid=host.pid, host_exit_code=self._cut_exit_code(),

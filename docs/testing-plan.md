@@ -565,6 +565,11 @@ intent/context/版本/期望版本及独立 retention 与原 Host 意图一致�
 无自动决定则按原期限继续观察，未知或其它改变即失败。第一会话不调用 Destroy，原未完成
 Unload 不算完成，也不生成主动 Destroy 的耗时样本；结算耗时从原审计观察的单调时间起算，不把最后一次 Unload 的发送时间标为 Destroy。
 
+三种冻结到期入口共用公开 Destroy 的原 Host 回执窗口观察器。在实际 TTL 之前、中心审计
+读到自动接受之后各核一次原 Freeze 的 SQL 空回执、完整注册和当前 Pause，保留原背衬材料
+责任、暂停 pidfd 和初次 Paused 端点。报告的 `freeze_receipt_window` 保留两次见证。
+后一轮核对失败时仍保留已从审计取得的自动接受和前一次见证，禁止进入 Host 终止恢复。
+
 随后沿同一原 Host/Kill/围栏/唯一全局 Stop、backing pin/正额度、另一 owner 真实进展、
 原 Paused 复查、Stop 回执/pidfd 退出及 Cleanup/GC 收尾；Terminating/Cleaned 的历史重放
 和严格结算沿用上述合同。失败保留已审计接受、原责任及暂停状态，不自动放行。该有限
