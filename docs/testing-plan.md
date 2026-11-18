@@ -492,8 +492,10 @@ Host SQLite 事务核对原 Unload、完整 Freeze、对应的逻辑动作登记
 及原 outbox 无 Seal/Commit。
 报告两侧的 `freeze_logical_action_registered` 均须为 true。前置核对失败时不发送 Destroy，
 后置核对失败时保留原接受和首错。
-该场景将顺序控制保持到原 Host 已持久接受准确的 Kill。只读核对当前终止版本、
-本地映射、原来源及 backing 责任后恢复同一 VMM 进程应答，
+该场景将顺序控制保持到原 Host 已持久接受准确的 Kill。恢复同一 VMM 应答前，
+同一只读快照须确认当前 Kill 的 epoch 晚于原 Freeze、两条操作的 outbox 保留原
+Freeze 且无 Seal/Commit/Prepare/Activate，并核对本地映射、原来源及 backing 责任。
+旧 Freeze 仍可待回执。额外动作或错配保留原暂停现场。恢复应答后，
 随后仍用原规则核对终止围栏、同源 Stop、材料、同伴进展与退出/GC。它不会等 Stop 才
 SIGCONT；初始短暂的进程停止及恢复时刻单列，不能称为全程无进程停止。自由应答对照
 可能在 Host 收到 Destroy 前已派发 Full；应按原输入日志区分在途旧工作与终止后新派发，
@@ -551,7 +553,7 @@ E8/E15 场景有受控审计、真实 Unix Stop 门及编排自测；尚无本�
 `FreezeExpiryProbe` 的真实 TTL、原 Rust 审计和自动接受绑定，再复用
 `OrderedFreezeDestroyProbe` 的 Host 持久 Kill 核对及恢复应答钩子。中心审计观察到自动
 接受尚不足以 SIGCONT；必须先只读核对原 Host 的完整自动意图、本地映射、当前 Kill、
-同源 VM/网络及原 backing/pin/正额度，随后恢复同一 pidfd 的 VMM 应答，才等待原终止
+同源 VM/网络、上述 outbox 与原 backing/pin/正额度，随后恢复同一 pidfd 的 VMM 应答，才等待原终止
 围栏和 Stop。恢复快照可为旧 Freeze dispatched/无回执、新围栏 ready/无回执，不能等
 Stop 才恢复应答形成测试等待环。其余原 Stop、Paused 复查、同伴、退出、Cleanup/GC、
 重放和结算检查全部沿用；第一会话不发 Destroy，不虚构自动接受时间或重置寿命。

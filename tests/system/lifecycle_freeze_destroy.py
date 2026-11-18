@@ -494,13 +494,14 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
             except _AwaitTerminal:
                 time.sleep(min(.01,remaining(deadline)))
         native=snapshot['native'];binding=self.prior['context']['binding'];operation=native['current_operation']
-        _u64(native['epoch'])
+        epoch = _u64(native['epoch'])
         if (native['terminal'] is not True or native['phase']!='Revoking' or operation is None
                 or operation['kind']!='Kill' or not equal(operation['id'],snapshot['terminal']['local_operation'])
-                or not equal(operation['epoch'],native['epoch']) or not equal(native['generation'],binding['generation'])
+                or not equal(operation['epoch'],epoch) or epoch<=self.action['identity']['epoch']
+                or not equal(native['generation'],binding['generation'])
                 or not equal(native['current_vm'],binding['vm']) or not equal(native['net_slot'],binding['network'])):
             raise ValueError('durable exact original Kill required before restoring VMM response')
-        self._no_full(snapshot['sources'],terminal=True)
+        self._inventory(snapshot)
         backing=self._backing(snapshot['sources'])
         if (not equal(self._responsibilities(snapshot['sources']),self._responsibilities(self.initial_sources))
                 or not equal(self.runtime._materials(backing['capture']['full'],backing['capture']),self.backing_material)):
