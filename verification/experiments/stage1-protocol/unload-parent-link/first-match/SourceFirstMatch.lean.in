@@ -1,0 +1,147 @@
+import FirstMatchInputs
+
+open Aeneas Aeneas.Std SandproofSourceFirstMatch alloc.vec
+open controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceFirstMatch
+
+private theorem add_one (i : Usize) (bound : i.val + 1 ≤ Usize.max) (next : Usize)
+    (value : next.val = i.val + 1) : ((i + 1#usize) : Result Usize) = .ok next := by
+  obtain ⟨actual, returned, post⟩ := WP.spec_imp_exists
+    (Usize.add_bv_spec (x := i) (y := 1#usize) (by simpa using bound))
+  have same : actual = next := by scalar_tac
+  simpa only [same] using returned
+
+private theorem vector_lookup {R : Type} (v : Vec R) (i : Usize) (inside : i.val < v.val.length) :
+    alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice R) v i = .ok v.val[i.val] := by
+  obtain ⟨actual, returned, rfl⟩ := WP.spec_imp_exists (Vec.index_usize_spec v i inside)
+  exact returned
+
+/-- A bounded forward loop returns the decision on the first selected value. -/
+theorem indexed_first {R : Type} (values : Vec R) (select decideOn : R → Bool) (missing : Bool)
+    (body : Usize → Result (ControlFlow Usize Bool))
+    (atEnd : ∀ i, values.val.length ≤ i.val → body i = .ok (.done missing))
+    (atStep : ∀ i next, ∀ inside : i.val < values.val.length, next.val = i.val + 1 →
+      body i = .ok (if select values.val[i.val] then .done (decideOn values.val[i.val]) else .cont next))
+    (index : Usize) :
+    loop body index = .ok (((values.val.drop index.val).find? select).elim missing decideOn) := by
+  induction remaining : values.val.length - index.val using Nat.strong_induction_on generalizing index with
+  | h remaining ih =>
+    conv_lhs => rw [loop]
+    by_cases inside : index.val < values.val.length
+    · let next := Usize.ofNatCore (index.val + 1) (by scalar_tac)
+      have advanced : next.val = index.val + 1 := rfl
+      have lookup : (values.val.drop index.val).find? select =
+          match select values.val[index.val] with
+          | true => some values.val[index.val]
+          | false => (values.val.drop (index.val + 1)).find? select := by
+        rw [List.drop_eq_getElem_cons inside, List.find?_cons]
+        rfl
+      rw [atStep index next inside advanced, lookup]
+      cases select values.val[index.val] with
+      | true =>
+        rw [Aeneas.Std.bind_ok]
+        rfl
+      | false =>
+        have later := ih (values.val.length - next.val) (by omega) next rfl
+        rw [Aeneas.Std.bind_ok]
+        change loop body next = _
+        simpa only [advanced] using later
+    · rw [atEnd index (by omega)]
+      simp [List.drop_eq_nil_of_le (by omega : values.val.length ≤ index.val)]
+
+theorem record_loop_refines {R K : Type} (checks : Checks R K) (known : K → R → Bool)
+    (sameWork keeps : R → R → Bool) (observed : Observations checks known sameWork keeps)
+    (old : R) (sources : Vec R) (index : Usize) :
+    retains_record_using_loop checks old sources index =
+      .ok (firstPreserves sameWork keeps old (sources.val.drop index.val)) := by
+  unfold retains_record_using_loop firstPreserves
+  apply indexed_first sources (fun next => sameWork next old) (keeps old) false
+  · intro i outside
+    simp [retains_record_using_loop.body, UScalar.lt_equiv, Nat.not_lt.mpr outside]
+  · intro i next inside advanced
+    have bound := Nat.le_trans (Nat.succ_le_of_lt inside) sources.property
+    simp [retains_record_using_loop.body, UScalar.lt_equiv, inside,
+      vector_lookup sources i inside, observed.same, observed.facts, add_one i bound next advanced]
+    split <;> rfl
+
+theorem record_refines {R K : Type} (checks : Checks R K) (known : K → R → Bool)
+    (sameWork keeps : R → R → Bool) (observed : Observations checks known sameWork keeps)
+    (old : R) (sources : Vec R) (keys : K) :
+    retains_record_using checks old sources keys = .ok (retained known sameWork keeps keys sources.val old) := by
+  cases has : known keys old <;>
+    simp [retains_record_using, observed.key, has, retained, record_loop_refines checks known sameWork keeps observed]
+
+private theorem all_as_first {R : Type} (p : R → Bool) (xs : List R) :
+    (xs.find? (fun x => !p x)).elim true (fun _ => false) = xs.all p := by
+  induction xs with
+  | nil => rfl
+  | cons record rest ih => cases h : p record <;> simp [h, ih]
+
+theorem inventory_refines {R K : Type} (checks : Checks R K) (known : K → R → Bool)
+    (sameWork keeps : R → R → Bool) (observed : Observations checks known sameWork keeps)
+    (current sources : Vec R) (keys : K) :
+    retains_inventory_using checks current sources keys =
+      .ok (current.val.all (retained known sameWork keeps keys sources.val)) := by
+  let p := retained known sameWork keeps keys sources.val
+  unfold retains_inventory_using retains_inventory_using_loop
+  have scanned := indexed_first current (fun old => !p old) (fun _ => false) true
+    (retains_inventory_using_loop.body checks current sources keys)
+  have atEnd (i : Usize) (outside : current.val.length ≤ i.val) :
+      retains_inventory_using_loop.body checks current sources keys i = .ok (.done true) := by
+    simp [retains_inventory_using_loop.body, UScalar.lt_equiv, Nat.not_lt.mpr outside]
+  have atStep (i next : Usize) (inside : i.val < current.val.length) (advanced : next.val = i.val + 1) :
+      retains_inventory_using_loop.body checks current sources keys i =
+        .ok (if !p current.val[i.val] then .done false else .cont next) := by
+    have bound := Nat.le_trans (Nat.succ_le_of_lt inside) current.property
+    cases h : p current.val[i.val] <;>
+      simp [p] at h ⊢ <;>
+      simp [retains_inventory_using_loop.body, UScalar.lt_equiv, inside, vector_lookup current i inside,
+        record_refines checks known sameWork keeps observed, h, add_one i bound next advanced]
+  simpa [all_as_first] using scanned atEnd atStep 0#usize
+
+/-- Providers keep their existing complete equality contract. The saved-facts
+    result is indexed by that same original pair, including the chosen row. -/
+theorem inventory_using_complete_work {R K W : Type} (checks : Checks R K)
+    (work : R → W) (compare : W → W → Result Bool) (full : FullReplayContract compare)
+    (known : K → R → Bool) (keeps : R → R → Bool)
+    (hasKey : ∀ keys old, checks.has_key keys old = .ok (known keys old))
+    (sameWork : ∀ next old, checks.same_work next old = compare (work next) (work old))
+    (saved : ∀ old next, checks.preserves old next = .ok (keeps old next))
+    (current sources : Vec R) (keys : K) :
+    retains_inventory_using checks current sources keys =
+      .ok (current.val.all (retained known (completeMatch work) keeps keys sources.val)) := by
+  apply inventory_refines checks known (completeMatch work) keeps _ current sources keys
+  refine ⟨hasKey, ?_, saved⟩
+  intro next old
+  rw [sameWork]
+  exact full (work next) (work old)
+
+theorem first_selected_record {R : Type} (sameWork keeps : R → R → Bool) (old first : R)
+    (earlierRows tail : List R) (earlier : ∀ x ∈ earlierRows, sameWork x old = false)
+    (found : sameWork first old = true) :
+    firstPreserves sameWork keeps old (earlierRows ++ first :: tail) = keeps old first := by
+  induction earlierRows with
+  | nil => simp [firstPreserves, found]
+  | cons x xs ih =>
+    have miss := earlier x (by simp)
+    have later := ih (fun a ha => earlier a (by simp [ha]))
+    simpa [firstPreserves, List.find?_cons, miss] using later
+
+theorem preserves_unchanged_witness :
+    retains_record_using witnessChecks witnessOld witnessUnchanged 7 = .ok true := by
+  have observed : Observations witnessChecks (fun key old => key == old.1)
+      (fun next old => next == old) (fun _ _ => true) := ⟨fun _ _ => rfl, fun _ _ => rfl, fun _ _ => rfl⟩
+  rw [record_refines _ _ _ _ observed]
+  simp [retained, firstPreserves, witnessUnchanged, witnessOld]
+
+end SandboxModel.Stage1Protocol.SourceFirstMatch
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFirstMatch.indexed_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFirstMatch.record_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFirstMatch.record_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFirstMatch.inventory_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFirstMatch.inventory_using_complete_work
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFirstMatch.first_selected_record
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFirstMatch.preserves_unchanged_witness

@@ -1,0 +1,30 @@
+#[test]
+fn proof_source_save_rejects_same_binding_with_different_complete_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("source-first-match.db");
+    let (mut journal, _) = ready(&path);
+    let saved = prepare(&mut journal);
+    let conn = &journal.journal.connection;
+    let original = codec::load(conn).unwrap().unwrap();
+    assert_eq!(original.records.as_slice(), std::slice::from_ref(&saved));
+    let mut candidate = original.clone();
+    candidate.records[0]
+        .work
+        .requirement
+        .limits
+        .max_configuration_bytes += 1;
+    assert_eq!(
+        candidate.records[0].work.requirement.work_binding,
+        saved.work.requirement.work_binding
+    );
+    assert_ne!(candidate.records[0].work, saved.work);
+
+    let answer = codec::save(conn, &candidate, candidate.max_sessions);
+    let after = codec::load(conn).unwrap().unwrap();
+    assert!(
+        matches!(answer, Err(JournalError::Conflict)),
+        "the same binding must not replace different complete SourceWork: {answer:?}, candidate persisted: {}",
+        after == candidate
+    );
+    assert_eq!(after, original);
+}

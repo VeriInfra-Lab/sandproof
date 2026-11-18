@@ -1,0 +1,39 @@
+import SandproofSourceFirstMatch.Funs
+import SandboxModel.Lifecycle.Protocol.ReplayContract
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofSourceFirstMatch alloc.vec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceFirstMatch
+
+abbrev Checks (R K : Type) := controller.lifecycle_inbox.source_work.codec.SavedRecordChecks Unit R K
+
+structure Observations {R K : Type} (checks : Checks R K) (known : K → R → Bool)
+    (sameWork keeps : R → R → Bool) : Prop where
+  key : ∀ keys old, checks.has_key keys old = .ok (known keys old)
+  same : ∀ next old, checks.same_work next old = .ok (sameWork next old)
+  facts : ∀ old next, checks.preserves old next = .ok (keeps old next)
+
+def firstPreserves {R : Type} (sameWork keeps : R → R → Bool) (old : R) (next : List R) : Bool :=
+  (next.find? (fun record => sameWork record old)).elim false (keeps old)
+
+def retained {R K : Type} (known : K → R → Bool) (sameWork keeps : R → R → Bool)
+    (keys : K) (next : List R) (old : R) : Bool :=
+  known keys old && firstPreserves sameWork keeps old next
+
+noncomputable def completeMatch {R W : Type} (work : R → W) (next old : R) : Bool := by
+  classical
+  exact decide (work next = work old)
+
+def witnessChecks : Checks (Nat × Nat) Nat where
+  has_key key old := .ok (key == old.1)
+  same_work next old := .ok (next == old)
+  same_binding next old := .ok (next.1 == old.1)
+  preserves _ _ := .ok true
+
+def witnessOld : Nat × Nat := (7, 1)
+def witnessChanged : Vec (Nat × Nat) := Vec.from [(7, 2)] (by scalar_tac)
+def witnessUnchanged : Vec (Nat × Nat) := Vec.from [witnessOld] (by scalar_tac)
+
+end SandboxModel.Stage1Protocol.SourceFirstMatch
