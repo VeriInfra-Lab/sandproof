@@ -4,7 +4,7 @@ use axum::http::StatusCode;
 use sandproof_api::admission::RequestAdmission;
 use sandproof_center_core::LifecycleSubmission;
 use sandproof_center_service::{AuthorityPort, CenterPort};
-use sandproof_protocol::lifecycle::{OperationKey, PublicAcceptance};
+use sandproof_protocol::lifecycle::{OperationKey, PublicAcceptance, UnloadedFacts};
 use tokio::sync::Barrier;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -51,18 +51,7 @@ async fn concurrent_same_full_resume_uses_one_redis_acceptance_even_after_commit
             key,
             accepted_version: input.expected_version + 1,
         };
-        let LifecycleOperation::Resume {
-            source_incarnation,
-            capture,
-            manifest_digest,
-            ..
-        } = &intent.request.operation
-        else {
-            panic!("one original Resume intent required");
-        };
-        assert_eq!(*source_incarnation, source.source_incarnation);
-        assert_eq!(*capture, source.capture);
-        assert_eq!(*manifest_digest, source.manifest_digest);
+        assert_resume_source(&intent.request.operation, &source);
         let expected_state = before.with_center(once);
         let baseline_block = durable_block(&engine);
 
@@ -121,6 +110,21 @@ async fn concurrent_same_full_resume_uses_one_redis_acceptance_even_after_commit
         assert_eq!(host.recordings.load(Ordering::SeqCst), recordings);
         assert!(host.resume_requests.lock().unwrap().is_empty());
     }
+}
+
+fn assert_resume_source(operation: &LifecycleOperation, source: &UnloadedFacts) {
+    let LifecycleOperation::Resume {
+        source_incarnation,
+        capture,
+        manifest_digest,
+        ..
+    } = operation
+    else {
+        panic!("one original Resume intent required");
+    };
+    assert_eq!(*source_incarnation, source.source_incarnation);
+    assert_eq!(*capture, source.capture);
+    assert_eq!(*manifest_digest, source.manifest_digest);
 }
 
 async fn send_after_barrier(
