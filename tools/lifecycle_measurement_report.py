@@ -107,6 +107,7 @@ def checked_resources(report, samples):
             vm_index += 1
     digest = hashlib.sha256(); size = count = unknown = 0; previous = None
     group_first = group_last = None
+    group_memory_peak = maximum_gap = 0
     service_roles = None
     prior_vms, seen_epochs = set(), set()
     volume = dict(samples=0,unknown_samples=0,baseline_used_bytes=None,sampled_peak_used_bytes=None,final_used_bytes=None)
@@ -118,10 +119,15 @@ def checked_resources(report, samples):
             digest.update(line)
             row = json.loads(line,object_pairs_hook=unique_keys)
             now = row['at_monotonic_ns']
+            phase = row.get('phase')
+            if type(phase) is not str or re.fullmatch('[a-z0-9-]{1,128}', phase) is None:
+                raise ValueError('bounded original lifecycle phase name required')
             if (row['candidate'] != candidate or row['run_id'] != measurement['run_id']
                     or not uint(row['sequence']) or row['sequence'] != count or not uint(now)
                     or (previous is not None and now <= previous)):
                 raise ValueError('original sequential monotonic resource stream required')
+            if previous is not None:
+                maximum_gap = max(maximum_gap, now - previous)
             previous = now
             roles, vms, seen = sample_cohorts(row, epochs)
             if service_roles is not None and roles != service_roles:
@@ -157,6 +163,10 @@ def checked_resources(report, samples):
                     or not equal(row['volume_identity'],measurement['volume']['identity'])):
                 raise ValueError('original group/volume identity and counters required')
             if group_first is None:group_first=group
+            if group_last is not None and any(group[key] < group_last[key]
+                    for key in ('cpu_usage_usec', 'kernel_group_peak_memory_bytes')):
+                raise ValueError('original service cgroup counter regressed')
+            group_memory_peak = max(group_memory_peak, group['memory_current_bytes'])
             group_last=group
             used=row['volume_used_bytes'];volume['final_used_bytes']=used
             if used is None:volume['unknown_samples']+=1;unknown+=1
@@ -171,6 +181,9 @@ def checked_resources(report, samples):
         raise ValueError('raw resource stream differs from original sealed summary')
     if seen_epochs != set(range(len(epochs))):
         raise ValueError('original epoch declaration is missing from the raw resource stream')
+    observer = measurement.get('observer_overhead')
+    if type(observer) is not dict or not equal(maximum_gap, observer.get('max_observed_gap_ns')):
+        raise ValueError('longest observation gap differs from original resource samples')
     if (not equal(group_first,measurement['service_group']['first']) or not equal(group_last,measurement['service_group']['last'])
             or any(not equal(value,measurement['volume'][key]) for key,value in volume.items())
             or not equal(unknown,measurement['unknown_observations'])):
@@ -191,7 +204,10 @@ def checked_resources(report, samples):
                 or (seconds is not None and type(seconds) not in (int,float))
                 or (None if delta is None else delta/ticks) != seconds):
             raise ValueError('process summary differs from its original resource samples')
-    return measurement
+    return dict(measurement, service_group=dict(measurement['service_group'],
+        observed_cpu_usage_delta_usec=None if count < 2 else group_last['cpu_usage_usec']-group_first['cpu_usage_usec'],
+        sampled_peak_memory_bytes=group_memory_peak,
+        kernel_peak_memory_bytes=group_last['kernel_group_peak_memory_bytes']))
 
 
 def render(report, samples):
@@ -243,11 +259,22 @@ def render(report, samples):
         out.append(f"| {epoch['role']}/{epoch['index']} | {identity['pid']}/{identity['start_time_ticks']} | "
             f"{number(epoch['observed_cpu_seconds_delta'])} | {number(epoch['sampled_peak_rss_bytes'],1024**2)} | "
             f"{number(epoch['kernel_process_peak_rss_bytes'],1024**2)} | {epoch['samples']}/{epoch['unknown_samples']} |")
+    group = measurements['service_group']
+    gap = measurements['observer_overhead']['max_observed_gap_ns']
+    gap_text = (f'最长采样间隔 {number(gap, 10**9)} 秒。' if measurements['samples'] > 1
+                else '只有一个采样点，最长采样间隔未知。')
+    out += ['', '| 服务 cgroup | 已观察 CPU 秒差 | 采样内存峰值 MiB | 内核内存峰值 MiB |',
+        '|---|---:|---:|---:|',
+        f"| 原服务组 | {number(group['observed_cpu_usage_delta_usec'], 10**6)} | "
+        f"{number(group['sampled_peak_memory_bytes'], 1024**2)} | "
+        f"{number(group['kernel_peak_memory_bytes'], 1024**2)} |",
+        '', gap_text]
     volume=measurements['volume']
     out += ['',f"原文件系统已用字节：基线 {volume['baseline_used_bytes']}，采样峰值 {volume['sampled_peak_used_bytes']}，"
         f"末次 {volume['final_used_bytes']}；未知样本 {volume['unknown_samples']}。",'',
         'CPU 差仅覆盖同一进程已观察窗口；进程重启分别记账。RSS 采样峰值不保证捕获间隔中的峰值，'
-        'HWM 是内核报告的进程全生命周期值。cgroup 内存计费、服务目录观察和采集开销见原 JSON；不累加各进程独立峰值。',
+        'HWM 是内核报告的进程全生命周期值。服务 cgroup 内存为原组计费量，含继承该组的 helper；'
+        '采集开销见原 JSON。',
         '', '整卷包含其它写者，不能归因于某个沙箱，也不是项目配额或 CoW 共享块精确归属。',
         '', '未控制冷/热缓存，未取得内部 freeze/capture/copy/sync 等分段；本报告不是完整 E16 或系统验收证明。','']
     return '\n'.join(out)
