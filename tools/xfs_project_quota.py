@@ -25,10 +25,14 @@ def project_hard_limit(text, project):
     return matches[0]
 
 
-def capture(tool,command,root):
+def capture(tool,command,root,*,executable_fd=None):
     # Existing fixed tool only, no shell/user-supplied command program.
+    # Acceptance can pin the measured executable across path replacement.
+    execution = {} if executable_fd is None else {
+        'executable': f'/proc/self/fd/{executable_fd}', 'pass_fds': (executable_fd,),
+    }
     process=subprocess.Popen([str(tool),'-x','-c',command,str(root)],stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=ENV)
+        stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=ENV,**execution)
     output=bytearray()
     deadline=time.monotonic()+10
     try:

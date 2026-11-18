@@ -12,6 +12,7 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 import argparse
+from contextlib import contextmanager
 import hashlib
 import os
 import re
@@ -25,9 +26,12 @@ if str(ROOT) not in sys.path:
 from _lifecycle_private_json import original_json
 from tools.check_kvm_host import trusted_path
 from tools.ci_e2e_prepare import bounded_json_command
+from tools.guest_artifacts import file_digest
 from tools.system_acceptance import private_path,json_file,write_once
 from tools.template_build_guest import equal
 from tools.xfs_project_quota import ENV, capture, project_hard_limit
+
+QUOTA_TOOL_LIMIT = 16 * 1024**2
 
 def validate_deployment(deployment):
     """Static independently approved facts must not depend on a future run."""
@@ -96,6 +100,37 @@ def validate_run_receipt(receipt, deployment, captures, deployment_sha256):
     return receipt
 
 
+@contextmanager
+def approved_quota_tool(path, expected_sha256):
+    """Hold the same verified executable for every quota readback command."""
+    selected = path.lstat()
+    if (not stat.S_ISREG(selected.st_mode) or selected.st_uid != 0
+            or selected.st_mode & 0o022 or not selected.st_mode & 0o111
+            or not 0 < selected.st_size <= QUOTA_TOOL_LIMIT):
+        raise ValueError('bounded root-owned quota executable required')
+
+    def identity(info):
+        return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns,
+                info.st_ctime_ns, info.st_mode, info.st_uid, info.st_gid, info.st_nlink)
+
+    expected_identity = identity(selected)
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC), 'rb') as source:
+        descriptor = source.fileno()
+
+        def same_file():
+            return (identity(os.fstat(descriptor)) == expected_identity
+                    and identity(path.lstat()) == expected_identity)
+
+        def verify(message):
+            if (not same_file() or file_digest(source, selected.st_size) != expected_sha256
+                    or not same_file()):
+                raise ValueError(message)
+
+        verify('fixed quota tool differs from independent approval')
+        yield descriptor
+        verify('original quota tool changed during readback')
+
+
 def readback(args):
     """Recheck the static deployment under this execution's original lease."""
     if os.geteuid()!=0 or re.fullmatch(r'[0-9a-f]{64}',args.run_identity) is None:
@@ -125,31 +160,25 @@ def readback(args):
     if any(row['hard_bytes']%1024 or row not in deployment['projects'] for row in projects):
         raise ValueError('current projects must match approved exact kernel block limits')
     tool=trusted_path(Path('/usr/sbin/xfs_quota'))
-    original=tool.stat();tool_hash=hashlib.sha256(tool.read_bytes()).hexdigest()
-    if (tool_hash!=deployment['xfs_quota_sha256'] or original.st_mode&0o022
-            or not stat.S_ISREG(original.st_mode) or original.st_uid!=0
-            or not 0<original.st_size<=16*1024**2):
-        raise ValueError('fixed quota tool differs from independent approval')
-    rows=bounded_json_command(['/usr/bin/findmnt','--json','--target',str(root),
-        '--output','TARGET,SOURCE,FSTYPE,OPTIONS,UUID'],ENV,timeout=10,max_bytes=16384)['filesystems']
-    if (len(rows)!=1 or rows[0]['target']!=str(root) or rows[0]['fstype']!='xfs'
-            or rows[0]['source']!=deployment['source']
-            or rows[0]['uuid']!=deployment['filesystem_uuid']
-            or not {'pquota','prjquota'}&set(rows[0]['options'].split(','))):
-        raise ValueError('original filesystem identity or project quota mount changed')
-    reports={name:capture(tool,command,root) for name,command in (
-        ('state','state -p'),('blocks','report -p -b -N -n'),('inodes','report -p -i -N -n'))}
-    state=reports['state']
-    if (state.count('Project quota state on ')!=1 or str(root) not in state
-            or state.count('Accounting: ON')!=1 or state.count('Enforcement: ON')!=1):
-        raise ValueError('actual project accounting/enforcement not confirmed ON')
-    for row in projects:
-        if (project_hard_limit(reports['blocks'],row['project_id'])*1024!=row['hard_bytes']
-                or project_hard_limit(reports['inodes'],row['project_id'])!=row['hard_inodes']):
-            raise ValueError('actual kernel hard limits differ from protected capture budget')
-    stamp=lambda m:(m.st_dev,m.st_ino,m.st_size,m.st_mtime_ns,m.st_ctime_ns,m.st_mode,m.st_uid,m.st_nlink)
-    if stamp(tool.stat())!=stamp(original) or hashlib.sha256(tool.read_bytes()).hexdigest()!=tool_hash:
-        raise ValueError('original quota tool changed during readback')
+    tool_hash = deployment['xfs_quota_sha256']
+    with approved_quota_tool(tool, tool_hash) as executable_fd:
+        rows=bounded_json_command(['/usr/bin/findmnt','--json','--target',str(root),
+            '--output','TARGET,SOURCE,FSTYPE,OPTIONS,UUID'],ENV,timeout=10,max_bytes=16384)['filesystems']
+        if (len(rows)!=1 or rows[0]['target']!=str(root) or rows[0]['fstype']!='xfs'
+                or rows[0]['source']!=deployment['source']
+                or rows[0]['uuid']!=deployment['filesystem_uuid']
+                or not {'pquota','prjquota'}&set(rows[0]['options'].split(','))):
+            raise ValueError('original filesystem identity or project quota mount changed')
+        reports={name:capture(tool,command,root,executable_fd=executable_fd) for name,command in (
+            ('state','state -p'),('blocks','report -p -b -N -n'),('inodes','report -p -i -N -n'))}
+        state=reports['state']
+        if (state.count('Project quota state on ')!=1 or str(root) not in state
+                or state.count('Accounting: ON')!=1 or state.count('Enforcement: ON')!=1):
+            raise ValueError('actual project accounting/enforcement not confirmed ON')
+        for row in projects:
+            if (project_hard_limit(reports['blocks'],row['project_id'])*1024!=row['hard_bytes']
+                    or project_hard_limit(reports['inodes'],row['project_id'])!=row['hard_inodes']):
+                raise ValueError('actual kernel hard limits differ from protected capture budget')
     descriptor=os.open(args.native_lock,os.O_RDONLY|os.O_NOFOLLOW|os.O_CLOEXEC)
     try:
         lock=os.fstat(descriptor)
