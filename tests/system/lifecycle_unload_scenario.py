@@ -837,14 +837,17 @@ def exercise(args):
     data_drain = args.scenario == 'data-drain'
     command_disconnect = args.scenario == 'command-disconnect'
     retirement_restart = args.scenario == 'material-retirement-restart'
+    retirement_late_receipt = args.scenario == 'material-retirement-late-receipt'
+    late_stop_delete = args.scenario == 'slot-reuse-late-stop-delete'
     receipt_restart = args.scenario == 'unload-receipt-restart'
     resume_receipt_restart = args.scenario == 'resume-receipt-restart'
     normal_chain = args.scenario == 'normal' or command_disconnect or receipt_restart or resume_receipt_restart
-    retirement_observation = normal_chain or retirement_restart
+    retirement_observation = normal_chain or retirement_restart or retirement_late_receipt
     expired_window_replay = getattr(args, 'expired_window_replay', False)
     if expired_window_replay and args.scenario != 'normal':
         raise ValueError('expired-window replay extends only the original complete normal scenario')
-    if not normal_chain and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or expiry_case or freeze_terminal):
+    if not normal_chain and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain
+            or retirement_restart or expiry_case or retirement_late_receipt or late_stop_delete or freeze_terminal):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -853,6 +856,10 @@ def exercise(args):
     if type(seconds) not in (int, float) or not math.isfinite(seconds) or not 0 < seconds <= 3600:
         raise ValueError('explicit finite scenario deadline at most one hour required')
     deadline = time.monotonic() + seconds
+    helper = None
+    if late_stop_delete:
+        from lifecycle_late_host_actions import approved_probe
+        helper = approved_probe(args)
     runtime = prepare(args)
     root = private_path(runtime.root, directory=True)
     report = dict(schema=1, kind='create-unload-reopen-resume-destroy-system-scenario',
@@ -961,10 +968,16 @@ def exercise(args):
         report['phase']='actual-slot-reuse'
         control=PublicUnloadScenario(runtime.services.sdk_url,runtime.foreign_key,
             runtime.owner_key,report['registration']['deployment'],deadline,owner='2')
+        if late_stop_delete:
+            from lifecycle_late_host_actions import exercise_late_stop_delete
+            exercise_late_stop_delete(runtime, client, control, saved, deadline, report, helper)
+            return report  # The common finally still preserves both sessions and finishes the runtime.
         control.create(runtime.create_parameters(owner=2))
         control_running=control.wait_running()
         control.assert_owner_isolation()
         control_physical=runtime.record_running(control.session,deadline)
+        if retirement_late_receipt:
+            report['slot_occupant_workload'] = control.run_public_workload(control_running)
         control.operation_evidence_completed()
         assert control.session!=client.session
         assert control_physical['context']['position']==physical['original_position']['position'], \
@@ -1265,11 +1278,11 @@ def exercise(args):
             if cycle==1:
                 assert physical_running['context']['position']!=control_physical['context']['position'], \
                     'original session did not restore into a different actual slot'
-                assert control.query()==control_running
+                assert equal(control.query(),control_running)
                 report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
                     control.session,control_physical,deadline)
                 report['slot_reuse']['restored_position']=physical_running['context']['position']
-                if not freeze_terminal:
+                if not (freeze_terminal or retirement_late_receipt):
                     finish_slot_occupant(control, control_running, runtime, deadline, report)
             if cycle == 1 and freeze_terminal:
                 if freeze_expiry:
@@ -1345,10 +1358,15 @@ def exercise(args):
                 report['cycles'][-1]['frozen_unload_expired' if freeze_expiry else 'frozen_unload_destroyed']=True
                 terminal_destroy_done=True;break
             if cycle < restore_cycles:
-                if retirement_restart:
-                    from lifecycle_unload_retirement import RetirementRestartProbe
-                    retirement_probe = RetirementRestartProbe(runtime,client.session,
-                        original_physical,deadline)
+                if retirement_restart or retirement_late_receipt:
+                    if retirement_late_receipt:
+                        from lifecycle_late_material_receipt import LateMaterialReceiptProbe
+                        retirement_probe = LateMaterialReceiptProbe(runtime,client.session,
+                            original_physical,control_physical,deadline)
+                    else:
+                        from lifecycle_unload_retirement import RetirementRestartProbe
+                        retirement_probe = RetirementRestartProbe(runtime,client.session,
+                            original_physical,deadline)
                     report['phase'] = 'arm-original-material-retirement-gate'
                     report['material_retirement_arm'] = retirement_probe.arm(args.activation_gate_timeout_ms)
                 if capture_stage is not None:
@@ -1376,7 +1394,11 @@ def exercise(args):
                 client.assert_data_closed()
                 if retirement_probe is not None:
                     report['phase'] = 'original-material-deleted-before-settlement'
-                    report['material_retirement_restart'] = retirement_probe.restart_after_delete(accepted_unload)
+                    if retirement_late_receipt:
+                        report['late_material_receipt'] = retirement_probe.release_after_delete(
+                            accepted_unload, lambda:control.assert_running_workload(control_running))
+                    else:
+                        report['material_retirement_restart'] = retirement_probe.restart_after_delete(accepted_unload)
                 saved=client.wait_unloaded()
                 if retirement_probe is not None:
                     client.assert_reopened(saved)
@@ -1398,6 +1420,9 @@ def exercise(args):
                         original=original_physical, successor=physical, resume=accepted,
                         deadline=deadline)
                     report['cycles'][-1]['old_material_retirement'] = retirement['receipt']
+                if retirement_late_receipt:
+                    report['phase'] = 'other-owner-cleanup-after-delayed-receipt'
+                    finish_slot_occupant(control, control_running, runtime, deadline, report)
         if not terminal_destroy_done:
             report['phase']='public-destroy-and-physical-gc'
             report['destroy']=client.destroy(lost if lost is not None else resumed)
@@ -1459,6 +1484,12 @@ def exercise(args):
                 'original durable plan observed Retiring after actual delete and before settlement; '
                 'same-config managers restarted, same consumed gate and fixed plan settled, '
                 'old Resume/claim preserved, current successor restored and final Destroy settled')
+        if retirement_late_receipt:
+            report['acceptance_cases']['E9'] = (
+                'other owner kept the original reused position; after actual old-material delete, '
+                'the original receipt was held through same guest RAM/process/credential and file '
+                'read/write checks, then released and the same SQL plan settled with occupant '
+                'identity and other reservations unchanged; not late stop/delete')
         if args.scenario=='restore-activation-loss':
             report['acceptance_cases']['E7']='gate-sealed RAM state and same host VMM/netns survived original manager exit86 and replay'
         if args.scenario=='restore-candidate-exit':
@@ -1655,7 +1686,11 @@ def main():
         'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-receipt-destroy',
         'capture-freeze-receipt-expiry','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
-        'material-retirement-restart','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
+        'material-retirement-restart','material-retirement-late-receipt',
+        'slot-reuse-late-stop-delete','restore-prepare-expiry','restored-running-expiry',
+        'unload-receipt-restart','resume-receipt-restart'),default='normal')
+    parser.add_argument('--stale-probe',type=Path)
+    parser.add_argument('--stale-probe-sha256')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
     args = parser.parse_args()
     try:
