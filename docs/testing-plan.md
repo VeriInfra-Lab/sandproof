@@ -366,6 +366,25 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 和原工作责任。源 stamp（含时间字段）按原判据检查，观察到合法变化时先分析裁定，
 不能为测试通过直接删除检查。
 
+E11 的[项目配额克隆对照](../sandbox-runtime/src/snapshot_store_tests.rs)在批准的私有
+reflink XFS 卷上运行。准备一个非稀疏的 2 MiB 来源和同一挂载上的两个空 store。
+用原配额工具分别读回项目标签、继承、硬限、实际用量及卷空闲。受限 store 采用
+1 MiB 项目硬限且留足 inode，健康 store 使用另一个能容纳完整克隆的项目。
+通过 `SANDPROOF_UNIT_CLONE_QUOTA_SOURCE`、`SANDPROOF_UNIT_CLONE_QUOTA_STORE`
+和 `SANDPROOF_UNIT_CLONE_QUOTA_CONTROL` 提供三个规范绝对路径，再显式选择：
+
+```sh
+cargo test -p sandbox-runtime --locked --lib \
+  snapshot_store::tests::actual_project_quota_clone_failure_with_healthy_control \
+  -- --exact --ignored --nocapture --test-threads=1
+```
+
+受限项目必须到达原 `BeforeClone`，记录实际 ENOSPC 或 EDQUOT，且没有完成克隆或发布。
+不调整限额，使用同一个来源 FD 在健康项目用新键完成克隆及同步，核对源摘要、独立 inode
+以及受限项目的原部分文件仍在。再次读回两项目和卷的用量，与固定提交的真实测试输出一并
+保留。原双路径的配额负例仍可独立运行。本对照只验证文件层克隆与保留责任，产品继续运行、
+数据库记账和最终回收须由各自实机场景取证。
+
 捕获故障点须对应真实克隆前后、目标摘要读取、同步与发布窗口；不能将摘要读取进度
 标成复制写入。恢复失败不得发布 Loaded/Ready、解除 source pin 或回退另一个 capture。
 事件选择使用同一 `SnapshotArtifactEvent` 及原 artifact/work 身份；`Cloned` 不等于

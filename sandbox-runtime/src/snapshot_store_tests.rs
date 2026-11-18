@@ -456,6 +456,20 @@ fn actual_clone_size_limit_failure_keeps_empty_target_and_original_source() {
 #[test]
 #[ignore = "requires root and independently prepared source/store XFS project quotas"]
 fn actual_project_quota_clone_failure_keeps_original_source_and_staging() {
+    check_project_quota_clone_failure(None);
+}
+
+#[test]
+#[ignore = "requires root and a third private XFS project with enough quota for the control clone"]
+fn actual_project_quota_clone_failure_with_healthy_control() {
+    let control = PathBuf::from(
+        std::env::var_os("SANDPROOF_UNIT_CLONE_QUOTA_CONTROL")
+            .expect("explicit prepared healthy control store required"),
+    );
+    check_project_quota_clone_failure(Some(&control));
+}
+
+fn check_project_quota_clone_failure(control_path: Option<&Path>) {
     assert_eq!(rustix::process::geteuid().as_raw(), 0, "root required");
     let source_path = std::path::PathBuf::from(
         std::env::var_os("SANDPROOF_UNIT_CLONE_QUOTA_SOURCE")
@@ -478,6 +492,21 @@ fn actual_project_quota_clone_failure_keeps_original_source_and_staging() {
         )
         .unwrap(),
     );
+    let control = control_path.map(|path| {
+        assert!(path.is_absolute());
+        assert_eq!(path.canonicalize().unwrap(), path);
+        assert!(fs::read_dir(path).unwrap().next().is_none());
+        let control = SnapshotStore::open(path).unwrap();
+        require_same_xfs_mount(&store.directory, &control.directory).unwrap();
+        let limited = store.directory.metadata().unwrap();
+        let healthy = control.directory.metadata().unwrap();
+        assert_ne!(
+            limited.ino(),
+            healthy.ino(),
+            "independent control store required"
+        );
+        control
+    });
     let original = source.metadata().unwrap();
     assert_eq!(original.uid(), 0);
     assert_eq!(original.len(), 2 * 1024 * 1024);
@@ -491,7 +520,18 @@ fn actual_project_quota_clone_failure_keeps_original_source_and_staging() {
     let partial = store_path.join(key_name("staging-", &key));
     let mut stage = store.begin(key).unwrap();
     let staging_before = fs::symlink_metadata(&partial).unwrap();
-    let result = stage.copy_artifact(&mut source, 0, SnapshotArtifact::Memory, original.len());
+    let mut phases = Vec::new();
+    let result = stage.copy_artifact_observing(
+        &mut source,
+        0,
+        SnapshotArtifact::Memory,
+        original.len(),
+        &mut |artifact, event| {
+            assert_eq!(artifact, SnapshotArtifact::Memory);
+            phases.push(event);
+            Ok(())
+        },
+    );
     let RuntimeError::Io(error) = result.unwrap_err() else {
         panic!("expected actual kernel project space/quota refusal");
     };
@@ -501,6 +541,7 @@ fn actual_project_quota_clone_failure_keeps_original_source_and_staging() {
             || errno == rustix::io::Errno::DQUOT.raw_os_error(),
         "expected ENOSPC or EDQUOT, got {errno}"
     );
+    assert_eq!(phases, [SnapshotArtifactEvent::BeforeClone]);
     assert!(stage.measurements().is_empty());
     assert_eq!(
         FileStamp::from_metadata(&source.metadata().unwrap()),
@@ -547,6 +588,42 @@ fn actual_project_quota_clone_failure_keeps_original_source_and_staging() {
         target.ino(),
         target.len()
     );
+
+    if let Some(control) = control {
+        let control_key = [34; 32];
+        let mut stage = control.begin(control_key).unwrap();
+        let measurement = stage
+            .copy_artifact(&mut source, 0, SnapshotArtifact::Memory, original.len())
+            .unwrap();
+        assert_eq!(measurement.length, original.len());
+        assert_eq!(measurement.sha256, digest_before);
+        assert_eq!(stage.measurements(), [measurement]);
+        let control_file = control
+            .path
+            .join(key_name("staging-", &control_key))
+            .join("memory.bin");
+        let healthy = fs::symlink_metadata(control_file).unwrap();
+        assert_eq!(healthy.dev(), original.dev());
+        assert_ne!(healthy.ino(), original.ino());
+        assert_ne!(healthy.ino(), target.ino());
+        assert_eq!(
+            (healthy.len(), healthy.nlink(), healthy.mode() & 0o777),
+            (original.len(), 1, 0o400)
+        );
+        assert_eq!(
+            FileStamp::from_metadata(&source.metadata().unwrap()),
+            source_before
+        );
+        assert_eq!(
+            FileStamp::from_metadata(&fs::symlink_metadata(partial.join("memory.bin")).unwrap()),
+            FileStamp::from_metadata(&target)
+        );
+        eprintln!(
+            "healthy control after quota refusal inode={} bytes={} source_sha256={digest_before:?}",
+            healthy.ino(),
+            healthy.len()
+        );
+    }
 }
 
 #[test]
