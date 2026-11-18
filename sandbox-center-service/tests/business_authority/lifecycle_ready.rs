@@ -335,18 +335,26 @@ impl HostPort for Host {
         })
     }
 }
-type Application = CenterApplication<
+type Application<H = Host> = CenterApplication<
     SharedBusinessAuthority,
-    Host,
+    H,
     BusinessTemplates<templates::Candidates, templates::Evidence>,
 >;
 const REPLY_TIMEOUT: Duration = Duration::from_millis(200);
 fn application(authority: &SharedBusinessAuthority) -> (Arc<Application>, Host, Arc<Time>) {
     let clock = Arc::new(Time(AtomicU64::new(100)));
     let host = Host::new(Arc::clone(&clock));
+    let app = application_with_host(authority, host.clone(), Arc::clone(&clock));
+    (app, host, clock)
+}
+fn application_with_host<H: HostPort>(
+    authority: &SharedBusinessAuthority,
+    host: H,
+    clock: Arc<Time>,
+) -> Arc<Application<H>> {
     let app = CenterApplication::new(
         authority.clone(),
-        host.clone(),
+        host,
         templates::template_provider(authority),
         CenterConfig {
             domain: "sandbox.test".into(),
@@ -360,13 +368,13 @@ fn application(authority: &SharedBusinessAuthority) -> (Arc<Application>, Host, 
         &[7; 32],
     )
     .unwrap()
-    .with_clock(clock.clone())
+    .with_clock(clock)
     .with_lifecycle_observation_policy(NodeObservationPolicy {
         health_window_ms: 1000,
         max_clock_skew_ms: 0,
     })
     .unwrap();
-    (Arc::new(app), host, clock)
+    Arc::new(app)
 }
 fn await_observation(entered: &mpsc::Receiver<()>) {
     entered.recv_timeout(Duration::from_secs(5)).unwrap();

@@ -12,6 +12,9 @@ mod continued_reunload;
 #[path = "lifecycle_renewed_continued.rs"]
 mod renewed_continued;
 
+#[path = "lifecycle_terminal_reply_loss.rs"]
+mod terminal_reply_loss;
+
 #[path = "unloaded_query_confirmation.rs"]
 mod query_confirmation;
 
@@ -20,6 +23,9 @@ mod decoded_resume_terminal;
 
 #[path = "lifecycle_resume_races.rs"]
 mod resume_races;
+
+#[path = "lifecycle_resume_replay.rs"]
+mod resume_replay;
 
 #[path = "unload_setup.rs"]
 mod setup;

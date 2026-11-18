@@ -272,6 +272,17 @@ impl Engine {
             .query(&mut connect(self.address))
             .unwrap()
     }
+    pub(crate) fn durable_block(&self) -> (u64, Vec<u8>) {
+        // Read the revision and exact committed bytes together, bypassing the
+        // proxy and the authority's reaffirmation writes.
+        let (revision, bytes): (String, Vec<u8>) = redis::cmd("HMGET")
+            .arg(KEY)
+            .arg("revision")
+            .arg("payload")
+            .query(&mut connect(self.address))
+            .unwrap();
+        (revision.parse().unwrap(), bytes)
+    }
 }
 impl Drop for Engine {
     fn drop(&mut self) {

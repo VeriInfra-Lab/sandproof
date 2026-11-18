@@ -138,6 +138,12 @@ E13 首次 Unload 的中心回执窗口使用同一入口的显式 `--scenario u
 分块编码仅补 HTTP framing，不能把丢失或截断的数据变成成功。SDK 错误类型必须结合原始
 RPC/传输错误判断，不能把所有 TimeoutException 都解释为真实等待超时。
 
+E13 的 [Destroy 终局提交回归](../sandbox-center-service/tests/business_authority/lifecycle_terminal_reply_loss.rs)
+分别丢弃实际保存 `Cleaned` 和实际保存 Host 确认的 Redis 提交回包。两侧都要观察到
+中心状态未知且禁止继续派发，并用独立 Redis 读取核对原业务块。前者不能向 Host 发确认，
+显式对账后只补原 Destroy 的确认。后者对账后直接读回已确认终局，不能再发原动作。
+仍保留原结果、额度结算和全文重放。Host 的终局和确认由组件夹具提供，实机收尾单独记录。
+
 E13 首次 Resume 的中心回执窗口使用同一入口的 `--scenario resume-receipt-restart`，精确实机结果同样按 issue/PR 记录。该选择复用上述双 mTLS、有限流、固定配置/预算/绝对截止时间和中心独立重启流程，保留原 normal 的两 owner、实际位置复用及 A/B/C 三代。它在首次 Unload 已完成、原来源物理证据取得之后计划读取中心审计，随后只武装 Resume 门；不会同时丢弃 Unload 回执。`/internal/lifecycle/resume-observation` 只有 HTTP 200、完整当前请求相同的 `Observed` 才在回复头前被保持；Pending、NotCurrent、NotRunning、Expired、StateLost 均不触发。全部 binding、操作参数、center、retention、接受版本与独立原 Unload 来源关联，目标代允许大于来源代的空洞，不要求加一，也不要求 key window 等于 retention window。
 
 并发只读 Resume 观察的 `observed_at_ms` 可以变化；每次实际合法时间单独保留，完整意图和另外四个寿命字段必须相同。门终身最多保持八份完成回执，显式丢弃、后端关闭并排空后，才允许 `held == dropped > 0` 且 `response_attempts == 0` 的丢失证据。超时、503、回复尝试、工作者失败和未知收尾不能代替它。中心停止后的原账本必须仍为同一 Resuming、当前操作尚无 Running 结果，原 Create/Unload 历史不变；接受 Resume 时相对 Unloaded 精确重新占用原实例/CPU/内存额度，磁盘额度不变，中心故障及恢复不能重复占用或提前释放。重开后只允许同一 Resume 增加原寿命的 Running 结果和更新 `last_running`，新的合法只读观察时间不冻结。
@@ -199,6 +205,13 @@ Destroy 和原产品流程完成 Cleaned、物理释放及账本结算。故障�
 材料记录；退出本身不是释放位置或材料的凭据。该分支不认领正常两周期或任意故障后的
 状态可恢复性，不能关闭存活分支的原断言。
 
+E7 的 [迟到就绪回归](../sandbox-center-service/tests/business_authority/lifecycle_resume_races.rs)
+使用真实 Redis 与原中心后台或查询入口。先保持同一 Resume 的旧就绪答复，再通过原
+查询把 `StateLost` 保存到仍是同一键和版本的 Resume；在旧答复的原期限内放行，
+核对旧就绪被拒、业务块字节及原额度保持、全文重放只返回原接受。已发布过 Running 的
+查询分支还核对本次恢复的数据凭据已撤销。重开原 Redis 账本仍读回同一
+`StateLost`，无需再次询问 Host。Host 退出与就绪来自受控组件输入，实机分别验收。
+
 `restore-prepare-destroy` 先核原 LoadPaused 候选，再持同一 pidfd 暂停该 VMM 进程，
 使原只读 API 观察暂时不可用。只有真实 Destroy 已进入宿主、原终止围栏已安装且原
 Prepare 仍未完成时，才恢复这个进程供原取证/Stop 流程推进；SIGCONT 不等于激活 vCPU。
@@ -252,7 +265,14 @@ Cleaned 与产品结算完成收尾，不用缺失记录或测试信号冒充成
 另覆盖确认/保留期限/准确关窗回执三个独立门、同一 owner 尚被保留的旧窗口请求、不同
 owner 的独立键域，以及原 Redis 权威重新打开后的拒绝前沿。其宿主终局证据是受控输入，
 不算真实 VM 退出或完整 E2 实机通过；观察器自测同样不代替实际运行。每个层次的执行提交、
-结果和未运行项分别在 issue/PR 记录。不同操作并发、丢回包及任意交错继续保留缺口。
+结果和未运行项分别在 issue/PR 记录。关窗与丢回包的组合仍需另验。
+
+[Resume 并发组件](../sandbox-center-service/tests/business_authority/lifecycle_resume_replay.rs)
+从受控宿主 Unloaded 结果和真实 Redis 账本出发，屏障后将同一完整请求两次交给原公开
+HTTP 路由。正常对照核对两份相同的公开接受。故障对照让 Redis 实际提交，然后丢弃该
+次写的答复，两个请求都得到未知，原结果经耐久重确认后由同键原文读回。推进到无法
+读取的时钟后，全文重放仍返回原接受，同键改写期望版本仍冲突。原 Redis 负载、恢复
+材料键、记录与额度只允许一次业务决定。宿主结果由受控提供方输入，KVM 恢复结果另验。
 
 `restore-activation-destroy` 复用 E7 的原激活门，在原 MayHaveExecuted 已持久、实际
 激活后的新 RAM 见证已取得、SQL 尚无激活回执时接受公开 Destroy。复用原只读候选观察，
