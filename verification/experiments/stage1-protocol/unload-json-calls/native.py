@@ -36,19 +36,19 @@ def run(output, lock):
         profile = json.loads((HERE / 'profile.json').read_bytes())
         fixture = (HERE / 'native-fixture.rs.in').read_bytes()
         source_fixture = (HERE / 'native-source-fixture.rs.in').read_bytes()
-        capture.inputs(profile)
+        report['head'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
+        subprocess.run(['git', 'diff', '--quiet', report['head']], cwd=ROOT, check=True)
+        capture.inputs(profile, report['head'])
         report['fixture_sha256'] = sha(HERE / 'native-fixture.rs.in')
         report['source_fixture_sha256'] = sha(HERE / 'native-source-fixture.rs.in')
         report['profile_sha256'] = sha(HERE / 'profile.json')
-        report['head'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-        subprocess.run(['git', 'diff', '--quiet', 'HEAD'], cwd=ROOT, check=True)
         version = subprocess.check_output(['cargo', '--version'], cwd=ROOT, text=True).strip()
         if not version.startswith('cargo 1.97.0 '):
             raise ValueError('use the existing fixed Cargo toolchain')
         report['cargo_version'] = version
         archive = output / 'source.tar'
         with archive.open('xb') as stream:
-            subprocess.run(['git', 'archive', 'HEAD'], cwd=ROOT, stdout=stream, check=True)
+            subprocess.run(['git', 'archive', report['head']], cwd=ROOT, stdout=stream, check=True)
         report['source_archive_sha256'] = sha(archive)
         cpus = sorted(os.sched_getaffinity(0))[:4]
         os.sched_setaffinity(0, cpus)
@@ -95,6 +95,7 @@ def run(output, lock):
                     tar.extractall(source, filter='data')
                 case = dict(name=name, commands=[], complete=False)
                 report['cases'].append(case)
+                capture.verify_archived_inputs(source, profile)
                 case['mutation'] = capture.apply_variant(source, profile, name if name in profile['mutations'] else 'correct')
                 rust = source / profile['source']
                 rust.write_bytes(rust.read_bytes() + b'\n' + fixture)
@@ -140,7 +141,7 @@ def run(output, lock):
                         or sha(support) != case['support_sha256']):
                     raise ValueError('native source/binary changed during the run')
                 case['complete'] = True
-        capture.inputs(profile)
+        capture.inputs(profile, report['head'])
         report['complete'] = True
     except BaseException as error:
         report['error'] = repr(error)

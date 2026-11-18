@@ -29,7 +29,10 @@ CreateOptions 的四个实际声明字段和原引用/类型/字典均核对；n
 独立保留；摘要视图不替代它，也不删除中间字段。
 
 `profile.json` 保存实际重抽后的完整调用/派生快照及全部生产 Rust/Cargo 输入，
-不是对旧摘要换签。输入变化须重新审查和抽取，不提供自动刷新命令。
+不是对旧摘要换签。准入从同一精确 Git 提交枚举 `verification/` 之外的
+`.rs`、`.toml`、`.lock` 文件，核对路径集合和原字节。抽取及四版原生各自从该
+提交解包，在改写变体或追加夹具前复核解包后的同一集合和字节。输入变化须重新
+审查和抽取，不提供自动刷新命令。
 两个真实 Rust 变体分别把 execution_origin 换成 request、清空 metadata；它们只在
 隔离副本应用，使用相同完整值合同。编译/抽取失败、超时或导入失败均不算性质拒绝。
 源码检查拒绝和原生断言失败分别记录，不列作 Lean 形式反例。
@@ -48,6 +51,9 @@ done
 SANDPROOF_UNLOAD_JSON_LLBC=artifacts/json-calls-correct/actual.llbc \
   bash scripts/python-entry.sh -m unittest discover -s "$package" -p 'test_*.py'
 ```
+
+仅运行四项文件准入回归时，把上面 `unittest discover` 的 `-p` 设为
+`test_inputs.py`，无需准备 LLBC；完整入口仍须执行原有 11 项 LLBC 回归。
 
 ning 的原生入口；其它机器只能报告开发检查，不能签发正式验收：
 
