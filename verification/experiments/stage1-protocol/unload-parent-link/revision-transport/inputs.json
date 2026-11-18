@@ -1,0 +1,52 @@
+{
+  "source_commit": "f26fc26a3fb6987a18ad69015c56bb99c0748e12",
+  "source_tree": "a24d73244cf0c952271e0bc44ab4231d15036ed3",
+  "capture_driver": "476a100a70365dbddd1904ffac505f622074923b",
+  "source_archive_sha256": "5e3c46112d1becd898fb070b4fd10373874184aef6fe40b1727e3fe6381fb824",
+  "generated_types": {
+    "SandproofUnloadBaseSnapshot": {
+      "raw_sha256": "b1f0707525c659d68d9102083a2db9c1ae3b7d1ddc18b40c282284eccb355aa5",
+      "view_sha256": "ef2d181ec8362fc31c60fe277c0e1fca158f16fbdd5a57a80240d40d6acba963",
+      "edits": [
+        {
+          "offset": 671,
+          "before": "namespace SandproofUnloadBaseSnapshot\n\n",
+          "after": "namespace SandproofUnloadBaseSnapshot\n\nvariable [Representations]\n\n"
+        },
+        {
+          "offset": 3757,
+          "before": "@[discriminant isize, rust_type\n  \"sandproof_protocol::lifecycle::request::LifecycleOperation\"]\n",
+          "after": "@[rust_type\n  \"sandproof_protocol::lifecycle::request::LifecycleOperation\"]\n"
+        },
+        {
+          "offset": 6116,
+          "before": "@[discriminant isize]\ninductive JournalError where",
+          "after": "inductive JournalError where"
+        }
+      ]
+    },
+    "SandproofUnloadFirstObservation": {
+      "raw_sha256": "59cf36716df7cadb0c2271053ab18c82e3d30c4dc8b0ebf948acec26e5471130",
+      "view_sha256": "7be9ccb91025f44fbb0c24a1b2a9090d3ef675d50ab9a9b7cfed73100bc846a6",
+      "edits": [
+        {
+          "offset": 675,
+          "before": "namespace SandproofUnloadFirstObservation\n\n",
+          "after": "namespace SandproofUnloadFirstObservation\n\nvariable [Representations]\n\n"
+        }
+      ]
+    }
+  },
+  "repository": {
+    "verification/experiments/stage1-protocol/unload-base-provenance/proof-inputs/BaseSnapshotLink.lean.in": "d356ce308153fb08544ed6c757c1ea7315dfb00337dcea96ed7d1652406804ed",
+    "verification/experiments/stage1-protocol/unload-base-provenance/proof-inputs/SandproofUnloadBaseSnapshot/TypesExternal.lean.in": "c64f170facbce4dc4a846010fc46933895862d50b1e96b595b703943b68b1464",
+    "verification/experiments/stage1-protocol/unload-startup-source/proof-inputs/SandproofUnloadFirstObservation/TypesExternal.lean.in": "f2c08705c6aa17c04427671ce4c6e0ad2e10bc81465e809b0f51425b0a8bfd60",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+    "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",
+    "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f"
+  }
+}
