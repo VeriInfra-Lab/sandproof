@@ -13,7 +13,6 @@ _require_assertions()
 
 import argparse
 import hashlib
-import json
 import os
 import re
 from pathlib import Path
@@ -23,9 +22,11 @@ import sys
 ROOT=Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0,str(ROOT))
+from _lifecycle_private_json import original_json
 from tools.check_kvm_host import trusted_path
 from tools.ci_e2e_prepare import bounded_json_command
 from tools.system_acceptance import private_path,json_file,write_once
+from tools.template_build_guest import equal
 from tools.xfs_project_quota import ENV, capture, project_hard_limit
 
 def validate_deployment(deployment):
@@ -71,12 +72,14 @@ def validate_run_receipt(receipt, deployment, captures, deployment_sha256):
     validate_deployment(deployment)
     projects=[{key:entry['material_project'][key] for key in ('project_id','hard_bytes','hard_inodes')}
               for entry in captures]
-    if (receipt.get('schema_version')!=1
-            or any(receipt.get(key)!=deployment[key] for key in
+    if (type(receipt) is not dict or not equal(receipt.get('schema_version'),1)
+            or any(not equal(receipt.get(key),deployment[key]) for key in
                    ('filesystem_device','filesystem_uuid','mount','source',
                     'native_lock_identity','xfs_quota_sha256'))
             or receipt.get('deployment_receipt_sha256')!=deployment_sha256
-            or receipt.get('projects')!=projects or any(row not in deployment['projects'] for row in projects)
+            or not equal(receipt.get('projects'),projects)
+            or any(not any(equal(row,approved) for approved in deployment['projects'])
+                   for row in projects)
             or any(receipt.get(key) is not True for key in
                    ('accounting','enforcement','actual_readback_verified'))
             or re.fullmatch(r'[0-9a-f]{64}',receipt.get('host_lease_identity','')) is None):
@@ -99,11 +102,8 @@ def readback(args):
         raise ValueError('protected deployment root and exact current run identity required')
     os.umask(0o077)
     deployment_path=private_path(args.deployment_receipt)
-    raw=deployment_path.read_bytes()
-    if not 0<len(raw)<=65536 or hashlib.sha256(raw).hexdigest()!=args.deployment_receipt_sha256:
-        raise ValueError('original independently approved deployment receipt changed')
-    from tools.check_kvm_host import unique_keys
-    deployment=validate_deployment(json.loads(raw,object_pairs_hook=unique_keys))
+    deployment = validate_deployment(original_json(
+        deployment_path, 65536, expected_sha256=args.deployment_receipt_sha256))
     root=trusted_path(Path(deployment['mount']))
     mounted=root.stat()
     if (not stat.S_ISDIR(mounted.st_mode) or mounted.st_uid!=0

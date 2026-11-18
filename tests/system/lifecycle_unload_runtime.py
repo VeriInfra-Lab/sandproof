@@ -35,6 +35,7 @@ import time
 
 from _runtime_services import RuntimeServices, add_arguments as service_arguments
 from _center_host_services import local_binding, role_facts, validate_redis_operation_timeout_ms
+from _lifecycle_private_json import original_json, read_private_json
 from server_process_crash import free_loopback_port, process_start_ticks
 from tools.check_kvm_host import unique_keys
 from tools.ci_e2e_supervisor import HostLease
@@ -370,38 +371,8 @@ GATE_FINAL_NAMES=frozenset(('config.json','observation.json','ready.json','comma
 GATE_STAGE_NAMES=GATE_NAMES-GATE_FINAL_NAMES
 
 
-def _read_private_json(path, limit, *, mode=None, directory_fd=None):
-    """Read bounded bytes and identity through one root-private descriptor."""
-    path=Path(path)
-    identity=lambda m:(m.st_dev,m.st_ino,m.st_size,m.st_mtime_ns,m.st_ctime_ns,m.st_mode,m.st_uid,m.st_nlink)
-    name=str(path) if directory_fd is None else path.name
-    metadata=lambda:os.stat(name,dir_fd=directory_fd,follow_symlinks=False)
-    before=metadata()
-    if (not stat.S_ISREG(before.st_mode) or before.st_uid!=0 or before.st_nlink!=1
-            or before.st_mode&0o077 or not 0<before.st_size<=limit
-            or (mode is not None and stat.S_IMODE(before.st_mode)!=mode)):
-        raise ValueError('original bounded private JSON file required')
-    fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,dir_fd=directory_fd)
-    with os.fdopen(fd,'rb') as stream:
-        if identity(os.fstat(stream.fileno()))!=identity(before):
-            raise ValueError('JSON file changed before protected read')
-        raw=stream.read(limit+1)
-        if (len(raw)!=before.st_size or len(raw)>limit
-                or identity(os.fstat(stream.fileno()))!=identity(before)
-                or identity(metadata())!=identity(before)):
-            raise ValueError('JSON file changed during protected read')
-    return raw, identity(before)
-
-
-def original_json(path, limit, *, expected_sha256=None):
-    raw, _ = _read_private_json(path, limit)
-    if expected_sha256 is not None and hashlib.sha256(raw).hexdigest() != expected_sha256:
-        raise ValueError('original JSON differs from independently approved fingerprint')
-    return json.loads(raw, object_pairs_hook=unique_keys)
-
-
 def _measured_original_json(path, limit):
-    raw, identity = _read_private_json(path, limit, mode=0o400)
+    raw, identity = read_private_json(path, limit, mode=0o400)
     device, inode, size = identity[:3]
     measurement = dict(bytes=size, sha256=list(hashlib.sha256(raw).digest()),
                        device=device, inode=inode)
@@ -410,7 +381,7 @@ def _measured_original_json(path, limit):
 
 def gate_json(path, limit, *, directory_fd=None):
     """Use the original gate directory and exact root0600 mode."""
-    raw, identity = _read_private_json(path, limit, mode=0o600, directory_fd=directory_fd)
+    raw, identity = read_private_json(path, limit, mode=0o600, directory_fd=directory_fd)
     return json.loads(raw, object_pairs_hook=unique_keys), hashlib.sha256(raw).hexdigest(), identity
 
 

@@ -1,10 +1,16 @@
-"""Actual quota output parser guards only; no filesystem quota or VM changes."""
+"""Quota parser, approval-file boundary, and per-run receipt regressions."""
 import importlib.util
 import copy
+import hashlib
 from pathlib import Path
+import sys
+import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest.mock import patch
 
 PATH=Path(__file__).resolve().parents[2]/'tests/system/lifecycle_unload_quota.py'
+sys.path.insert(0,str(PATH.parent))
 SPEC=importlib.util.spec_from_file_location('lifecycle_unload_quota_readback',PATH)
 quota=importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(quota)
@@ -23,6 +29,28 @@ class QuotaReadbackTests(unittest.TestCase):
                 '#63801 0 4 16777216 00\n'):
             with self.subTest(output=text),self.assertRaises(ValueError):
                 quota.project_hard_limit(text,63801)
+
+    def test_oversize_approval_rejected_before_read_or_quota_tool_lookup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=Path(directory)/'deployment.json'
+            raw=b' '*65537
+            path.write_bytes(raw)
+            path.chmod(0o600)
+            args=SimpleNamespace(deployment_receipt=path,
+                deployment_receipt_sha256=hashlib.sha256(raw).hexdigest(),run_identity='a'*64)
+            metadata=SimpleNamespace(st_mode=path.stat().st_mode,st_uid=0,st_nlink=1,st_size=len(raw))
+            with patch.object(quota.os,'geteuid',return_value=0), \
+                    patch.object(quota.os,'umask'), \
+                    patch.object(quota,'private_path',return_value=path), \
+                    patch.object(quota.os,'stat',return_value=metadata), \
+                    patch.object(quota.os,'open') as opened, \
+                    patch.object(Path,'read_bytes',return_value=raw) as read_bytes, \
+                    patch.object(quota,'trusted_path') as trusted:
+                with self.assertRaises(ValueError):
+                    quota.readback(args)
+                opened.assert_not_called()
+                read_bytes.assert_not_called()
+                trusted.assert_not_called()
 
 
 class StaticDeploymentRunReceiptTests(unittest.TestCase):
@@ -70,6 +98,35 @@ class StaticDeploymentRunReceiptTests(unittest.TestCase):
             changed=copy.deepcopy(self.receipt);changed[key]=value
             with self.subTest(key=key),self.assertRaises(ValueError):
                 quota.validate_run_receipt(changed,self.static,self.captures,'d'*64)
+
+    def test_equal_numeric_aliases_do_not_match_the_approved_receipt(self):
+        paths=[
+            (('schema_version',),True),
+            (('schema_version',),1.0),
+            (('filesystem_device',),7.0),
+            (('native_lock_identity','device'),True),
+            (('native_lock_identity','device'),1.0),
+            (('native_lock_identity','inode'),9.0),
+            (('native_lock_identity','owner_uid'),1000.0),
+        ]
+        paths.extend((('projects',0,key),float(value)) for key,value in self.project.items())
+        for path,replacement in paths:
+            changed=copy.deepcopy(self.receipt)
+            field=changed
+            for key in path[:-1]:
+                field=field[key]
+            self.assertEqual(field[path[-1]],replacement)
+            field[path[-1]]=replacement
+            with self.subTest(path=path,replacement=replacement),self.assertRaises(ValueError):
+                quota.validate_run_receipt(changed,self.static,self.captures,'d'*64)
+
+        for key,value in self.project.items():
+            changed_receipt=copy.deepcopy(self.receipt)
+            changed_captures=copy.deepcopy(self.captures)
+            changed_receipt['projects'][0][key]=float(value)
+            changed_captures[0]['material_project'][key]=float(value)
+            with self.subTest(capture_project_key=key),self.assertRaises(ValueError):
+                quota.validate_run_receipt(changed_receipt,self.static,changed_captures,'d'*64)
 
     def test_duplicate_partial_and_unapproved_project_is_rejected(self):
         for project in (dict(self.project,project_id=True),dict(self.project,hard_bytes=1025),
