@@ -504,6 +504,10 @@ Resume backing pin 与正材料额度，允许刷新来源观测样本。
 该场景将顺序控制保持到原 Host 已持久接受准确的 Kill。恢复同一 VMM 应答前，
 同一只读快照须确认当前 Kill 的 epoch 晚于原 Freeze、两条操作的 outbox 保留原
 Freeze 且无 Seal/Commit/Prepare/Activate，并核对本地映射、原来源及 backing 责任。
+同一 SQLite 快照的 `operations` 须含 Host 收件指向的原 Kill。报告中的
+`native_kill_ledger` 核对沙箱、owner、完整当前操作和输入运行代。状态允许
+`Pending` 或 `OutcomeUnknown`，结果必须为空。账本缺失或不一致时保留首错和
+原 VMM 暂停现场。真实自动到期的有序分支也使用这个检查。
 旧 Freeze 仍可待回执。额外动作或错配保留原暂停现场。恢复应答后，
 随后仍用原规则核对终止围栏、同源 Stop、材料、同伴进展与退出/GC。它不会等 Stop 才
 SIGCONT；初始短暂的进程停止及恢复时刻单列，不能称为全程无进程停止。自由应答对照

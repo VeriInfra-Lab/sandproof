@@ -587,7 +587,7 @@ class CaptureHandoffProbe:
         return terminal_outbox(self.runtime, conn, local, operation, capacity,
                                self.action['identity'])
 
-    def _read_terminal(self, deadline):
+    def _read_terminal(self, deadline, *, extra=None):
         """Separate terminal-only SQL snapshot; the five old stages stay strict."""
         native = self.runtime.services.native_pools[0]
         database = private_path(native['database'])
@@ -608,11 +608,13 @@ class CaptureHandoffProbe:
             sources = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
             resume_actions = self._terminal_outbox(conn, local, original['local_operation'], capacity)
             terminal_actions = self._terminal_outbox(conn, local, terminal['local_operation'], capacity)
-            extra = self._terminal_extra(conn, local, capacity)
+            additional = self._terminal_extra(conn, local, capacity)
+            if extra is not None:
+                additional.update(extra(conn, local, terminal, capacity))
         if (database.stat().st_dev, database.stat().st_ino) != identity:
             raise ValueError('original SQLite replaced during terminal snapshot')
         return dict(original=original, terminal=terminal, local=local, native=state,
-                    sources=sources, resume_actions=resume_actions, terminal_actions=terminal_actions, **extra)
+                    sources=sources, resume_actions=resume_actions, terminal_actions=terminal_actions, **additional)
 
     def _read_native(self, conn, local, capacity):
         native = self.runtime.services.native_pools[0]
