@@ -214,15 +214,16 @@ class FrozenFactsTests(unittest.TestCase):
             row = dict(f.inbox['sessions'][0], current_version=4, terminal=False, entries=[p.unload_entry])
             raw = json.dumps({'sessions': [row]}).encode()
             original = json.dumps(f.freeze).encode()
+            operation = f.freeze['identity']['operation']
             replacement = copy.deepcopy(f.freeze)
             replacement['identity']['logical_action'] = 'effect-17'
             with closing(sqlite3.connect(path)) as conn, conn:
                 conn.execute('CREATE TABLE controller_lifecycle_inbox(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER)')
-                conn.execute('CREATE TABLE outbox(id INTEGER,sandbox_id TEXT,operation_id TEXT,action_json BLOB,dispatch_state TEXT,receipt_json BLOB)')
+                conn.execute('CREATE TABLE outbox(id INTEGER PRIMARY KEY,sandbox_id TEXT,operation_id TEXT,action_json BLOB,dispatch_state TEXT,receipt_json BLOB)')
                 conn.execute('INSERT INTO controller_lifecycle_inbox VALUES(1,?,?,?)',
                              (raw, hashlib.sha256(raw).digest(), 65536))
                 conn.execute('INSERT INTO outbox VALUES(1,?,?,?,?,NULL)',
-                             (p.config['sandbox'], f.freeze['identity']['operation'], original, 'dispatched'))
+                             (p.config['sandbox'], operation, original, 'dispatched'))
             path.chmod(0o600)
             with patch.object(capture, 'checked_source_records', return_value=f.rows), \
                     patch.object(p, '_check_source_hold') as held:
@@ -247,6 +248,38 @@ class FrozenFactsTests(unittest.TestCase):
                     conn.execute('UPDATE outbox SET action_json=?, dispatch_state=?, receipt_json=NULL',
                                  (original, 'dispatched'))
                 self.assertEqual(held.call_count, 2)
+                namespace = f.runner.services.native_pools[0]['namespace']
+                other_operation = f'op-{namespace}-4-2'
+                with closing(sqlite3.connect(path)) as conn:
+                    for kind in ('SealSnapshot', 'CommitSnapshot'):
+                        action = copy.deepcopy(f.freeze)
+                        action['identity'].update(logical_action='effect-17',
+                            resource=dict(kind='snapshot', id=f'snapshot-{namespace}-7'))
+                        fields = dict(sandbox=4, epoch=3, generation=2, snapshot=7,
+                                      manifest=dict(digest=5))
+                        if kind == 'SealSnapshot':
+                            fields.update(vm=9, workspace=6)
+                        action['command']['logical']['command'] = {kind: fields}
+                        unknown = json.dumps(dict(identity=action['identity'], outcome=dict(
+                            status='unknown', details=dict(reason='observation_unavailable',
+                                                           last_observation=None)))).encode()
+                        for state, receipt in (('ready', None), ('dispatched', None), ('receipted', unknown)):
+                            with self.subTest(kind=kind, state=state):
+                                with conn:
+                                    conn.execute('INSERT OR REPLACE INTO outbox VALUES(2,?,?,?,?,?)',
+                                        (p.config['sandbox'], operation, json.dumps(action).encode(), state, receipt))
+                                with self.assertRaisesRegex(ValueError, 'outbox contains a capture action'):
+                                    p.observe_destroy_window(p.deadline)
+                        action['identity']['operation'] = other_operation
+                        with conn:
+                            conn.execute('INSERT OR REPLACE INTO outbox VALUES(2,?,?,?,?,NULL)',
+                                         (p.config['sandbox'], other_operation, json.dumps(action).encode(), 'ready'))
+                        with self.subTest(kind=kind, operation=other_operation):
+                            self.assertEqual(p.observe_destroy_window(p.deadline), first)
+                    with conn:
+                        conn.execute('DELETE FROM outbox WHERE id=2')
+                self.assertEqual(held.call_count, 4)
+                self.assertIs(first['capture_outbox_actions_absent'], True)
                 f.runner.services.processes.children['host-0'] = Mock(pid=p.host.pid)
                 with self.assertRaisesRegex(ValueError, 'original Freeze cut Host'):
                     p.observe_destroy_window(p.deadline)
