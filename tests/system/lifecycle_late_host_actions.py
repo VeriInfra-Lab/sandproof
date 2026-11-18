@@ -21,6 +21,7 @@ import sqlite3
 import time
 
 from _center_host_services import role_facts
+from _internal_fault_relay import _u64
 from lifecycle_late_material_receipt import SlotOccupantObserver, _bounded_json
 from lifecycle_unload_capture_faults import CaptureHandoffProbe, terminal_outbox
 from lifecycle_unload_runtime import original_process, remaining
@@ -31,6 +32,7 @@ from server_process_crash import process_start_ticks
 from tools.check_kvm_host import artifact_fingerprint, unique_keys
 from tools.ci_e2e_prepare import bounded_json_command
 from tools.system_acceptance import private_path
+from tools.template_build_guest import equal
 
 # sandproof_protocol::PROTOCOL_VERSION; independent of lifecycle protocol 4.
 NATIVE_ACTION_PROTOCOL_VERSION = 1
@@ -46,18 +48,20 @@ def approved_probe(args):
 
 
 def accepted_entry(inbox, accepted, prior, node, *, terminal):
+    version = _u64(accepted['accepted_version'], positive=True)
     sessions = [s for s in inbox['sessions'] if s['id'] == accepted['session']]
-    if (len(sessions) != 1 or sessions[0]['current_version'] != accepted['accepted_version']
+    if (len(sessions) != 1 or not equal(sessions[0]['current_version'], version)
             or sessions[0]['terminal'] is not terminal):
         raise ValueError('exact current original Host session/version required')
     session = sessions[0]
-    if any(session['local'][k] != prior['local'][k] for k in ('sandbox', 'owner')):
+    if any(not equal(session['local'][k], prior['local'][k]) for k in ('sandbox', 'owner')):
         raise ValueError('original public/native mapping changed')
-    entries = [e for e in session['entries'] if e['intent']['accepted_version'] == accepted['accepted_version']
-        and e['intent']['request']['binding']['key'] == accepted['key']]
+    entries = [e for e in session['entries'] if equal(e['intent']['accepted_version'], version)
+        and equal(e['intent']['request']['binding']['key'], accepted['key'])]
     if len(entries) != 1 or entries[0]['local_operation'] is None:
         raise ValueError('one original admitted Host operation required')
     entry = entries[0]; binding = entry['intent']['request']['binding']
+    _u64(entry['local_operation'])
     if (binding['session'] != accepted['session'] or binding['node'] != node
             or str(prior['local']['owner']) != accepted['key']['owner']):
         raise ValueError('original complete session/node/owner binding differs')
@@ -81,27 +85,28 @@ def original_actions(rows, prior, native, resource):
     if set(selected) != {'StopVm', 'CleanupVm'}:
         raise ValueError('both actual old stop/delete actions required before journal retirement')
     expected = dict(sandbox=prior['local']['sandbox'], generation=binding['generation'], vm=binding['vm'])
+    epoch = _u64(native['epoch'])
     # ResourceRef comes from the original persisted Prepare, never a guessed id.
     stop, cleanup = selected['StopVm'], selected['CleanupVm']
     for row, kind in ((stop, 'StopVm'), (cleanup, 'CleanupVm')):
         action = row[0]; identity = action['identity']
-        want = dict(expected, epoch=native['epoch']) if kind == 'StopVm' else expected
-        if (action['command']['logical']['command'] != {kind: want}
+        want = dict(expected, epoch=epoch) if kind == 'StopVm' else expected
+        if (not equal(action['command']['logical']['command'], {kind: want})
                 or type(identity['protocol_version']) is not int
                 or identity['protocol_version'] != NATIVE_ACTION_PROTOCOL_VERSION
-                or identity['epoch'] != native['epoch']
+                or not equal(identity['epoch'], epoch)
                 or identity['resource'] != resource):
             raise ValueError('old terminal action has a foreign VM/generation/resource/epoch')
     if (cleanup[1:] != ('dispatched', None)
-            or CaptureHandoffProbe._success_observation(stop, 'Stopped') != dict(
-                pid=prior['source']['pid'], start_ticks=prior['source']['start_time_ticks'])):
+            or not equal(CaptureHandoffProbe._success_observation(stop, 'Stopped'), dict(
+                pid=prior['source']['pid'], start_ticks=prior['source']['start_time_ticks']))):
         raise ValueError('original successful Stop and unacknowledged Cleanup cut required')
     return [copy.deepcopy(stop[0]), copy.deepcopy(cleanup[0])]
 
 
 class LateHostActionsProbe:
     def __init__(self, runtime, client, prior, resume, helper, deadline):
-        if prior['session'] != client.session or resume != client.current_acceptance:
+        if prior['session'] != client.session or not equal(resume, client.current_acceptance):
             raise ValueError('original restored execution and Resume acceptance required')
         self.runtime, self.client, self.deadline = runtime, client, deadline
         self.prior, self.resume, self.helper = copy.deepcopy((prior, resume, helper))
@@ -140,18 +145,21 @@ class LateHostActionsProbe:
             sandbox = 'sb-'+self.native['namespace']+'-'+str(local['sandbox'])
             native = _bounded_json(conn, 'sandboxes', 'state_blob', 'sandbox_id', sandbox,
                 capacity['max_sql_value_bytes'])
-            if native['owner'] != local['owner'] or native['generation'] != self.prior['context']['binding']['generation']:
+            if (not equal(native['owner'], local['owner'])
+                    or not equal(native['generation'], self.prior['context']['binding']['generation'])):
                 raise ValueError('original terminal native generation/owner differs')
             if terminal:
                 operation = native['current_operation']
+                epoch = _u64(native['epoch'])
                 if (native['terminal'] is not True or operation is None or operation['kind'] != 'Kill'
-                        or operation['id'] != entry['local_operation'] or operation['epoch'] != native['epoch']):
+                        or not equal(operation['id'], entry['local_operation'])
+                        or not equal(operation['epoch'], epoch)):
                     raise ValueError('original admitted terminal Kill is no longer current')
             expected_identity = dict(owner='tenant-'+str(local['owner']),
                 protocol_version=NATIVE_ACTION_PROTOCOL_VERSION, generation=native['generation'])
             rows = terminal_outbox(self.runtime, conn, local, entry['local_operation'], capacity, expected_identity)
-            if any(type(action['identity']['protocol_version']) is not int for action, _, _ in rows):
-                raise ValueError('original native action protocol version must retain its integer type')
+            for action, _, _ in rows:
+                _u64(action['identity']['attempt'])
         after = database.stat()
         if (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino):
             raise ValueError('original database replaced during action capture')
@@ -165,8 +173,9 @@ class LateHostActionsProbe:
             raise ValueError('original admitted Resume required')
         prepared = [row[0] for row in rows if 'PrepareVm' in row[0]['command']['logical']['command']]
         binding = self.prior['context']['binding']
-        if (len(prepared) != 1 or any(prepared[0]['command']['logical']['command']['PrepareVm'][k] != v
-                for k,v in dict(sandbox=binding['sandbox'], generation=binding['generation'], vm=binding['vm']).items())):
+        if (len(prepared) != 1 or any(
+                not equal(prepared[0]['command']['logical']['command']['PrepareVm'][field], binding[field])
+                for field in ('sandbox', 'generation', 'vm'))):
             raise ValueError('one original persisted Prepare for the restored execution required')
         self.resource = copy.deepcopy(prepared[0]['identity']['resource'])
         self.runtime.services.processes.stop('host-0')
@@ -177,11 +186,11 @@ class LateHostActionsProbe:
         return dict(cut='cleanup_vm-success-before-SQL-receipt', preparatory_host_restart=True)
 
     def capture(self, accepted):
-        if (self.host is None or self.actions is not None or accepted != self.client.current_acceptance
+        if (self.host is None or self.actions is not None or not equal(accepted, self.client.current_acceptance)
                 or accepted['session'] != self.resume['session']
-                or accepted['accepted_version'] != self.resume['accepted_version']+1
-                or self.client.destroy_request != dict(window=accepted['key']['window'],
-                    sequence=accepted['key']['sequence'], expected_version=self.resume['accepted_version'])):
+                or not equal(accepted['accepted_version'], self.resume['accepted_version']+1)
+                or not equal(self.client.destroy_request, dict(window=accepted['key']['window'],
+                    sequence=accepted['key']['sequence'], expected_version=self.resume['accepted_version']))):
             raise ValueError('one exact successor public Destroy required')
         while self.host.poll() is None:
             time.sleep(min(.02, remaining(self.deadline)))
@@ -193,7 +202,7 @@ class LateHostActionsProbe:
         expected['request']['binding'].update(key=copy.deepcopy(accepted['key']),
             expected=dict(state='version', version=self.resume['accepted_version']))
         expected['request']['operation'] = dict(kind='destroy')
-        if entry['intent'] != expected or accepted['key'] == self.resume['key']:
+        if not equal(entry['intent'], expected) or equal(accepted['key'], self.resume['key']):
             raise ValueError('complete original Destroy intent differs from the accepted successor')
         actions = original_actions(rows, self.prior, native, self.resource)
         if original_process(self.prior['source']):
