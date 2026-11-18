@@ -61,10 +61,11 @@ def fixture(root):
     native=dict(terminal=True,phase='Revoking',generation=2,current_vm=9,net_slot=10,epoch=4,current_operation=dict(kind='Kill',id=5,epoch=4))
     snapshot=dict(original=old,terminal=terminal,local=local,native=native,sources=rows,original_actions=[(freeze,'dispatched',None)],
         terminal_actions=[(fence,'receipted',receipt(fence,'Fence',dict(epoch=4,terminal=True))),(stop,'dispatched',None)],
-        global_pending_stops=[stop],lifetime=lifetime)
+        global_pending_stops=[stop],lifetime=lifetime,logical_action_registered=True)
     cleanup_snapshot=copy.deepcopy(snapshot)
     cleanup_snapshot['terminal_actions'][1]=(stop,'receipted',receipt(stop,'Stopped',dict(pid=123,start_ticks=456)))
     cleanup_snapshot['terminal_actions'].append((cleanup,'dispatched',None));cleanup_snapshot['global_pending_stops']=[]
+    cleanup_snapshot['logical_action_registered']=False
     settings=dict(namespace=namespace,database=str(root/'state.db'),node_state_dir=str(root/'state'),chroot_base=str(root/'jails'))
     config=dict(inbox=dict(node=node),native=dict(maintenance=dict(capacity=dict(max_sql_rows=64,max_sql_value_bytes=65536))))
     runner=NS(services=NS(native_pools=[settings],host_configs=[config],processes=NS(bindings={'host-0':dict(uid=os.getuid(),gid=os.getgid())})),
@@ -323,9 +324,12 @@ class FrozenFactsTests(unittest.TestCase):
             f=fixture(Path(directory));p=f.probe;p._bind_destroy(f.accepted(f.destroy));raw=json.dumps(f.inbox).encode()
             with sqlite3.connect(p.runtime.services.native_pools[0]['database']) as conn:
                 conn.executescript('CREATE TABLE controller_lifecycle_inbox(id INTEGER,state_json BLOB,sha256 BLOB,reserve_bytes INTEGER); CREATE TABLE sandboxes(sandbox_id TEXT,state_blob BLOB,owner_id TEXT); CREATE TABLE outbox(id INTEGER,sandbox_id TEXT,operation_id TEXT,action_json BLOB,dispatch_state TEXT,receipt_json BLOB); CREATE TABLE sandbox_lifetimes(sandbox_id TEXT,owner_id TEXT,started_at_ms INTEGER,deadline_ms INTEGER,max_deadline_ms INTEGER,startup_deadline_ms INTEGER);')
+                conn.execute('CREATE TABLE controller_effect_keys(id INTEGER PRIMARY KEY,logical_json BLOB NOT NULL UNIQUE)')
                 conn.execute('INSERT INTO controller_lifecycle_inbox VALUES(1,?,?,?)',(raw,hashlib.sha256(raw).digest(),65536))
                 name=p.config['sandbox'];conn.execute('INSERT INTO sandboxes VALUES(?,?,?)',(name,json.dumps(dict(f.snapshot['native'],owner=1)).encode(),'tenant-1'))
                 conn.execute('INSERT INTO sandbox_lifetimes VALUES(?,?,?,?,?,?)',(name,'tenant-1',900,1000,1100,1000))
+                logical=f.stop['command']['logical']
+                conn.execute('INSERT INTO controller_effect_keys VALUES(3,?)',(json.dumps(logical).encode(),))
                 for i,(a,state,receipt) in enumerate(f.snapshot['original_actions']+f.snapshot['terminal_actions']):
                     conn.execute('INSERT INTO outbox VALUES(?,?,?,?,?,?)',(i,name,a['identity']['operation'],json.dumps(a).encode(),state,None if receipt is None else json.dumps(receipt).encode()))
             Path(p.runtime.services.native_pools[0]['database']).chmod(0o600)
@@ -333,6 +337,38 @@ class FrozenFactsTests(unittest.TestCase):
                 got=p._read_terminal(p.deadline)
             self.assertEqual(got['original'],p.unload_entry);self.assertEqual(got['global_pending_stops'],[f.stop])
             self.assertEqual(got['lifetime'],p.prior['lifetime']);self.assertNotIn('resume_actions',got)
+            self.assertIs(got['logical_action_registered'],True)
+            for field,replacement in (('vm',10),('vm',9.0),('generation',2.0)):
+                with self.subTest(field=field,replacement=replacement):
+                    changed=copy.deepcopy(logical)
+                    changed['command']['StopVm'][field]=replacement
+                    with sqlite3.connect(p.runtime.services.native_pools[0]['database']) as conn:
+                        conn.execute('UPDATE controller_effect_keys SET logical_json=?',(json.dumps(changed).encode(),))
+                    with patch.object(capture,'checked_source_records',return_value=f.rows):
+                        got=p._read_terminal(p.deadline)
+                    self.assertIs(got['logical_action_registered'],False)
+                    with self.assertRaisesRegex(ValueError,'complete logical effect registration'):
+                        p._stop_barrier(got)
+            with sqlite3.connect(p.runtime.services.native_pools[0]['database']) as conn:
+                conn.execute('UPDATE controller_effect_keys SET logical_json=?',(b' '*65537,))
+            with patch.object(capture,'checked_source_records',return_value=f.rows), \
+                    self.assertRaisesRegex(ValueError,'bounded original logical effect'):
+                p._read_terminal(p.deadline)
+            with sqlite3.connect(p.runtime.services.native_pools[0]['database']) as conn:
+                conn.execute('UPDATE controller_effect_keys SET id=4, logical_json=?',(json.dumps(logical).encode(),))
+            with patch.object(capture,'checked_source_records',return_value=f.rows), \
+                    self.assertRaisesRegex(ValueError,'bounded original logical effect'):
+                p._read_terminal(p.deadline)
+            with sqlite3.connect(p.runtime.services.native_pools[0]['database']) as conn:
+                conn.execute('UPDATE controller_effect_keys SET id=3')
+                changed=copy.deepcopy(f.stop)
+                changed['identity']['logical_action']='effect-03'
+                conn.execute('UPDATE outbox SET action_json=? WHERE id=2',(json.dumps(changed).encode(),))
+            with patch.object(capture,'checked_source_records',return_value=f.rows), \
+                    self.assertRaisesRegex(ValueError,'canonical SQL logical action'):
+                p._read_terminal(p.deadline)
+            with sqlite3.connect(p.runtime.services.native_pools[0]['database']) as conn:
+                conn.execute('UPDATE outbox SET action_json=? WHERE id=2',(json.dumps(f.stop).encode(),))
             with sqlite3.connect(p.runtime.services.native_pools[0]['database']) as conn:conn.execute('UPDATE controller_lifecycle_inbox SET sha256=?',(b'x'*32,))
             with patch.object(capture,'checked_source_records',return_value=f.rows),self.assertRaises(ValueError):p._read_terminal(p.deadline)
 
@@ -446,7 +482,7 @@ class OriginalUnixPauseTests(unittest.TestCase):
 class FreezeStopWiringTests(unittest.TestCase):
     def test_actual_stop_socket_is_released_only_after_checks_and_peer_progress(self):
         import lifecycle_freeze_dispatch as dispatched
-        for fault in ('dispatch-none','dispatch-peer-progress','dispatch-global-stop','none','peer-progress','global-stop',
+        for fault in ('dispatch-none','dispatch-peer-progress','dispatch-global-stop','none','peer-progress','global-stop','unregistered-stop',
                       'peer-stop-replacement','final-stop-replacement',
                       'automatic-none','automatic-peer-progress','automatic-global-stop','responsive-none','responsive-peer-progress','responsive-global-stop',
                       'unresponsive-none','unresponsive-peer-progress','unresponsive-global-stop',
@@ -493,9 +529,11 @@ class FreezeStopWiringTests(unittest.TestCase):
                     fence=accepted_snapshot['terminal_actions'][0][0]
                     accepted_snapshot['terminal_actions']=[(fence,'ready',None)]
                     accepted_snapshot['global_pending_stops']=[]
+                    accepted_snapshot['logical_action_registered']=False
                     p._read_terminal.side_effect=[accepted_snapshot,f.snapshot,f.snapshot,f.snapshot]
                     p.runtime.services.wait_ready.side_effect=lambda **_:events.append('wait-ready')
                 if fault=='global-stop':f.snapshot['global_pending_stops']=[]
+                if fault=='unregistered-stop':f.snapshot['logical_action_registered']=False
                 if fault in ('peer-stop-replacement','final-stop-replacement'):
                     replaced=copy.deepcopy(f.snapshot)
                     stop=replaced['terminal_actions'][1][0]
@@ -556,6 +594,11 @@ class FreezeStopWiringTests(unittest.TestCase):
                         self.assertEqual(events.count('peer'),1)
                         self.assertEqual(p.continue_sent,fault=='final-stop-replacement')
                         self.assertFalse(p.terminal_failure_state()['capacity_released'])
+                    elif fault=='unregistered-stop':
+                        with self.assertRaisesRegex(ValueError,'complete logical effect registration'):
+                            recovery(accepted,p.deadline,observe_peer=progress)
+                        self.assertFalse(p.stop_released);self.assertFalse(p.recovered)
+                        self.assertFalse(p.continue_sent);self.assertNotIn('peer',events)
                     else:
                         with self.assertRaises(ValueError):recovery(accepted,p.deadline,observe_peer=progress)
                         self.assertFalse(p.stop_released);self.assertFalse(p.recovered)

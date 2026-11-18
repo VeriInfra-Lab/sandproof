@@ -47,19 +47,6 @@ class PendingStopProbe(CaptureHandoffProbe):
 
     def _extra(self, conn, local, capacity):
         facts = pending_stop_facts(self.runtime, conn, local, capacity)
-        facts['logical_action_registered'] = False
-        if len(facts['global_pending_stops']) == 1:
-            stop = facts['global_pending_stops'][0]
-            self._stop_shape(stop)
-            logical = stop['identity']['logical_action']
-            number = logical.removeprefix('effect-')
-            if not number.isascii() or not number.isdecimal() or not 0 < int(number) < 2**63 or logical != 'effect-' + str(int(number)):
-                raise ValueError('original canonical SQL logical action identifier required')
-            row = conn.execute('SELECT length(logical_json) FROM controller_effect_keys WHERE id=?', (int(number),)).fetchone()
-            if row is None or not 0 < row[0] <= capacity['max_sql_value_bytes']:
-                raise ValueError('bounded original logical effect row required')
-            raw, = conn.execute('SELECT logical_json FROM controller_effect_keys WHERE id=?', (int(number),)).fetchone()
-            facts['logical_action_registered'] = equal(json.loads(raw, object_pairs_hook=unique_keys), stop['command']['logical'])
         name = 'sb-' + self.runtime.services.native_pools[0]['namespace'] + '-' + str(local['sandbox'])
         row = conn.execute('SELECT length(state_blob) FROM sandboxes WHERE sandbox_id=?', (name,)).fetchone()
         if row is None or not 0 < row[0] <= capacity['max_sql_value_bytes']:
