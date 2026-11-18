@@ -33,6 +33,9 @@ from tools.system_acceptance import private_path
 from tools.template_build_guest import equal
 
 
+CAPTURE_COMMANDS = frozenset(('SealSnapshot', 'CommitSnapshot'))
+
+
 def paused_source(runtime, prior, deadline, *, expected_state='Paused'):
     """One GET on the actual original VM's checked Unix stream; no VM mutation.
 
@@ -221,6 +224,9 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         action = self._original_action(actions, entry)
         if not equal(entry, self.unload_entry) or not equal(action, self.action):
             raise ValueError('original Unload or complete Freeze changed at public Destroy')
+        if any(CAPTURE_COMMANDS & saved['command']['logical']['command'].keys()
+               for saved, _, _ in actions):
+            raise ValueError('original Unload outbox contains a capture action at public Destroy')
         self._no_full(rows)
         self._check_source_hold(deadline)
         host = self.runtime.services.processes.children.get('host-0')
@@ -229,7 +235,8 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         remaining(deadline)
         return dict(host_pid=host.pid, host_exit_code=self._cut_exit_code(),
                     unload_accepted_version=entry['intent']['accepted_version'],
-                    freeze_identity=action['identity'], freeze_sql_receipt_pending=True)
+                    freeze_identity=action['identity'], freeze_sql_receipt_pending=True,
+                    capture_outbox_actions_absent=True)
 
     def _source_state(self,deadline):
         remaining(deadline)
@@ -308,7 +315,8 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         originals=snapshot['original_actions'];all_rows=originals+snapshot['terminal_actions']
         freeze=[r for r in originals if 'FreezeVm' in r[0]['command']['logical']['command']]
         if len(freeze)!=1 or not equal(freeze[0][0],self.action):raise ValueError('original Freeze missing or replaced')
-        if any(set(r[0]['command']['logical']['command']) & {'SealSnapshot','CommitSnapshot','PrepareVm','ActivateVm'} for r in all_rows):
+        forbidden = CAPTURE_COMMANDS | {'PrepareVm', 'ActivateVm'}
+        if any(forbidden & action['command']['logical']['command'].keys() for action, _, _ in all_rows):
             raise ValueError('terminal frozen Unload scheduled new capture or execution')
         self._no_full(snapshot['sources'],terminal=True)
         observed=self._success_observation(freeze[0],'Frozen')
