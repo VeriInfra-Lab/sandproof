@@ -1,0 +1,34 @@
+import FirstMatchInputs
+
+open Aeneas Aeneas.Std SandproofSourceFirstMatch alloc.vec
+open controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceFirstMatch
+
+/-- The binding-only view accepts changed full work under the same binding. -/
+theorem binding_only_accepts_changed_work :
+    retains_record_using witnessChecks witnessOld witnessChanged 7 = .ok true := by
+  have selected : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (Nat × Nat))
+      witnessChanged 0#usize = .ok (7, 2) := by
+    change Vec.index_usize witnessChanged 0#usize = .ok (7, 2)
+    simp [Vec.index_usize, witnessChanged]
+  have inside : 0#usize < alloc.vec.Vec.len witnessChanged := by
+    simp [UScalar.lt_equiv, witnessChanged]
+  unfold retains_record_using retains_record_using_loop
+  simp only [witnessChecks, witnessOld, beq_self_eq_true, bind_tc_ok, ↓reduceIte]
+  rw [loop]
+  simp only [retains_record_using_loop.body, inside, ↓reduceIte, selected, bind_tc_ok, beq_self_eq_true]
+  rw [Aeneas.Std.bind_ok]
+
+theorem binding_only_violates_complete_match :
+    retains_record_using witnessChecks witnessOld witnessChanged 7 ≠
+      .ok (retained (fun key old => key == old.1) (completeMatch id) (fun _ _ => true)
+        7 witnessChanged.val witnessOld) := by
+  rw [binding_only_accepts_changed_work]
+  simp [retained, firstPreserves, completeMatch, witnessChanged, witnessOld]
+
+end SandboxModel.Stage1Protocol.SourceFirstMatch
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFirstMatch.binding_only_accepts_changed_work
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFirstMatch.binding_only_violates_complete_match

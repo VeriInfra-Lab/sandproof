@@ -1,0 +1,18 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2520,3 +2520,15 @@
+ 历史、重启、物理资源及 V4/V5/V6/V7 条件没有因此证明；JSON/SHA/SQLite 的既有依赖
+ 合同不升级为第三方内部证明。公共登记、独立实现对应和本有限封口不表示整个 V3、
+ 旧 `full`/全项目或部署系统已完成。
++
++## V3 来源记录首个完整匹配候选
++
++固定 integration `7b27876458a7212feb98a2aaf36560fe6443fb73`。两个真实生成扫描对任意
++记录向量分别对应 `List.find?` 和 `List.all`。比较收到完整工作值，事实核对收到原旧记录
++和首个匹配的整条记录。首匹配的拒绝结果终止该次查找。正确版与仅按 binding 的实际
++错误版均由固定工具抽取，使用同一完整比较规格。原生 SQLite 对照还检查旧行未被替换，
++及错误版真正持久化被篡改的完整工作值。
++
++[输入、形式与原生复验](../verification/experiments/stage1-protocol/unload-parent-link/first-match/README.md)
++列明两份独立闭包和当前提供者。键集合与现有相等/事实提供者的实际类型连接、逐行 SQL、
++JSON/SHA 和事务语义仍待接续。Stage1 公共登记及精确候选的普通与原生封口仍待验收。
