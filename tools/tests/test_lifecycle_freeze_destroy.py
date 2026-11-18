@@ -244,7 +244,8 @@ class FrozenFactsTests(unittest.TestCase):
             replacement = copy.deepcopy(f.freeze)
             replacement['identity']['logical_action'] = 'effect-17'
             with patch.object(capture, 'checked_source_records', return_value=f.rows), \
-                    patch.object(p, '_check_source_hold') as held:
+                    patch.object(p, '_check_source_hold') as held, \
+                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
                 first = p.observe_destroy_window(p.deadline)
                 self.assertEqual(first['freeze_identity'], f.freeze['identity'])
                 self.assertEqual(first['unload_accepted_version'], 4)
@@ -309,7 +310,8 @@ class FrozenFactsTests(unittest.TestCase):
             path = freeze_window_journal(f)
             logical = f.freeze['command']['logical']
             capacity = f.runner.services.host_configs[0]['native']['maintenance']['capacity']
-            with closing(sqlite3.connect(path)) as writer, patch.object(p, '_check_source_hold') as held:
+            with closing(sqlite3.connect(path)) as writer, patch.object(p, '_check_source_hold') as held, \
+                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
                 self.assertEqual(writer.execute('PRAGMA journal_mode=WAL').fetchone(), ('wal',))
 
                 def replace_after_outbox_read(reader, _config, _deadline):
@@ -354,7 +356,8 @@ class FrozenFactsTests(unittest.TestCase):
             p = f.probe
             freeze_window_journal(f)
             with patch.object(capture, 'checked_source_records', return_value=f.rows) as records, \
-                    patch.object(p, '_check_source_hold') as held:
+                    patch.object(p, '_check_source_hold') as held, \
+                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
                 before = p.observe_destroy_window(p.deadline)
                 held.assert_called_once()
 
@@ -379,6 +382,7 @@ class FrozenFactsTests(unittest.TestCase):
                 rows[0]['observation'] = {'sample': 2}
                 unrelated = copy.deepcopy(rows[1])
                 unrelated['work']['anchor']['local']['sandbox'] += 1
+                unrelated['work']['anchor']['request']['request']['binding']['session'] = 'sandbox-2'
                 records.return_value = [unrelated, *rows]
                 self.assertEqual(p.observe_destroy_window(p.deadline), before)
                 self.assertEqual(held.call_count, 2)
@@ -393,7 +397,8 @@ class FrozenFactsTests(unittest.TestCase):
                             entries=[p.unload_entry])
             with closing(sqlite3.connect(path)) as writer, \
                     patch.object(capture, 'checked_source_records', return_value=f.rows), \
-                    patch.object(p, '_check_source_hold') as held:
+                    patch.object(p, '_check_source_hold') as held, \
+                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
                 before = p.observe_destroy_window(p.deadline)
                 for variant in (
                         dict(original, terminal=True),
@@ -417,7 +422,8 @@ class FrozenFactsTests(unittest.TestCase):
             pause = pending_pause(f)
             with closing(sqlite3.connect(path)) as writer, \
                     patch.object(capture, 'checked_source_records', return_value=f.rows), \
-                    patch.object(p, '_check_source_hold') as held:
+                    patch.object(p, '_check_source_hold') as held, \
+                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
                 before = p.observe_destroy_window(p.deadline)
                 for field, value in (
                         ('terminal', True), ('phase', 'Paused'), ('owner', 1.0), ('epoch', 4),
@@ -439,7 +445,8 @@ class FrozenFactsTests(unittest.TestCase):
             f = fixture(Path(directory))
             p = f.probe
             path = freeze_window_journal(f)
-            with closing(sqlite3.connect(path)) as writer, patch.object(p, '_check_source_hold') as held:
+            with closing(sqlite3.connect(path)) as writer, patch.object(p, '_check_source_hold') as held, \
+                    patch.object(p, '_observe_destroy_endpoint', return_value={}):
                 self.assertEqual(writer.execute('PRAGMA journal_mode=WAL').fetchone(), ('wal',))
 
                 def record_terminal_on_another_connection(reader, _config, _deadline):
@@ -716,6 +723,53 @@ class OriginalUnixPauseTests(unittest.TestCase):
             self.assertEqual(result['peer_pid'],os.getpid());self.assertEqual(result['state'],'Paused')
             self.assertFalse(result['execution_authority']);self.assertEqual(len(seen),1);self.assertTrue(seen[0].startswith(b'GET / HTTP/1.1'))
 
+    def test_destroy_window_rejects_an_endpoint_replaced_after_the_paused_reply(self):
+        for change in ('socket', 'jail'):
+            with self.subTest(change=change), self.endpoint() as (runner, prior, seen):
+                native = runner.services.native_pools[0]
+                base = Path(native['chroot_base'])
+                jail = base / 'firecracker' / prior['source']['resource_id'] / 'root'
+                f = fixture(base)
+                p = f.probe
+                p.runtime.services.native_pools[0].update(native)
+                p.prior['source'] = prior['source']
+                p.prior['context']['position'] = prior['context']['position']
+                freeze_window_journal(f)
+                p.frozen = frozen.paused_source(p.runtime, p.prior, p.deadline)
+
+                with patch.object(capture, 'checked_source_records', return_value=f.rows), \
+                        patch.object(p, '_check_source_hold'), \
+                        patch.object(frozen.socket, 'socket', side_effect=AssertionError('unexpected VMM connection')):
+                    before = p.observe_destroy_window(p.deadline)
+                    self.assertEqual(p.observe_destroy_window(p.deadline), before)
+
+                old_jail = jail.with_name('original-root')
+                socket_path = jail / 'api.socket'
+                if change == 'jail':
+                    jail.rename(old_jail)
+                    jail.mkdir()
+                    (old_jail / socket_path.name).rename(socket_path)
+                else:
+                    socket_path.rename(jail / 'original.socket')
+                with ExitStack() as stack:
+                    if change == 'socket':
+                        replacement = stack.enter_context(socket.socket(socket.AF_UNIX, socket.SOCK_STREAM))
+                        descriptor = os.open(jail, os.O_RDONLY | os.O_DIRECTORY)
+                        try:
+                            replacement.bind(f'/proc/self/fd/{descriptor}/api.socket')
+                        finally:
+                            os.close(descriptor)
+                    stack.enter_context(patch.object(capture, 'checked_source_records', return_value=f.rows))
+                    stack.enter_context(patch.object(p, '_check_source_hold'))
+                    stack.enter_context(patch.object(frozen.socket, 'socket',
+                        side_effect=AssertionError('unexpected VMM connection')))
+                    with self.assertRaisesRegex(ValueError, 'endpoint differs from the original Paused reply'):
+                        p.observe_destroy_window(p.deadline)
+                self.assertEqual(before['original_vmm_endpoint'], {
+                    key: p.frozen[key] for key in ('jail_identity', 'socket_identity', 'uid')
+                })
+                self.assertEqual(len(seen), 1)
+
     def test_unmodified_kernel_credentials_require_both_vm_uid_and_gid(self):
         with self.endpoint('native-credentials') as (runner,prior,seen):
             if os.getuid()==os.getgid():
@@ -937,7 +991,8 @@ class SceneAndReplayTests(unittest.TestCase):
         for name in ('arm','after_acceptance','assert_terminal_before_gc','cleanup','close'):
             getattr(p,name).side_effect=lambda *_,n=name,**__:events.append(n) or {}
         window_reads = 0
-        window_evidence = dict(freeze_sql_receipt_pending=True, original_pin_and_positive_charge_retained=True)
+        window_evidence = dict(freeze_sql_receipt_pending=True, original_pin_and_positive_charge_retained=True,
+            original_vmm_endpoint=dict(jail_identity=[1, 2], socket_identity=[1, 3], uid=4))
         def observe_destroy_window(_):
             nonlocal window_reads
             window_reads += 1

@@ -13,6 +13,7 @@ _require_assertions = _runpy.run_path(
 _require_assertions()
 
 import copy
+from contextlib import contextmanager
 import hashlib
 import http.client
 import json
@@ -36,6 +37,43 @@ from tools.template_build_guest import equal
 CAPTURE_COMMANDS = frozenset(('SealSnapshot', 'CommitSnapshot'))
 
 
+@contextmanager
+def original_vmm_endpoint(runtime, prior, deadline):
+    """Sample the original jail and named API socket without connecting."""
+    remaining(deadline)
+    native = runtime.services.native_pools[0]
+    source = prior['source']
+    resource = 'vm-' + native['namespace'] + '-' + str(prior['context']['binding']['vm'])
+    if source['resource_id'] != resource or not original_process(source):
+        raise ValueError('original source process required before observing the VMM endpoint')
+    claim = Path(native['chroot_base']) / '.claims' / resource / 'record.json'
+    if not equal(original_json(claim, 16384), source):
+        raise ValueError('original process claim changed')
+    root = Path(native['chroot_base']) / Path(native['firecracker']).name / resource / 'root'
+    if root.resolve(strict=True) != root:
+        raise ValueError('canonical original jail required')
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    try:
+        held = os.fstat(fd)
+        before = os.stat('api.socket', dir_fd=fd, follow_symlinks=False)
+        uid = native['bounded_host']['uid_base'] + prior['context']['position']
+        if not stat.S_ISSOCK(before.st_mode) or before.st_uid != uid:
+            raise ValueError('original VMM API socket required')
+        identity = dict(jail_identity=[held.st_dev, held.st_ino],
+                        socket_identity=[before.st_dev, before.st_ino])
+        yield fd, uid, identity
+        after = os.stat('api.socket', dir_fd=fd, follow_symlinks=False)
+        current = root.lstat()
+        if (not stat.S_ISSOCK(after.st_mode) or after.st_uid != uid
+                or [after.st_dev, after.st_ino] != identity['socket_identity']
+                or [current.st_dev, current.st_ino] != identity['jail_identity']
+                or not equal(original_json(claim, 16384), source) or not original_process(source)):
+            raise ValueError('original VMM endpoint changed during observation')
+        remaining(deadline)
+    finally:
+        os.close(fd)
+
+
 def paused_source(runtime, prior, deadline, *, expected_state='Paused'):
     """One GET on the actual original VM's checked Unix stream; no VM mutation.
 
@@ -44,20 +82,8 @@ def paused_source(runtime, prior, deadline, *, expected_state='Paused'):
     """
     if expected_state not in ('Paused','Running'):
         raise ValueError('one exact current physical VMM state required')
-    native=runtime.services.native_pools[0];source=prior['source']
-    resource='vm-'+native['namespace']+'-'+str(prior['context']['binding']['vm'])
-    if source['resource_id']!=resource or not original_process(source):
-        raise ValueError('original source process required before pause query')
-    claim=Path(native['chroot_base'])/'.claims'/resource/'record.json'
-    if not equal(original_json(claim,16384),source):raise ValueError('original process claim changed')
-    root=Path(native['chroot_base'])/Path(native['firecracker']).name/resource/'root'
-    if root.resolve(strict=True)!=root:raise ValueError('canonical original jail required')
-    fd=os.open(root,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC)
-    try:
-        held=os.fstat(fd);before=os.stat('api.socket',dir_fd=fd,follow_symlinks=False)
-        uid=native['bounded_host']['uid_base']+prior['context']['position']
-        if not stat.S_ISSOCK(before.st_mode) or before.st_uid!=uid:
-            raise ValueError('original VMM API socket required')
+    source = prior['source']
+    with original_vmm_endpoint(runtime, prior, deadline) as (fd, uid, identity):
         with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as peer:
             peer.settimeout(min(2,remaining(deadline)))
             peer.connect('/proc/self/fd/'+str(fd)+'/api.socket')
@@ -76,16 +102,11 @@ def paused_source(runtime, prior, deadline, *, expected_state='Paused'):
                 value=json.loads(data,object_pairs_hook=unique_keys)
             finally:response.close()
         _fields(value,'app_name id state vmm_version')
-        after=os.stat('api.socket',dir_fd=fd,follow_symlinks=False);current=root.lstat()
-        if (value!=dict(app_name='Firecracker',id=resource,state=expected_state,vmm_version='1.16.1')
-                or (before.st_dev,before.st_ino)!=(after.st_dev,after.st_ino)
-                or (held.st_dev,held.st_ino)!=(current.st_dev,current.st_ino)
-                or not equal(original_json(claim,16384),source) or not original_process(source)):
-            raise ValueError('original paused VMM changed during observation')
-        remaining(deadline)
-        return dict(source=copy.deepcopy(source),state=expected_state,peer_pid=actual[0],uid=uid,
-                    socket_identity=[after.st_dev,after.st_ino],read_only=True,execution_authority=False)
-    finally:os.close(fd)
+        if value != dict(app_name='Firecracker', id=source['resource_id'],
+                         state=expected_state, vmm_version='1.16.1'):
+            raise ValueError('original VMM did not report the expected state')
+    return dict(source=copy.deepcopy(source), state=expected_state, peer_pid=actual[0], uid=uid,
+                **identity, read_only=True, execution_authority=False)
 
 
 def original_backing(runtime, acceptance, rows):
@@ -220,6 +241,15 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         registered = action_is_registered(conn, self.action, capacity)
         return registered, self._read_native(conn, local, capacity)
 
+    def _observe_destroy_endpoint(self, deadline):
+        with original_vmm_endpoint(self.runtime, self.prior, deadline) as (_, uid, identity):
+            endpoint = dict(identity, uid=uid)
+            if (self.frozen['state'] != 'Paused'
+                    or not equal(self.frozen['source'], self.prior['source'])
+                    or not equal(endpoint, {field: self.frozen[field] for field in endpoint})):
+                raise ValueError('VMM endpoint differs from the original Paused reply')
+        return endpoint
+
     def observe_destroy_window(self, deadline):
         """Re-read the original cut on either side of the public Destroy."""
         deadline = min(deadline, self.deadline)
@@ -253,12 +283,14 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         host = self.runtime.services.processes.children.get('host-0')
         if host is None or host is not self.host or host.poll() != self._cut_exit_code():
             raise ValueError('original Freeze cut Host must remain exited at public Destroy')
+        endpoint = self._observe_destroy_endpoint(deadline)
         remaining(deadline)
         return dict(host_pid=host.pid, host_exit_code=self._cut_exit_code(),
                     unload_accepted_version=entry['intent']['accepted_version'],
                     freeze_identity=action['identity'], freeze_sql_receipt_pending=True,
                     freeze_logical_action_registered=registered,
                     host_nonterminal_pause=pause,
+                    original_vmm_endpoint=endpoint,
                     original_pin_and_positive_charge_retained=True,
                     capture_outbox_actions_absent=True)
 
