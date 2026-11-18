@@ -1,0 +1,115 @@
+#[derive(Default)]
+struct FirstPrepareFinishHooks {
+    points: Vec<crate::CrashPoint>,
+    fail_after_commit: bool,
+}
+
+impl crate::CrashInjector for FirstPrepareFinishHooks {
+    fn hit(&mut self, point: crate::CrashPoint) -> Result<(), JournalError> {
+        self.points.push(point);
+        if self.fail_after_commit && point == crate::CrashPoint::AfterCommit {
+            return Err(JournalError::InjectedCrash(point));
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn proof_first_prepare_after_commit_error_preserves_original_durable_work() {
+    use crate::CrashPoint::{AfterCommit, BeforeCommit};
+    use rusqlite::{Connection, OpenFlags};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("first-prepare-after-commit.db");
+    let (mut journal, state) = ready(&path);
+    let intent = unload();
+    let context = v3::context();
+    let observer = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let before = proof_first_prepare_durable_rows(&observer);
+    let queried = state.lock().unwrap().source_calls;
+    assert!(before.1.is_empty());
+    let mut hooks = FirstPrepareFinishHooks {
+        fail_after_commit: true,
+        ..Default::default()
+    };
+    assert!(matches!(
+        journal.prepare_lifecycle_source_work::<Evidence>(&intent, &context, 10, &mut hooks),
+        Err(JournalError::InjectedCrash(AfterCommit))
+    ));
+    assert_eq!(hooks.points, [BeforeCommit, AfterCommit]);
+    assert!(journal.journal.connection.is_autocommit());
+    let (inbox, records) = proof_first_prepare_durable_rows(&observer);
+    assert_eq!(
+        records.len(),
+        1,
+        "AfterCommit failure must leave the original work durable"
+    );
+    assert_eq!(inbox, before.0);
+    assert_eq!(records[0].work.request(), &intent);
+    assert_eq!(state.lock().unwrap().source_calls, queried);
+    drop(journal);
+
+    let mut reopened = v3::open(&path);
+    bootstrap(&mut reopened);
+    hooks.points.clear();
+    assert_eq!(
+        reopened
+            .prepare_lifecycle_source_work::<Evidence>(&intent, &context, 10, &mut hooks)
+            .unwrap(),
+        records[0]
+    );
+    assert!(hooks.points.is_empty());
+    assert_eq!(
+        proof_first_prepare_durable_rows(&observer),
+        (inbox, records)
+    );
+}
+
+#[test]
+fn proof_first_prepare_commit_uncertain_can_hide_either_sqlite_outcome() {
+    use crate::CrashPoint::BeforeCommit;
+    use rusqlite::{Connection, Error, OpenFlags};
+
+    for durable in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("first-prepare-unknown.db");
+        let (mut journal, state) = ready(&path);
+        let intent = unload();
+        let observer =
+            Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        let before = proof_first_prepare_durable_rows(&observer);
+        let queried = state.lock().unwrap().source_calls;
+        assert!(before.1.is_empty());
+        ControllerJournal::fail_next_lifecycle_commit(durable);
+        let mut hooks = FirstPrepareFinishHooks::default();
+        assert!(matches!(
+            journal.prepare_lifecycle_source_work::<Evidence>(
+                &intent,
+                &v3::context(),
+                10,
+                &mut hooks,
+            ),
+            Err(JournalError::CommitUncertain(Error::InvalidQuery))
+        ));
+        assert_eq!(hooks.points, [BeforeCommit]);
+        assert!(journal.journal.connection.is_autocommit());
+        let (inbox, records) = proof_first_prepare_durable_rows(&observer);
+        assert_eq!(inbox, before.0);
+        assert_eq!(records.len(), usize::from(durable));
+        assert_eq!(state.lock().unwrap().source_calls, queried);
+        drop(journal);
+
+        let mut reopened = v3::open(&path);
+        bootstrap(&mut reopened);
+        let record = prepare(&mut reopened);
+        if let Some(original) = records.first() {
+            assert_eq!(&record, original);
+        }
+        assert_eq!(record.work.request(), &intent);
+        assert_eq!(prepare(&mut reopened), record);
+        assert_eq!(
+            proof_first_prepare_durable_rows(&observer),
+            (inbox, vec![record])
+        );
+    }
+}

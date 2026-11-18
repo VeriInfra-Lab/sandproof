@@ -1,0 +1,43 @@
+import SandproofUnloadFinish.Funs
+import SandproofParentCommit.ParentResults
+import UnloadWorldBegin
+
+open Aeneas Aeneas.Std SandproofUnloadFinish
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.UnloadFinish
+
+abbrev Owner := controller.transaction.WorldTransaction
+abbrev Raw := rusqlite.transaction.Transaction
+abbrev Writer (Rows : Type) := controller.lifecycle_inbox.source_work.SaveSourceInputs Unit Rows
+abbrev CommitReply := SandproofParentCommitRust.CurrentViews.SourceRaw → Result
+  (core.result.Result Unit SandproofParentCommitRust.rusqlite.error.Error)
+
+/-- Carry the original source transaction and cells into the already checked
+    commit caller. V5 and the whole SQLite call supply the observations. -/
+def toCommitOwner (owner : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (commit : CommitReply) (checks : SandproofParentCommitRust.V5CallObservations) : Owner :=
+  { transaction := owner.transaction.map (fun tx =>
+      ⟨⟨tx.base.conn, commit tx.base, checks⟩, tx.base.drop_behavior⟩)
+    committed := ⟨owner.committed.value, owner.committed.data_version⟩
+    candidate := owner.candidate
+    input_start := owner.input_start }
+
+theorem opened_owner_is_commit_source (owner : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (commit : CommitReply) (checks : SandproofParentCommitRust.V5CallObservations) :
+    SandproofParentCommitRust.CurrentViews.ownerToSource
+      (toCommitOwner owner commit checks) = SandproofUnloadWorldBegin.originalOwner owner := by
+  simp [SandproofParentCommitRust.CurrentViews.ownerToSource, SandproofParentCommitRust.CurrentViews.rawToSource, toCommitOwner,
+    SandproofUnloadWorldBegin.originalOwner, SandproofUnloadWorldBegin.committedView,
+    Option.map_map, Function.comp_def]
+
+theorem live_deref (owner : Owner) (raw : Raw) (live : owner.transaction = some raw) :
+    controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref owner = .ok raw := by
+  refine (SandproofParentCommitRust.ActualCalls.actual_deref_is_original_prefix owner).trans ?_
+  simp only [SandproofParentCommitRust.CurrentViews.liveRaw, SandproofParentReadRust.core.option.Option.as_ref,
+    live, bind_tc_ok, core.option.Option.expect, Result.ofOption]
+
+end SandboxModel.Stage1Protocol.UnloadFinish
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFinish.opened_owner_is_commit_source
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFinish.live_deref
