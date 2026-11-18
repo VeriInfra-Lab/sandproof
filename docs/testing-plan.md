@@ -189,6 +189,8 @@ RSS 峰值、服务 cgroup、整卷及采集开销。采样器身份/证据/退�
 StateLost 分列，Unload 的 Unloaded 与 OriginalContinued 分列。检查发送至接受、
 接受至公开完成的两段之和，并拒绝给未完成操作填入完成耗时。报告不合并候选、伪补
 未完成样本或复制异常/配置/凭据。
+资源流逐行核对原服务角色组与 VM 序段。每行保留各原服务角色，已登记 VM 继续记录其
+`observed`、`not_live` 或采样未知状态。服务与 VM 样本不能交换，每个序段都须在原流中出现。
 
 ```sh
 bash scripts/python-entry.sh -m tools.lifecycle_measurement_report \

@@ -216,6 +216,13 @@ class ResourceReportTests(SamplerFixture):
                     complete=False,send_to_accept_seconds=0.25,accept_to_public_completion_seconds=None,
                     send_to_public_completion_seconds=None)])
 
+    def reseal_samples(self, report, rows):
+        raw = b''.join((json.dumps(row, sort_keys=True, separators=(',', ':'))+'\n').encode()
+                       for row in rows)
+        self.probe.path.write_bytes(raw)
+        report['resource_measurements']['raw'].update(
+            bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+
     def test_report_verifies_original_stream_and_recomputes_percentiles(self):
         from tools.lifecycle_measurement_report import render
         report=self.report();text=render(report,self.probe.path)
@@ -279,6 +286,84 @@ class ResourceReportTests(SamplerFixture):
         for bad in (raw[:-1],raw+b'{}\n',raw.replace(b'"sequence":0',b'"sequence":8')):
             self.probe.path.write_bytes(bad)
             with self.assertRaises((ValueError,KeyError)):render(report,self.probe.path)
+
+    def test_report_rejects_service_and_vm_samples_swapped_between_lists(self):
+        from tools.lifecycle_measurement_report import render
+        report = self.report()
+        rows = [json.loads(line) for line in self.probe.path.read_bytes().splitlines()]
+        row = rows[0]
+        row['services'][0], row['vms'][0] = row['vms'][0], row['services'][0]
+        self.reseal_samples(report, rows)
+        with self.assertRaisesRegex(ValueError, 'sample epoch must match its original service or VM list'):
+            render(report, self.probe.path)
+
+    def test_report_requires_the_original_inactive_service_role_in_each_row(self):
+        from tools.lifecycle_measurement_report import render
+        self.children['host-0'].poll.return_value = 0
+        report = self.report()
+        render(report, self.probe.path)
+        rows = [json.loads(line) for line in self.probe.path.read_bytes().splitlines()]
+        last = rows[0]['services'][-1]
+        self.assertEqual(last, dict(role='host-0', epoch=None, state='not_live'))
+        for wrong in ('omit', 'duplicate-role'):
+            with self.subTest(wrong=wrong):
+                changed = copy.deepcopy(rows)
+                if wrong == 'omit':
+                    changed[0]['services'].pop()
+                else:
+                    changed[0]['services'][-1]['role'] = 'redis'
+                self.reseal_samples(report, changed)
+                with self.assertRaisesRegex(ValueError, 'one sample for each original service role'):
+                    render(report, self.probe.path)
+
+    def test_report_preserves_an_optional_second_host_role_across_rows(self):
+        from tools.lifecycle_measurement_report import render
+        report = self.report()
+        rows = [json.loads(line) for line in self.probe.path.read_bytes().splitlines()]
+        for row in rows:
+            row['services'].append(dict(role='host-1', epoch=None, state='not_live'))
+        self.reseal_samples(report, rows)
+        render(report, self.probe.path)
+        rows[-1]['services'].pop()
+        self.reseal_samples(report, rows)
+        with self.assertRaisesRegex(ValueError, 'original service role cohort changed'):
+            render(report, self.probe.path)
+
+    def test_report_cannot_drop_an_inactive_vm_from_later_rows(self):
+        from tools.lifecycle_measurement_report import render
+        self.add_vm()
+        self.probe.sample()
+        self.alive = False
+        report = self.report()
+        render(report, self.probe.path)
+        rows = [json.loads(line) for line in self.probe.path.read_bytes().splitlines()]
+        [inactive] = rows[-1]['vms']
+        self.assertEqual(inactive['state'], 'not_live')
+        rows[-1]['vms'] = []
+        report['resource_measurements']['epochs'][inactive['epoch']]['inactive_samples'] -= 1
+        self.reseal_samples(report, rows)
+        with self.assertRaisesRegex(ValueError, 'original recorded VM epoch is missing from a later sample'):
+            render(report, self.probe.path)
+
+    def test_report_rejects_an_epoch_declared_but_never_sampled(self):
+        from tools.lifecycle_measurement_report import render
+        report = self.report()
+        epochs = report['resource_measurements']['epochs']
+        unseen = copy.deepcopy(epochs[0])
+        unseen.update(index=len(epochs), samples=0, first=None, last=None,
+                      sampled_peak_rss_bytes=None, kernel_process_peak_rss_bytes=None,
+                      observed_cpu_ticks_delta=None, observed_cpu_seconds_delta=None)
+        epochs.append(unseen)
+        with self.assertRaisesRegex(ValueError, 'original epoch declaration is missing'):
+            render(report, self.probe.path)
+
+    def test_report_rejects_a_changed_vm_role_in_the_epoch_table(self):
+        from tools.lifecycle_measurement_report import render
+        report = self.report()
+        vm = next(epoch for epoch in report['resource_measurements']['epochs'] if epoch['kind'] == 'vm')
+        vm['role'] = 'vm-5'
+        with self.assertRaisesRegex(ValueError, 'exact original VM epoch role required'):
+            render(report, self.probe.path)
 
     def test_numeric_summary_preserves_integer_types_and_real_seconds(self):
         from tools.lifecycle_measurement_report import render

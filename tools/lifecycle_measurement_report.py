@@ -23,6 +23,10 @@ COMPLETION_CONDITIONS = {
     'resume': ('running', 'state_lost'),
     'destroy': ('cleaned',),
 }
+REQUIRED_SERVICE_ROLES = {'center', 'redis', 'host-0'}
+SERVICE_ROLES = REQUIRED_SERVICE_ROLES | {'host-1'}
+EPOCH_SAMPLE_STATES = {'observed', 'not_live', 'unknown', 'exited_during_sample'}
+SERVICE_STATES_WITHOUT_EPOCH = EPOCH_SAMPLE_STATES - {'observed'} | {'not_started', 'not_ready'}
 
 
 def uint(value):
@@ -31,6 +35,44 @@ def uint(value):
 
 def duration(value):
     return type(value) in (int, float) and math.isfinite(value) and value >= 0
+
+
+def sample_cohorts(row, epochs):
+    roles, vm_epochs, seen = set(), set(), set()
+    for kind, key, limit in (('service', 'services', len(SERVICE_ROLES)),
+                             ('vm', 'vms', len(epochs))):
+        samples = row.get(key)
+        if type(samples) is not list or len(samples) > limit:
+            raise ValueError('bounded original service and VM sample lists required')
+        for sample in samples:
+            if type(sample) is not dict:
+                raise ValueError('original process sample required')
+            index = sample.get('epoch')
+            state = sample.get('state')
+            allowed_states = SERVICE_STATES_WITHOUT_EPOCH if index is None else EPOCH_SAMPLE_STATES
+            if type(state) is not str or state not in allowed_states:
+                raise ValueError('original resource observation state required')
+            if index is not None:
+                if (not uint(index) or index >= len(epochs) or index in seen
+                        or epochs[index]['kind'] != kind):
+                    raise ValueError('sample epoch must match its original service or VM list')
+                seen.add(index)
+                role = epochs[index]['role']
+                if sample.get('role', role) != role:
+                    raise ValueError('sample role differs from its original epoch')
+            else:
+                role = sample.get('role')
+            if kind == 'vm':
+                if index is None:
+                    raise ValueError('every original VM sample requires its epoch')
+                vm_epochs.add(index)
+                continue
+            if type(role) is not str or role not in SERVICE_ROLES or role in roles:
+                raise ValueError('one sample for each original service role required')
+            roles.add(role)
+    if not REQUIRED_SERVICE_ROLES <= roles:
+        raise ValueError('one sample for each original service role required')
+    return roles, vm_epochs, seen
 
 
 def checked_resources(report, samples):
@@ -50,6 +92,7 @@ def checked_resources(report, samples):
     if type(epochs) is not list or not 1 <= len(epochs) <= 64:
         raise ValueError('finite original process epochs required')
     observed = [dict(first=None,last=None,count=0,peak=None,kernel_peak=None,unknown=0,inactive=0) for _ in epochs]
+    vm_index = 0
     for index, epoch in enumerate(epochs):
         if (not uint(epoch['index']) or epoch['index'] != index or not uint(epoch['identity']['pid'])
                 or not uint(epoch['identity']['start_time_ticks'])
@@ -58,8 +101,14 @@ def checked_resources(report, samples):
                 or any(not uint(epoch[k]) for k in ('samples','unknown_samples','inactive_samples'))
                 or re.fullmatch('center|redis|host-[01]|vm-[0-9]+',epoch['role']) is None):
             raise ValueError('exact original process epoch declaration required')
+        if epoch['kind'] == 'vm':
+            if epoch['role'] != f'vm-{vm_index}':
+                raise ValueError('exact original VM epoch role required')
+            vm_index += 1
     digest = hashlib.sha256(); size = count = unknown = 0; previous = None
     group_first = group_last = None
+    service_roles = None
+    prior_vms, seen_epochs = set(), set()
     volume = dict(samples=0,unknown_samples=0,baseline_used_bytes=None,sampled_peak_used_bytes=None,final_used_bytes=None)
     with private_path(samples).open('rb') as source:
         for line in iter(lambda:source.readline(16385),b''):
@@ -73,16 +122,17 @@ def checked_resources(report, samples):
                     or not uint(row['sequence']) or row['sequence'] != count or not uint(now)
                     or (previous is not None and now <= previous)):
                 raise ValueError('original sequential monotonic resource stream required')
-            previous = now; seen=set()
+            previous = now
+            roles, vms, seen = sample_cohorts(row, epochs)
+            if service_roles is not None and roles != service_roles:
+                raise ValueError('original service role cohort changed across resource rows')
+            if not prior_vms <= vms:
+                raise ValueError('original recorded VM epoch is missing from a later sample')
+            service_roles, prior_vms = roles, vms
+            seen_epochs.update(seen)
             for value in row['services']+row['vms']:
                 index=value.get('epoch')
-                if index is not None:
-                    if type(index) is not int or not 0 <= index < len(epochs) or index in seen:
-                        raise ValueError('one original epoch per resource row required')
-                    seen.add(index)
                 state_name=value['state']
-                if state_name not in ('observed','not_started','not_ready','not_live','unknown','exited_during_sample'):
-                    raise ValueError('original resource observation state required')
                 if state_name in ('unknown','not_started','not_ready','exited_during_sample'):
                     unknown+=1
                     if index is not None:observed[index]['unknown']+=1
@@ -119,6 +169,8 @@ def checked_resources(report, samples):
             count+=1
     if size != raw['bytes'] or digest.hexdigest() != raw['sha256'] or count != measurement['samples']:
         raise ValueError('raw resource stream differs from original sealed summary')
+    if seen_epochs != set(range(len(epochs))):
+        raise ValueError('original epoch declaration is missing from the raw resource stream')
     if (not equal(group_first,measurement['service_group']['first']) or not equal(group_last,measurement['service_group']['last'])
             or any(not equal(value,measurement['volume'][key]) for key,value in volume.items())
             or not equal(unknown,measurement['unknown_observations'])):
