@@ -26,6 +26,7 @@ INBOX = CONTROLLER + '::lifecycle_inbox'
 WORK = INBOX + '::source_work'
 TRANSACTION = CONTROLLER + '::transaction'
 ROOT = WORK + '::{' + CONTROLLER + '::ControllerJournal}::prepare_lifecycle_source_work'
+START_FROM = CONTROLLER + '::ControllerJournal::prepare_lifecycle_source_work'
 MODULE = 'SandproofUnloadPrepareTransaction'
 SHAPES = {
     WORK + '::SourceWorkRecord': ['work', 'observation', 'capture', 'restore', 'retirement', 'material_release'],
@@ -35,7 +36,7 @@ SHAPES = {
 
 def configuration(parent):
     return dict(
-        roots=[ROOT],
+        roots=[START_FROM],
         include=[
             ROOT,
             CONTROLLER + '::ControllerJournal',
@@ -96,7 +97,7 @@ def checked_translation(ir, cfg, target, root):
 
 
 def admit(ir, generated, cfg, target):
-    translated = checked_translation(ir, cfg, target, ROOT)
+    translated = checked_translation(ir, cfg, target, START_FROM)
 
     functions = translated['fun_decls']
     prepare = method(functions, WORK, 'prepare_lifecycle_source_work')

@@ -19,6 +19,7 @@ SOURCE_INPUTS = {
 }
 OWNER = TRANSACTION + '::WorldTransaction'
 ROOT = TRANSACTION + '::{' + OWNER + '}::begin'
+START_FROM = OWNER + '::begin'
 RUST_METHOD = TRANSACTION + '::{' + OWNER + "<'a>}::begin"
 SQLITE = 'rusqlite'
 SQLITE_TRANSACTION = SQLITE + '::transaction'
@@ -31,7 +32,7 @@ MODULE = 'SandproofUnloadWorldBegin'
 
 def configuration(parent):
     return dict(
-        roots=[ROOT],
+        roots=[START_FROM],
         include=[ROOT, HIGH_WATER, OWNER, TRANSACTION + '::CommittedWorld', BEHAVIOR],
         opaque=parent['opaque'],
         namespace=MODULE,
@@ -88,7 +89,7 @@ def check_generated_begin(generated, mappings, begin_id, calls):
 
 
 def admit(ir, generated, cfg, target):
-    translated = checked_translation(ir, cfg, target, ROOT)
+    translated = checked_translation(ir, cfg, target, START_FROM)
     functions = translated['fun_decls']
     begin = method(functions, TRANSACTION, 'begin')
     body = transparent_body(begin, 'begin')
