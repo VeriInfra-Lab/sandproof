@@ -18,10 +18,31 @@ def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def inputs(profile):
-    for name, expected in profile['production_inputs'].items():
-        if sha(ROOT / name) != expected:
+def check_production_inputs(root, names, expected):
+    actual = {name for name in names if not name.startswith('verification/')
+              and name.endswith(('.rs', '.toml', '.lock'))}
+    expected_paths = set(expected)
+    if actual != expected_paths:
+        extra = sorted(actual - expected_paths)
+        missing = sorted(expected_paths - actual)
+        raise ValueError(f'production input inventory changed: extra={extra}, missing={missing}')
+    for name, digest in expected.items():
+        path = root / name
+        if path.is_symlink() or not path.is_file() or sha(path) != digest:
             raise ValueError('reviewed production input changed: ' + name)
+
+
+def verify_archived_inputs(source, profile):
+    names = (path.relative_to(source).as_posix() for path in source.rglob('*')
+             if path.is_file() or path.is_symlink())
+    check_production_inputs(source, names, profile['production_inputs'])
+
+
+def inputs(profile, head):
+    names = subprocess.check_output(
+        ['git', 'ls-tree', '-r', '--name-only', '-z', head], cwd=ROOT,
+    ).decode().split('\0')
+    check_production_inputs(ROOT, names, profile['production_inputs'])
     spec = importlib.util.spec_from_file_location('json_call_fixed_library', HERE.parent / 'serde-binding/library.py')
     library = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(library)
@@ -54,21 +75,22 @@ def run(output, lock, variant):
                   library_refinement_proved=False, actual_wrapper_lean_proved=False)
     try:
         profile = json.loads((HERE / 'profile.json').read_text())
-        inputs(profile)
-        record['profile_sha256'] = sha(HERE / 'profile.json')
         record['head'] = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()
-        subprocess.run(['git', 'diff', '--quiet', 'HEAD'], cwd=ROOT, check=True)
+        subprocess.run(['git', 'diff', '--quiet', record['head']], cwd=ROOT, check=True)
+        inputs(profile, record['head'])
+        record['profile_sha256'] = sha(HERE / 'profile.json')
         cpus = sorted(os.sched_getaffinity(0))[:4]
         os.sched_setaffinity(0, cpus)
         record['cpus'] = cpus
         archive = output / 'source.tar'
         with archive.open('xb') as stream:
-            subprocess.run(['git', 'archive', 'HEAD'], cwd=ROOT, stdout=stream, check=True)
+            subprocess.run(['git', 'archive', record['head']], cwd=ROOT, stdout=stream, check=True)
         record['archive_sha256'] = sha(archive)
         source = output / 'source'
         source.mkdir(mode=0o700)
         with tarfile.open(archive) as tar:
             tar.extractall(source, filter='data')
+        verify_archived_inputs(source, profile)
         record['mutation'] = apply_variant(source, profile, variant)
         expected = sha(source / profile['source'])
         fixed = json.loads((ROOT / 'verification/foundations-environment.json').read_text())
@@ -124,7 +146,7 @@ def run(output, lock, variant):
                 raise ValueError('actual field substitution was admitted')
         if sha(source / profile['source']) != expected:
             raise ValueError('source changed during extraction')
-        inputs(profile)
+        inputs(profile, record['head'])
         record['complete'] = True
     except BaseException as error:
         record['error'] = repr(error)
