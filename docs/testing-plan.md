@@ -508,6 +508,9 @@ Freeze 且无 Seal/Commit/Prepare/Activate，并核对本地映射、原来源�
 `native_kill_ledger` 核对沙箱、owner、完整当前操作和输入运行代。状态允许
 `Pending` 或 `OutcomeUnknown`，结果必须为空。账本缺失或不一致时保留首错和
 原 VMM 暂停现场。真实自动到期的有序分支也使用这个检查。
+核对通过后，若发送 `SIGCONT` 或后续等待 Stop 失败，两条有序场景的失败报告均保留
+`terminal_acceptance_before_response_restored`，包括原 Kill 账本。报告仍记录首错及
+信号是否成功发出、Stop 门是否放行。信号发出不表示 VMM 已应答或产品已释放容量。
 旧 Freeze 仍可待回执。额外动作或错配保留原暂停现场。恢复应答后，
 随后仍用原规则核对终止围栏、同源 Stop、材料、同伴进展与退出/GC。它不会等 Stop 才
 SIGCONT；初始短暂的进程停止及恢复时刻单列，不能称为全程无进程停止。自由应答对照
