@@ -572,6 +572,16 @@ class PublicUnloadScenario:
                     altered_request_rejected=True, terminal_view_unchanged=True,
                     data_access_closed=True)
 
+    def assert_terminal_unload_replay(self, *, phase):
+        """Keep the original Create/Unload acceptance and the later Destroy."""
+        assert phase in ('terminating','cleaned')
+        current=self.query();self.check_view(current,self.current_acceptance)
+        assert current['phase']==phase and current['current_version']>self.unload_acceptance['accepted_version']
+        self.assert_original_replay(current)
+        self.assert_data_closed();self.assert_previous_tokens_closed()
+        return dict(phase=phase,original_create_unload_acceptance_returned=True,
+                    altered_unload_rejected=True,terminal_view_unchanged=True,data_access_closed=True)
+
     def sdk(self):
         """Original no-create SDK constructor; does not renew the lifetime."""
         import importlib.metadata
@@ -742,6 +752,9 @@ def exercise(args):
         'capture-stop-receipt': 'stop-receipt',
     }
     capture_stage = capture_stages.get(args.scenario)
+    freeze_destroy = args.scenario == 'capture-freeze-destroy'
+    freeze_expiry = args.scenario == 'capture-freeze-expiry'
+    freeze_terminal = freeze_destroy or freeze_expiry
     expiry_prepare = args.scenario == 'restore-prepare-expiry'
     expiry_running = args.scenario == 'restored-running-expiry'
     expiry_case = expiry_prepare or expiry_running
@@ -757,7 +770,7 @@ def exercise(args):
     expired_window_replay = getattr(args, 'expired_window_replay', False)
     if expired_window_replay and args.scenario != 'normal':
         raise ValueError('expired-window replay extends only the original complete normal scenario')
-    if not normal_chain and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or expiry_case):
+    if not normal_chain and not (restore_fault or continued_exit or capture_stage or prepare_fault or data_drain or retirement_restart or expiry_case or freeze_terminal):
         raise ValueError('one explicit existing lifecycle scenario required')
     if args.scenario!='normal' and (type(args.activation_gate_timeout_ms) is not int
             or not 1000<=args.activation_gate_timeout_ms<=120000):
@@ -790,7 +803,7 @@ def exercise(args):
             runtime.foreign_key, report['registration']['deployment'], deadline)
         report['phase'] = 'public-create'
         parameters = runtime.create_parameters()
-        if expiry_case:
+        if expiry_case or freeze_expiry:
             parameters['timeout_ms'] = 75000
         report['create'] = client.create(parameters)
         running = client.wait_running()
@@ -884,7 +897,7 @@ def exercise(args):
             'another session did not actually reuse the old running slot'
         report['slot_reuse']=dict(occupant_session=control.session,
             position=control_physical['context']['position'])
-        if activation_destroy:
+        if activation_destroy or freeze_terminal:
             report['slot_reuse']['peer_workload']=control.run_public_workload(control_running)
         report['cycles']=[]
         if resume_receipt_restart:
@@ -1178,14 +1191,70 @@ def exercise(args):
             if cycle==1:
                 assert physical_running['context']['position']!=control_physical['context']['position'], \
                     'original session did not restore into a different actual slot'
-                assert control.query()==control_running
+                assert equal(control.query(),control_running)
                 report['slot_reuse']['occupant_after_resume']=runtime.confirm_running(
                     control.session,control_physical,deadline)
                 report['slot_reuse']['restored_position']=physical_running['context']['position']
-                control.destroy(control_running)
-                control.wait_cleaned()
+                if not freeze_terminal:
+                    control.destroy(control_running)
+                    control.wait_cleaned()
+                    report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
+                    control.operation_evidence_completed()
+            if cycle == 1 and freeze_terminal:
+                from lifecycle_freeze_destroy import FreezeDestroyProbe
+                if freeze_expiry:
+                    from lifecycle_freeze_expiry import FreezeExpiryProbe, wait_expired_cleaned
+                prefix='freeze_expiry' if freeze_expiry else 'freeze_destroy'
+                capture_probe=(FreezeExpiryProbe if freeze_expiry else FreezeDestroyProbe)(runtime,client,physical_running)
+                report['phase']='arm-original-freeze-before-'+('expiry' if freeze_expiry else 'destroy')
+                report[prefix+'_arm']=capture_probe.arm(deadline,args.activation_gate_timeout_ms)
+                accepted_unload=client.unload(resumed)
+                report['phase']='original-freeze-success-before-sql-receipt'
+                report[prefix+'_observation']=capture_probe.after_acceptance(accepted_unload,deadline)
+                pending=client.query();client.check_view(pending,accepted_unload)
+                assert pending['phase']=='unloading', 'frozen original Unload unexpectedly completed'
+                client.assert_data_closed();client.assert_previous_tokens_closed()
+                if freeze_expiry:
+                    report['phase']='real-expiry-with-original-freeze-receipt-pending'
+                    report['automatic_expiry']=capture_probe.observe_expiry(deadline)
+                    terminal_acceptance=report['automatic_expiry']['acceptance']
+                else:
+                    report['phase']='public-destroy-with-original-freeze-receipt-pending'
+                    report['destroy']=client.destroy(pending)
+                    terminal_acceptance=report['destroy']
+                    report['terminal_unload_replays']=[client.assert_terminal_unload_replay(phase='terminating')]
+                def observe_frozen_peer():
+                    report['phase']=prefix.replace('_','-')+'-peer-progress-before-stop'
+                    assert equal(control.query(),control_running)
+                    return control.assert_running_workload(control_running)
+                report['phase']='original-terminal-stop-held-with-backing-and-peer'
+                recovery=capture_probe.recover_after_expiry if freeze_expiry else capture_probe.recover_after_destroy
+                report[prefix+'_recovery']=recovery(terminal_acceptance,deadline,observe_peer=observe_frozen_peer)
+                if freeze_expiry:
+                    # Center and Host are ready after the inherited terminal
+                    # handoff. No public query could have created the expiry.
+                    report['terminal_unload_replays']=[client.assert_terminal_unload_replay(phase='terminating')]
+                report['phase']='original-stop-and-cleanup-pre-sql-receipt'
+                report[prefix+'_terminal']=capture_probe.assert_terminal_before_gc(deadline)
+                report['phase']='public-frozen-'+('expiry' if freeze_expiry else 'destroy')+'-cleaned-and-product-gc'
+                if freeze_expiry:
+                    wait_expired_cleaned(client,deadline)
+                else:
+                    client.wait_cleaned()
+                report['final_resources']=runtime.destroy_evidence(client.session,deadline)
+                if not freeze_expiry:
+                    client.operation_evidence_completed()
+                report['terminal_unload_replays'].append(client.assert_terminal_unload_replay(phase='cleaned'))
+                assert equal(control.query(),control_running)
+                suffix='frozen_expiry' if freeze_expiry else 'frozen_destroy'
+                report['slot_reuse']['occupant_after_'+suffix]=runtime.confirm_running(control.session,control_physical,deadline)
+                report['phase']=prefix.replace('_','-')+'-peer-progress-after-cleaned'
+                report['slot_reuse']['peer_after_'+suffix]=control.assert_running_workload(control_running)
+                control.destroy(control_running);control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
                 control.operation_evidence_completed()
+                report['cycles'][-1]['frozen_unload_expired' if freeze_expiry else 'frozen_unload_destroyed']=True
+                terminal_destroy_done=True;break
             if cycle < restore_cycles:
                 if retirement_restart:
                     from lifecycle_unload_retirement import RetirementRestartProbe
@@ -1257,9 +1326,10 @@ def exercise(args):
         report['settlement_timing']=dict(check_seconds=settlement_completed-settlement_started,
             final_destroy_send_to_settled_seconds=settlement_completed-client.timings[-1]['sent_monotonic'],
             completion_condition='original physical materials/VM absence plus zero resources, material charge and backing pins')
-        if expiry_case:
+        if expiry_case or freeze_expiry:
             del report['settlement_timing']['final_destroy_send_to_settled_seconds']
-            report['settlement_timing']['expiry_observed_to_settled_seconds'] = settlement_completed-report['expiry']['observed_monotonic']
+            observed=report['automatic_expiry'] if freeze_expiry else report['expiry']
+            report['settlement_timing']['expiry_observed_to_settled_seconds'] = settlement_completed-observed['observed_monotonic']
         if expired_window_replay:
             from lifecycle_window_replay import exercise as exercise_expired_window
             report['phase'] = 'expired-window-replay'
@@ -1329,6 +1399,23 @@ def exercise(args):
                     'stop-receipt': 'E5', 'restore-prepare-receipt': 'E6'}[
                         capture_stage or 'restore-prepare-receipt']
             report['acceptance_cases'][case] = 'one exact original ' + (capture_stage or 'restore-prepare-receipt') + ' boundary recovered through original product workflow'
+        if freeze_destroy:
+            report['acceptance_cases'] = {
+                'E2':'old Create/Unload keep historical acceptance during Terminating and after Cleaned; altered Unload conflicts, terminal decision and closed access remain',
+                'E8':'actual Freeze success before SQL receipt, then public Destroy; exact current fence/Stop with same paused source and backing pin/charge, then original exit/Cleanup/GC',
+                'E12':'original other owner actually reused the old position, made guest progress while terminal Stop was held, and retained its same candidate before explicit cleanup',
+                'E14':'old execution tokens remained rejected; peer continued with its original authorization',
+                'other_cases':'one restored cycle followed by frozen-Unload Destroy; not normal three cycles, all E8 interleavings or a formal proof',
+            }
+        if freeze_expiry:
+            report['acceptance_cases'] = {
+                'E2':'original Create/Unload replay preserves automatic terminal acceptance during Terminating and after Cleaned',
+                'E8':'real TTL with original Freeze SQL receipt pending; original Center audit observes one automatic terminal request before any subsequent public query',
+                'E15':'actual frozen source and backing pin/positive charge retained until same-source Stop, kernel exit and product Cleanup/GC',
+                'E12':'other owner retains its original candidate and makes guest progress before Stop and after original Cleaned',
+                'E14':'old execution tokens remain closed; peer retains its original authorization',
+                'other_cases':'one frozen Unload expiry order; no explicit Destroy, reset clock, full expiry matrix or new formal proof',
+            }
         if prepare_destroy:
             report['acceptance_cases'] = {
                 'E2': 'same full Resume returns its historical acceptance during Terminating and after Cleaned; altered replay conflicts without changing the current terminal view',
@@ -1377,8 +1464,9 @@ def exercise(args):
         # Never record HTTP bodies, SDK exceptions, API keys or data tokens.
         report['failure_type'] = type(error).__name__
         report.update(failure_details(error, client, report['phase']))
-        if (prepare_destroy or activation_destroy) and capture_probe is not None:
-            report['activation_destroy_failure_state' if activation_destroy else 'prepare_destroy_failure_state'] = capture_probe.terminal_failure_state()
+        if (prepare_destroy or activation_destroy or freeze_terminal) and capture_probe is not None:
+            name='activation_destroy' if activation_destroy else 'freeze_expiry' if freeze_expiry else 'freeze_destroy' if freeze_destroy else 'prepare_destroy'
+            report[name+'_failure_state'] = capture_probe.terminal_failure_state()
         try:
             report['activation_gate_failure_action']=runtime.fail_resume_gate()
         except BaseException as gate_error:
@@ -1471,7 +1559,7 @@ def main():
         help='extend complete normal with natural window retirement/replay; original deadline retained')
     parser.add_argument('--scenario',choices=('normal','restore-activation-loss','restore-candidate-exit','restore-activation-destroy',
         'continued-after-capture-exit','continued-before-admission-exit',
-        'data-drain','command-disconnect','capture-freeze-receipt','capture-measurement-partial','capture-seal-receipt',
+        'data-drain','command-disconnect','capture-freeze-receipt','capture-freeze-destroy','capture-freeze-expiry','capture-measurement-partial','capture-seal-receipt',
         'capture-stop-receipt','restore-prepare-receipt','restore-prepare-destroy',
         'material-retirement-restart','restore-prepare-expiry','restored-running-expiry','unload-receipt-restart','resume-receipt-restart'),default='normal')
     parser.add_argument('--activation-gate-timeout-ms',type=int,default=60000)
