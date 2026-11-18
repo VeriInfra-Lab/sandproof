@@ -257,7 +257,44 @@ bash scripts/python-entry.sh "$package/test_world_begin_capture.py"
 
 沿用原固定工具、重锁、80 GiB 起跑、64 GiB 停机、四核与 4 GiB target 预算。
 驱动自测使用合成生成体。仅实际 Charon 和 Aeneas 成功后才收录新原件。
-回调别名、首错顺序、物理 SQLite 行为与 World 缓存证明继续按原 V5 合同。
+物理 SQLite 行为、World 缓存与外层事务仍按原 V5 合同。
+
+### 原 `begin` 的首错与已开始事务连接
+
+`UnloadWorldBegin` 物化 `world-begin` 已准入的两份未改动生成文件，并复用上节
+`UnloadStartedTransaction` 的完整依赖闭包。输入固定为 integration `f26fc26a`、
+#923 驱动 `a290351c` 及该驱动的原源码归档、LLBC、生成映射和输出。两个外部模块
+只提供具体类型转换与具名调用观察。`from_started_transaction` 直接调用 #770 的生成体。
+
+- 四个首错定理依次保留缓存读取、写前维护、SQLite 开启和输入前沿的原错误载荷。
+  各分支保留当时应返回的连接，SQLite 错误仍由原 Rust 的错误转换包入 `JournalError`。
+- 开启成功后，前沿读取使用原事务解引用所得连接、原 `input` 类型和空作用域。继续使用
+  同一个原事务、初始缓存参数、前沿和候选 World 调用已开始事务的构造。版本变化时返回
+  `CorruptStore`，版本匹配时原 World getter 在同一事务表示上读回原候选 World。
+- `BeginCalls.world`、`prepareWrite` 和 `readAllocator` 分别由 V5 的当前缓存读取、写前维护
+  和真实 allocator 提供。`beginSqlite` 的物理连接、写锁与回写由 V5 的 SQLite 事务框架提供。
+  定理对这些原值及调用观察成立。回滚、单写者租约、存储读写帧与完整外层登记仍是独立义务。
+  原生 `Immediate`/`Deferred` 对照及运行命令见 [#929](https://github.com/VeriInfra-Lab/sandproof/pull/929)。
+
+```bash
+package=verification/experiments/stage1-protocol/unload-parent-link
+bash scripts/python-entry.sh "$package/prepare_world_begin.py" \
+  --capture "$new_begin_evidence" --output "$new_begin_lean" \
+  --lake-packages "$fixed_lake_packages" --lean-mcp "$fixed_lean_mcp"
+# four_cpus 为当前获准 CPU 中的四个编号，用逗号分隔。
+(cd "$new_begin_lean" && LEAN_NUM_THREADS=4 flock -n "$SANDPROOF_LOCK_FILE" \
+  taskset -c "$four_cpus" lake build UnloadWorldBegin)
+bash scripts/python-entry.sh "$package/diagnose.py" \
+  --project "$new_begin_lean" --output "$new_begin_audit" --lock "$SANDPROOF_LOCK_FILE"
+```
+
+外层 `prepare-transaction` 仍按原 `prepare_lifecycle_source_work` 捕获。固定 Aeneas 在原
+切片迭代器 `find` 的高阶生命周期约束处停止。外层认证、同一事务中的观察请求构造、
+持久登记及失败时不构造观察请求仍待原生成体与组合证明。
+
+主控可使用新物化项目的 `plan.json` 登记该闭包的全部实际文件，并使用
+[覆盖候选](world-begin/public-registration.patch) 记录本切片。共享 Lake 接线和现有登记的
+合并由主控按实际生成文件和回执统一处理。
 
 主控使用 [登记候选](registration-candidate.json) 和 [公共覆盖候选](public-registration.patch)
 接入全部实际输入和审计；先解决 #776 已列的旧输入/原件阻断，不能只跑旧根报告本包通过。

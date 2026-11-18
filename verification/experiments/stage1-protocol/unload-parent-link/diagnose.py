@@ -92,6 +92,10 @@ def diagnose(project, output, lock):
         if before != {name: sha(project / name) for name in names}:
             raise ValueError('transitive source closure changed during service inspection')
         own = {path.name.removesuffix('.in') for path in HERE.glob('*.lean.in')}
+        strict = set(plan.get('strict_files', ()))
+        if strict - before.keys():
+            raise ValueError('strict diagnostics include a file outside the source closure')
+        own.update(strict)
         result['own_warnings'] = [item for item in result['warnings'] if item['file'] in own]
         result['complete'] = not (result['rejected'] or result['errors'] or result['own_warnings'])
         result['source_sha256'] = before
