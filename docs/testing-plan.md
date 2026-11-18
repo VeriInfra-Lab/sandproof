@@ -391,6 +391,15 @@ SQL 快照中确认整个宿主只有一条已派发、未回执的 Stop，并�
 会话的管理请求持续可用；恢复后仍须确认它保持原实例且可用。两者最后分别记录自动终止
 完成与全局资源归零，不把它计入主动 Destroy 的操作耗时，也不替代其它到期/回收交错。
 
+`restored-running-expiry` 在到期前及原 Stop 实际执行前各读取一次同一 pidfd 所指进程的
+有界 `/proc/PID/maps`。用设备号及 inode 将 `rw-p` 区间绑定到 jail 的私有
+`restore-memory.bin`，按文件偏移核对整个文件的覆盖。两个时点需读到同一个私有 inode，
+VMM 映射封存来源 `memory.bin`、映射有缺口或文件被同字节替换均拒绝。原来源文件、
+pin、正额度和产品最终结算仍按原判据观察。报告只保留映射的文件身份、权限与覆盖字节数，
+不采集进程地址或内存内容。真实 Linux 组件回归用私有 `mmap` 和临时文件，实际 Firecracker
+结果按精确部署另记。[Linux procfs 字段](https://man7.org/linux/man-pages/man5/proc_pid_maps.5.html) ·
+[固定 Firecracker File 映射实现](https://github.com/firecracker-microvm/firecracker/blob/v1.16.1/src/vmm/src/vstate/memory.rs)
+
 `normal --expired-window-replay` 在完整原三轮正常链及产品结算之后，另检查 E2 的窗口边界。
 [窗口观察器](../tests/system/lifecycle_window_replay.py)只轮询原服务的当前窗口，等待产品按
 原保留期、确认和关窗协议自然退休，不改时钟、数据库、保留期或原场景绝对期限。
