@@ -202,21 +202,62 @@ class SamplingInputTests(unittest.TestCase):
 
 
 class ResourceReportTests(SamplerFixture):
+    def completed_timing(self, operation, condition, seconds):
+        return dict(operation=operation, completion_condition=condition, complete=True,
+                    send_to_accept_seconds=0.25, accept_to_public_completion_seconds=seconds-0.25,
+                    send_to_public_completion_seconds=seconds)
+
     def report(self):
         self.add_vm();self.probe.sample();resources=self.probe.close()
         return dict(schema=1,complete=True,scenario='normal',resource_measurements=resources,
             measurement_identity=dict(candidate=dict(candidate='a'*40)),
-            operation_timings=[dict(operation='resume',complete=True,send_to_public_completion_seconds=n)
-                for n in (3,1,2)]+[dict(operation='destroy',complete=False)])
+            operation_timings=[self.completed_timing('resume', 'running', seconds)
+                for seconds in (3,1,2)]+[dict(operation='destroy',completion_condition='cleaned',
+                    complete=False,send_to_accept_seconds=0.25,accept_to_public_completion_seconds=None,
+                    send_to_public_completion_seconds=None)])
 
     def test_report_verifies_original_stream_and_recomputes_percentiles(self):
         from tools.lifecycle_measurement_report import render
         report=self.report();text=render(report,self.probe.path)
-        self.assertIn('| resume | 3 | 2.000000 | 3.000000 |',text)
+        self.assertIn('| resume | running | 3 | 2.000000 | 3.000000 |',text)
         self.assertIn('未完成操作 1 项',text)
         self.assertIn('不是完整 E16',text)
         self.assertNotIn('original-private-path',text)
         self.assertNotIn('/private/',text)
+
+    def test_report_keeps_distinct_public_completion_conditions_out_of_each_others_percentiles(self):
+        from tools.lifecycle_measurement_report import render
+        report = self.report()
+        rounded = self.completed_timing('create', 'running', 0.3)
+        rounded.update(send_to_accept_seconds=0.1, accept_to_public_completion_seconds=0.2)
+        report['operation_timings'].extend((rounded,
+            self.completed_timing('resume', 'state_lost', 20),
+            self.completed_timing('unload', 'unloaded', 9),
+            self.completed_timing('unload', 'original_continued', 2)))
+        text = render(report, self.probe.path)
+        self.assertNotIn('| resume | 4 | 2.000000 | 20.000000 |', text)
+        self.assertIn('| create | running | 1 | 0.300000 | 0.300000 |', text)
+        self.assertIn('| resume | running | 3 | 2.000000 | 3.000000 |', text)
+        self.assertIn('| resume | state_lost | 1 | 20.000000 | 20.000000 |', text)
+        self.assertIn('| unload | unloaded | 1 | 9.000000 | 9.000000 |', text)
+        self.assertIn('| unload | original_continued | 1 | 2.000000 | 2.000000 |', text)
+
+    def test_report_rejects_wrong_completion_condition_or_inconsistent_durations(self):
+        from tools.lifecycle_measurement_report import render
+        report = self.report()
+        for index, field, value, message in (
+                (0, 'completion_condition', None, 'completion condition'),
+                (0, 'completion_condition', 'original_continued', 'completion condition'),
+                (0, 'send_to_accept_seconds', True, 'finite original acceptance'),
+                (0, 'accept_to_public_completion_seconds', -1, 'finite original acceptance'),
+                (0, 'send_to_public_completion_seconds', 0.5, 'do not add up'),
+                (-1, 'send_to_public_completion_seconds', 0, 'incomplete original operation'),
+                (-1, 'accept_to_public_completion_seconds', 0, 'incomplete original operation')):
+            with self.subTest(field=field, value=value):
+                bad = copy.deepcopy(report)
+                bad['operation_timings'][index][field] = value
+                with self.assertRaisesRegex(ValueError, message):
+                    render(bad, self.probe.path)
 
     def test_changed_summary_identity_volume_missing_counts_or_timings_are_rejected(self):
         from tools.lifecycle_measurement_report import render

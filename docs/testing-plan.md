@@ -185,7 +185,10 @@ run root；后者的 `resource_measurements` 含原始流摘要、各序段有�
 RSS 峰值、服务 cgroup、整卷及采集开销。采样器身份/证据/退出失败使本轮失败并保留原责任；
 正常停止窗口或读取缺失单列，资源覆盖仍可能为 partial，不能据此称 E16 已验收。
 独立报告器先核对原流摘要/长度/顺序、完整 PID/start 身份及 CPU/RSS/磁盘汇总，再从原
-公开完成样本重算最近秩 p50/p95；不合并候选、伪补未完成样本或复制异常/配置/凭据：
+公开完成样本按操作及原公开终局分别重算最近秩 p50/p95。Resume 的 Running 和
+StateLost 分列，Unload 的 Unloaded 与 OriginalContinued 分列。检查发送至接受、
+接受至公开完成的两段之和，并拒绝给未完成操作填入完成耗时。报告不合并候选、伪补
+未完成样本或复制异常/配置/凭据。
 
 ```sh
 bash scripts/python-entry.sh -m tools.lifecycle_measurement_report \
