@@ -249,9 +249,12 @@ class CaptureHandoffProbe:
             cap = self.runtime.services.host_configs[0]['native']['maintenance']['capacity']['max_sql_value_bytes']
             if any(len(row[0]) > cap or (row[2] is not None and len(row[2]) > cap) for row in rows):
                 raise ValueError('original outbox exceeds configured value bound')
-            actions = [(json.loads(raw, object_pairs_hook=unique_keys), state,
-                        None if receipt is None else json.loads(receipt, object_pairs_hook=unique_keys))
-                       for raw, state, receipt in rows]
+            actions = []
+            for raw, state, stored_receipt in rows:
+                receipt = None if stored_receipt is None else json.loads(stored_receipt, object_pairs_hook=unique_keys)
+                if receipt is None and stored_receipt is not None:
+                    raise ValueError('stored outbox receipt cannot be JSON null')
+                actions.append((json.loads(raw, object_pairs_hook=unique_keys), state, receipt))
             records = checked_source_records(conn, self.runtime.services.host_configs[0], deadline)
             additional = extra(conn, local, capacity) if extra is not None else None
         if (database.stat().st_dev, database.stat().st_ino) != identity:

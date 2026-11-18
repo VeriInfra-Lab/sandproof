@@ -444,7 +444,11 @@ cgroup 及 backing pin；不能把旧 Unloaded VMM 登记为这次清理对象�
 `capture-freeze-destroy` 在实际一次 Unload/Resume 和另一 owner 复用旧位置后，复用原
 Freeze 成功但 SQL 回执未入库的退出点。通过原 VMM 的 Unix API 连接核对进程身份及
 当前 `Paused`，再持同一 pidfd 发送 SIGSTOP，仅用于阻止旧 Freeze 对账先于终止意图。
-经公开接口接受 Destroy，重开原 Host 并持原 Stop 门；同一 SQL 快照必须包含当前
+发出公开 Destroy 前和收到 202 后、重开 Host 前，各读一次原 SQL 快照，确认原 Unload
+和同一完整 Freeze 仍在途、回执列为 SQL NULL、Full 未放行，且原 Host 子进程仍为退出 86 的
+同一对象，原 VM 仍存活且符合本场景的进程应答模式。报告分别保留两次观察和公开接受。
+任一观察失败即保留已有结果并停止编排，收到 202 后的失败仍保留原 Destroy 接受。
+重开原 Host 并持原 Stop 门；同一 SQL 快照必须包含当前
 Destroy/Kill、成功终止围栏、唯一的全局在途 Stop 与该动作的完整逻辑登记，并保留原 VM、
 寿命和 backing pin/正材料额度。另一 owner 的原来宾 RAM/文件工作负载须继续推进，期间复核原材料
 及责任不变。同伴尚未 Unload，以当前 Running 接受核对原授权、完整 RAM/激活/进程

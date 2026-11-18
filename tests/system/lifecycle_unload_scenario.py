@@ -1292,9 +1292,16 @@ def exercise(args):
                     report['automatic_expiry']=capture_probe.observe_expiry(deadline)
                     terminal_acceptance=report['automatic_expiry']['acceptance']
                 else:
+                    if not freeze_dispatch_destroy:
+                        report['phase']='recheck-original-freeze-before-public-destroy'
+                        report['freeze_destroy_acceptance_window']={
+                            'before':capture_probe.observe_destroy_window(deadline)}
                     report['phase']='public-destroy-with-original-freeze-receipt-pending'
                     report['destroy']=client.destroy(pending)
                     terminal_acceptance=report['destroy']
+                    if not freeze_dispatch_destroy:
+                        report['phase']='recheck-original-freeze-after-public-destroy'
+                        report['freeze_destroy_acceptance_window']['after']=capture_probe.observe_destroy_window(deadline)
                     report['terminal_unload_replays']=[client.assert_terminal_unload_replay(phase='terminating')]
                 def observe_frozen_peer():
                     report['phase']=prefix.replace('_','-')+'-peer-progress-before-stop'
