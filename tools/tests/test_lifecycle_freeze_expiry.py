@@ -431,6 +431,7 @@ class FrozenExpiryObservationTests(unittest.TestCase):
                     self.assertEqual(window['before'], window['after'])
                     self.assertTrue(window['after']['freeze_sql_receipt_pending'])
                     self.assertEqual(window['after']['host_nonterminal_pause'], original.pending_pause(f)['current_operation'])
+                    self.assertEqual(window['after']['native_pause_ledger'], original.pause_ledger(f))
                     self.assertEqual(window['after']['original_vmm_endpoint'], endpoint.return_value)
                     self.assertEqual(endpoint.call_count, 2)
                     f.processes.audit.assert_called_once_with('center')

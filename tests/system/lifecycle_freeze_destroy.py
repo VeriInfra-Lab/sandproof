@@ -161,6 +161,18 @@ def pending_stop_facts(runtime,conn,local,capacity):
     return dict(global_pending_stops=stops,lifetime=lifetime,logical_action_registered=registered)
 
 
+def _native_operation_ledger(conn, operation_id, identity, capacity, kind):
+    """Read the exact bounded operation in the caller's Host SQL snapshot."""
+    row = conn.execute(
+        'SELECT sandbox_id,owner_id,state_blob FROM operations '
+        'WHERE operation_id=? AND length(state_blob) BETWEEN 1 AND ?',
+        (operation_id, capacity['max_sql_value_bytes']),
+    ).fetchone()
+    if (row is None or row[:2] != (identity['sandbox'], identity['owner'])
+            or type(row[2]) is not bytes):
+        raise ValueError(f'bounded original native {kind} ledger row required')
+    return json.loads(row[2], object_pairs_hook=unique_keys)
+
 
 class FreezeDestroyProbe(CaptureHandoffProbe):
     hold_source_process = True
@@ -239,7 +251,10 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
 
     def _destroy_window_facts(self, conn, local, capacity):
         registered = action_is_registered(conn, self.action, capacity)
-        return registered, self._read_native(conn, local, capacity)
+        native = self._read_native(conn, local, capacity)
+        identity = self.action['identity']
+        ledger = _native_operation_ledger(conn, identity['operation'], identity, capacity, 'Pause')
+        return registered, native, ledger
 
     def _observe_frozen_endpoint(self, deadline):
         with original_vmm_endpoint(self.runtime, self.prior, deadline) as (_, uid, identity):
@@ -254,7 +269,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         """Re-read the original Host cut around public Destroy or audited expiry."""
         deadline = min(deadline, self.deadline)
         self._configuration()
-        entry, rows, actions, (registered, native) = self._read(
+        entry, rows, actions, (registered, native, ledger) = self._read(
             deadline, extra=self._destroy_window_facts, require_nonterminal=True)
         action = self._original_action(actions, entry)
         if not equal(entry, self.unload_entry) or not equal(action, self.action):
@@ -272,6 +287,9 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
                 or not equal(native['current_vm'], binding['vm'])
                 or not equal(native['net_slot'], binding['network'])):
             raise ValueError('original nonterminal native Pause must remain current in the receipt window')
+        if not equal(ledger, dict(sandbox=self.prior['local']['sandbox'], operation=pause,
+                                  input={'Pause': {'generation': binding['generation']}}, result=None)):
+            raise ValueError('original native Pause ledger must match the pending current Pause')
         if any(CAPTURE_COMMANDS & saved['command']['logical']['command'].keys()
                for saved, _, _ in actions):
             raise ValueError('original Unload outbox contains a capture action in the receipt window')
@@ -290,6 +308,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
                     freeze_identity=action['identity'], freeze_sql_receipt_pending=True,
                     freeze_logical_action_registered=registered,
                     host_nonterminal_pause=pause,
+                    native_pause_ledger=ledger,
                     original_vmm_endpoint=endpoint,
                     original_pin_and_positive_charge_retained=True,
                     capture_outbox_actions_absent=True)
@@ -562,16 +581,9 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
         namespace = self.runtime.services.native_pools[0]['namespace']
         sandbox = _u64(local['sandbox'], positive=True)
         operation = _u64(terminal['local_operation'], positive=True)
-        row = conn.execute(
-            'SELECT sandbox_id,owner_id,state_blob FROM operations '
-            'WHERE operation_id=? AND length(state_blob) BETWEEN 1 AND ?',
-            (f'op-{namespace}-{sandbox}-{operation}', capacity['max_sql_value_bytes']),
-        ).fetchone()
-        identity = self.action['identity']
-        if (row is None or row[:2] != (identity['sandbox'], identity['owner'])
-                or type(row[2]) is not bytes):
-            raise ValueError('bounded original native Kill ledger row required')
-        return dict(native_kill_ledger=json.loads(row[2], object_pairs_hook=unique_keys))
+        operation_id = f'op-{namespace}-{sandbox}-{operation}'
+        return dict(native_kill_ledger=_native_operation_ledger(
+            conn, operation_id, self.action['identity'], capacity, 'Kill'))
 
     def _terminal_manager_started(self,deadline):
         while True:
