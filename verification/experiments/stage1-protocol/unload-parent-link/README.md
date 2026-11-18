@@ -163,6 +163,12 @@ bash scripts/python-entry.sh "$package/diagnose.py" \
 - `RevisionReadErrors` 验证原 SQL、唯一绑定键和第一列读取。到达 revision 读取前缀后，
   身份键构造错误、原 SQLite 错误和负 revision 各有首错定理。负值经同一父调用返回
   `CorruptStore`，后续编码不被求值。这些定理无需后续分配器返回成功。
+- `RevisionReadSuccess` 给出生成函数的原 clone 和分配器后段。正常 revision 保留完整
+  非负有符号值到 `Option U64` 的转换。读取成功后，原分配器错误仍原样返回。
+  本地绑定缺失与绑定存在但 World 记录缺失分别核对，均跳过 revision 查询并保留该
+  分支的完整结果。后段等式也保留原 clone 或分配器的外层失败和非返回。
+- 在同一父调用，正常 revision 与分配器值各进入自己的字段。原 base 返回缺
+  `native` 的候选时，真实父函数返回 `CorruptStore`，后续观察请求编码不被求值。
 - `BeforeRevision` 和原父调用前缀逐操作记录所需返回，保留 V4/V5 已登记生产义务。
   实际 SQLite 活动事务、同一物理快照和读错误后的帧仍需 V5 提供证明。
 
