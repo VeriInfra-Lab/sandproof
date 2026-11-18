@@ -19,7 +19,18 @@ from revision_capture import declaration, regular_calls
 
 ROOT = Path(__file__).resolve().parents[4]
 GIB = 2**30
-ORIGINAL_ARCHIVE = '5e3c46112d1becd898fb070b4fd10373874184aef6fe40b1727e3fe6381fb824'
+BASELINES = {
+    prepare.SOURCE_COMMIT: (prepare.SOURCE_TREE,
+                            '5e3c46112d1becd898fb070b4fd10373874184aef6fe40b1727e3fe6381fb824'),
+    'a044095cd65ea518b1f57f4d4b2239de023c2bd1': (
+        '84ba51c05691a86e8bbf538397899f95b500bc57',
+        'ed12d2e1671877b5a42de85879ff18216d0fd8c71ed2e62a9dba9666bda87772',
+    ),
+    '6fd0852025468e2583c436d37af18383bf2e71ea': (
+        '1eb064834e310a2006b3df6c5981ab15a07afc12',
+        '1fd6c33cf97f94bfea5afd6ae135c60a6427121f58188d517ec80059e0623042',
+    ),
+}
 REPLAY = '''        if let Some(record) = sources.records.iter().find(|r| r.work.request() == intent) {
             return Ok(record.clone());
         }
@@ -188,7 +199,7 @@ def check_encoder_wrapper(translated, encoder):
     return to_vec['def_id']
 
 
-def probe(variant, output, tools, lock, wrapper_ir):
+def probe(variant, output, tools, lock, wrapper_ir, source_commit):
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal':
         raise ValueError('extraction probe belongs to the existing proof role')
     if shutil.disk_usage(ROOT).free < 80 * GIB:
@@ -199,7 +210,8 @@ def probe(variant, output, tools, lock, wrapper_ir):
     output.mkdir()
     source = output / 'source'
     source.mkdir()
-    report = dict(variant=variant, source_commit=prepare.SOURCE_COMMIT, source_tree=prepare.SOURCE_TREE,
+    source_tree, original_archive = BASELINES[source_commit]
+    report = dict(variant=variant, source_commit=source_commit, source_tree=source_tree,
                   cpus=cpus, development_probe=True, original_implementation=False,
                   commands=[], generated=False, wrapper_ir=wrapper_ir, native_acceptance=False,
                   driver_sha256=digest(Path(__file__)))
@@ -210,10 +222,13 @@ def probe(variant, output, tools, lock, wrapper_ir):
             if digest(path) != fixed[name]['binary_sha256']:
                 raise ValueError('fixed extraction tool differs: ' + name)
         archive = output / 'source.tar'
+        found_tree = subprocess.check_output(['git', 'rev-parse', source_commit + '^{tree}'], cwd=ROOT, text=True).strip()
+        if found_tree != source_tree:
+            raise ValueError('original integration tree differs')
         with archive.open('xb') as stream:
-            subprocess.run(['git', 'archive', prepare.SOURCE_COMMIT], cwd=ROOT, stdout=stream, check=True)
+            subprocess.run(['git', 'archive', source_commit], cwd=ROOT, stdout=stream, check=True)
         report['archive_sha256'] = digest(archive)
-        if report['archive_sha256'] != ORIGINAL_ARCHIVE:
+        if report['archive_sha256'] != original_archive:
             raise ValueError('original integration archive differs')
         with tarfile.open(archive) as tar:
             tar.extractall(source, filter='data')
@@ -298,6 +313,7 @@ def probe(variant, output, tools, lock, wrapper_ir):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--variant', choices=VARIANTS, required=True)
+    parser.add_argument('--source-commit', choices=tuple(BASELINES), default=prepare.SOURCE_COMMIT)
     parser.add_argument('--wrapper-ir', action='store_true', help='check the concrete encoder body with Charon only')
     for name in ('output', 'tools', 'lock'):
         parser.add_argument('--' + name, type=Path, required=True)
@@ -305,4 +321,4 @@ if __name__ == '__main__':
     if args.wrapper_ir and args.variant != 'json-boundary':
         parser.error('--wrapper-ir requires the json-boundary variant')
     raise SystemExit(probe(args.variant, args.output.resolve(), args.tools.resolve(strict=True),
-                           args.lock.resolve(strict=True), args.wrapper_ir))
+                           args.lock.resolve(strict=True), args.wrapper_ir, args.source_commit))
