@@ -99,6 +99,8 @@ def freeze_window_journal(f):
         conn.execute('CREATE TABLE outbox(id INTEGER PRIMARY KEY,sandbox_id TEXT,operation_id TEXT,action_json BLOB,dispatch_state TEXT,receipt_json BLOB)')
         conn.execute('CREATE TABLE controller_effect_keys(id INTEGER PRIMARY KEY,logical_json BLOB NOT NULL UNIQUE)')
         conn.execute('CREATE TABLE sandboxes(sandbox_id TEXT PRIMARY KEY,owner_id TEXT,state_blob BLOB)')
+        conn.execute('CREATE TABLE operations(operation_id TEXT PRIMARY KEY,sandbox_id TEXT NOT NULL,'
+                     'owner_id TEXT NOT NULL,state_blob BLOB NOT NULL)')
         conn.execute('INSERT INTO controller_lifecycle_inbox VALUES(1,?,?,?)',
                      (raw, hashlib.sha256(raw).digest(), 65536))
         conn.execute('INSERT INTO outbox VALUES(1,?,?,?,?,NULL)',
@@ -108,6 +110,10 @@ def freeze_window_journal(f):
                      (json.dumps(f.freeze['command']['logical']).encode(),))
         conn.execute('INSERT INTO sandboxes VALUES(?,?,?)',
                      (p.config['sandbox'], f.freeze['identity']['owner'], json.dumps(pending_pause(f)).encode()))
+        identity = f.freeze['identity']
+        conn.execute('INSERT INTO operations VALUES(?,?,?,?)',
+                     (identity['operation'], identity['sandbox'], identity['owner'],
+                      json.dumps(pause_ledger(f)).encode()))
     path.chmod(0o600)
     return path
 
@@ -117,6 +123,12 @@ def pending_pause(f):
                 current_operation=dict(id=4, epoch=3, kind='Pause', status='Pending'))
 
 
+def pause_ledger(f):
+    pause = pending_pause(f)
+    return dict(sandbox=f.probe.prior['local']['sandbox'], operation=pause['current_operation'],
+                input={'Pause': {'generation': pause['generation']}}, result=None)
+
+
 def ordered_kill_journal(f, path=None):
     if path is None:
         path = freeze_window_journal(f)
@@ -124,8 +136,6 @@ def ordered_kill_journal(f, path=None):
     fence = f.snapshot['terminal_actions'][0][0]
     ledger = f.snapshot['native_kill_ledger']
     with closing(sqlite3.connect(path)) as conn, conn:
-        conn.execute('CREATE TABLE operations(operation_id TEXT PRIMARY KEY,sandbox_id TEXT NOT NULL,'
-                     'owner_id TEXT NOT NULL,state_blob BLOB NOT NULL)')
         conn.execute('CREATE TABLE sandbox_lifetimes(sandbox_id TEXT PRIMARY KEY,owner_id TEXT,'
                      'started_at_ms INTEGER,deadline_ms INTEGER,max_deadline_ms INTEGER,startup_deadline_ms INTEGER)')
         conn.execute('UPDATE controller_lifecycle_inbox SET state_json=?,sha256=?',
@@ -285,6 +295,7 @@ class FrozenFactsTests(unittest.TestCase):
                 self.assertEqual(first['unload_accepted_version'], 4)
                 self.assertEqual(first['host_exit_code'], 86)
                 self.assertIs(first['freeze_sql_receipt_pending'], True)
+                self.assertEqual(first['native_pause_ledger'], pause_ledger(f))
                 self.assertEqual(p.observe_destroy_window(p.deadline), first)
                 for action, state, receipt, message in (
                         (original, 'dispatched', b'{}', 'no SQL receipt'),
@@ -498,6 +509,75 @@ class FrozenFactsTests(unittest.TestCase):
                         p.observe_destroy_window(p.deadline)
                 held.assert_called_once()
                 self.assertEqual(before['host_nonterminal_pause'], pending_pause(f)['current_operation'])
+
+    def test_destroy_window_rejects_missing_or_different_pause_ledger(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = fixture(Path(directory))
+            p = f.probe
+            path = freeze_window_journal(f)
+            identity = f.freeze['identity']
+            original = pause_ledger(f)
+            pause = original['operation']
+            change_blob = 'UPDATE operations SET state_blob=?'
+            ledger_cases = (
+                ('different sandbox', dict(original, sandbox=5)),
+                ('different status', dict(original, operation=dict(pause, status='OutcomeUnknown'))),
+                ('different operation', dict(original, operation=dict(pause, id=5))),
+                ('different epoch', dict(original, operation=dict(pause, epoch=4))),
+                ('different generation', dict(original, input={'Pause': {'generation': 3}})),
+                ('float generation', dict(original, input={'Pause': {'generation': 2.0}})),
+                ('premature result', dict(original, result='Paused')),
+            )
+            cases = (
+                ('missing', 'DELETE FROM operations', ()),
+                ('foreign sandbox', 'UPDATE operations SET sandbox_id=?', ('sb-other-4',)),
+                ('foreign owner', 'UPDATE operations SET owner_id=?', ('tenant-2',)),
+                ('oversized blob', change_blob, (b'x' * 65537,)),
+                ('text storage', change_blob, ('{}',)),
+                *((fault, change_blob, (json.dumps(ledger).encode(),)) for fault, ledger in ledger_cases),
+            )
+            p.deadline = time.monotonic() + 30
+            with closing(sqlite3.connect(path)) as writer, \
+                    patch.object(capture, 'checked_source_records', return_value=f.rows), \
+                    patch.object(p, '_check_source_hold') as held, \
+                    patch.object(p, '_observe_frozen_endpoint') as endpoint:
+                for fault, statement, args in cases:
+                    with self.subTest(fault=fault):
+                        with writer:
+                            writer.execute('INSERT OR REPLACE INTO operations VALUES(?,?,?,?)',
+                                           (identity['operation'], identity['sandbox'], identity['owner'],
+                                            json.dumps(original).encode()))
+                            writer.execute(statement, args)
+                        with self.assertRaisesRegex(ValueError, 'original native Pause ledger'):
+                            p.observe_destroy_window(p.deadline)
+                held.assert_not_called()
+                endpoint.assert_not_called()
+
+    def test_destroy_window_reads_pause_ledger_in_the_freeze_sql_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            f = fixture(Path(directory))
+            p = f.probe
+            path = freeze_window_journal(f)
+            original = pause_ledger(f)
+            p.deadline = time.monotonic() + 30
+            with closing(sqlite3.connect(path)) as writer, patch.object(p, '_check_source_hold') as held, \
+                    patch.object(p, '_observe_frozen_endpoint', return_value={}):
+                self.assertEqual(writer.execute('PRAGMA journal_mode=WAL').fetchone(), ('wal',))
+
+                def write_result_after_freeze_read(reader, _config, _deadline):
+                    self.assertTrue(reader.in_transaction)
+                    with writer:
+                        writer.execute('UPDATE operations SET state_blob=?',
+                                       (json.dumps(dict(original, result='Paused')).encode(),))
+                    return f.rows
+
+                with patch.object(capture, 'checked_source_records', side_effect=write_result_after_freeze_read):
+                    before = p.observe_destroy_window(p.deadline)
+                with patch.object(capture, 'checked_source_records', return_value=f.rows):
+                    with self.assertRaisesRegex(ValueError, 'original native Pause ledger'):
+                        p.observe_destroy_window(p.deadline)
+                self.assertEqual(before['native_pause_ledger'], original)
+                held.assert_called_once()
 
     def test_complete_destroy_history_context_and_window_are_correlated(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1390,11 +1470,13 @@ class OrderedFreezeTests(unittest.TestCase):
                     f.snapshot['native_kill_ledger']['operation']['status'] = 'Succeeded'
                 path = ordered_kill_journal(f)
                 ledger = copy.deepcopy(f.snapshot['native_kill_ledger'])
+                operation_id = f.stop['identity']['operation']
                 with closing(sqlite3.connect(path)) as writer, writer:
                     if fault == 'missing':
-                        writer.execute('DELETE FROM operations')
+                        writer.execute('DELETE FROM operations WHERE operation_id=?', (operation_id,))
                     elif fault == 'foreign-owner':
-                        writer.execute('UPDATE operations SET owner_id=?', ('tenant-2',))
+                        writer.execute('UPDATE operations SET owner_id=? WHERE operation_id=?',
+                                       ('tenant-2', operation_id))
                     else:
                         if fault == 'different-operation':
                             ledger['operation']['id'] += 1
@@ -1404,7 +1486,8 @@ class OrderedFreezeTests(unittest.TestCase):
                             ledger['input']['Kill']['generation'] = 2.0
                         elif fault == 'result':
                             ledger['result'] = 'Destroyed'
-                        writer.execute('UPDATE operations SET state_blob=?', (json.dumps(ledger).encode(),))
+                        writer.execute('UPDATE operations SET state_blob=? WHERE operation_id=?',
+                                       (json.dumps(ledger).encode(), operation_id))
                 p._source_state = Mock(side_effect=lambda _: 'S' if p.continue_sent else 'T')
                 with patch.object(capture, 'checked_source_records', return_value=f.rows), \
                         patch.object(frozen.signal, 'pidfd_send_signal', create=True) as sent:
@@ -1435,8 +1518,9 @@ class OrderedFreezeTests(unittest.TestCase):
                 def finish_after_native_read(reader, _config, _deadline):
                     self.assertTrue(reader.in_transaction)
                     with writer:
-                        writer.execute('UPDATE operations SET state_blob=?',
-                                       (json.dumps(dict(original, result='Destroyed')).encode(),))
+                        writer.execute('UPDATE operations SET state_blob=? WHERE operation_id=?',
+                                       (json.dumps(dict(original, result='Destroyed')).encode(),
+                                        f.stop['identity']['operation']))
                     return f.rows
 
                 with patch.object(capture, 'checked_source_records', side_effect=finish_after_native_read), \

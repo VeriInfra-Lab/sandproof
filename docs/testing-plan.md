@@ -494,6 +494,10 @@ Resume backing pin 与正材料额度，允许刷新来源观测样本。
 同一快照还须确认 Host 收件仍停在非终止的原 Unload 版本，原生账本的 Pause 仍为
 `Pending`，且操作号、epoch、运行代、VM 和网络槽均为原 Freeze 对应的身份。
 公开 Destroy 返回 202 时，两侧的 `host_nonterminal_pause` 仍须记录同一个原 Pause。
+两侧的 `native_pause_ledger` 从同一 Host SQLite 快照的 `operations` 表读取该 Pause。
+账本须绑定原沙箱和 owner，并匹配当前 Pause 的操作号、epoch、`Pending` 状态和输入运行代。
+结果须为空。缺行、错身份、类型别名或提前写入结果均使该窗口检查失败。自动到期的两次
+窗口核对也读取原 Pause 账本。
 两侧的 `original_vmm_endpoint` 均须匹配最初实际 Paused 回复时的 jail 与 API socket
 设备号、inode 和预期 UID；受保护的进程记录与原 pidfd 身份也要保持。窗口内只读这些
 元数据，不重新连接 VMM 或发送信号。复用原目录路径的其它 socket，或搬入替换 jail
