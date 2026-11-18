@@ -1210,7 +1210,52 @@ class SceneAndReplayTests(unittest.TestCase):
                 changed=dict(current);changed[field]=value;c.query.return_value=changed
                 with self.subTest(phase=phase,field=field),self.assertRaises(AssertionError):c.assert_terminal_unload_replay(phase=phase)
 
-    def exercise(self,fault=False,peer_fault='none',expiry=False,responsive=False,ordered=False,unresponsive=False,ordered_expiry=False,dispatch=False,window_fault=None,resume_fault=None):
+    def test_frozen_destroy_replay_matches_full_acceptance_and_terminal_view_at_both_edges(self):
+        cases = (
+            (None, None, 5),
+            ('wrong-acceptance', 'Destroy replay changed the original acceptance', 2),
+            ('changed-after-exact', 'exact Destroy replay changed the current terminal state', 3),
+            ('unexpected-acceptance', 'public response status differs', 4),
+            ('changed-after-altered', 'altered Destroy replay changed the current terminal state', 5),
+        )
+        for fault, message, count in cases:
+            with self.subTest(fault=fault):
+                client = scene.PublicUnloadScenario('http://127.0.0.1:1', 'original', 'peer',
+                                                   'deployment', time.monotonic() + 30)
+                client.session, client.window, client.sequence = 'session-1', 3, 8
+                request = dict(window=3, sequence=8, expected_version=4)
+                accepted = dict(session=client.session, key=client.key(8), accepted_version=5)
+                current = dict(session=client.session, operation=accepted['key'], current_version=5,
+                               phase='terminating', unload_outcome=None, create_refusal=None)
+                client.destroy_request = copy.deepcopy(request)
+                client.current_acceptance = copy.deepcopy(accepted)
+                replay = dict(accepted, key=client.key(9)) if fault == 'wrong-acceptance' else accepted
+                replaced = dict(current, operation=client.key(9))
+                after_exact = replaced if fault == 'changed-after-exact' else current
+                after_altered = replaced if fault == 'changed-after-altered' else current
+                altered_status = 202 if fault == 'unexpected-acceptance' else 409
+                replies = [(200, json.dumps(current)), (202, json.dumps(replay)),
+                           (200, json.dumps(after_exact)), (altered_status, b''),
+                           (200, json.dumps(after_altered))]
+                with patch.object(scene, 'fetch', side_effect=replies) as fetch:
+                    if message is None:
+                        self.assertEqual(client.assert_frozen_destroy_replay(), dict(
+                            original_acceptance_returned=True, altered_http_status=409,
+                            altered_expected_version=5, terminal_view_unchanged=True))
+                    else:
+                        with self.assertRaisesRegex(AssertionError, message):
+                            client.assert_frozen_destroy_replay()
+                get = ('GET', client.path(), client.owner_key, None)
+                post = ('POST', client.path() + '/destroy', client.owner_key)
+                expected = [get, (*post, request), get,
+                            (*post, dict(request, expected_version=5)), get]
+                self.assertEqual([call.args[2:] for call in fetch.call_args_list], expected[:count])
+                self.assertEqual(client.destroy_request, request)
+                self.assertEqual(client.current_acceptance, accepted)
+                self.assertEqual(client.sequence, 8)
+                self.assertEqual(client.timings, [])
+
+    def exercise(self,fault=False,peer_fault='none',expiry=False,responsive=False,ordered=False,unresponsive=False,ordered_expiry=False,dispatch=False,window_fault=None,resume_fault=None,replay_fault=False):
         import lifecycle_freeze_dispatch as dispatched
         if ordered_expiry:self.assertTrue(expiry)
         if expiry:
@@ -1239,6 +1284,14 @@ class SceneAndReplayTests(unittest.TestCase):
                 raise scene.PublicStatusMismatch(202, 409)
             return veto_evidence
         clients['1'].assert_terminal_rejects_new_resume = Mock(side_effect=reject_new_resume)
+        replay_evidence = dict(original_acceptance_returned=True, altered_http_status=409,
+                               altered_expected_version=5, terminal_view_unchanged=True)
+        def replay_destroy():
+            events.append('destroy-replay')
+            if replay_fault:
+                raise scene.PublicStatusMismatch(202, 409)
+            return replay_evidence
+        clients['1'].assert_frozen_destroy_replay = Mock(side_effect=replay_destroy)
         from tools.tests.test_lifecycle_running_witness import RunningWitnessTests
         peer,peer_running=RunningWitnessTests().fixture()
         previous=copy.deepcopy(peer.witness);peer.witness=None;peer.data_token=None
@@ -1271,7 +1324,7 @@ class SceneAndReplayTests(unittest.TestCase):
         def observe_destroy_window(_):
             nonlocal window_reads
             window_reads += 1
-            edge = ('before', 'after', 'after_rejected_resume')[window_reads - 1]
+            edge = ('before', 'after', 'after_rejected_resume', 'after_destroy_replay')[window_reads - 1]
             events.append('freeze-window-' + edge)
             if window_fault == edge:
                 raise ValueError('original Freeze receipt no longer pending')
@@ -1320,7 +1373,23 @@ class SceneAndReplayTests(unittest.TestCase):
             expiry_scenario='capture-freeze-receipt-expiry' if ordered_expiry else 'capture-freeze-unresponsive-expiry' if unresponsive else 'capture-freeze-expiry'
             destroy_scenario='capture-freeze-before-destroy' if dispatch else 'capture-freeze-unresponsive-destroy' if unresponsive else 'capture-freeze-receipt-destroy' if ordered else 'capture-freeze-responsive-destroy' if responsive else 'capture-freeze-destroy'
             args=NS(scenario=expiry_scenario if expiry else destroy_scenario,scenario_timeout=60,activation_gate_timeout_ms=60000)
-            if resume_fault == 'unexpected-acceptance':
+            if replay_fault:
+                with self.assertRaises(scene.PublicStatusMismatch):
+                    scene.exercise(args)
+                report = json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
+                self.assertFalse(report['complete'])
+                self.assertEqual(report['phase'], 'destroy-replay-before-host-reopen')
+                self.assertEqual(report['last_http_status'], dict(actual=202, expected=409))
+                self.assertEqual(report['destroy'], clients['1'].current_acceptance)
+                self.assertEqual(report['frozen_destroy_resume_veto'], veto_evidence)
+                self.assertEqual(report['freeze_destroy_acceptance_window'], dict(
+                    before=window_evidence, after=window_evidence, after_rejected_resume=window_evidence))
+                self.assertNotIn('frozen_destroy_replay', report)
+                p.recover_after_destroy.assert_not_called()
+                clients['1'].assert_terminal_unload_replay.assert_not_called()
+                other.destroy.assert_not_called()
+                runner.settlement_evidence.assert_not_called()
+            elif resume_fault == 'unexpected-acceptance':
                 with self.assertRaises(scene.PublicStatusMismatch):
                     scene.exercise(args)
                 report = json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
@@ -1340,9 +1409,10 @@ class SceneAndReplayTests(unittest.TestCase):
                     scene.exercise(args)
                 report = json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
                 self.assertFalse(report['complete'])
-                self.assertEqual(report['phase'], 'recheck-original-freeze-after-resume-veto'
-                    if window_fault == 'after_rejected_resume'
-                    else 'recheck-original-freeze-' + window_fault + '-public-destroy')
+                phases = dict(after_rejected_resume='recheck-original-freeze-after-resume-veto',
+                              after_destroy_replay='recheck-original-freeze-after-destroy-replay')
+                self.assertEqual(report['phase'], phases.get(
+                    window_fault, 'recheck-original-freeze-' + window_fault + '-public-destroy'))
                 if window_fault == 'before':
                     clients['1'].destroy.assert_not_called()
                     self.assertNotIn('destroy', report)
@@ -1350,9 +1420,12 @@ class SceneAndReplayTests(unittest.TestCase):
                     clients['1'].destroy.assert_called_once()
                     self.assertEqual(report['destroy'], clients['1'].current_acceptance)
                     expected = {'before': window_evidence}
-                    if window_fault == 'after_rejected_resume':
+                    if window_fault in ('after_rejected_resume', 'after_destroy_replay'):
                         expected['after'] = window_evidence
                         self.assertEqual(report['frozen_destroy_resume_veto'], veto_evidence)
+                    if window_fault == 'after_destroy_replay':
+                        expected['after_rejected_resume'] = window_evidence
+                        self.assertEqual(report['frozen_destroy_replay'], replay_evidence)
                     self.assertEqual(report['freeze_destroy_acceptance_window'], expected)
                 other.destroy.assert_not_called()
                 p.recover_after_destroy.assert_not_called()
@@ -1400,9 +1473,13 @@ class SceneAndReplayTests(unittest.TestCase):
                     if ordered:
                         self.assertLess(events.index('freeze-window-after'), events.index('new-resume'))
                         self.assertLess(events.index('new-resume'), events.index('freeze-window-after_rejected_resume'))
-                        self.assertLess(events.index('freeze-window-after_rejected_resume'), events.index('recover'))
+                        self.assertLess(events.index('freeze-window-after_rejected_resume'), events.index('destroy-replay'))
+                        self.assertLess(events.index('destroy-replay'), events.index('freeze-window-after_destroy_replay'))
+                        self.assertLess(events.index('freeze-window-after_destroy_replay'), events.index('recover'))
                         self.assertEqual(report['frozen_destroy_resume_veto'], veto_evidence)
+                        self.assertEqual(report['frozen_destroy_replay'], replay_evidence)
                         expected['after_rejected_resume'] = window_evidence
+                        expected['after_destroy_replay'] = window_evidence
                     self.assertEqual(report['freeze_destroy_acceptance_window'], expected)
                 self.assertLess(events.index('assert_running_workload-2'),events.index('release-stop'))
                 self.assertLess(events.index('release-stop'),events.index('assert_terminal_before_gc'))
@@ -1416,7 +1493,12 @@ class SceneAndReplayTests(unittest.TestCase):
                 veto.assert_called_once_with()
             else:
                 veto.assert_not_called()
-            if fault or window_fault is not None or resume_fault is not None:
+            replay = clients['1'].assert_frozen_destroy_replay
+            if ordered and resume_fault is None and window_fault in (None, 'after_destroy_replay'):
+                replay.assert_called_once_with()
+            else:
+                replay.assert_not_called()
+            if fault or window_fault is not None or resume_fault is not None or replay_fault:
                 other.assert_running_workload.assert_not_called();witness.assert_not_called()
             elif peer_fault=='none':
                 self.assertEqual(other.assert_running_workload.call_count,2)
@@ -1458,6 +1540,10 @@ class SceneAndReplayTests(unittest.TestCase):
         self.exercise(ordered=True, resume_fault='unexpected-acceptance')
     def test_ordered_scene_preserves_veto_when_third_freeze_check_fails(self):
         self.exercise(ordered=True, window_fault='after_rejected_resume')
+    def test_ordered_scene_stops_when_altered_destroy_replay_is_accepted(self):
+        self.exercise(ordered=True, replay_fault=True)
+    def test_ordered_scene_preserves_destroy_replay_when_final_freeze_check_fails(self):
+        self.exercise(ordered=True, window_fault='after_destroy_replay')
     def test_unresponsive_scene_keeps_original_terminal_peer_and_cleanup_checks(self):self.exercise(unresponsive=True)
     def test_unresponsive_unknown_stop_preserves_original_and_peer(self):self.exercise(unresponsive=True,fault=True)
     def test_unresponsive_stalled_peer_never_releases_stop(self):self.exercise(unresponsive=True,peer_fault='held-counter')

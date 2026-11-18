@@ -511,6 +511,11 @@ Resume backing pin 与正材料额度，允许刷新来源观测样本。
 同一 Freeze 回执窗口，结果记为 `freeze_destroy_acceptance_window.after_rejected_resume`。
 Resume 得到意外状态、当前视图改变或第三次窗口核对失败时，保留已取得的 Destroy 202
 和窗口证据，停止编排。
+第三次核对通过后，在 Host 重开前原样重放已接受的 Destroy，须返回同一完整 202 接受。
+只把同键请求的 `expected_version` 改为当前 Destroy 版本再发送一次，须返回 409。
+两次重放之后都要核对同一完整 Terminating 视图。报告留存 `frozen_destroy_replay`
+和 `freeze_destroy_acceptance_window.after_destroy_replay`。任一检查失败时保留已取得
+的接受和窗口证据，停止编排。回执窗口仍以同一 Host SQLite 观察为准。
 该场景将顺序控制保持到原 Host 已持久接受准确的 Kill。恢复同一 VMM 应答前，
 同一只读快照须确认当前 Kill 的 epoch 晚于原 Freeze、两条操作的 outbox 保留原
 Freeze 且无 Seal/Commit/Prepare/Activate，并核对本地映射、原来源及 backing 责任。

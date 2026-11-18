@@ -602,6 +602,33 @@ class PublicUnloadScenario:
         return dict(http_status=status, sequence=sequence,
                     expected_version=request['expected_version'], terminal_view_unchanged=True)
 
+    def assert_frozen_destroy_replay(self):
+        """Replay the saved Destroy while the original Host is still stopped."""
+        self.step('terminal-state-before-destroy-replay', 200)
+        current = self.query()
+        self.check_view(current, self.current_acceptance)
+        assert current['phase'] == 'terminating', 'current Destroy must be terminating'
+        request = self.destroy_request
+        assert equal(request, dict(window=self.window, sequence=self.sequence,
+                                   expected_version=current['current_version'] - 1))
+        path = self.path() + '/destroy'
+
+        self.step('original-destroy-replay', 202)
+        replay = self.read_json('POST', path, key=self.owner_key, body=request, status=202)
+        assert equal(replay, self.current_acceptance), 'Destroy replay changed the original acceptance'
+        self.step('terminal-state-after-destroy-replay', 200)
+        assert equal(self.query(), current), 'exact Destroy replay changed the current terminal state'
+
+        changed = dict(request, expected_version=current['current_version'])
+        self.step('altered-destroy-replay', 409)
+        status, _ = self.call('POST', path, key=self.owner_key, body=changed)
+        if status != 409:
+            raise PublicStatusMismatch(status, 409)
+        self.step('terminal-state-after-altered-destroy-replay', 200)
+        assert equal(self.query(), current), 'altered Destroy replay changed the current terminal state'
+        return dict(original_acceptance_returned=True, altered_http_status=status,
+                    altered_expected_version=changed['expected_version'], terminal_view_unchanged=True)
+
     def sdk(self):
         """Original no-create SDK constructor; does not renew the lifetime."""
         import importlib.metadata
@@ -1326,6 +1353,11 @@ def exercise(args):
                         report['frozen_destroy_resume_veto'] = client.assert_terminal_rejects_new_resume()
                         report['phase'] = 'recheck-original-freeze-after-resume-veto'
                         report['freeze_destroy_acceptance_window']['after_rejected_resume'] = (
+                            capture_probe.observe_destroy_window(deadline))
+                        report['phase'] = 'destroy-replay-before-host-reopen'
+                        report['frozen_destroy_replay'] = client.assert_frozen_destroy_replay()
+                        report['phase'] = 'recheck-original-freeze-after-destroy-replay'
+                        report['freeze_destroy_acceptance_window']['after_destroy_replay'] = (
                             capture_probe.observe_destroy_window(deadline))
                     report['terminal_unload_replays']=[client.assert_terminal_unload_replay(phase='terminating')]
                 def observe_frozen_peer():
