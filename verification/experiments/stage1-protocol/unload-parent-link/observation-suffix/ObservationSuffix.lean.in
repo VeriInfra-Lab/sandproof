@@ -1,0 +1,192 @@
+import ObservationSuffixGenerated
+
+open Aeneas Aeneas.Std SandproofObservationSlot
+open SandboxModel.Stage1Protocol.ObservationSlot
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationSuffix
+
+attribute [local simp] core.result.Result.Insts.CoreOpsTry.branch
+  core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+
+variable {c : Carriers} {C : Type} (calls : Calls c) (hooks : Hooks c C)
+variable (self : Journal c) (work : c.work) (raw : c.observation) (crashes : C)
+variable (connection : c.connection)
+
+def withConnection (journal : Journal c) (connection : c.connection) : Journal c :=
+  { journal with journal := { connection := connection } }
+
+abbrev scan (calls : Calls c) :=
+  controller.lifecycle_inbox.source_work.observation_slot_using (scanDictionary calls)
+
+abbrev judge (calls : Calls c) :=
+  controller.lifecycle_inbox.source_work.observation_slot_decision calls.observationEq
+
+theorem rejected_prefix (error : c.error) :
+    afterPrefix calls hooks self work raw crashes (.Err error) connection =
+      .ok (.Err error, withConnection self connection, crashes) := by
+  simp [afterPrefix, withConnection]
+
+theorem missing_record (tx : c.transaction) (inbox : Inbox c) (rows : Sources c)
+    (noneFound : scan calls rows.records work = .ok none) :
+    afterPrefix calls hooks self work raw crashes (.Ok (tx, inbox, rows)) connection =
+      .ok (.Err calls.conflict, withConnection self connection, crashes) := by
+  simp [afterPrefix, withConnection, noneFound]
+
+theorem full_scan (rows : Sources c) (full : FullReplayContract calls.workEq) :
+    ∃ selected, scan calls rows.records work = .ok selected ∧
+      selected.map (fun i => i.val) = firstComplete (fun record : Record c => record.work) rows.records.val work :=
+  lookup_returns_first_complete (scanDictionary calls) rows.records (fun record => record.work)
+    work calls.workEq full (fun _ => rfl)
+
+theorem selected_index (rows : Sources c) (index : Usize) (full : FullReplayContract calls.workEq)
+    (found : scan calls rows.records work = .ok (some index)) :
+    ∃ inside : index.val < rows.records.val.length,
+      rows.records.val[index.val].work = work ∧
+        ∀ earlier (before : earlier < index.val),
+          (rows.records.val[earlier]'(Nat.lt_trans before inside)).work ≠ work := by
+  classical
+  obtain ⟨selected, returned, first⟩ := full_scan calls work rows full
+  rw [found] at returned
+  have firstAt : rows.records.val.findIdx? (fun record => decide (record.work = work))
+      = some index.val := by
+    rw [← Result.ok_injective returned] at first
+    exact first.symm
+  obtain ⟨inside, same, minimal⟩ := List.findIdx?_eq_some_iff_getElem.mp firstAt
+  exact ⟨inside, by simpa using same, fun i hi => by simpa using minimal i hi⟩
+
+private theorem checked_index_mut (rows : Sources c) (i : Usize) (inside : i.val < rows.records.val.length) :
+    rows.records.index_mut_usize i =
+      .ok (rows.records.val[i.val], alloc.vec.Vec.set rows.records i) := by
+  obtain ⟨⟨value, back⟩, returned, equal, sameBack⟩ :=
+    WP.spec_imp_exists (alloc.vec.Vec.index_mut_usize_spec rows.records i inside)
+  simpa only [equal, sameBack] using returned
+
+def updated (record : Record c) (raw : c.observation) : Record c :=
+  { record with observation := some raw }
+
+def updatedSources (rows : Sources c) (i : Usize) (record : Record c) (raw : c.observation) : Sources c :=
+  { rows with records := rows.records.set i (updated record raw) }
+
+theorem selected_dispatch (tx : c.transaction) (inbox : Inbox c) (rows : Sources c)
+    (i : Usize) (inside : i.val < rows.records.val.length)
+    (found : scan calls rows.records work = .ok (some i))
+    (decision : controller.lifecycle_inbox.source_work.ObservationSlotDecision)
+    (judged : judge calls rows.records.val[i.val].observation raw = .ok decision) :
+    afterPrefix calls hooks self work raw crashes (.Ok (tx, inbox, rows)) connection =
+      (match decision with
+      | .Conflict => .ok (.Err calls.conflict, withConnection self connection, crashes)
+      | .Replay => do
+          let record ← calls.clone rows.records.val[i.val]
+          .ok (.Ok record, withConnection self connection, crashes)
+      | .Fresh => do
+          let record ← calls.clone (updated rows.records.val[i.val] raw)
+          let (answer, after) ← finishActual calls (saveDictionary calls) hooks tx
+            (updatedSources rows i rows.records.val[i.val] raw) inbox.config.max_sessions crashes record
+          .ok (answer, withConnection self connection, after)) := by
+  have indexed := checked_index_mut rows i inside
+  cases decision <;>
+    simp [afterPrefix, found, indexed, judged, withConnection, updatedSources, updated]
+
+theorem stays_outside_selected_slot (rows : Sources c) (i j : Usize)
+    (record : Record c) (raw : c.observation) (other : i.val ≠ j.val) (inside : j.val < rows.records.val.length)
+    (retained : j.val < (updatedSources rows i record raw).records.val.length) :
+    ((updatedSources rows i record raw).records.val[j.val]'retained) = (rows.records.val[j.val]'inside) := by
+  simp [updatedSources, alloc.vec.Vec.set, List.getElem_set_ne other]
+
+theorem stored_full_observation (saved : Option c.observation) (incoming : c.observation)
+    (full : FullReplayContract calls.observationEq.eq)
+    (standard : ∀ old next, calls.observationEq.ne old next =
+      (calls.observationEq.eq old next >>= fun equal => Result.ok (!equal))) :
+    judge calls saved incoming = .ok (sameObservation saved incoming) :=
+  selected_slot_decision calls.observationEq full standard saved incoming
+
+theorem finish_save_error (tx : c.transaction) (transactionView : c.rawTransaction)
+    (writerConnection : c.connection) (rows : Sources c) (limit : U16) (record : Record c) (error : c.error)
+    (rawView : calls.raw tx = .ok transactionView)
+    (connectionView : calls.connection transactionView = .ok writerConnection)
+    (saved : calls.save writerConnection rows limit = .ok (.Err error)) :
+    finishActual calls (saveDictionary calls) hooks tx rows limit crashes record =
+      .ok (.Err error, crashes) := by
+  have returned : (saveDictionary calls).save writerConnection rows limit = .ok (.Err error) := saved
+  simp [finishActual, controller.lifecycle_inbox.source_work.finish_observation_save,
+    controller.lifecycle_inbox.source_work.finish_source_work, rawView, connectionView, returned]
+
+theorem finish_before_commit_error (tx : c.transaction) (transactionView : c.rawTransaction)
+    (writerConnection : c.connection) (rows : Sources c) (limit : U16) (record : Record c)
+    (error : c.error) (before : C) (rawView : calls.raw tx = .ok transactionView)
+    (connectionView : calls.connection transactionView = .ok writerConnection)
+    (saved : calls.save writerConnection rows limit = .ok (.Ok ()))
+    (failed : hooks.hit crashes .BeforeCommit = .ok (.Err error, before)) :
+    finishActual calls (saveDictionary calls) hooks tx rows limit crashes record =
+      .ok (.Err error, before) := by
+  have returned : (saveDictionary calls).save writerConnection rows limit = .ok (.Ok ()) := saved
+  simp [finishActual, controller.lifecycle_inbox.source_work.finish_observation_save,
+    controller.lifecycle_inbox.source_work.finish_source_work, rawView, connectionView, returned, failed]
+
+theorem finish_commit_error (tx : c.transaction) (transactionView : c.rawTransaction)
+    (writerConnection : c.connection) (rows : Sources c) (limit : U16) (record : Record c)
+    (error : c.error) (before : C) (rawView : calls.raw tx = .ok transactionView)
+    (connectionView : calls.connection transactionView = .ok writerConnection)
+    (saved : calls.save writerConnection rows limit = .ok (.Ok ()))
+    (checked : hooks.hit crashes .BeforeCommit = .ok (.Ok (), before))
+    (failed : calls.commit tx = .ok (.Err error)) :
+    finishActual calls (saveDictionary calls) hooks tx rows limit crashes record =
+      .ok (.Err error, before) := by
+  have returned : (saveDictionary calls).save writerConnection rows limit = .ok (.Ok ()) := saved
+  simp [finishActual, controller.lifecycle_inbox.source_work.finish_observation_save,
+    controller.lifecycle_inbox.source_work.finish_source_work, rawView, connectionView, returned, checked, failed]
+
+theorem finish_post_commit_reply (tx : c.transaction) (transactionView : c.rawTransaction)
+    (writerConnection : c.connection) (rows : Sources c) (limit : U16) (record : Record c)
+    (before after : C) (outcome : core.result.Result Unit c.error)
+    (rawView : calls.raw tx = .ok transactionView)
+    (connectionView : calls.connection transactionView = .ok writerConnection)
+    (saved : calls.save writerConnection rows limit = .ok (.Ok ()))
+    (checked : hooks.hit crashes .BeforeCommit = .ok (.Ok (), before))
+    (committed : calls.commit tx = .ok (.Ok ()))
+    (notified : hooks.hit before .AfterCommit = .ok (outcome, after)) :
+    finishActual calls (saveDictionary calls) hooks tx rows limit crashes record =
+      .ok ((match outcome with | .Ok _ => .Ok record | .Err error => .Err error), after) := by
+  have returned : (saveDictionary calls).save writerConnection rows limit = .ok (.Ok ()) := saved
+  cases outcome <;>
+    simp [finishActual, controller.lifecycle_inbox.source_work.finish_observation_save,
+      controller.lifecycle_inbox.source_work.finish_source_work, rawView, connectionView, returned, checked,
+      committed, notified]
+
+theorem fresh_commit_returns_updated_record (tx : c.transaction) (inbox : Inbox c) (rows : Sources c)
+    (i : Usize) (inside : i.val < rows.records.val.length)
+    (found : scan calls rows.records work = .ok (some i))
+    (judged : judge calls rows.records.val[i.val].observation raw = .ok .Fresh)
+    (cloned : calls.clone (updated rows.records.val[i.val] raw) = .ok (updated rows.records.val[i.val] raw))
+    (transactionView : c.rawTransaction) (writerConnection : c.connection) (before after : C)
+    (rawView : calls.raw tx = .ok transactionView)
+    (connectionView : calls.connection transactionView = .ok writerConnection)
+    (saved : calls.save writerConnection (updatedSources rows i rows.records.val[i.val] raw)
+      inbox.config.max_sessions = .ok (.Ok ()))
+    (checked : hooks.hit crashes .BeforeCommit = .ok (.Ok (), before))
+    (committed : calls.commit tx = .ok (.Ok ()))
+    (notified : hooks.hit before .AfterCommit = .ok (.Ok (), after)) :
+    afterPrefix calls hooks self work raw crashes (.Ok (tx, inbox, rows)) connection =
+      .ok (.Ok (updated rows.records.val[i.val] raw), withConnection self connection, after) := by
+  rw [selected_dispatch calls hooks self work raw crashes connection tx inbox rows i inside found .Fresh judged]
+  have finished := finish_post_commit_reply calls hooks crashes tx transactionView writerConnection
+    (updatedSources rows i rows.records.val[i.val] raw) inbox.config.max_sessions
+    (updated rows.records.val[i.val] raw) before after (.Ok ()) rawView connectionView
+    saved checked committed notified
+  simp [cloned, finished]
+
+end SandboxModel.Stage1Protocol.ObservationSuffix
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.rejected_prefix
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.missing_record
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.full_scan
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.selected_index
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.selected_dispatch
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.stays_outside_selected_slot
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.stored_full_observation
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.finish_save_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.finish_before_commit_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.finish_commit_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.finish_post_commit_reply
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSuffix.fresh_commit_returns_updated_record

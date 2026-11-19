@@ -1,0 +1,78 @@
+import ObservationSlot
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationSuffix
+
+/-- Opaque inputs of the retained parent capture. Each is an explicit type
+    parameter. The original generated structures preserve their full fields. -/
+structure Carriers where
+  work : Type
+  observation : Type
+  captureState : Type
+  restoreState : Type
+  retirement : Type
+  release : Type
+  node : Type
+  center : Type
+  registration : Type
+  owner : Type
+  session : Type
+  lane : Type
+  limits : Type
+  connection : Type
+  transaction : Type
+  rawTransaction : Type
+  committed : Type
+  epoch : Type
+  lease : Type
+  error : Type
+  writer : Type
+  scanner : Type
+
+section
+variable (c : Carriers)
+
+local notation "controller.lifecycle_inbox.source_work.SourceWork" => c.work
+local notation "capture.source.RawSourceObservation" => c.observation
+local notation "controller.lifecycle_inbox.source_work.full.CaptureWork" => c.captureState
+local notation "controller.lifecycle_inbox.source_work.restore.RestoreClaim" => c.restoreState
+local notation "controller.lifecycle_inbox.source_work.retirement.MaterialRetirementState" => c.retirement
+local notation "controller.lifecycle_inbox.source_work.retirement.MaterialReleaseFacts" => c.release
+local notation "sandproof_protocol.internal.NodeIdentity" => c.node
+local notation "sandproof_protocol.lifecycle.authority.CenterIdentity" => c.center
+local notation "capture.HostEpochRegistration" => c.registration
+local notation "capture.HostEpochObservation" => c.epoch
+local notation "controller.lifecycle_inbox.model.Owner" => c.owner
+local notation "controller.lifecycle_inbox.model.Session" => c.session
+local notation "controller.lifecycle_inbox.model.LifecycleRetentionLane" => c.lane
+local notation "capture.source.SourceObservationConfig" => c.limits
+local notation "rusqlite.Connection" => c.connection
+local notation "controller.transaction.CommittedWorld" => c.committed
+local notation "controller.ControllerLease" => c.lease
+local notation "JournalError" => c.error
+
+-- GENERATED TYPES
+
+end
+
+abbrev Record := controller.lifecycle_inbox.source_work.SourceWorkRecord
+abbrev Sources := controller.lifecycle_inbox.source_work.codec.Sources
+abbrev Inbox := controller.lifecycle_inbox.model.Inbox
+abbrev Journal := controller.ControllerJournal
+abbrev Hooks := CrashInjector
+abbrev Writer := controller.lifecycle_inbox.source_work.SaveSourceInputs
+
+structure Calls (c : Carriers) where
+  workEq : c.work → c.work → Result Bool
+  sameBinding : Record c → c.work → Result Bool
+  observationEq : core.cmp.PartialEq c.observation c.observation
+  clone : Record c → Result (Record c)
+  conflict : c.error
+  raw : c.transaction → Result c.rawTransaction
+  connection : c.rawTransaction → Result c.connection
+  save : c.connection → Sources c → U16 → Result (core.result.Result Unit c.error)
+  commit : c.transaction → Result (core.result.Result Unit c.error)
+
+end SandboxModel.Stage1Protocol.ObservationSuffix
