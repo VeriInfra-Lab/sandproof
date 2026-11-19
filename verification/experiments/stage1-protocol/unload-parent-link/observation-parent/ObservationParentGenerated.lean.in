@@ -1,0 +1,91 @@
+import ObservationSuffix
+
+open Aeneas Aeneas.Std Result SandproofObservationSlot
+open SandboxModel.Stage1Protocol.ObservationSuffix
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationParent
+
+structure ReadTypes where
+  requirement : Type
+  request : Type
+  context : Type
+  world : Type
+  host : Type → Type
+  decoder : Type → Type
+
+section
+variable (c : Carriers) (t : ReadTypes)
+local notation "sandbox_controller_core.model.World" => t.world
+local notation "controller.lifecycle_inbox.model.Inbox" => Inbox c
+local notation "capture.source.SourceObservationConfig" => c.limits
+local notation "capture.HostEpochObservation" => c.epoch
+
+-- GENERATED CURRENT SOURCE
+end
+
+abbrev Current := controller.lifecycle_inbox.source_work.snapshot.CurrentSource
+
+structure ReadCalls (c : Carriers) (t : ReadTypes) where
+  requirement : c.work → Result t.requirement
+  guard : c.observation → t.requirement → Result Bool
+  invalidEvidence : c.error
+  cloneEpoch : core.clone.Clone c.epoch
+  cloneActive : core.clone.Clone c.epoch → Option c.epoch → Result (Option c.epoch)
+  begin : c.connection → c.committed → Result (core.result.Result c.transaction c.error × c.connection)
+  loadInbox : c.connection → Result (core.result.Result (Option (Inbox c)) c.error)
+  unsupported : c.error
+  request : c.work → Result t.request
+  authenticate : Inbox c → t.request → t.context → Result (core.result.Result Unit c.error)
+  loadSources : c.connection → Result (core.result.Result (Option (Sources c)) c.error)
+  namespaceView : String → Result Str
+  world : c.transaction → Result t.world
+  activeRef : Option c.epoch → Result (Option c.epoch)
+  current : {E : Type} → t.host E → t.decoder E → c.rawTransaction →
+    Str → t.request → I64 → Current c t → Result (core.result.Result c.work c.error)
+
+def workDictionary {c : Carriers} (calls : Calls c) : core.cmp.PartialEq c.work c.work :=
+  { eq := calls.workEq }
+
+section
+variable {c : Carriers} {t : ReadTypes} (calls : Calls c) (reads : ReadCalls c t)
+local notation "host_contract.HostEvidence" => t.host
+local notation "serde_core.de.DeserializeOwned" => t.decoder
+local notation "CrashInjector" => Hooks c
+local notation "controller.ControllerJournal" => Journal c
+local notation "controller.lifecycle_inbox.source_work.SourceWork" => c.work
+local notation "sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext" => t.context
+local notation "capture.source.RawSourceObservation" => c.observation
+local notation "controller.lifecycle_inbox.source_work.SourceWorkRecord" => Record c
+local notation "JournalError" => c.error
+local notation "JournalError.InvalidHostEvidence" => reads.invalidEvidence
+local notation "JournalError.UnsupportedStore" => reads.unsupported
+local notation "JournalError.Conflict" => calls.conflict
+local notation "controller.lifecycle_inbox.source_work.SourceWork.impl.requirement" => reads.requirement
+local notation "capture.source.RawSourceObservation.matches" => reads.guard
+local notation "capture.HostEpochObservation.Insts.CoreCloneClone" => reads.cloneEpoch
+local notation "core.option.Option.Insts.CoreCloneClone.clone" => reads.cloneActive
+local notation "controller.transaction.WorldTransaction.begin" => reads.begin
+local notation "controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref" => calls.raw
+local notation "rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref" => calls.connection
+local notation "controller.lifecycle_inbox.codec.load" => reads.loadInbox
+local notation "controller.lifecycle_inbox.source_work.SourceWork.request" => reads.request
+local notation "controller.lifecycle_inbox.authenticated" => reads.authenticate
+local notation "controller.lifecycle_inbox.source_work.codec.load" => reads.loadSources
+local notation "alloc.string.String.Insts.CoreOpsDerefDerefStr.deref" => reads.namespaceView
+local notation "controller.transaction.WorldTransaction.world" => reads.world
+local notation "core.option.Option.as_ref" => reads.activeRef
+local notation "controller.lifecycle_inbox.source_work.snapshot.current" => reads.current
+local notation "controller.lifecycle_inbox.source_work.SourceWork.Insts.CoreCmpPartialEqSourceWork" => workDictionary calls
+local notation "controller.lifecycle_inbox.source_work.JournalObservationWork.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workObservationWorkSourceWorkRecordSourceWork" => scanDictionary calls
+local notation "capture.source.RawSourceObservation.Insts.CoreCmpPartialEqRawSourceObservation" => calls.observationEq
+local notation "controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCloneClone.clone" => calls.clone
+local notation "controller.lifecycle_inbox.source_work.finish_observation_save" => finishActual calls
+local notation "controller.lifecycle_inbox.source_work.SaveSourceInputsToJournal.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workSaveSourceInputsSources" => saveDictionary calls
+
+-- GENERATED WHOLE PARENT
+end
+
+abbrev actual := @controller.lifecycle_inbox.source_work.ControllerJournal.save_source_observation
+
+end SandboxModel.Stage1Protocol.ObservationParent

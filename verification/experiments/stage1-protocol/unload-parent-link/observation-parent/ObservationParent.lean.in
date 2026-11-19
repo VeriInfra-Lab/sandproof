@@ -1,0 +1,190 @@
+import ObservationParentGenerated
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.ObservationSuffix
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationParent
+
+attribute [local simp] core.result.Result.Insts.CoreOpsTry.branch
+  core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+
+variable {c : Carriers} {t : ReadTypes} {E C : Type}
+
+structure Checked (reads : ReadCalls c t) (journal : Journal c) (work : c.work) (raw : c.observation) where
+  requirement : t.requirement
+  requirementOk : reads.requirement work = .ok requirement
+  guardOk : reads.guard raw requirement = .ok true
+  active : Option c.epoch
+  activeOk : reads.cloneActive reads.cloneEpoch journal.active_host_epoch = .ok active
+
+structure Started (calls : Calls c) (reads : ReadCalls c t) (journal : Journal c) where
+  tx : c.transaction
+  writeback : c.connection
+  begun : reads.begin journal.journal.connection journal.committed_world = .ok (.Ok tx, writeback)
+  transactionView : c.rawTransaction
+  transactionOk : calls.raw tx = .ok transactionView
+  readConnection : c.connection
+  connectionOk : calls.connection transactionView = .ok readConnection
+
+structure InboxRead (reads : ReadCalls c t) (connection : c.connection) (work : c.work) where
+  inbox : Inbox c
+  readOk : reads.loadInbox connection = .ok (.Ok (some inbox))
+  request : t.request
+  requestOk : reads.request work = .ok request
+
+structure CurrentInputs (reads : ReadCalls c t) (journal : Journal c)
+    (tx : c.transaction) (active : Option c.epoch) (inbox : Inbox c) (rows : Sources c) where
+  namespaceValue : Str
+  namespaceOk : reads.namespaceView journal.namespace = .ok namespaceValue
+  world : t.world
+  worldOk : reads.world tx = .ok world
+  activeRef : Option c.epoch
+  activeOk : reads.activeRef active = .ok activeRef
+
+def CurrentInputs.arguments {reads : ReadCalls c t} {journal : Journal c} {tx : c.transaction}
+    {active : Option c.epoch} {inbox : Inbox c} {rows : Sources c}
+    (view : CurrentInputs reads journal tx active inbox rows) : Current c t :=
+  { world := view.world, inbox := inbox, limits := rows.config, active := view.activeRef }
+
+variable (calls : Calls c) (reads : ReadCalls c t) (host : t.host E) (decoder : t.decoder E)
+variable (hooks : Hooks c C) (self : Journal c) (work : c.work) (context : t.context)
+variable (raw : c.observation) (now : I64) (crashes : C)
+
+local notation "parent" => actual calls reads host decoder hooks self work context raw now crashes
+
+theorem invalid_observation_first (required : t.requirement)
+    (requirementOk : reads.requirement work = .ok required)
+    (rejected : reads.guard raw required = .ok false) :
+    parent = .ok (.Err reads.invalidEvidence, self, crashes) := by
+  simp [actual, controller.lifecycle_inbox.source_work.ControllerJournal.save_source_observation,
+    requirementOk, rejected]
+
+theorem begin_error (guard : Checked reads self work raw) (error : c.error) (writeback : c.connection)
+    (begun : reads.begin self.journal.connection self.committed_world = .ok (.Err error, writeback)) :
+    parent = .ok (.Err error, withConnection self writeback, crashes) := by
+  simp [actual, controller.lifecycle_inbox.source_work.ControllerJournal.save_source_observation,
+    guard.requirementOk, guard.guardOk, guard.activeOk, begun, withConnection]
+
+theorem inbox_error (guard : Checked reads self work raw) (started : Started calls reads self)
+    (error : c.error) (readFailed : reads.loadInbox started.readConnection = .ok (.Err error)) :
+    parent = .ok (.Err error, withConnection self started.writeback, crashes) := by
+  simp [actual, controller.lifecycle_inbox.source_work.ControllerJournal.save_source_observation,
+    guard.requirementOk, guard.guardOk, guard.activeOk, started.begun, started.transactionOk,
+    started.connectionOk, readFailed, withConnection]
+
+theorem inbox_absent (guard : Checked reads self work raw) (started : Started calls reads self)
+    (absent : reads.loadInbox started.readConnection = .ok (.Ok none)) :
+    parent = .ok (.Err reads.unsupported, withConnection self started.writeback, crashes) := by
+  simp [actual, controller.lifecycle_inbox.source_work.ControllerJournal.save_source_observation,
+    guard.requirementOk, guard.guardOk, guard.activeOk, started.begun, started.transactionOk,
+    started.connectionOk, absent, withConnection]
+
+theorem authentication_error (guard : Checked reads self work raw) (started : Started calls reads self)
+    (inbox : InboxRead reads started.readConnection work) (error : c.error)
+    (rejected : reads.authenticate inbox.inbox inbox.request context = .ok (.Err error)) :
+    parent = .ok (.Err error, withConnection self started.writeback, crashes) := by
+  simp [actual, controller.lifecycle_inbox.source_work.ControllerJournal.save_source_observation,
+    guard.requirementOk, guard.guardOk, guard.activeOk, started.begun, started.transactionOk,
+    started.connectionOk, inbox.readOk, inbox.requestOk, rejected, withConnection]
+
+theorem sources_error (guard : Checked reads self work raw) (started : Started calls reads self)
+    (inbox : InboxRead reads started.readConnection work)
+    (authenticated : reads.authenticate inbox.inbox inbox.request context = .ok (.Ok ()))
+    (error : c.error) (readFailed : reads.loadSources started.readConnection = .ok (.Err error)) :
+    parent = .ok (.Err error, withConnection self started.writeback, crashes) := by
+  simp [actual, controller.lifecycle_inbox.source_work.ControllerJournal.save_source_observation,
+    guard.requirementOk, guard.guardOk, guard.activeOk, started.begun, started.transactionOk,
+    started.connectionOk, inbox.readOk, inbox.requestOk, authenticated, readFailed, withConnection]
+
+theorem sources_absent (guard : Checked reads self work raw) (started : Started calls reads self)
+    (inbox : InboxRead reads started.readConnection work)
+    (authenticated : reads.authenticate inbox.inbox inbox.request context = .ok (.Ok ()))
+    (absent : reads.loadSources started.readConnection = .ok (.Ok none)) :
+    parent = .ok (.Err reads.unsupported, withConnection self started.writeback, crashes) := by
+  simp [actual, controller.lifecycle_inbox.source_work.ControllerJournal.save_source_observation,
+    guard.requirementOk, guard.guardOk, guard.activeOk, started.begun, started.transactionOk,
+    started.connectionOk, inbox.readOk, inbox.requestOk, authenticated, absent, withConnection]
+
+variable (guard : Checked reads self work raw) (started : Started calls reads self)
+variable (inbox : InboxRead reads started.readConnection work) (rows : Sources c)
+variable (view : CurrentInputs reads self started.tx guard.active inbox.inbox rows)
+
+theorem current_error
+    (authenticated : reads.authenticate inbox.inbox inbox.request context = .ok (.Ok ()))
+    (loaded : reads.loadSources started.readConnection = .ok (.Ok (some rows)))
+    (error : c.error) (readFailed : reads.current host decoder started.transactionView view.namespaceValue
+      inbox.request now view.arguments = .ok (.Err error)) :
+    parent = .ok (.Err error, withConnection self started.writeback, crashes) := by
+  unfold CurrentInputs.arguments at readFailed
+  simp [actual, controller.lifecycle_inbox.source_work.ControllerJournal.save_source_observation,
+    guard.requirementOk, guard.guardOk, guard.activeOk, started.begun, started.transactionOk,
+    started.connectionOk, inbox.readOk, inbox.requestOk, authenticated, loaded,
+    view.namespaceOk, view.worldOk, view.activeOk, readFailed, withConnection]
+
+theorem different_current_conflicts
+    (authenticated : reads.authenticate inbox.inbox inbox.request context = .ok (.Ok ()))
+    (loaded : reads.loadSources started.readConnection = .ok (.Ok (some rows)))
+    (current : c.work) (rebuilt : reads.current host decoder started.transactionView view.namespaceValue
+      inbox.request now view.arguments = .ok (.Ok current))
+    (full : FullReplayContract calls.workEq) (other : current ≠ work) :
+    parent = .ok (.Err calls.conflict, withConnection self started.writeback, crashes) := by
+  have unequal : calls.workEq current work = .ok false := by simpa [other] using full current work
+  unfold CurrentInputs.arguments at rebuilt
+  simp [actual, controller.lifecycle_inbox.source_work.ControllerJournal.save_source_observation,
+    guard.requirementOk, guard.guardOk, guard.activeOk, started.begun, started.transactionOk,
+    started.connectionOk, inbox.readOk, inbox.requestOk, authenticated, loaded, view.namespaceOk,
+    view.worldOk, view.activeOk, rebuilt, core.cmp.PartialEq.ne.trait_default,
+    core.cmp.PartialEq.ne.default, workDictionary, unequal, withConnection]
+
+theorem exact_current_continues
+    (authenticated : reads.authenticate inbox.inbox inbox.request context = .ok (.Ok ()))
+    (loaded : reads.loadSources started.readConnection = .ok (.Ok (some rows)))
+    (rebuilt : reads.current host decoder started.transactionView view.namespaceValue
+      inbox.request now view.arguments = .ok (.Ok work))
+    (full : FullReplayContract calls.workEq) :
+    parent = afterPrefix calls hooks self work raw crashes (.Ok (started.tx, inbox.inbox, rows)) started.writeback := by
+  have equal : calls.workEq work work = .ok true := by simpa using full work work
+  unfold CurrentInputs.arguments at rebuilt
+  simp [actual, controller.lifecycle_inbox.source_work.ControllerJournal.save_source_observation,
+    guard.requirementOk, guard.guardOk, guard.activeOk, started.begun, started.transactionOk,
+    started.connectionOk, inbox.readOk, inbox.requestOk, authenticated, loaded, view.namespaceOk,
+    view.worldOk, view.activeOk, rebuilt, core.cmp.PartialEq.ne.trait_default,
+    core.cmp.PartialEq.ne.default, workDictionary, equal, afterPrefix]
+  rfl
+
+theorem fresh_commit_uses_started_transaction
+    (authenticated : reads.authenticate inbox.inbox inbox.request context = .ok (.Ok ()))
+    (loaded : reads.loadSources started.readConnection = .ok (.Ok (some rows)))
+    (rebuilt : reads.current host decoder started.transactionView view.namespaceValue
+      inbox.request now view.arguments = .ok (.Ok work))
+    (full : FullReplayContract calls.workEq)
+    (i : Usize) (inside : i.val < rows.records.val.length)
+    (found : scan calls rows.records work = .ok (some i))
+    (judged : judge calls rows.records.val[i.val].observation raw = .ok .Fresh)
+    (cloned : calls.clone (updated rows.records.val[i.val] raw) = .ok (updated rows.records.val[i.val] raw))
+    (saved : calls.save started.readConnection (updatedSources rows i rows.records.val[i.val] raw)
+      inbox.inbox.config.max_sessions = .ok (.Ok ()))
+    (before after : C) (checked : hooks.hit crashes .BeforeCommit = .ok (.Ok (), before))
+    (committed : calls.commit started.tx = .ok (.Ok ()))
+    (notified : hooks.hit before .AfterCommit = .ok (.Ok (), after)) :
+    parent = .ok (.Ok (updated rows.records.val[i.val] raw), withConnection self started.writeback, after) := by
+  rw [exact_current_continues calls reads host decoder hooks self work context raw now crashes
+    guard started inbox rows view authenticated loaded rebuilt full]
+  exact fresh_commit_returns_updated_record calls hooks self work raw crashes started.writeback
+    started.tx inbox.inbox rows i inside found judged cloned started.transactionView
+    started.readConnection before after started.transactionOk started.connectionOk saved checked committed notified
+
+end SandboxModel.Stage1Protocol.ObservationParent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationParent.invalid_observation_first
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationParent.begin_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationParent.inbox_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationParent.inbox_absent
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationParent.authentication_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationParent.sources_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationParent.sources_absent
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationParent.current_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationParent.different_current_conflicts
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationParent.exact_current_continues
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationParent.fresh_commit_uses_started_transaction
