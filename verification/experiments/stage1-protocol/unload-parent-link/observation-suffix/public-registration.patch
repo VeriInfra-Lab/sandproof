@@ -1,0 +1,12 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39,1 +39,9 @@
++## V3 来源观察保存的后续条件证明候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。从实际前置调用交回的结果与连接
++开始，核对原生成分支中第一条完整匹配、只更新所选记录、重放、冲突和提交首错。
++父方法连接回写的生成签名及活事务的持久行对应仍待关闭。
++[定理与复验](../verification/experiments/stage1-protocol/unload-parent-link/observation-suffix/README.md)。
++
++
+ ## V3 首次卸载使用同一条原执行记录

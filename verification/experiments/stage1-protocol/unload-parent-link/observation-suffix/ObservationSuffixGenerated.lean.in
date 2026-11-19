@@ -1,0 +1,64 @@
+import ObservationSuffixTypes
+
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofObservationSlot
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationSuffix
+
+section
+variable {c : Carriers} (calls : Calls c)
+
+local notation "controller.lifecycle_inbox.source_work.SourceWork" => c.work
+local notation "capture.source.RawSourceObservation" => c.observation
+local notation "controller.lifecycle_inbox.source_work.SourceWorkRecord" => Record c
+local notation "controller.lifecycle_inbox.source_work.codec.Sources" => Sources c
+local notation "controller.lifecycle_inbox.source_work.SaveSourceInputs" => Writer c
+local notation "controller.lifecycle_inbox.source_work.SaveSourceInputsToJournal" => c.writer
+local notation "controller.lifecycle_inbox.source_work.JournalObservationWork" => c.scanner
+local notation "CrashInjector" => Hooks c
+local notation "JournalError" => c.error
+local notation "JournalError.Conflict" => calls.conflict
+local notation "rusqlite.Connection" => c.connection
+local notation "controller.transaction.WorldTransaction" => c.transaction
+local notation "controller.lifecycle_inbox.source_work.codec.save" => calls.save
+local notation "controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref" => calls.raw
+local notation "rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref" => calls.connection
+local notation "controller.transaction.WorldTransaction.commit" => calls.commit
+local notation "controller.lifecycle_inbox.source_work.SourceWork.Insts.CoreCmpPartialEqSourceWork.eq" => calls.workEq
+local notation "controller.lifecycle_inbox.source_work.JournalObservationWork.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workObservationWorkSourceWorkRecordSourceWork.same_binding" => calls.sameBinding
+local notation "capture.source.RawSourceObservation.Insts.CoreCmpPartialEqRawSourceObservation" => calls.observationEq
+local notation "controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCloneClone.clone" => calls.clone
+
+-- GENERATED ADAPTERS
+
+abbrev scanDictionary :=
+  controller.lifecycle_inbox.source_work.JournalObservationWork.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workObservationWorkSourceWorkRecordSourceWork calls
+
+abbrev saveDictionary :=
+  controller.lifecycle_inbox.source_work.SaveSourceInputsToJournal.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workSaveSourceInputsSources calls
+
+-- GENERATED FINISH SOURCE
+
+local notation "controller.lifecycle_inbox.source_work.finish_source_work" =>
+  controller.lifecycle_inbox.source_work.finish_source_work calls
+
+-- GENERATED FINISH OBSERVATION
+
+local notation "controller.lifecycle_inbox.source_work.JournalObservationWork.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workObservationWorkSourceWorkRecordSourceWork" => scanDictionary calls
+local notation "controller.lifecycle_inbox.source_work.SaveSourceInputsToJournal.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workSaveSourceInputsSources" => saveDictionary calls
+local notation "controller.lifecycle_inbox.source_work.finish_observation_save" =>
+  controller.lifecycle_inbox.source_work.finish_observation_save calls
+
+def afterPrefix {C : Type} (CrashInjectorInst : Hooks c C)
+    (self : Journal c) (work : c.work) (observation : c.observation) (crashes : C)
+    (r : core.result.Result (c.transaction × Inbox c × Sources c) c.error)
+    (connectionAfterPrefix : c.connection) :
+    Result (core.result.Result (Record c) c.error × Journal c × C) := do
+  let c := connectionAfterPrefix
+-- GENERATED SUFFIX
+
+end
+
+abbrev finishActual := @controller.lifecycle_inbox.source_work.finish_observation_save
+
+end SandboxModel.Stage1Protocol.ObservationSuffix
