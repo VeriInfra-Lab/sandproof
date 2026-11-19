@@ -1,0 +1,88 @@
+trait SourceRowEffects<Db, E> {
+    fn existing(connection: &Db, key: &[u8; 32]) -> Result<Option<i64>, E>;
+    fn vacant(connection: &Db) -> Result<Option<i64>, E>;
+    fn digest(bytes: &[u8]) -> [u8; 32];
+    fn update(
+        connection: &Db,
+        bytes: &[u8],
+        sha: &[u8; 32],
+        key: &[u8; 32],
+        id: i64,
+    ) -> Result<usize, E>;
+    fn capacity() -> E;
+    fn corrupt() -> E;
+}
+
+struct SqliteSourceRow;
+
+impl SourceRowEffects<Connection, JournalError> for SqliteSourceRow {
+    fn existing(connection: &Connection, key: &[u8; 32]) -> Result<Option<i64>, JournalError> {
+        Ok(connection
+            .query_row(
+                "SELECT id FROM controller_source_work_records WHERE work_key=?1",
+                [key.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    fn vacant(connection: &Connection) -> Result<Option<i64>, JournalError> {
+        Ok(connection.query_row(
+            "SELECT min(id) FROM controller_source_work_records WHERE work_key IS NULL",
+            [],
+            |row| row.get::<_, Option<i64>>(0),
+        )?)
+    }
+
+    fn digest(bytes: &[u8]) -> [u8; 32] {
+        Sha256::digest(bytes).into()
+    }
+
+    fn update(
+        connection: &Connection,
+        bytes: &[u8],
+        sha: &[u8; 32],
+        key: &[u8; 32],
+        id: i64,
+    ) -> Result<usize, JournalError> {
+        Ok(connection.execute(
+            "UPDATE controller_source_work_records SET state_json=?1,sha256=?2,work_key=?3 WHERE id=?4 AND (work_key IS NULL OR work_key=?3)",
+            params![bytes, sha.as_slice(), key.as_slice(), id],
+        )?)
+    }
+
+    fn capacity() -> JournalError {
+        JournalError::MaintenanceCapacity
+    }
+
+    fn corrupt() -> JournalError {
+        JournalError::CorruptStore
+    }
+}
+
+fn write_candidate_record(
+    connection: &Connection,
+    key: [u8; 32],
+    bytes: Vec<u8>,
+) -> Result<(), JournalError> {
+    write_candidate_record_using::<_, _, SqliteSourceRow>(connection, key, &bytes)
+}
+
+fn write_candidate_record_using<Db, E, Effects: SourceRowEffects<Db, E>>(
+    connection: &Db,
+    key: [u8; 32],
+    bytes: &[u8],
+) -> Result<(), E> {
+    let id = match Effects::existing(connection, &key)? {
+        Some(id) => id,
+        None => match Effects::vacant(connection)? {
+            Some(id) => id,
+            None => return Err(Effects::capacity()),
+        },
+    };
+    let sha = Effects::digest(bytes);
+    if Effects::update(connection, bytes, &sha, &key, id)? != 1 {
+        return Err(Effects::corrupt());
+    }
+    Ok(())
+}

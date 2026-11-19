@@ -1,0 +1,46 @@
+import SandproofSourceRowWrite.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofSourceRowWrite
+open controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowWrite
+
+abbrev Key := Array U8 32#usize
+
+inductive Selected {Db E Check : Type} (ops : SourceRowEffects Check Db E)
+    (connection : Db) (key : Key) (slot : I64) : Prop where
+  | existing (found : ops.existing connection key = .ok (.Ok (some slot)))
+  | free (missing : ops.existing connection key = .ok (.Ok none))
+      (vacancy : ops.vacant connection = .ok (.Ok (some slot)))
+
+def rowOutcome {E : Type} (corrupt : E) (returned : core.result.Result Usize E) : core.result.Result Unit E :=
+  match returned with
+  | .Err error => .Err error
+  | .Ok count => if count.val = 1 then .Ok () else .Err corrupt
+
+inductive RowFault where
+  | unexpectedArguments
+  | noSpace
+  | corruptCount
+  deriving DecidableEq
+
+def keyWitness : Key := Array.from (List.replicate 32 (7#u8)) (by decide)
+def digestWitness : Key := Array.from (List.replicate 32 (9#u8)) (by decide)
+def bytesWitness : Slice U8 := Slice.from [123#u8, 125#u8] (by scalar_tac)
+
+noncomputable def witness (count : Usize) : SourceRowEffects Unit Nat RowFault where
+  existing connection key := by
+    classical
+    exact .ok (if connection = 17 ∧ key = keyWitness then .Ok (some 13#i64) else .Err .unexpectedArguments)
+  vacant _ := .ok (.Err .unexpectedArguments)
+  digest _ := .ok digestWitness
+  update connection bytes digest key slot := by
+    classical
+    exact .ok (if connection = 17 ∧ bytes = bytesWitness ∧ digest = digestWitness ∧ key = keyWitness ∧ slot = 13#i64
+      then .Ok count else .Err .unexpectedArguments)
+  capacity := .ok .noSpace
+  corrupt := .ok .corruptCount
+
+end SandboxModel.Stage1Protocol.SourceRowWrite
