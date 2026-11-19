@@ -1,0 +1,112 @@
+// Append after native-tests.rs.in in the disposable native checkout.
+#[test]
+fn proof_first_unload_prepare_begin_busy() {
+    use rusqlite::{
+        Connection, Error, ErrorCode, OpenFlags,
+        hooks::{AuthAction, AuthContext, Authorization, TransactionOperation},
+    };
+    use std::time::Duration;
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("first-prepare-busy.db");
+    let (mut journal, _) = ready(&path);
+    let intent = unload();
+    let context = v3::context();
+    let observer = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let before = proof_first_prepare_durable_rows(&observer);
+    assert!(before.1.is_empty());
+
+    let high_water: String = observer
+        .query_row(
+            "SELECT high_water FROM controller_id_highwaters WHERE kind='input' AND scope=''",
+            (),
+            |row| row.get(0),
+        )
+        .unwrap();
+    let set_high_water = |journal: &ControllerJournal, value: &str| {
+        assert_eq!(
+            journal
+                .journal
+                .connection
+                .execute(
+                    "UPDATE controller_id_highwaters SET high_water=?1 WHERE kind='input' AND scope=''",
+                    [value],
+                )
+                .unwrap(),
+            1,
+        );
+    };
+    // A Deferred mutant reaches this read while the other writer is held.
+    set_high_water(&journal, "invalid");
+
+    let writer = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
+    writer.busy_timeout(Duration::ZERO).unwrap();
+    let writer = Arc::new(Mutex::new(writer));
+    let held_writer = Arc::clone(&writer);
+    journal
+        .journal
+        .connection
+        .busy_timeout(Duration::ZERO)
+        .unwrap();
+    journal
+        .journal
+        .connection
+        .authorizer(Some(move |auth: AuthContext<'_>| {
+            // Acquire the competing lock during preparation of the original
+            // BEGIN, after its earlier WAL checkpoint and before execution.
+            if matches!(
+                auth.action,
+                AuthAction::Transaction {
+                    operation: TransactionOperation::Begin,
+                }
+            ) && held_writer
+                .lock()
+                .unwrap()
+                .execute_batch("BEGIN IMMEDIATE")
+                .is_err()
+            {
+                return Authorization::Deny;
+            }
+            Authorization::Allow
+        }))
+        .unwrap();
+    let result =
+        journal.prepare_lifecycle_source_work::<Evidence>(&intent, &context, 10, &mut NeverCrash);
+    journal
+        .journal
+        .connection
+        .authorizer(None::<fn(AuthContext<'_>) -> Authorization>)
+        .unwrap();
+    {
+        let writer = writer.lock().unwrap();
+        assert!(
+            !writer.is_autocommit(),
+            "the competing writer must acquire the lock"
+        );
+        writer.execute_batch("ROLLBACK").unwrap();
+    }
+    assert!(
+        matches!(&result, Err(JournalError::Sqlite(Error::SqliteFailure(error, _)))
+            if error.code == ErrorCode::DatabaseBusy),
+        "original BEGIN IMMEDIATE must report SQLITE_BUSY before allocator read: {result:?}"
+    );
+    assert!(journal.journal.connection.is_autocommit());
+    assert_eq!(proof_first_prepare_durable_rows(&observer), before);
+
+    assert!(matches!(
+        journal.prepare_lifecycle_source_work::<Evidence>(&intent, &context, 10, &mut NeverCrash),
+        Err(JournalError::CorruptStore)
+    ));
+    assert!(journal.journal.connection.is_autocommit());
+    assert_eq!(proof_first_prepare_durable_rows(&observer), before);
+
+    set_high_water(&journal, &high_water);
+    let record = prepare(&mut journal);
+    assert_eq!(record.work.request(), &intent);
+    assert!(record.observation.is_none());
+    assert_eq!(prepare(&mut journal), record);
+    assert_eq!(
+        proof_first_prepare_durable_rows(&observer),
+        (before.0, vec![record])
+    );
+}
