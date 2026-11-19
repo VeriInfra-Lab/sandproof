@@ -1035,6 +1035,7 @@ class FreezeStopWiringTests(unittest.TestCase):
                     paused.side_effect = lambda *_: change_kill()
 
                 accepted = f.accepted(f.destroy)
+                p.deadline = time.monotonic() + 30
                 if edge == 'valid':
                     result = p.recover_after_destroy(accepted, p.deadline, observe_peer=peer_progress)
                     ledger = result['snapshot']['native_kill_ledger']
@@ -1593,6 +1594,7 @@ class OrderedFreezeTests(unittest.TestCase):
                     elif fault == 'foreign-owner':
                         conn.execute('UPDATE operations SET owner_id=? WHERE operation_id=?',
                                      ('tenant-2', f.stop['identity']['operation']))
+                p.deadline = time.monotonic() + 30
                 with patch.object(capture, 'checked_source_records', return_value=f.rows), \
                         patch.object(frozen, 'pidfd_exited', return_value=True), \
                         patch.object(frozen, 'original_process', return_value=False):
