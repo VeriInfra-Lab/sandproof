@@ -1,0 +1,213 @@
+import ObservationDrop
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRowSqlSelect (existingSpec vacantSql)
+open SandboxModel.Stage1Protocol.SourceRowSqlComposition
+  (actualSpecAt updateSpec updateSql updateValues writeInOrder chooseSlot requireOne)
+
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceHistory
+
+/-- Complete storage columns at an existing positive primary key. The key
+    domain of an actual image comes from the original schema. -/
+structure Cell where
+  stateBytes : alloc.vec.Vec U8
+  checksum : SaveRows.Key
+  reserveBytes : I64
+  workKey : Option (List U8)
+
+abbrev Image := I64 → Option Cell
+
+structure Invocation (Raw : Type) where
+  raw : Raw
+  connection : SaveRows.Db
+
+def keyBytes (row : SaveRows.Encoded) : List U8 := row.1.val
+
+def accepts (key : List U8) (cell : Cell) : Prop :=
+  cell.workKey = none ∨ cell.workKey = some key
+
+instance (key : List U8) (cell : Cell) : Decidable (accepts key cell) :=
+  inferInstanceAs (Decidable (cell.workKey = none ∨ cell.workKey = some key))
+
+def affected (before : Image) (slot : I64) (key : List U8) : Nat :=
+  match before slot with
+  | none => 0
+  | some cell => if accepts key cell then 1 else 0
+
+/-- The actual WHERE clause and the three SET columns. The fourth parameter
+    identifies the primary key and reserve_bytes is outside the SET list. -/
+def applyUpdate (before : Image) (slot : I64) (row : SaveRows.Encoded)
+    (digest : SaveRows.Key) : Image :=
+  fun id => if id = slot then
+    (before id).map fun cell =>
+      if accepts (keyBytes row) cell then
+        {cell with stateBytes := row.2, checksum := digest, workKey := some (keyBytes row)}
+      else cell
+    else before id
+
+/-- Statement-specific instance of the registered A4 successful UPDATE frame.
+    The provider supplies a protected schema, the same transaction snapshot and
+    no trigger that changes this successful statement's row footprint. -/
+def A4UpdateFrame (before after : Image) (slot : I64) (row : SaveRows.Encoded)
+    (digest : SaveRows.Key) (count : Usize) : Prop :=
+  after = applyUpdate before slot row digest ∧ count.val = affected before slot (keyBytes row)
+
+def allocation (image : Image) (id : I64) : Option (I64 × Option (List U8)) :=
+  (image id).map fun cell => (cell.reserveBytes, cell.workKey)
+
+theorem existing_slot_changes_exact_columns (before : Image) (id : I64)
+    (row : SaveRows.Encoded) (digest : SaveRows.Key) (cell : Cell)
+    (found : before id = some cell) (oldKey : cell.workKey = some (keyBytes row)) :
+    applyUpdate before id row digest id =
+      some {cell with stateBytes := row.2, checksum := digest} := by
+  simp [applyUpdate, found, accepts, oldKey]
+
+theorem other_slot_preserved (before : Image) (slot other : I64)
+    (row : SaveRows.Encoded) (digest : SaveRows.Key) (distinct : other ≠ slot) :
+    applyUpdate before slot row digest other = before other := by
+  simp [applyUpdate, distinct]
+
+/-- A successful save of an existing encoded row. The key lookup and the
+    UPDATE both use the original connection. The A4 provider relates the
+    actual successful call to this transaction's successive row images. -/
+structure ExistingWrite {Raw : Type} (invocation : Invocation Raw)
+    (before after : Image) (row : SaveRows.Encoded) where
+  slot : I64
+  cell : Cell
+  found : before slot = some cell
+  oldKey : cell.workKey = some (keyBytes row)
+  selected : existingSpec invocation.connection row.1 = .ok (.Ok (some slot))
+  digest : SaveRows.Key
+  digested : SandproofSourceRowSqlSelect.controller.lifecycle_inbox.sha256.digest row.2.slice = .ok digest
+  parameters : Nat
+  prepared : invocation.connection.canonical.prepare updateSql = .ok (.Ok parameters)
+  count : Usize
+  executed : invocation.connection.canonical.run updateSql
+    (updateValues row.2.slice digest.to_slice row.1.to_slice slot) = .ok (.Ok count)
+  frame : A4UpdateFrame before after slot row digest count
+
+variable {Raw : Type} {invocation : Invocation Raw} {before after : Image} {row : SaveRows.Encoded}
+
+theorem ExistingWrite.accepted (step : ExistingWrite invocation before after row) :
+    actualSpecAt invocation.connection row.1 row.2 vacantSql = .ok (.Ok ()) := by
+  have one : step.count = 1#usize := UScalar.eq_of_val_eq (by
+    simp [step.frame.2, affected, step.found, accepts, step.oldKey])
+  simp [actualSpecAt, writeInOrder, chooseSlot, requireOne, step.selected, step.digested,
+    updateSpec, step.prepared, step.executed, one]
+
+theorem ExistingWrite.slot_after (step : ExistingWrite invocation before after row) :
+    after step.slot = some {step.cell with stateBytes := row.2, checksum := step.digest} := by
+  calc
+    after step.slot = applyUpdate before step.slot row step.digest step.slot :=
+      congrArg (fun image => image step.slot) step.frame.1
+    _ = _ := existing_slot_changes_exact_columns before step.slot row step.digest step.cell step.found step.oldKey
+
+theorem ExistingWrite.other_after (step : ExistingWrite invocation before after row)
+    (other : I64) (distinct : other ≠ step.slot) : after other = before other := by
+  calc
+    after other = applyUpdate before step.slot row step.digest other :=
+      congrArg (fun image => image other) step.frame.1
+    _ = before other := other_slot_preserved before step.slot other row step.digest distinct
+
+theorem ExistingWrite.preserves_allocation (step : ExistingWrite invocation before after row)
+    (id : I64) : allocation after id = allocation before id := by
+  by_cases atSlot : id = step.slot
+  · subst id
+    simp [allocation, step.slot_after, step.found]
+  · simp [allocation, step.other_after id atSlot]
+
+theorem two_distinct_writes {middle : Image} {next : SaveRows.Encoded}
+    (first : ExistingWrite invocation before middle row)
+    (second : ExistingWrite invocation middle after next) (distinct : first.slot ≠ second.slot) :
+    after first.slot = some {first.cell with stateBytes := row.2, checksum := first.digest} ∧
+    after second.slot = some {second.cell with stateBytes := next.2, checksum := second.digest} :=
+  ⟨(second.other_after first.slot distinct).trans first.slot_after, second.slot_after⟩
+
+/-- Each successful call advances the next SELECT/UPDATE's input image. -/
+inductive Written {Raw : Type} (invocation : Invocation Raw) : Image → List SaveRows.Encoded → Image → Prop
+  | nil (image : Image) : Written invocation image [] image
+  | cons {start next finish : Image} {row : SaveRows.Encoded} {rest : List SaveRows.Encoded}
+      (step : ExistingWrite invocation start next row) (tail : Written invocation next rest finish) :
+      Written invocation start (row :: rest) finish
+
+theorem Written.actualReply {rows : List SaveRows.Encoded}
+    (history : Written invocation before rows after) :
+    SaveRows.writeList invocation.connection rows = .ok (.Ok ()) := by
+  induction history with
+  | nil _ => rfl
+  | cons step _ ih => simp [SaveRows.writeList, step.accepted, ih]
+
+theorem Written.replies {rows : List SaveRows.Encoded}
+    (history : Written invocation before rows after) :
+    ∀ entry ∈ rows, actualSpecAt invocation.connection entry.1 entry.2 vacantSql = .ok (.Ok ()) := by
+  induction history with
+  | nil _ => simp
+  | cons step _ ih =>
+      intro entry present
+      rcases List.mem_cons.mp present with rfl | later
+      · exact step.accepted
+      · exact ih entry later
+
+theorem Written.preserves_allocation {rows : List SaveRows.Encoded}
+    (history : Written invocation before rows after) (id : I64) :
+    allocation after id = allocation before id := by
+  induction history with
+  | nil _ => rfl
+  | cons step _ ih => rw [ih, step.preserves_allocation]
+
+/-- A4 has no no-effect theorem for a failing statement. The physical image
+    after that call is independent of the error returned by the actual row. -/
+structure FailedWrite {Raw : Type} (invocation : Invocation Raw) (row : SaveRows.Encoded)
+    (error : SaveRows.Error) (before after : Image) : Prop where
+  rejected : actualSpecAt invocation.connection row.1 row.2 vacantSql = .ok (.Err error)
+
+/-- End observations of the original physical transaction under the registered
+    A4 lease, protected WAL/FULL setup and ordinary SQLite failure contract. -/
+inductive Commit {Raw Error : Type} (invocation : Invocation Raw) (initial candidate : Image) :
+    core.result.Result Unit Error → Image → Prop
+  | success : Commit invocation initial candidate (.Ok ()) candidate
+  | lostBefore (error : Error) : Commit invocation initial candidate (.Err error) initial
+  | lostAfter (error : Error) : Commit invocation initial candidate (.Err error) candidate
+
+theorem commit_success_image {Error : Type} {visible : Image}
+    (ended : Commit invocation before after (core.result.Result.Ok (E := Error) ()) visible) :
+    visible = after := by cases ended; rfl
+
+theorem commit_uncertain_images {Error : Type} {visible : Image} (error : Error)
+    (ended : Commit invocation before after (.Err error) visible) :
+    visible = before ∨ visible = after := by
+  cases ended
+  · exact Or.inl rfl
+  · exact Or.inr rfl
+
+theorem commit_uncertain_excludes_partial {Error : Type} {partialImage : Image} (error : Error)
+    (notInitial : partialImage ≠ before) (notCandidate : partialImage ≠ after) :
+    ¬ Commit invocation before after (.Err error) partialImage := by
+  intro outcome
+  exact (commit_uncertain_images error outcome).elim notInitial notCandidate
+
+/-- A normal rollback error is outside the confirmed rollback relation. -/
+inductive RolledBack {Raw : Type} (invocation : Invocation Raw) (initial transient : Image) : Image → Prop
+  | confirmed : RolledBack invocation initial transient initial
+
+theorem rollback_image {visible : Image} (ended : RolledBack invocation before after visible) :
+    visible = before := by cases ended; rfl
+
+end SandboxModel.Stage1Protocol.SourceHistory
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.existing_slot_changes_exact_columns
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.other_slot_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.ExistingWrite.accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.ExistingWrite.slot_after
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.ExistingWrite.other_after
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.ExistingWrite.preserves_allocation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.two_distinct_writes
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.Written.actualReply
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.Written.replies
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.Written.preserves_allocation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.commit_success_image
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.commit_uncertain_images
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.commit_uncertain_excludes_partial
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceHistory.rollback_image

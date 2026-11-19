@@ -1,0 +1,12 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,9 @@
++## V3 来源观察的 SQLite 写入历史候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。对同一原事务上的已登记来源行，连接完整
++四参数 UPDATE、成功前缀及下一行读写视图。确认回滚恢复原来源表，确认提交使完整候选可见，
++CommitUncertain 保留原错误并仅允许原视图或完整候选。A4 正常语句/耐久条件和 V5 实际事务
++提供者显式保留。完整普通与原生回执待统一验收。
++[作用范围与复验](../verification/experiments/stage1-protocol/unload-parent-link/observation-sql-history/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录

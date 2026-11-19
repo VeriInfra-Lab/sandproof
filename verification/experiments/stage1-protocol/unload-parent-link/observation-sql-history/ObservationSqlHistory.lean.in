@@ -1,0 +1,130 @@
+import SourceHistory
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.ObservationDrop
+open SandboxModel.Stage1Protocol.ObservationParent
+open SandboxModel.Stage1Protocol.ObservationSql
+open SandboxModel.Stage1Protocol.ObservationSuffix
+open SandboxModel.Stage1Protocol.SourceHistory
+
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationSqlHistory
+
+/-- The V5 close provider observes the consuming rusqlite call on the same raw
+    transaction, after the validators have passed. The wrapper is the original
+    success/CommitUncertain forwarding case, independent of AfterCommit. -/
+structure CommitCall {Raw OuterError : Type} (invocation : Invocation Raw)
+    (ownerCall : Result (core.result.Result Unit OuterError))
+    (reply : core.result.Result Unit RollbackError) where
+  rawCommit : Raw → Result (core.result.Result Unit RollbackError)
+  commitUncertain : RollbackError → OuterError
+  consumed : rawCommit invocation.raw = .ok reply
+  forwarded : ownerCall = .ok (match reply with
+    | .Ok value => .Ok value
+    | .Err error => .Err (commitUncertain error))
+
+variable {c : Carriers} {t : ReadTypes} {Keys E C W : Type}
+variable (attached : CodecInputs c Keys) (calls : Calls c) (reads : ReadCalls c t)
+variable (host : t.host E) (decoder : t.decoder E) (hooks : Hooks c C)
+variable (journal : Journal c) (work : c.work) (context : t.context)
+variable (raw : c.observation) (now : I64) (crashes : C)
+variable (current : CurrentReady attached calls reads host decoder journal work context raw now)
+variable (selected : Selected attached calls reads host decoder journal work context raw now current)
+variable (write : WriteReady attached calls reads host decoder journal work context raw now current selected)
+
+local notation "ops" => bindCodec attached calls
+local notation "parent" => actual ops reads host decoder hooks journal work context raw now crashes
+
+def originalInvocation : Invocation c.rawTransaction :=
+  ⟨current.started.transactionView, cast attached.connection current.started.readConnection⟩
+
+local notation "invocation" => originalInvocation attached calls reads host decoder journal work context raw now current
+local notation "ownerCall" => Calls.commit ops current.started.tx
+
+theorem first_row_error_restores_original_image
+    (drop : LiveDrop c W current.started.tx current.started.transactionView)
+    (completed later : List SaveRows.Encoded) (entry : SaveRows.Encoded) (error : SaveRows.Error)
+    (initial intermediate atFailure visible : Image)
+    (order : write.encoded.val = completed ++ entry :: later)
+    (history : Written invocation initial completed intermediate)
+    (failure : FailedWrite invocation entry error intermediate atFailure)
+    (returned : drop.rollback current.started.transactionView = .ok (.Ok ()))
+    (ended : RolledBack invocation initial atFailure visible) :
+    parent = .ok (.Err (cast attached.error error), withConnection journal current.started.writeback, crashes) ∧
+    closeOwner drop = .ok (none, drop.state current.started.tx) ∧ visible = initial := by
+  obtain ⟨key, bytes⟩ := entry
+  refine ⟨?_, ?_, rollback_image ended⟩
+  · exact first_row_error_precedes_commit attached calls reads host decoder hooks journal work
+      context raw now crashes current selected write completed later key bytes error order history.replies
+      failure.rejected
+  · exact live_rollback_success drop returned
+
+theorem before_commit_hook_error_restores_original_image
+    (drop : LiveDrop c W current.started.tx current.started.transactionView)
+    (initial candidate visible : Image)
+    (history : Written invocation initial write.encoded.val candidate)
+    (error : c.error) (before : C) (failed : hooks.hit crashes .BeforeCommit = .ok (.Err error, before))
+    (returned : drop.rollback current.started.transactionView = .ok (.Ok ()))
+    (ended : RolledBack invocation initial candidate visible) :
+    parent = .ok (.Err error, withConnection journal current.started.writeback, before) ∧
+    closeOwner drop = .ok (none, drop.state current.started.tx) ∧ visible = initial := by
+  refine ⟨?_, live_rollback_success drop returned, rollback_image ended⟩
+  rw [exact_current_continues ops reads host decoder hooks journal work context raw now crashes
+    current.guard current.started current.inbox current.rows current.view current.authenticated current.loaded
+    current.rebuilt current.full]
+  rw [selected_dispatch ops hooks journal work raw crashes current.started.writeback current.started.tx
+    current.inbox.inbox current.rows selected.index selected.inside selected.found .Fresh selected.fresh]
+  have saved := forwards_codec_reply attached calls current.started.readConnection selected.savedRows write.stored
+    current.inbox.inbox.config.max_sessions write.reserved write.keys write.encoded write.validated
+    write.retained (.Ok ()) history.actualReply
+  have finished := finish_before_commit_error ops hooks crashes current.started.tx current.started.transactionView
+    current.started.readConnection selected.savedRows current.inbox.inbox.config.max_sessions
+    (updated selected.row raw) error before current.started.transactionOk current.started.connectionOk saved failed
+  unfold Selected.savedRows Selected.row at finished
+  simp [selected.cloned, finished]
+
+theorem committed_image_and_original_result
+    (initial candidate visible : Image)
+    (history : Written invocation initial write.encoded.val candidate)
+    (before after : C) (checked : hooks.hit crashes .BeforeCommit = .ok (.Ok (), before))
+    (committed : CommitCall invocation ownerCall (.Ok ()))
+    (ended : Commit invocation initial candidate (core.result.Result.Ok (E := RollbackError) ()) visible)
+    (notified : hooks.hit before .AfterCommit = .ok (.Ok (), after)) :
+    parent = .ok (.Ok (updated selected.row raw), withConnection journal current.started.writeback, after) ∧
+    visible = candidate := by
+  exact ⟨sql_success_then_commit attached calls reads host decoder hooks journal work context raw
+    now crashes current selected write history.actualReply before after checked committed.forwarded notified,
+    commit_success_image ended⟩
+
+theorem after_commit_hook_error_keeps_committed_image
+    (initial candidate visible : Image)
+    (history : Written invocation initial write.encoded.val candidate)
+    (before after : C) (checked : hooks.hit crashes .BeforeCommit = .ok (.Ok (), before))
+    (committed : CommitCall invocation ownerCall (.Ok ()))
+    (ended : Commit invocation initial candidate (core.result.Result.Ok (E := RollbackError) ()) visible)
+    (error : c.error) (notified : hooks.hit before .AfterCommit = .ok (.Err error, after)) :
+    parent = .ok (.Err error, withConnection journal current.started.writeback, after) ∧ visible = candidate := by
+  exact ⟨after_commit_error_is_returned attached calls reads host decoder hooks journal work context raw
+    now crashes current selected write history.actualReply before after checked committed.forwarded error notified,
+    commit_success_image ended⟩
+
+theorem uncertain_commit_returns_original_error_and_two_images
+    (initial candidate visible : Image)
+    (history : Written invocation initial write.encoded.val candidate)
+    (before : C) (checked : hooks.hit crashes .BeforeCommit = .ok (.Ok (), before))
+    (error : RollbackError) (committed : CommitCall invocation ownerCall (.Err error))
+    (ended : Commit invocation initial candidate (.Err error) visible) :
+    parent = .ok (.Err (committed.commitUncertain error), withConnection journal current.started.writeback, before) ∧
+    (visible = initial ∨ visible = candidate) := by
+  exact ⟨sql_success_then_commit_error attached calls reads host decoder hooks journal work context raw
+    now crashes current selected write history.actualReply before checked _ committed.forwarded,
+    commit_uncertain_images error ended⟩
+
+end SandboxModel.Stage1Protocol.ObservationSqlHistory
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSqlHistory.first_row_error_restores_original_image
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSqlHistory.before_commit_hook_error_restores_original_image
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSqlHistory.committed_image_and_original_result
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSqlHistory.after_commit_hook_error_keeps_committed_image
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSqlHistory.uncertain_commit_returns_original_error_and_two_images
