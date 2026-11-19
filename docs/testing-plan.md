@@ -407,12 +407,13 @@ PID/start 回执及尚未记录的 Cleanup 回执；动作缺失、退出码不�
 终止 epoch、命令和 Stop 回执的身份字段须保持 JSON 整数类型。Cleanup 回执未登记
 要求原列为 SQL NULL，已存储的 JSON `null` 会拒绝并保留原故障现场。
 
-重放期间所属 Host 保持停止，助手初始化、传输、超时或格式失败不能算拒绝。必须同时
-核对两条原动作均被拒绝、原 node/claim 元数据逐文件身份与摘要不变、原 B 的 PID/start/
-boot、UID、netns/cgroup/磁盘身份以及只读 SQL 的代数/凭据/额度/其它来源不变；恢复原
+重放期间所属 Host 保持停止，助手初始化、传输、超时或格式失败不能通过。原助手把
+两条动作的 `Unknown` 或 `DefinitiveFailure` 汇总为未成功。独立核对原 node/claim
+元数据逐文件身份与摘要不变、原 B 的 PID/start/boot、UID、netns/cgroup/磁盘身份
+以及只读 SQL 的代数/凭据/额度/其它来源不变；恢复原
 配置 Host 后，再通过同一 SDK 凭据读写原 guest RAM 和磁盘标记。此处是已经正确回收的
 原命令迟到重复，不覆盖第一次物理删除与位置释放的任意竞争，也不把准备停启写作 E13。
-未知结果保留两会话、原输入和责任；最后两次产品 Destroy/GC 及零额度证据缺一不可。
+观察证据不足时保留两会话、原输入和责任；最终须取得两次产品 Destroy/GC 及零额度证据。
 
 在 `capture-freeze-receipt-destroy` 的 Host 重开前，以当前 Destroy 版本和新键尝试 Resume，
 要求 409。原样重放 Destroy 须返回同一完整接受，仅改 `expected_version` 的同键请求须返回

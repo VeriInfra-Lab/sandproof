@@ -302,6 +302,6 @@ def exercise_late_stop_delete(runtime, client, control, saved, deadline, report,
         final_destroy_send_to_settled_seconds=finished-control.timings[-1]['sent_monotonic'],
         completion_condition='both original public Destroy/GC plus zero reservations/material charge/backing pins')
     report['acceptance_cases'] = dict(E9='two original terminal StopVm/CleanupVm commands replayed after '
-        'other-owner immediate slot reuse; refusal plus unchanged SQL/kernel/claims and same guest I/O',
+        'other-owner immediate slot reuse; no reported success plus unchanged SQL/kernel/claims and same guest I/O',
         other_cases='one late-duplicate representative; not arbitrary late deletion or complete E9/E12/E13')
     report['phase'], report['complete'] = 'accepted-scenario', True
