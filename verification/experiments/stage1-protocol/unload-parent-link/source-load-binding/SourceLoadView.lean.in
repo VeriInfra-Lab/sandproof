@@ -1,0 +1,69 @@
+import SourceKeyEncodeProof
+import Aeneas.Std.VecIter
+
+open Aeneas Aeneas.Std Result ControlFlow SandproofSourceRowSqlSelect
+open SandboxModel.Stage1Protocol.SourceKeyEncode
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceLoadView
+
+abbrev Bytes := alloc.vec.Vec U8
+abbrev Columns := Bytes × Bytes × Option Bytes
+abbrev SqlError := SandproofSourceRowSqlSelect.rusqlite.error.Error
+abbrev CursorItem := core.result.Result Columns SqlError
+abbrev Cursor := alloc.vec.into_iter.IntoIter CursorItem
+
+structure Ports (f : Fields) where
+  checked : Slice U8 → Slice U8 → Result (core.result.Result (Option (Row f)) SaveRows.Error)
+  anchor : f.anchor → Result (core.result.Result Bytes SaveRows.Error)
+  digest : Slice U8 → Result SaveRows.Key
+
+def sliceKeyEq (_ : core.cmp.PartialEq U8 U8) (blob : Slice U8) (key : SaveRows.Key) : Result Bool :=
+  .ok (blob.val == key.val)
+
+def asSlice {T : Type} (_ : Type) (value : alloc.vec.Vec T) : Result (Slice T) :=
+  .ok value.slice
+
+def fromSql : core.convert.From JournalError SqlError :=
+  { «from» := fun error => .ok (.Sqlite error) }
+
+section
+variable {f : Fields} (ports : Ports f)
+local notation "Global" => Unit
+local notation "alloc.vec.Vec.as_slice" => asSlice
+local notation "Slice.Insts.CoreCmpPartialEqArray.eq" => sliceKeyEq
+local notation "JournalError.Insts.CoreConvertFromError" => fromSql
+local notation "sandproof_protocol.lifecycle.digest.ContentDigest.as_bytes" =>
+  (fun (key : SaveRows.Key) => Result.ok key)
+local notation "sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq" =>
+  fullDigestEq.eq
+local notation "controller.lifecycle_inbox.source_work.SourceWorkRecord" => Row f
+local notation "controller.lifecycle_inbox.source_work.codec.checked_source_payload" => ports.checked
+local notation "controller.lifecycle_inbox.source_work.codec.encode_load_anchor" => ports.anchor
+local notation "controller.lifecycle_inbox.source_work.digest" => ports.digest
+
+-- ACTUAL DECODE
+
+local notation "controller.lifecycle_inbox.source_work.codec.decode_loaded_record" =>
+  controller.lifecycle_inbox.source_work.codec.decode_loaded_record ports
+
+-- ACTUAL BODY
+
+local notation "controller.lifecycle_inbox.source_work.codec.read_loaded_rows_loop.body" =>
+  controller.lifecycle_inbox.source_work.codec.read_loaded_rows_loop.body ports
+
+-- ACTUAL LOOP
+
+local notation "controller.lifecycle_inbox.source_work.codec.read_loaded_rows_loop" =>
+  controller.lifecycle_inbox.source_work.codec.read_loaded_rows_loop ports
+
+-- ACTUAL READER
+
+end
+
+abbrev decode := @controller.lifecycle_inbox.source_work.codec.decode_loaded_record
+abbrev reader := @controller.lifecycle_inbox.source_work.codec.read_loaded_rows
+abbrev readLoop := @controller.lifecycle_inbox.source_work.codec.read_loaded_rows_loop
+abbrev readStep := @controller.lifecycle_inbox.source_work.codec.read_loaded_rows_loop.body
+
+end SandboxModel.Stage1Protocol.SourceLoadView
