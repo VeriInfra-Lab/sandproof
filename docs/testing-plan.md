@@ -406,6 +406,33 @@ E11 的[回执目录同步对照](../sandbox-runtime/src/snapshot_completion.rs)
 和原工作责任。源 stamp（含时间字段）按原判据检查，观察到合法变化时先分析裁定，
 不能为测试通过直接删除检查。
 
+E11 的[项目配额克隆对照](../sandbox-runtime/src/snapshot_store_tests.rs)在批准的私有
+reflink XFS 卷上运行。准备一个非稀疏的 2 MiB 来源和同一挂载上的两个空 store。
+用原配额工具分别读回项目标签、继承、硬限、实际用量及卷空闲。受限 store 采用
+1 MiB 项目硬限且留足 inode，健康 store 使用另一个能容纳完整克隆的项目。
+通过 `SANDPROOF_UNIT_CLONE_QUOTA_SOURCE`、`SANDPROOF_UNIT_CLONE_QUOTA_STORE`
+和 `SANDPROOF_UNIT_CLONE_QUOTA_CONTROL` 提供三个规范绝对路径，再显式选择：
+
+```sh
+cargo test -p sandbox-runtime --locked --lib \
+  snapshot_store::tests::actual_project_quota_clone_failure_with_healthy_control \
+  -- --exact --ignored --nocapture --test-threads=1
+```
+
+受限项目必须到达原 `BeforeClone`，记录实际 ENOSPC 或 EDQUOT，且没有完成克隆或发布。
+不调整限额，使用同一个来源 FD 在健康项目用新键完成克隆及同步，核对源摘要、独立 inode
+以及受限项目的原部分文件仍在。再次读回两项目和卷的用量，与固定提交的真实测试输出一并
+保留。原双路径的配额负例仍可独立运行。本对照只验证文件层克隆与保留责任，产品继续运行、
+数据库记账和最终回收须由各自实机场景取证。
+
+E11 的[清单短写对照](../sandbox-runtime/src/snapshot_store_tests.rs)以单独子进程运行
+`actual_manifest_short_write_retains_stage_and_allows_healthy_publication`。原 XFS 三件
+材料可写入并克隆，同一子进程的 `RLIMIT_FSIZE=128` 与忽略 SIGXFSZ 只作用于该进程。
+原发布入口须留下清单的 128 字节前缀并返回 EFBIG，原 staging 和已测材料保持，旧键
+不能打开或重新接管。提高该子进程上限后，以独立新键用同一源材料完成发布及读回。
+重开 store 后用原有计划精确回收残件，保留新包和原来源。只验证文件层短写及收尾，
+主机空间/配额、数据库责任和真实 VM 的结果各自验收。
+
 捕获故障点须对应真实克隆前后、目标摘要读取、同步与发布窗口；不能将摘要读取进度
 标成复制写入。恢复失败不得发布 Loaded/Ready、解除 source pin 或回退另一个 capture。
 事件选择使用同一 `SnapshotArtifactEvent` 及原 artifact/work 身份；`Cloned` 不等于
@@ -443,6 +470,13 @@ work/plan 继续。核对错误身份不能删除后继或复用位置，后继�
 重放，旧 Resume 不重新加载；直接使用当前严格内部格式，旧开发数据拒绝且不迁移。
 逐项核对源包、private backing、在途克隆和收尾的原预算；Retiring 未结算仍全额占用，
 回收受阻时按原容量拒绝后续工作。逻辑退额与共享物理块释放分别报告。
+
+E11 的[实际 unlink 失败对照](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)
+用已批准 Linux 宿主的私有挂载命名空间，将原 Memory 文件绑定挂载到自身。原文件
+身份和已保存计划须继续匹配。真实退休先删除 State，在 Memory 的 unlink 返回
+`EBUSY` 后停止，保留原 Memory、Disk、原回执标记和另一键的材料。移除本用例的
+私有挂载后重开 store，用同一份序列化计划完成回收，重复执行仍成功。组件结果只
+约束文件和原计划，产品层的持久责任、配额和 VM 证据另行验收。
 
 G6 只扩展唯一 `normal`：产生 A→恢复 R1→B→恢复 R2→C→恢复 R3。在每次 Resume 前
 沿当前完整包锚定 C6 原目录/文件身份，真实 guest RAM/进程/磁盘推进后全读原五个文件，
