@@ -1,0 +1,60 @@
+import SourceRowSqlComposition
+import Aeneas.Std.VecIter
+
+open Aeneas Aeneas.Std Result ControlFlow SandproofSourceRowSqlSelect
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SaveRows
+
+abbrev Key := Array U8 32#usize
+abbrev Encoded := Key × alloc.vec.Vec U8
+abbrev Db := SandproofSourceRowSqlSelect.rusqlite.Connection
+abbrev Error := SandproofSourceRowSqlSelect.JournalError
+abbrev Reply := Result (core.result.Result Unit Error)
+
+local notation "JournalError" => Error
+local notation "JournalError.CorruptStore" => SandproofSourceRowSqlSelect.JournalError.CorruptStore
+local notation "JournalError.MaintenanceCapacity" => SandproofSourceRowSqlSelect.JournalError.MaintenanceCapacity
+local notation "JournalError.Conflict" => SandproofSourceRowSqlSelect.JournalError.Conflict
+local notation "rusqlite.Connection" => Db
+local notation "controller.lifecycle_inbox.source_work.codec.write_candidate_record" =>
+  SandproofSourceRowSqlSelect.controller.lifecycle_inbox.source_work.codec.write_candidate_record
+
+-- GENERATED TYPES AND LOOP
+
+abbrev Sources := controller.lifecycle_inbox.source_work.codec.Sources
+abbrev runLoop := @controller.lifecycle_inbox.source_work.codec.write_candidate_records_loop
+abbrev runRows := @controller.lifecycle_inbox.source_work.codec.write_candidate_records
+abbrev RowWriter := SandproofSourceRowSqlSelect.controller.lifecycle_inbox.source_work.codec.write_candidate_record
+
+structure ReadEffects (C N R Keys : Type) where
+  configuration : core.cmp.PartialEq C C
+  node : core.cmp.PartialEq N N
+  read : Db → Result (core.result.Result (Option (Sources C N R)) Error)
+  limit : Db → U16 → Result (core.result.Result U64 Error)
+  encode : Sources C N R → Result (core.result.Result (Keys × alloc.vec.Vec Encoded) Error)
+  retains : Sources C N R → Sources C N R → Keys → Result Bool
+
+abbrev KeySet (Keys : Type) (_ _ : Type) := Keys
+
+section
+variable {C N R Keys : Type} (inputs : ReadEffects C N R Keys)
+local notation "capture.source.SourceObservationConfig" => C
+local notation "sandproof_protocol.internal.NodeIdentity" => N
+local notation "controller.lifecycle_inbox.source_work.SourceWorkRecord" => R
+local notation "alloc.collections.btree.set.BTreeSet" => KeySet Keys
+local notation "Global" => Unit
+local notation "capture.source.SourceObservationConfig.Insts.CoreCmpPartialEqSourceObservationConfig" => inputs.configuration
+local notation "sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity" => inputs.node
+local notation "controller.lifecycle_inbox.source_work.codec.load" => inputs.read
+local notation "controller.lifecycle_inbox.source_work.codec.reserved_records" => inputs.limit
+local notation "controller.lifecycle_inbox.source_work.codec.encode_candidate_records" => inputs.encode
+local notation "controller.lifecycle_inbox.source_work.codec.retains_saved_records" => inputs.retains
+
+-- GENERATED CONCRETE SAVE
+
+end
+
+abbrev save := @controller.lifecycle_inbox.source_work.codec.save
+
+end SandboxModel.Stage1Protocol.SaveRows
