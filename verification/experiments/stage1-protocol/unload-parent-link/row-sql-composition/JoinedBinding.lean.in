@@ -1,0 +1,74 @@
+
+abbrev ReadValue := SandproofSourceSlotRead.rusqlite.types.value_ref.ValueRef
+
+def asValueRef : ReadValue → rusqlite.types.value_ref.ValueRef
+  | .Null => .Null
+  | .Integer id => .Integer id
+  | .Real number => .Real number
+  | .Text text => .Text text
+  | .Blob bytes => .Blob bytes
+
+def alloc.string.String.as_bytes (value : String) : Result (Slice U8) :=
+  if represented : SandproofFoundationsRust.IdentifierLibrary.StringRepresentable value then
+    .ok (.from (SandproofFoundationsRust.IdentifierLibrary.stringBytes value) represented)
+  else .fail .maximumSizeExceeded
+
+def controller.lifecycle_inbox.sha256.digest (bytes : Slice U8) : Result (Array U8 32#usize) :=
+  SandproofStandardDigestRust.controller.lifecycle_inbox.sha256.digest bytes
+
+/-- Logical bind inputs shared with the original four-parameter UPDATE.
+    Both the read and write paths leave raw bind/step to the canonical provider. -/
+def appendValue (statement : rusqlite.statement.Statement) (value : SqlValue) :=
+  withArguments statement (statement.canonical.arguments ++ [value])
+
+abbrev BindReply := core.result.Result Unit rusqlite.error.Error × rusqlite.statement.Statement
+abbrev SqlReply := core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error
+
+def bindValues : List (Result SqlReply) → rusqlite.statement.Statement → Result BindReply
+  | [], statement => .ok (.Ok (), statement)
+  | argument :: rest, statement => do
+      let reply ← argument
+      match reply with
+      | .Err error => .ok (.Err error, statement)
+      | .Ok (.Borrowed (.Blob bytes)) => bindValues rest (appendValue statement (.blob ⟨bytes⟩))
+      | .Ok (.Borrowed (.Integer id)) => bindValues rest (appendValue statement (.integer id))
+      | _ => .fail .panic
+
+def bindSlots {Item : Type} (encode : rusqlite.types.to_sql.ToSql Item)
+    (statement : rusqlite.statement.Statement) (first second third fourth ended : Option Item) :
+    Result BindReply :=
+  match first, second, third, fourth, ended with
+  | .some bytes, .some digest, .some key, .some id, .none =>
+      bindValues [encode.to_sql bytes, encode.to_sql digest, encode.to_sql key, encode.to_sql id]
+        statement
+  | _, _, _, _, _ => .fail .panic
+
+def rusqlite.statement.Statement.bind_parameters {P Item Iter : Type}
+    (into : core.iter.traits.collect.IntoIterator P Item Iter) (encode : rusqlite.types.to_sql.ToSql Item)
+    (statement : rusqlite.statement.Statement) (values : P) : Result BindReply := do
+  let initial ← into.into_iter values
+  let (first, next) ← into.iteratorInst.next initial
+  let (second, next) ← into.iteratorInst.next next
+  if second.isNone then bindOne encode statement first second
+  else
+    let (third, next) ← into.iteratorInst.next next
+    let (fourth, next) ← into.iteratorInst.next next
+    let (ended, _) ← into.iteratorInst.next next
+    bindSlots encode statement first second third fourth ended
+
+/-- Reuses the same canonical prepare/run fields as the separate UPDATE view. -/
+def rusqlite.Connection.execute {P : Type} (dictionary : rusqlite.params.Params P)
+    (connection : rusqlite.Connection) (sql : Str) (values : P) :
+    Result (core.result.Result Usize rusqlite.error.Error) := do
+  let prepared ← connection.canonical.prepare sql
+  match prepared with
+  | .Err error => .ok (.Err ⟨error, false⟩)
+  | .Ok count =>
+      let (bound, statement) ← dictionary.__bind_in values (issued connection sql count)
+      match bound with
+      | .Err error => .ok (.Err error)
+      | .Ok () =>
+          let written ← connection.canonical.run sql statement.canonical.arguments
+          match written with
+          | .Err error => .ok (.Err ⟨error, false⟩)
+          | .Ok count => .ok (.Ok count)

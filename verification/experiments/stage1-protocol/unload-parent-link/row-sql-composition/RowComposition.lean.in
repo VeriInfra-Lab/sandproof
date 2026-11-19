@@ -1,0 +1,123 @@
+import ComposedEffects
+import ActualRead
+
+open Aeneas Aeneas.Std SandproofSourceRowSqlSelect
+open SandboxModel.Stage1Protocol.SourceRowSqlSelect
+open controller.lifecycle_inbox.source_work.codec
+
+namespace SandboxModel.Stage1Protocol.SourceRowSqlComposition
+
+def chooseSlot {E : Type}
+    (existing vacant : Result (core.result.Result (Option I64) E))
+    (capacity : Result E) : Result (core.result.Result I64 E) := do
+  let found ← existing
+  match found with
+  | .Err error => .ok (.Err error)
+  | .Ok (some id) => .ok (.Ok id)
+  | .Ok none =>
+      let missing ← vacant
+      match missing with
+      | .Err error => .ok (.Err error)
+      | .Ok (some id) => .ok (.Ok id)
+      | .Ok none =>
+          let error ← capacity
+          .ok (.Err error)
+
+def requireOne {E : Type} (reply : core.result.Result Usize E) (corrupt : Result E) :
+    Result (core.result.Result Unit E) := do
+  match reply with
+  | .Err error => .ok (.Err error)
+  | .Ok count =>
+      if count != 1#usize then
+        let error ← corrupt
+        .ok (.Err error)
+      else .ok (.Ok ())
+
+def writeInOrder {E : Type}
+    (existing vacant : Result (core.result.Result (Option I64) E))
+    (capacity corrupt : Result E) (hash : Result Key)
+    (write : Key → I64 → Result (core.result.Result Usize E)) :
+    Result (core.result.Result Unit E) := do
+  let selected ← chooseSlot existing vacant capacity
+  match selected with
+  | .Err error => .ok (.Err error)
+  | .Ok slot =>
+      let sha ← hash
+      let reply ← write sha slot
+      requireOne reply corrupt
+
+theorem core_order {Db E Witness : Type} (ops : SourceRowEffects Witness Db E)
+    (connection : Db) (key : Key) (bytes : Slice U8) :
+    write_candidate_record_using ops connection key bytes =
+      writeInOrder (ops.existing connection key) (ops.vacant connection)
+        ops.capacity ops.corrupt (ops.digest bytes)
+        (fun digest slot => ops.update connection bytes digest key slot) := by
+  simp only [write_candidate_record_using, writeInOrder, chooseSlot, bind_assoc_eq]
+  congr 1
+  funext got
+  cases got with
+  | Err error =>
+      simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok found =>
+      cases found with
+      | none =>
+          simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+          rw [bind_assoc_eq]
+          congr 1
+          funext vacancy
+          cases vacancy with
+          | Err error =>
+              simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+          | Ok selected =>
+              cases selected with
+              | none =>
+                  simp
+              | some slot =>
+                  simp only [bind_tc_ok]
+                  congr 1
+                  funext sha
+                  congr 1
+                  funext response
+                  cases response <;> simp [requireOne,
+                    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | some id =>
+          simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+          congr 1
+          funext sha
+          congr 1
+          funext response
+          cases response <;> simp [requireOne,
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+def actualSpecAt (connection : rusqlite.Connection) (key : Key)
+    (bytes : alloc.vec.Vec U8) (vacancySql : Str) :
+    Result (core.result.Result Unit JournalError) :=
+  writeInOrder (existingSpec connection key) (vacantSpecAt connection vacancySql)
+    (.ok .MaintenanceCapacity) (.ok .CorruptStore)
+    (controller.lifecycle_inbox.sha256.digest bytes.slice)
+    (fun digest slot => updateSpec connection bytes.slice digest key slot)
+
+theorem actual_for_vacancy (connection : rusqlite.Connection) (key : Key)
+    (bytes : alloc.vec.Vec U8) (vacancySql : Str)
+    (vacancy : vacantAdapter connection = vacantSpecAt connection vacancySql) :
+    write_candidate_record connection key bytes = actualSpecAt connection key bytes vacancySql := by
+  unfold write_candidate_record
+  rw [core_order]
+  have originalSlice : bytes.deref = bytes.slice := Slice.val_from bytes.slice _
+  simp only [SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.capacity,
+    SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.corrupt,
+    SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.digest, originalSlice]
+  have originalExisting := actual_existing connection key
+  change existingAdapter connection key = _ at originalExisting
+  have resolved := actual_update connection bytes.slice
+  change writeInOrder (existingAdapter connection key) (vacantAdapter connection)
+    (.ok .MaintenanceCapacity) (.ok .CorruptStore)
+    (controller.lifecycle_inbox.sha256.digest bytes.slice)
+    (fun digest slot => update connection bytes.slice digest key slot) = _
+  simp only [originalExisting, vacancy, resolved, actualSpecAt]
+
+end SandboxModel.Stage1Protocol.SourceRowSqlComposition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlComposition.core_order
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlComposition.actual_for_vacancy

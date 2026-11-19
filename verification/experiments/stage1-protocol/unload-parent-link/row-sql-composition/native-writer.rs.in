@@ -1,0 +1,69 @@
+#[cfg(test)]
+mod proof_source_row_composed {
+    use super::*;
+
+    fn row(connection: &Connection, id: i64) -> (Vec<u8>, Vec<u8>, Option<Vec<u8>>, i64) {
+        connection
+            .query_row(
+                "SELECT state_json,sha256,work_key,reserve_bytes
+                 FROM controller_source_work_records WHERE id=?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn actual_writer_uses_existing_row_then_lowest_vacant_row_in_one_transaction() {
+        let mut connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(RECORDS_TABLE).unwrap();
+        let existing = [17_u8; 32];
+        let absent = [29_u8; 32];
+        // Seed the rows with direct SQL. This allows the wrong writer to reach
+        // the same vacancy assertion without perturbing fixture construction.
+        for (id, key) in [(3, Some(existing.as_slice())), (11, None), (7, None)] {
+            connection
+                .execute(
+                    "INSERT INTO controller_source_work_records
+                     VALUES (?1, X'6E756C6C', zeroblob(32), 8192, ?2)",
+                    params![id, key],
+                )
+                .unwrap();
+        }
+        let old = row(&connection, 3);
+        let minimum = row(&connection, 7);
+        let maximum = row(&connection, 11);
+        let first = br#"{"before":3}"#;
+        let next = br#"{"after":7}"#;
+
+        let tx = connection.transaction().unwrap();
+        write_candidate_record(&tx, existing, first.to_vec()).unwrap();
+        assert_eq!(
+            row(&tx, 3),
+            (
+                first.to_vec(),
+                Sha256::digest(first).to_vec(),
+                Some(existing.to_vec()),
+                old.3,
+            )
+        );
+        assert_eq!(row(&tx, 7), minimum);
+        write_candidate_record(&tx, absent, next.to_vec()).unwrap();
+        assert_eq!(
+            row(&tx, 7),
+            (
+                next.to_vec(),
+                Sha256::digest(next).to_vec(),
+                Some(absent.to_vec()),
+                minimum.3,
+            ),
+            "combined writer must update the lowest vacant slot"
+        );
+        assert_eq!(row(&tx, 11), maximum);
+        tx.rollback().unwrap();
+
+        assert_eq!(row(&connection, 3), old);
+        assert_eq!(row(&connection, 7), minimum);
+        assert_eq!(row(&connection, 11), maximum);
+    }
+}
