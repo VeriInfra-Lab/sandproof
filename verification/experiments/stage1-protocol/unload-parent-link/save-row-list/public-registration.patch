@@ -1,0 +1,12 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39,1 +39,9 @@
++## V3 来源保存按序进入逐行 SQL 的候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。实际 `codec::save` 过旧责任检查后，
++在同一连接上把原编码 Vec 依次交给 #956 的实际单行选槽及 UPDATE，并保留首错。
++#968 的活事务接线和 SQLite 状态、提交与回滚的对应仍待组合。
++[精确输入与复验](../verification/experiments/stage1-protocol/unload-parent-link/save-row-list/README.md)。
++
++
+ ## V3 首次卸载使用同一条原执行记录

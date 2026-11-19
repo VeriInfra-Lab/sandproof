@@ -1,0 +1,148 @@
+import SaveRowsGenerated
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRowSqlComposition
+
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SaveRows
+
+open SandboxModel.Stage1Protocol.SourceRowSqlSelect (vacantSql)
+
+private theorem bind_plain {A B : Type} (r : Result A) (next : A → Result B) :
+    Std.bind r next = (do let item ← r; next item) := rfl
+
+def writeList (db : Db) : List Encoded → Reply
+  | [] => .ok (.Ok ())
+  | (key, bytes) :: rest => do
+    let written ← actualSpecAt db key bytes vacantSql
+    match written with
+    | .Ok _ => writeList db rest
+    | .Err error => .ok (.Err error)
+
+theorem loop_writes_original_order (db : Db) (rows : alloc.vec.Vec Encoded) :
+    runLoop rows db = writeList db rows.val := by
+  generalize shape : rows.val = contents
+  induction contents generalizing rows with
+  | nil =>
+      have next : alloc.vec.into_iter.IteratorIntoIter.next rows = .ok (none, rows) := by
+        let empty : alloc.vec.Vec Encoded := .from [] (Nat.zero_le _)
+        have same : rows = empty := alloc.vec.Vec.ext _ _ (by simpa [empty] using shape)
+        rw [same]
+        rfl
+      unfold runLoop controller.lifecycle_inbox.source_work.codec.write_candidate_records_loop
+      conv_lhs => rw [loop]
+      simp [controller.lifecycle_inbox.source_work.codec.write_candidate_records_loop.body, next, writeList]
+  | cons row rest ih =>
+      obtain ⟨key, bytes⟩ := row
+      have bounded : rest.length ≤ Usize.max := by
+        have valid := rows.property
+        rw [shape] at valid
+        simpa only [List.length_cons] using Nat.le_trans (Nat.le_succ rest.length) valid
+      let tail : alloc.vec.Vec Encoded := .from rest bounded
+      have next : alloc.vec.into_iter.IteratorIntoIter.next rows = .ok (some (key, bytes), tail) := by
+        unfold alloc.vec.into_iter.IteratorIntoIter.next
+        split
+        · rename_i empty
+          rw [shape] at empty
+          contradiction
+        · rename_i head suffix same
+          rw [shape] at same
+          injection same with headEq tailEq
+          subst head
+          subst suffix
+          rfl
+      have step : controller.lifecycle_inbox.source_work.codec.write_candidate_records_loop.body db rows =
+          (do
+            let written ← actualSpecAt db key bytes vacantSql
+            match written with
+            | .Ok _ => .ok (.cont tail)
+            | .Err error => .ok (.done (.Err error))) := by
+        simp [controller.lifecycle_inbox.source_work.codec.write_candidate_records_loop.body,
+          next, actual_composed_write]
+        congr 1
+        funext reply
+        cases reply <;> simp [core.result.Result.Insts.CoreOpsTry.branch,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      unfold runLoop controller.lifecycle_inbox.source_work.codec.write_candidate_records_loop
+      conv_lhs => rw [loop]
+      rw [step, bind_plain, bind_assoc_eq, writeList]
+      congr 1
+      funext reply
+      cases reply with
+      | Ok _ =>
+          simpa [runLoop,
+            controller.lifecycle_inbox.source_work.codec.write_candidate_records_loop] using
+              ih tail (alloc.vec.Vec.from_val rest bounded)
+      | Err _ => simp
+
+theorem rows_use_same_connection (db : Db) (rows : alloc.vec.Vec Encoded) :
+    runRows db rows = writeList db rows.val := by
+  simpa [runRows, controller.lifecycle_inbox.source_work.codec.write_candidate_records,
+    alloc.vec.IntoIteratorVec.into_iter] using loop_writes_original_order db rows
+
+private theorem list_first_error (db : Db) (completed : List Encoded) (key : Key)
+    (bytes : alloc.vec.Vec U8) (later : List Encoded) (error : Error)
+    (written : ∀ row ∈ completed, actualSpecAt db row.1 row.2 vacantSql = .ok (.Ok ()))
+    (rejected : actualSpecAt db key bytes vacantSql = .ok (.Err error)) :
+    writeList db (completed ++ (key, bytes) :: later) = .ok (.Err error) := by
+  induction completed with
+  | nil => simp [writeList, rejected]
+  | cons row processed ih =>
+      obtain ⟨priorKey, priorBytes⟩ := row
+      have saved := written (priorKey, priorBytes) (by simp)
+      have remaining : ∀ row ∈ processed, actualSpecAt db row.1 row.2 vacantSql = .ok (.Ok ()) :=
+        fun row present => written row (List.mem_cons_of_mem _ present)
+      simp [writeList, saved, ih remaining]
+
+theorem codec_rows_return_first_error (db : Db) (rows : alloc.vec.Vec Encoded) (completed : List Encoded)
+    (key : Key) (bytes : alloc.vec.Vec U8) (later : List Encoded) (error : Error)
+    (original : rows.val = completed ++ (key, bytes) :: later)
+    (written : ∀ row ∈ completed, actualSpecAt db row.1 row.2 vacantSql = .ok (.Ok ()))
+    (rejected : actualSpecAt db key bytes vacantSql = .ok (.Err error)) :
+    runRows db rows = .ok (.Err error) := by
+  rw [rows_use_same_connection, original]
+  exact list_first_error db completed key bytes later error written rejected
+
+variable {C N R Keys : Type} (inputs : ReadEffects C N R Keys) (db : Db)
+variable (candidate current : Sources C N R) (sessions : U16)
+
+structure Validated (reserved : U64) (keys : Keys) (encoded : alloc.vec.Vec Encoded) : Prop where
+  previous : inputs.read db = .ok (.Ok (some current))
+  configuration : inputs.configuration.ne candidate.config current.config = .ok false
+  node : inputs.node.ne candidate.node current.node = .ok false
+  stored : candidate.max_sessions = current.max_sessions
+  requested : sessions = candidate.max_sessions
+  limit : inputs.limit db sessions = .ok (.Ok reserved)
+  fits : candidate.records.val.length ≤ reserved.val
+  encode : inputs.encode candidate = .ok (.Ok (keys, encoded))
+
+private theorem read_adapter : (saveEffects inputs).read db = inputs.read db := rfl
+private theorem limit_adapter : (saveEffects inputs).limit db sessions = inputs.limit db sessions := rfl
+private theorem encode_adapter : (saveEffects inputs).encode candidate = inputs.encode candidate := rfl
+private theorem retains_adapter (keys : Keys) :
+    (saveEffects inputs).retains current candidate keys = inputs.retains current candidate keys := rfl
+private theorem write_adapter (encoded : alloc.vec.Vec Encoded) :
+    (saveEffects inputs).write db encoded = runRows db encoded := rfl
+
+theorem save_after_retention (reserved : U64) (keys : Keys) (encoded : alloc.vec.Vec Encoded)
+    (valid : Validated inputs db candidate current sessions reserved keys encoded) (allowed : Bool)
+    (retained : inputs.retains current candidate keys = .ok allowed) :
+    save inputs db candidate sessions =
+      if allowed then writeList db encoded.val else .ok (.Err .Conflict) := by
+  obtain ⟨previous, configSame, nodeSame, stored, requested, limit, fits, encodedOk⟩ := valid
+  have room : ¬ reserved.val < candidate.records.val.length := Nat.not_lt.mpr fits
+  simp only [requested, stored] at limit
+  change controller.lifecycle_inbox.source_work.codec.save_using inputs.configuration inputs.node
+    (saveEffects inputs) db candidate sessions = _
+  simp [controller.lifecycle_inbox.source_work.codec.save_using, read_adapter, limit_adapter,
+    encode_adapter, retains_adapter, write_adapter, rows_use_same_connection, previous, configSame,
+    nodeSame, stored, requested, limit, room, encodedOk, retained, lift, core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTry.branch]
+
+end SandboxModel.Stage1Protocol.SaveRows
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRows.loop_writes_original_order
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRows.rows_use_same_connection
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRows.codec_rows_return_first_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRows.save_after_retention
