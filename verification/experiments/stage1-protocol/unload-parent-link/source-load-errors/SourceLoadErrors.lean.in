@@ -1,0 +1,129 @@
+import SourceLoadErrorsSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceLoadErrors
+
+open SourceMetadataView SourceMetadataSpec SourceLoadErrorsSpec
+variable {Node : Type} {f : Fields}
+
+theorem actual_loader_is_parent (ports : Ports Node f) (db : Db) :
+    SourceLoadErrorsView.load ports db = SourceMetadataView.load ports db := by rfl
+
+theorem source_schema_error_precedes_work_schema (ports : Ports Node f) (db : Db)
+    (stage : CurrentPrefix ports db) (failure : SourceMetadataView.Error)
+    (reply : schema ports.text db sourceName sourceSchema = .ok (.Err failure)) :
+    SourceLoadErrorsView.load ports db = .ok (.Err failure) := by
+  reduce_current_prefix stage
+  simp only [sourceName] at reply
+  rw [reply]
+  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem work_schema_error_precedes_count (ports : Ports Node f) (db : Db)
+    (stage : CurrentPrefix ports db) (failure : SourceMetadataView.Error)
+    (source : schema ports.text db sourceName sourceSchema = .ok (.Ok ()))
+    (reply : schema ports.text db workName workSchema = .ok (.Err failure)) :
+    SourceLoadErrorsView.load ports db = .ok (.Err failure) := by
+  reduce_current_prefix stage
+  simp only [sourceName] at source
+  simp only [workName] at reply
+  simp [source, reply, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem count_error_precedes_numbers (ports : Ports Node f) (db : Db)
+    (stage : FormatPrefix ports db) (failure : SqlError)
+    (reply : queryCount db = .ok (.Err failure)) :
+    SourceLoadErrorsView.load ports db = .ok (.Err (.Sqlite failure)) := by
+  reduce_format_prefix stage
+  change (do let result ← queryCount db; _) = _
+  rw [reply]
+  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SourceLoadView.fromSql]
+
+theorem numbers_error_precedes_count_guard :
+    SourceLoadErrorsSpec.Contract (SourceLoadErrorsView.load (Node := Node) (f := f)) := by
+  intro ports db stage count failure countReply numbersReply
+  reduce_format_prefix stage
+  change (do let result ← queryCount db; _) = _
+  rw [countReply]
+  simp only [bind_tc_ok]
+  change (do let result ← queryNumbers db; _) = _
+  rw [numbersReply]
+  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SourceLoadView.fromSql]
+
+theorem capacity_error_precedes_count_guard (ports : Ports Node f) (db : Db)
+    (stage : FormatPrefix ports db) (count length reserve : I64)
+    (failure : SourceMetadataView.Error)
+    (countReply : queryCount db = .ok (.Ok count))
+    (numbers : queryNumbers db = .ok (.Ok (length, reserve)))
+    (capacity : ports.capacity db = .ok (.Err failure)) :
+    SourceLoadErrorsView.load ports db = .ok (.Err failure) := by
+  reduce_format_prefix stage
+  change (do let result ← queryCount db; _) = _
+  rw [countReply]
+  simp only [bind_tc_ok]
+  change (do let result ← queryNumbers db; _) = _
+  rw [numbers]
+  simp [capacity, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem missing_capacity_rejects_before_payload (ports : Ports Node f) (db : Db)
+    (stage : FormatPrefix ports db) (count length reserve : I64)
+    (countReply : queryCount db = .ok (.Ok count))
+    (numbers : queryNumbers db = .ok (.Ok (length, reserve)))
+    (capacity : ports.capacity db = .ok (.Ok none)) :
+    SourceLoadErrorsView.load ports db = .ok (.Err .CorruptStore) := by
+  reduce_format_prefix stage
+  change (do let result ← queryCount db; _) = _
+  rw [countReply]
+  simp only [bind_tc_ok]
+  change (do let result ← queryNumbers db; _) = _
+  rw [numbers]
+  simp [capacity, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem payload_error_precedes_decoder (ports : Ports Node f) (db : Db)
+    (header : Header ports db)
+    (fits : metadataFits header.count header.length header.reserve header.capacity)
+    (failure : SqlError) (payload : queryPayload db = .ok (.Err failure)) :
+    SourceLoadErrorsView.load ports db = .ok (.Err (.Sqlite failure)) := by
+  rw [actual_loader_is_parent, SourceMetadata.actual_metadata_contract ports db header, if_pos fits]
+  simp [readPayload, stepReply, payload, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SourceLoadView.fromSql]
+
+theorem checked_error_precedes_valid_and_records (ports : Ports Node f) (db : Db)
+    (header : Header ports db)
+    (fits : metadataFits header.count header.length header.reserve header.capacity)
+    (bytes sha : Bytes) (failure : SourceMetadataView.Error)
+    (payload : queryPayload db = .ok (.Ok (bytes, sha)))
+    (checkedReply : checked ports.codec bytes.deref sha.deref = .ok (.Err failure)) :
+    SourceLoadErrorsView.load ports db = .ok (.Err failure) := by
+  rw [actual_loader_is_parent, SourceMetadata.actual_metadata_contract ports db header, if_pos fits]
+  simp [readPayload, stepReply, payload, checkedReply, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem original_missing_row_keeps_sqlite_error (f : Fields) :
+    SourceLoadErrorsView.load (samplePorts f) emptyMetadataDb = .ok (.Err (.Sqlite noRows)) := by
+  exact numbers_error_precedes_count_guard (samplePorts f) emptyMetadataDb (emptyPrefix f)
+    0#i64 noRows empty_count empty_numbers
+
+theorem healthy_prefix_reaches_original_payload (f : Fields) :
+    SourceLoadErrorsView.load (samplePorts f) (sampleDb 8192#i64) =
+      .ok (.Err (.Sqlite sampleError)) := by
+  rw [actual_loader_is_parent]
+  exact SourceMetadata.actual_equal_reserve_reaches_payload f
+
+end SandboxModel.Stage1Protocol.SourceLoadErrors
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrors.actual_loader_is_parent
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrors.source_schema_error_precedes_work_schema
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrors.work_schema_error_precedes_count
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrors.count_error_precedes_numbers
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrors.numbers_error_precedes_count_guard
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrors.capacity_error_precedes_count_guard
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrors.missing_capacity_rejects_before_payload
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrors.payload_error_precedes_decoder
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrors.checked_error_precedes_valid_and_records
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrors.original_missing_row_keeps_sqlite_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrors.healthy_prefix_reaches_original_payload

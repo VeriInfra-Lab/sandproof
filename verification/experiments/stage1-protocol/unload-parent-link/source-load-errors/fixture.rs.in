@@ -1,0 +1,5 @@
+pub(super) fn proof_source_load_error_fixture(path: &Path) -> ControllerJournal {
+    let (mut journal, _) = ready(path);
+    let _ = prepare(&mut journal);
+    journal
+}
