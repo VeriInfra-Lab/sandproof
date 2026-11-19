@@ -84,3 +84,23 @@ BEGIN 和全部断言。先用同组选项执行 `cargo test --no-run`，再运�
 
 这项有限原生对照绑定同一固定 Rust 输入和追加的夹具。事务开始的
 真实抽取、连接到 `from_started_transaction` 的形式证明，以及完整 V3 验收仍分别取证。
+
+## 逐行写入和首错的原生验收
+
+`codec-rows.rs.in` 保留原三条逐行写入测试。原工作键保留已有行，缺键时使用最小空槽。
+SQLite 返回零个更新行时保存必须报错。第二行拒绝时，第一行已写入的内容必须随原事务一并回滚。
+本组与上述真实写锁用例共用一次正例编译。三个错误版本分别在私有副本改变更新行数判断、
+第二行错误后的提交和事务开始方式，成功编译后须触发对应原断言。
+
+在已准入的 ning 普通测试环境，使用 `/data2` 上的私有工作盘和 `/data1` 上的新证据目录。
+
+```bash
+SANDPROOF_ACCEPTANCE_ROLE=native bash scripts/python-entry.sh \
+  verification/experiments/stage1-protocol/unload-prepare-transaction/native_rows.py \
+  --work-parent "$native_work_parent" --output "$native_evidence"
+bash scripts/check-function.sh
+```
+
+验收脚本只在独立源码副本中安装夹具，保留原始源码归档、每版实际代码、编译和断言日志。
+四版共用一个私有 Cargo target，测试结束后收回。`source_work/tests.rs` 的提交字节保持与
+原正式入口的冻结一致。此入口提供 SQLite 回归证据，证明覆盖和原公共正式入口单独记录。
