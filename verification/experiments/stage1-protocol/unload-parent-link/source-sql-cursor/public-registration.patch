@@ -1,0 +1,11 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,8 @@
++## V3 来源 SQLite 查询游标候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。原查询和三列 mapper 保持完整
++SQL、原连接、零绑定及首错。游标接到原行消费者。在同一事务快照条件下，后续正常
++保存查询使用原登记键。实际游标与读锁实例、元数据守卫及 JSON/摘要条件分别保留。
++[两版复验](../verification/experiments/stage1-protocol/unload-parent-link/source-sql-cursor/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录

@@ -1,0 +1,31 @@
+import SourceSqlCursorView
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceSqlCursorWitness
+
+open SourceSqlCursorView
+
+def ColumnContract : Prop :=
+  ∀ row : RawRow, mapper row = .ok (columnsResult row)
+
+/-- Both mandatory columns contain TEXT. The library gives the two distinct
+    column conversion errors different identities, as in InvalidColumnType. -/
+def twoTextColumns : RawRow where
+  object := 0
+  statement := { canonical := ⟨0, [], fun count => ⟨count⟩⟩
+                 object := 1
+                 columns := 3#usize
+                 invalidIndex := fun index => ⟨index.val⟩ }
+  column index :=
+    if index.val < 2 then .Text (.from [] (Nat.zero_le _)) else .Null
+  conversionError index _ _ := ⟨index.val⟩
+
+theorem contract_witness_has_column_zero_error :
+    columnsResult twoTextColumns = .Err ⟨⟨0⟩, false⟩ := by
+  rfl
+
+end SandboxModel.Stage1Protocol.SourceSqlCursorWitness
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursorWitness.contract_witness_has_column_zero_error

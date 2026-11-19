@@ -1,0 +1,135 @@
+import SourceLoadBinding
+
+open Aeneas Aeneas.Std Result
+open SandproofSourceRowSqlSelect hiding toStr
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields Row)
+open SandboxModel.Stage1Protocol.SourceLoadView (Bytes Columns Cursor CursorItem SqlError)
+open SandboxModel.Stage1Protocol.SourceLoadBinding (rowIterator)
+set_option autoImplicit false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+
+namespace SandboxModel.Stage1Protocol.SourceSqlCursorView
+
+private abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+abbrev RawRow := rusqlite.row.Row
+abbrev RawValue := SandproofSourceRowSqlSelect.ReadValue
+abbrev RawItem := core.result.Result RawRow SqlError
+abbrev RawCursor := alloc.vec.Vec RawItem
+abbrev SqlReply (T : Type) := core.result.Result T SqlError
+
+def fromBlob (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result Bytes rusqlite.types.from_sql.FromSqlError) :=
+  match value with
+  | .Blob bytes => .ok (.Ok ⟨bytes⟩)
+  | _ => .ok (.Err .invalidType)
+
+def blobColumn (value : RawValue) : core.result.Result Bytes rusqlite.types.from_sql.FromSqlError :=
+  match value with
+  | .Blob bytes => .Ok ⟨bytes⟩
+  | _ => .Err .invalidType
+
+def nullableColumn (value : RawValue) :
+    core.result.Result (Option Bytes) rusqlite.types.from_sql.FromSqlError :=
+  match value with
+  | .Null => .Ok none
+  | .Blob bytes => .Ok (some ⟨bytes⟩)
+  | _ => .Err .invalidType
+
+/-- Existing bounded index and conversion-error operations on the issued row. -/
+def columnResult {T : Type} (decode : RawValue → core.result.Result T rusqlite.types.from_sql.FromSqlError)
+    (row : RawRow) (index : Usize) : SqlReply T :=
+  if index.val < row.statement.columns.val then
+    match decode (row.column index) with
+    | .Ok out => .Ok out
+    | .Err error => .Err ⟨row.conversionError index (row.column index) error, false⟩
+  else .Err ⟨row.statement.invalidIndex index, false⟩
+
+def columnsResult (row : RawRow) : CursorItem :=
+  match columnResult blobColumn row 0#usize with
+  | .Err error => .Err error
+  | .Ok bytes =>
+    match columnResult blobColumn row 1#usize with
+    | .Err error => .Err error
+    | .Ok checksum =>
+      match columnResult nullableColumn row 2#usize with
+      | .Err error => .Err error
+      | .Ok key => .Ok (bytes, checksum, key)
+
+def mapRawItem : RawItem → CursorItem
+  | .Err error => .Err error
+  | .Ok row => columnsResult row
+
+/-- Finite value representation of the original lazy mapped cursor.
+    Pure column conversion encodes its items without executing the SQL query
+    again or changing the consumer's short circuit. -/
+def mappedCursor (raw : RawCursor) : Cursor :=
+  alloc.vec.Vec.from (raw.val.map mapRawItem) (by simpa only [List.length_map] using raw.property)
+
+structure Prepared where
+  connection : SaveRows.Db
+  sql : Str
+  parameters : rusqlite.statement.Statement
+
+structure Library where
+  /-- Raw replies of one original cursor and the returned mutable Statement.
+      Same-transaction provenance is a separate A4 relation at this operation. -/
+  openRows : Prepared → Result (SqlReply RawCursor × Prepared)
+
+def prepareScan (connection : SaveRows.Db) (sql : Str) : Result (SqlReply Prepared) := do
+  let answer ← connection.canonical.prepare sql
+  match answer with
+  | .Err error => .ok (.Err ⟨error, false⟩)
+  | .Ok count => .ok (.Ok ⟨connection, sql, issued connection sql count⟩)
+
+def openScan (library : Library) (statement : Prepared) : Result (SqlReply Cursor × Prepared) := do
+  -- Original [] binding checks zero parameters, with no value to bind.
+  if statement.parameters.canonical.expectedParameters != 0 then
+    .ok (.Err ⟨statement.parameters.canonical.countError 0, false⟩, statement)
+  else
+    let (answer, after) ← library.openRows statement
+    match answer with
+    | .Err error => .ok (.Err error, after)
+    | .Ok raw => .ok (.Ok (mappedCursor raw), after)
+
+local notation "alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result" => fromBlob
+
+-- ACTUAL BLOB DICTIONARY
+
+local notation "core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql.column_result" =>
+  SandproofSourceRowSqlSelect.core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+
+-- ACTUAL OPTION DICTIONARY
+
+local notation "JournalError.Insts.CoreConvertFromError" => SourceLoadView.fromSql
+
+local notation "controller.lifecycle_inbox.source_work.codec.SourceRows" => Cursor
+local notation "controller.lifecycle_inbox.source_work.codec.SourceRows.Insts.CoreIterTraitsIteratorIteratorResultTupleVecU8VecU8OptionVecU8Error.next" =>
+  rowIterator.next
+
+-- ACTUAL ITERATOR DICTIONARY
+
+-- ACTUAL MAPPER
+
+section
+variable {f : Fields} (library : Library) (ports : SourceLoadView.Ports f)
+local notation "rusqlite.Connection.prepare" => prepareScan
+local notation "controller.lifecycle_inbox.source_work.SourceWorkRecord" => Row f
+local notation "controller.lifecycle_inbox.source_work.codec.query_source_rows" => openScan library
+local notation "controller.lifecycle_inbox.source_work.codec.read_loaded_rows" => SourceLoadView.reader ports
+
+-- ACTUAL SCAN
+
+end
+
+abbrev mapper := controller.lifecycle_inbox.source_work.codec.read_source_columns
+abbrev scan := @controller.lifecycle_inbox.source_work.codec.scan_loaded_records
+abbrev blobDictionary := alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql
+abbrev nullableDictionary := core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql blobDictionary
+abbrev cursorDictionary :=
+  controller.lifecycle_inbox.source_work.codec.SourceRows.Insts.CoreIterTraitsIteratorIteratorResultTupleVecU8VecU8OptionVecU8Error
+
+end SandboxModel.Stage1Protocol.SourceSqlCursorView
