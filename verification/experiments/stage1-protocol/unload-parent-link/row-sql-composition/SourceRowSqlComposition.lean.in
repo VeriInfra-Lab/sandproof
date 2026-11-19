@@ -1,0 +1,16 @@
+import RowComposition
+
+open Aeneas Aeneas.Std SandproofSourceRowSqlSelect
+open SandboxModel.Stage1Protocol.SourceRowSqlSelect
+open controller.lifecycle_inbox.source_work.codec
+
+namespace SandboxModel.Stage1Protocol.SourceRowSqlComposition
+
+theorem actual_composed_write (connection : rusqlite.Connection) (key : Key)
+    (bytes : alloc.vec.Vec U8) :
+    write_candidate_record connection key bytes = actualSpecAt connection key bytes vacantSql :=
+  actual_for_vacancy connection key bytes vacantSql (actual_vacant connection)
+
+end SandboxModel.Stage1Protocol.SourceRowSqlComposition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlComposition.actual_composed_write

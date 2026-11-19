@@ -1,0 +1,129 @@
+import SourceRowSelectInputs
+
+open Aeneas Aeneas.Std SandproofSourceRowSqlSelect
+open SandboxModel.Stage1Protocol.SourceRowSqlSelect
+
+namespace SandboxModel.Stage1Protocol.SourceRowSqlComposition
+
+abbrev Key := Array U8 32#usize
+abbrev WriteReply := core.result.Result Usize JournalError
+abbrev update :=
+  controller.lifecycle_inbox.source_work.codec.SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.update
+
+set_option maxRecDepth 2048 in
+def updateSql : Str :=
+  SandproofSourceRowSqlSelect.toStr "UPDATE controller_source_work_records SET state_json=?1,sha256=?2,work_key=?3 WHERE id=?4 AND (work_key IS NULL OR work_key=?3)"
+
+def updateInput (bytes digest key : Slice U8) (id : I64) :
+    Array rusqlite.types.to_sql.ToSqlOutput 4#usize :=
+  Array.make 4#usize [.Borrowed (.Blob bytes), .Borrowed (.Blob digest),
+    .Borrowed (.Blob key), .Borrowed (.Integer id)]
+
+def updateValues (bytes digest key : Slice U8) (id : I64) : List SqlValue :=
+  [.blob ⟨bytes⟩, .blob ⟨digest⟩, .blob ⟨key⟩, .integer id]
+
+def updateSpec (connection : rusqlite.Connection) (bytes : Slice U8)
+    (digest key : Key) (id : I64) : Result WriteReply := do
+  let prepared ← connection.canonical.prepare updateSql
+  match prepared with
+  | .Err error => .ok (.Err (.Sqlite ⟨error, false⟩))
+  | .Ok _ =>
+      let written ← connection.canonical.run updateSql
+        (updateValues bytes digest.to_slice key.to_slice id)
+      match written with
+      | .Err error => .ok (.Err (.Sqlite ⟨error, false⟩))
+      | .Ok count => .ok (.Ok count)
+
+theorem update_bind (stmt : rusqlite.statement.Statement)
+    (bytes digest key : Slice U8) (id : I64) :
+    ArrayT4.Insts.RusqliteParamsParams.__bind_in
+      rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql
+      (updateInput bytes digest key id) stmt =
+      .ok (.Ok (), withArguments stmt (stmt.canonical.arguments ++ updateValues bytes digest key id)) := by
+  simp only [ArrayT4.Insts.RusqliteParamsParams.__bind_in,
+    rusqlite.statement.Statement.bind_parameters, bindSlots, bindValues, appendValue, withArguments,
+    SharedArray.Insts.CoreIterTraitsCollectIntoIteratorSharedIter.into_iter,
+    core.slice.iter.IteratorSliceIter.next, updateInput,
+    Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql,
+    Slice.len_val, Array.make_val, bind_tc_ok, Nat.reduceAdd]
+  dsimp only [getElem, instGetElemSliceNatLtLengthVal, Slice.from, Slice.val,
+    Aeneas.Data.ListN.ListN.fromList, Aeneas.Data.ListN.ListN.toList]
+  simp [Slice.val, Slice.length, Aeneas.Data.ListN.ListN.toList,
+    rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql.to_sql,
+    updateValues, List.append_assoc]
+
+private theorem update_reply (reply : core.result.Result Usize ReadError) :
+    (do
+      let branch ← core.result.Result.Insts.CoreOpsTry.branch reply
+      match branch with
+      | .Continue count => .ok (core.result.Result.Ok count)
+      | .Break error =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Usize JournalError.Insts.CoreConvertFromError error) =
+      .ok (match reply with
+        | .Ok count => .Ok count
+        | .Err error => .Err (.Sqlite error)) := by
+  cases reply <;> simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalError.Insts.CoreConvertFromError.from]
+
+private theorem finish_run (run : Result (core.result.Result Usize SqliteError)) :
+    (do
+      let result ← (do
+        let original ← run
+        match original with
+        | .Err error => .ok (core.result.Result.Err (⟨error, false⟩ : ReadError))
+        | .Ok count => .ok (core.result.Result.Ok count))
+      let branch ← core.result.Result.Insts.CoreOpsTry.branch result
+      match branch with
+      | .Continue count => .ok (core.result.Result.Ok count)
+      | .Break error =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Usize JournalError.Insts.CoreConvertFromError error) =
+    (do
+      let written ← run
+      match written with
+      | .Err error => .ok (.Err (.Sqlite ⟨error, false⟩))
+      | .Ok count => .ok (.Ok count)) := by
+  rw [bind_assoc_eq]
+  congr 1
+  funext response
+  cases response with
+  | Err error =>
+      simp only [bind_tc_ok]
+      exact update_reply (.Err ⟨error, false⟩)
+  | Ok count =>
+      simp only [bind_tc_ok]
+      exact update_reply (.Ok count)
+
+theorem actual_update (connection : rusqlite.Connection) (bytes : Slice U8)
+    (digest key : Key) (id : I64) :
+    update connection bytes digest key id = updateSpec connection bytes digest key id := by
+  simp only [update,
+    controller.lifecycle_inbox.source_work.codec.SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.update,
+    lift, bind_tc_ok]
+  change (do
+      let reply ← rusqlite.Connection.execute
+        (ArrayT4.Insts.RusqliteParamsParams rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql)
+        connection updateSql (updateInput bytes digest.to_slice key.to_slice id)
+      let branch ← core.result.Result.Insts.CoreOpsTry.branch reply
+      match branch with
+      | .Continue count => .ok (core.result.Result.Ok count)
+      | .Break error =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Usize JournalError.Insts.CoreConvertFromError error) = _
+  simp only [rusqlite.Connection.execute, updateSpec, bind_assoc_eq]
+  congr 1
+  funext prepared
+  cases prepared with
+  | Err error =>
+      simp only [bind_tc_ok]
+      exact update_reply (.Err ⟨error, false⟩)
+  | Ok count =>
+      simp only [update_bind, issued, List.nil_append, bind_tc_ok]
+      exact finish_run _
+
+end SandboxModel.Stage1Protocol.SourceRowSqlComposition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlComposition.update_bind
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlComposition.actual_update
