@@ -1,0 +1,17 @@
+
+mod proof_source_slot_sql {
+    use super::{Connection, JournalError, SourceRowEffects, SqliteSourceRow};
+
+    #[expect(dead_code, reason = "selected by the fixed Charon")]
+    pub(super) fn existing(
+        connection: &Connection,
+        key: &[u8; 32],
+    ) -> Result<Option<i64>, JournalError> {
+        SqliteSourceRow::existing(connection, key)
+    }
+
+    #[expect(dead_code, reason = "selected by the fixed Charon")]
+    pub(super) fn vacant(connection: &Connection) -> Result<Option<i64>, JournalError> {
+        SqliteSourceRow::vacant(connection)
+    }
+}

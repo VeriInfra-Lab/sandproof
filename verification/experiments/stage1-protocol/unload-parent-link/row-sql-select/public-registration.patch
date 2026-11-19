@@ -1,0 +1,25 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -335,1 +335,10 @@
++### A4 V3 来源槽读取候选
++
++固定 rusqlite 0.40.2。现有键读取保留同一原连接与 32 字节 BLOB，按原首行的第 0 列
++读出 i64。只有 OptionalExtension 的 QueryReturnedNoRows 构造映射到 None。
++其它 prepare、raw bind、step 和列错误保留。最小空槽用同一原连接、零参数与第 0 列
++Option<i64>，仅一行 SQL NULL 返回 None。对照中 [] 与 () 的 Params 绑定各自调用
++ensure_parameter_count(0)。原 Row/Statement 身份、原错误完整载体与原引用的有效期继续
++由 A4/V5 提供。自有 SQL 和参数选择由实际适配器对应。详见[来源 SELECT](../../verification/experiments/stage1-protocol/unload-parent-link/row-sql-select/README.md)。
++
+ ### SQLite：当前 Inbox 保存两 BLOB 参数（实际接线与验收单列）
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39,1 +39,9 @@
++## V3 来源槽读取候选
++
++固定 integration `7b27876458a7212feb98a2aaf36560fe6443fb73`。抽取的已存键和最小空槽
++适配器保持原 SQL、同一接收者、原绑定和第 0 列解码。QueryReturnedNoRows 与
++SQL NULL 分别解释。实际 max 错版使用同一最小槽规格。精确输入、局部条件和复验见
++[来源 SELECT](../verification/experiments/stage1-protocol/unload-parent-link/row-sql-select/README.md)。
++实际表语义、调用方事务与公共 Stage1 仍按各自义务验收。
++
+ ## V3 首次卸载使用同一条原执行记录

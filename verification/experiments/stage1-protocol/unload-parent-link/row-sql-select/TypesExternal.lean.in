@@ -1,0 +1,57 @@
+import SandproofSqliteStatements.TypesExternal
+import SandproofSourceRowSqlSelect.ReadValueData
+
+open Aeneas Aeneas.Std
+
+namespace SandproofSourceRowSqlSelect
+
+abbrev SqliteError := SandproofSqliteRust.rusqlite.error.Error
+abbrev core.io.error.Error := SandproofSqliteRust.core.io.error.Error
+abbrev serde_json.error.Error := SandproofSqliteRust.serde_json.error.Error
+abbrev SqlValue := SandproofSqliteStatementsRust.SqlValue
+
+/-- Finite view of the library error. The source provider records the exact
+    original error and whether its constructor is QueryReturnedNoRows. -/
+structure rusqlite.error.Error where
+  original : SqliteError
+  queryReturnedNoRows : Bool
+
+inductive rusqlite.types.from_sql.FromSqlError where
+  | invalidType
+
+structure rusqlite.statement.Statement where
+  canonical : SandproofSqliteStatementsRust.rusqlite.statement.Statement
+  object : Nat
+  columns : Usize
+  invalidIndex : Usize → SqliteError
+
+structure rusqlite.row.Row where
+  object : Nat
+  statement : rusqlite.statement.Statement
+  column : Usize → rusqlite.types.value_ref.ValueRef
+  conversionError : Usize → rusqlite.types.value_ref.ValueRef →
+    rusqlite.types.from_sql.FromSqlError → SqliteError
+
+/-- Conditional read interface using the existing canonical connection.
+    firstRow includes actual raw parameter binding, its first error and
+    count check, and Rows::get_expected_row on the issued statement. -/
+structure rusqlite.Connection where
+  canonical : SandproofSqliteStatementsRust.rusqlite.Connection
+  statementObject : Str → Nat
+  columns : Str → Usize
+  invalidIndex : Str → Usize → SqliteError
+  firstRow : Str → rusqlite.statement.Statement →
+    Result (core.result.Result rusqlite.row.Row rusqlite.error.Error)
+
+def issued (connection : rusqlite.Connection) (sql : Str) (count : Nat) :
+    rusqlite.statement.Statement where
+  canonical := ⟨count, [], connection.canonical.countError count⟩
+  object := connection.statementObject sql
+  columns := connection.columns sql
+  invalidIndex := connection.invalidIndex sql
+
+def withArguments (statement : rusqlite.statement.Statement) (values : List SqlValue) :
+    rusqlite.statement.Statement :=
+  {statement with canonical := {statement.canonical with arguments := values}}
+
+end SandproofSourceRowSqlSelect

@@ -1,0 +1,112 @@
+import SandproofSourceRowSqlSelect.Types
+
+open Aeneas Aeneas.Std
+
+namespace SandproofSourceRowSqlSelect
+
+abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
+def core.result.ResultTError.Insts.RusqliteOptionalExtension.optional {T : Type}
+    (reply : core.result.Result T rusqlite.error.Error) :
+    Result (core.result.Result (Option T) rusqlite.error.Error) :=
+  match reply with
+  | .Ok value => .ok (.Ok (some value))
+  | .Err error =>
+      if error.queryReturnedNoRows then .ok (.Ok none) else .ok (.Err error)
+
+def rusqlite.Connection.query_row {T P F : Type}
+    (parameters : rusqlite.params.Params P)
+    (callback : core.ops.function.FnOnce F rusqlite.row.Row (core.result.Result T rusqlite.error.Error))
+    (connection : rusqlite.Connection) (sql : Str) (values : P) (closure : F) :
+    Result (core.result.Result T rusqlite.error.Error) := do
+  let prepared ← connection.canonical.prepare sql
+  match prepared with
+  | .Err error => .ok (.Err ⟨error, false⟩)
+  | .Ok count =>
+      let (bound, statement) ← parameters.__bind_in values (issued connection sql count)
+      match bound with
+      | .Err error => .ok (.Err error)
+      | .Ok () =>
+          let read ← connection.firstRow sql statement
+          match read with
+          | .Err error => .ok (.Err error)
+          | .Ok row => callback.call_once closure row
+
+def rusqlite.statement.Statement.ensure_parameter_count (stmt : rusqlite.statement.Statement)
+    (count : Usize) : Result (core.result.Result Unit rusqlite.error.Error) :=
+  if stmt.canonical.expectedParameters = count.val then .ok (.Ok ())
+  else .ok (.Err ⟨stmt.canonical.countError count.val, false⟩)
+
+def Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql {T : Type}
+    (dictionary : rusqlite.types.to_sql.ToSql T) (value : T) :=
+  dictionary.to_sql value
+
+def bindBlobReply (statement : rusqlite.statement.Statement)
+    (reply : core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error) :
+    Result ((core.result.Result Unit rusqlite.error.Error) × rusqlite.statement.Statement) :=
+  match reply with
+  | .Err error => .ok (.Err error, statement)
+  | .Ok (.Borrowed (.Blob blob)) =>
+      .ok (.Ok (), withArguments statement (statement.canonical.arguments ++ [.blob ⟨blob⟩]))
+  | _ => .fail .panic
+
+def bindOne {Item : Type} (encode : rusqlite.types.to_sql.ToSql Item)
+    (statement : rusqlite.statement.Statement) (first ended : Option Item) :
+    Result ((core.result.Result Unit rusqlite.error.Error) × rusqlite.statement.Statement) :=
+  match first, ended with
+  | .some value, .none => encode.to_sql value >>= bindBlobReply statement
+  | _, _ => .fail .panic
+
+-- The firstRow provider owns the original raw bind, count check and step.
+def rusqlite.statement.Statement.bind_parameters {P Item Iter : Type}
+    (into : core.iter.traits.collect.IntoIterator P Item Iter) (encode : rusqlite.types.to_sql.ToSql Item)
+    (statement : rusqlite.statement.Statement) (values : P) :
+    Result ((core.result.Result Unit rusqlite.error.Error) × rusqlite.statement.Statement) := do
+  let initial ← into.into_iter values
+  let (first, next) ← into.iteratorInst.next initial
+  let (ended, _) ← into.iteratorInst.next next
+  bindOne encode statement first ended
+
+def rusqlite.row.Row.get {I T : Type} (indexDictionary : rusqlite.row.RowIndex I)
+    (fromSqlDictionary : rusqlite.types.from_sql.FromSql T) (row : rusqlite.row.Row)
+    (index : I) : Result (core.result.Result T rusqlite.error.Error) := do
+  let checked ← indexDictionary.idx index row.statement
+  match checked with
+  | .Err error => .ok (.Err error)
+  | .Ok checked =>
+      let value := row.column checked
+      let converted ← fromSqlDictionary.column_result value
+      match converted with
+      | .Ok answer => .ok (.Ok answer)
+      | .Err error => .ok (.Err ⟨row.conversionError checked value error, false⟩)
+
+def Usize.Insts.RusqliteRowRowIndex.idx (index : Usize) (statement : rusqlite.statement.Statement) :
+    Result (core.result.Result Usize rusqlite.error.Error) :=
+  if index.val < statement.columns.val then .ok (.Ok index)
+  else .ok (.Err ⟨statement.invalidIndex index, false⟩)
+
+def I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+    (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result I64 rusqlite.types.from_sql.FromSqlError) :=
+  match value with
+  | .Integer id => .ok (.Ok id)
+  | _ => .ok (.Err .invalidType)
+
+def core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql.column_result {T : Type}
+    (dictionary : rusqlite.types.from_sql.FromSql T) (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result (Option T) rusqlite.types.from_sql.FromSqlError) := do
+  match value with
+  | .Null => .ok (.Ok none)
+  | _ =>
+      let converted ← dictionary.column_result value
+      match converted with
+      | .Ok id => .ok (.Ok (some id))
+      | .Err error => .ok (.Err error)
+
+def SliceU8.Insts.RusqliteTypesTo_sqlToSql.to_sql (bytes : Slice U8) :
+    Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error) :=
+  .ok (.Ok (.Borrowed (.Blob bytes)))
+
+end SandproofSourceRowSqlSelect

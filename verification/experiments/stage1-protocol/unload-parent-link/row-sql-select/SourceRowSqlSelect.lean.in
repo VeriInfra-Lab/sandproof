@@ -1,0 +1,49 @@
+import SourceRowSelectInputs
+
+open Aeneas Aeneas.Std SandproofSourceRowSqlSelect
+
+namespace SandboxModel.Stage1Protocol.SourceRowSqlSelect
+
+theorem actual_existing (connection : rusqlite.Connection) (key : Array U8 32#usize) :
+    existingRoot connection key = existingSpec connection key := by
+  change existingAdapter connection key = _
+  calc
+    _ = (do
+      let reply ← rusqlite.Connection.query_row existingParams existingCallback
+        connection existingSql (existingInput key.to_slice) ()
+      let optional ← core.result.ResultTError.Insts.RusqliteOptionalExtension.optional reply
+      .ok (wrap optional)) := by
+        simp only [existingAdapter,
+          controller.lifecycle_inbox.source_work.codec.SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.existing,
+          lift, bind_tc_ok]
+        congr 1
+        funext read
+        congr 1
+        funext optional
+        exact finish_result optional
+    _ = _ := existing_query connection key
+
+theorem actual_vacant (connection : rusqlite.Connection) :
+    vacantRoot connection = vacantSpec connection := by
+  change vacantAdapter connection = _
+  calc
+    _ = (do
+      let reply ← rusqlite.Connection.query_row Tuple.Insts.RusqliteParamsParams
+        vacantCallback connection vacantSql vacantInput ()
+      .ok (wrap reply)) := by
+        unfold vacantAdapter
+        simp only [controller.lifecycle_inbox.source_work.codec.SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.vacant]
+        congr 1
+        funext reply
+        exact finish_result reply
+    _ = _ := vacant_query connection vacantSql
+
+theorem actual_min_sample :
+    vacantRoot sampleConnection = .ok (.Ok (some 7#i64)) := by
+  rw [actual_vacant, min_sample]
+
+end SandboxModel.Stage1Protocol.SourceRowSqlSelect
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.actual_existing
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.actual_vacant
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.actual_min_sample
