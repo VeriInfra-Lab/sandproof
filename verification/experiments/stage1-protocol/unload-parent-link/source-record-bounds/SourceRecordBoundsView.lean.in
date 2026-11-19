@@ -1,0 +1,149 @@
+import SourceSqlCursor
+
+open Aeneas Aeneas.Std Result
+open SandproofSourceRowSqlSelect hiding toStr
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields Row)
+set_option autoImplicit false
+set_option maxRecDepth 2048
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+
+namespace SandboxModel.Stage1Protocol.SourceRecordBoundsView
+
+private abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+abbrev Bounds := I64 × I64 × I64 × I64 × I64 × I64
+abbrev BoundsReply := core.result.Result Bounds rusqlite.error.Error
+abbrev Returned (f : Fields) := core.result.Result (alloc.vec.Vec (Row f)) SaveRows.Error
+
+-- ACTUAL SOURCE CONFIG
+-- ACTUAL CAPACITY
+-- ACTUAL POLICY
+
+section
+variable (Node : Type)
+local notation "sandproof_protocol.internal.NodeIdentity" => Node
+
+-- ACTUAL CONFIGURATION
+
+end
+
+abbrev Config := controller.lifecycle_inbox.source_work.codec.Configuration
+abbrev Capacity := controller.capacity.CapacityConfig
+abbrev Policy := controller.checkpoint.config.MaintenanceConfig
+abbrev Limits := capture.source.SourceObservationConfig
+
+@[reducible]
+-- ACTUAL SQL CLOSURE TYPE
+@[reducible]
+-- ACTUAL LENGTH CLOSURE TYPE
+@[reducible]
+-- ACTUAL AGGREGATE CLOSURE TYPE
+
+-- The only dynamic parameter carrier has zero entries.
+private abbrev EmptyArgument (_ : Type → Type) := Unit
+local notation "Dyn" => EmptyArgument
+
+def emptyBinding (_ : Array Unit 0#usize)
+    (statement : rusqlite.statement.Statement) :
+    Result (core.result.Result Unit rusqlite.error.Error × rusqlite.statement.Statement) := do
+  let result ← rusqlite.statement.Statement.ensure_parameter_count statement 0#usize
+  .ok (result, statement)
+
+local notation "ArrayShared0P0.Insts.RusqliteParamsParams.__bind_in" => emptyBinding
+
+-- ACTUAL EMPTY SEALED
+-- ACTUAL EMPTY DICTIONARY
+
+def toUnsigned (value : I64) : Result (core.result.Result U64 core.num.error.TryFromIntError) :=
+  if 0 ≤ value.val then .ok (.Ok (IScalar.hcast .U64 value)) else .ok (.Err ())
+
+def toSigned (value : U64) : Result (core.result.Result I64 core.num.error.TryFromIntError) :=
+  if (value.val : Int) ≤ I64.max then .ok (.Ok (UScalar.hcast .I64 value)) else .ok (.Err ())
+
+def integerEq : core.cmp.PartialEq I64 I64 :=
+  { eq := fun left right => .ok (decide (left = right)) }
+
+def anyMismatch : List (Result Bool) → Result Bool
+  | [] => .ok false
+  | comparison :: rest => do
+    let differs ← comparison
+    if differs then .ok true else anyMismatch rest
+
+def i64TupleNe {A B C D E : Type} (a : core.cmp.PartialEq A A) (b : core.cmp.PartialEq B B)
+    (c : core.cmp.PartialEq C C) (d : core.cmp.PartialEq D D) (e : core.cmp.PartialEq E E)
+    (left right : A × B × C × D × E) : Result Bool :=
+  anyMismatch [a.ne left.1 right.1, b.ne left.2.1 right.2.1, c.ne left.2.2.1 right.2.2.1,
+    d.ne left.2.2.2.1 right.2.2.2.1, e.ne left.2.2.2.2 right.2.2.2.2]
+
+local notation "U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from" => toUnsigned
+local notation "I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from" => toSigned
+local notation "TupleXWVUT.Insts.CoreCmpPartialEqTupleXWVUT.ne" => i64TupleNe
+local notation "core.cmp.PartialEqI64" => integerEq
+local notation "JournalError.Insts.CoreConvertFromError" => SourceLoadView.fromSql
+
+-- ACTUAL PLAN LIMIT
+-- ACTUAL RETIREMENT LIMIT
+-- ACTUAL RELEASE LIMIT
+-- ACTUAL VALUE LIMIT
+-- ACTUAL RESERVATION
+set_option linter.unusedVariables false in
+-- ACTUAL SQL CLOSURE
+-- ACTUAL SQL DICTIONARY
+-- ACTUAL SQL CONVERSION
+set_option linter.unusedVariables false in
+-- ACTUAL LENGTH CLOSURE
+-- ACTUAL LENGTH DICTIONARY
+set_option linter.unusedVariables false in
+-- ACTUAL AGGREGATE CLOSURE
+-- ACTUAL AGGREGATE DICTIONARY
+
+abbrev reservation := capture.source.SourceObservationConfig.required_bytes
+abbrev sqlConvert := controller.lifecycle_inbox.source_work.codec.sql
+abbrev valueLimit := controller.lifecycle_inbox.source_work.codec.VALUE_LIMIT
+abbrev aggregateMapper :=
+  controller.lifecycle_inbox.source_work.codec.load_records.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultTupleI64I64I64I64I64I64Error.call_once
+abbrev aggregateDictionary :=
+  controller.lifecycle_inbox.source_work.codec.load_records.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultTupleI64I64I64I64I64I64Error
+
+def aggregateSql : Str := toStr
+  "SELECT count(*),COALESCE(min(id),0),COALESCE(max(id),0),COALESCE(min(reserve_bytes),0),COALESCE(max(reserve_bytes),0),COALESCE(max(length(state_json)),0) FROM controller_source_work_records"
+
+def queryBounds (connection : SaveRows.Db) : Result BoundsReply :=
+  rusqlite.Connection.query_row ArrayShared0P0.Insts.RusqliteParamsParams aggregateDictionary
+    connection aggregateSql (Std.Array.empty (Dyn (fun item => rusqlite.types.to_sql.ToSql item))) ()
+
+abbrev PolicyRead := SaveRows.Db → Result (core.result.Result (Option Policy) SaveRows.Error)
+abbrev Scan (f : Fields) := SaveRows.Db → Result (Returned f)
+
+section
+variable (policy : PolicyRead)
+local notation "controller.checkpoint.config" => policy
+
+-- ACTUAL PER SESSION
+
+local notation "controller.lifecycle_inbox.source_work.codec.records_per_session" =>
+  controller.lifecycle_inbox.source_work.codec.records_per_session policy
+
+-- ACTUAL RESERVED RECORDS
+
+end
+
+abbrev reserved := controller.lifecycle_inbox.source_work.codec.reserved_records
+
+section
+variable {Node : Type} {f : Fields} (policy : PolicyRead) (scanRows : Scan f)
+local notation "controller.lifecycle_inbox.source_work.codec.Configuration" => Config Node
+local notation "controller.lifecycle_inbox.source_work.SourceWorkRecord" => Row f
+local notation "controller.lifecycle_inbox.source_work.codec.reserved_records" => reserved policy
+local notation "controller.lifecycle_inbox.source_work.codec.scan_loaded_records" => scanRows
+
+-- ACTUAL LOADER
+
+end
+
+abbrev loader := @controller.lifecycle_inbox.source_work.codec.load_records
+
+end SandboxModel.Stage1Protocol.SourceRecordBoundsView

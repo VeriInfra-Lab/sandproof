@@ -1,0 +1,194 @@
+import SourceRecordBoundsView
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRecordBoundsContract
+
+open SourceRecordBoundsView
+
+abbrev recordValueLimit : U64 := 16777216#u64
+
+theorem multiply_exact (left right result : U64) (exactValue : left.val * right.val = result.val) :
+    (left * right : Result U64) = .ok result := by
+  have fits : left.val * right.val ≤ U64.max := by
+    rw [exactValue]
+    scalar_tac
+  obtain ⟨computed, returned, value⟩ := WP.spec_imp_exists (U64.mul_spec fits)
+  rw [UScalar.eq_of_val_eq (value.trans exactValue)] at returned
+  exact returned
+
+theorem add_exact (left right result : U64) (exactValue : left.val + right.val = result.val) :
+    (left + right : Result U64) = .ok result := by
+  have fits : left.val + right.val ≤ U64.max := by
+    rw [exactValue]
+    scalar_tac
+  obtain ⟨computed, returned, value⟩ := WP.spec_imp_exists (U64.add_spec fits)
+  rw [UScalar.eq_of_val_eq (value.trans exactValue)] at returned
+  exact returned
+
+theorem subtract_exact (left right result : U64) (fits : right.val ≤ left.val)
+    (exactValue : left.val - right.val = result.val) : (left - right : Result U64) = .ok result := by
+  obtain ⟨computed, returned, value⟩ := WP.spec_imp_exists (U64.sub_spec fits)
+  rw [UScalar.eq_of_val_eq (value.1.trans exactValue)] at returned
+  exact returned
+
+theorem deployment_ceiling : valueLimit = .ok recordValueLimit := by
+  unfold valueLimit controller.lifecycle_inbox.source_work.codec.VALUE_LIMIT
+  rw [multiply_exact 16#u64 1024#u64 16384#u64 (by decide)]
+  simp only [bind_tc_ok]
+  exact multiply_exact 16384#u64 1024#u64 recordValueLimit (by decide)
+
+theorem retirement_allowance :
+    capture.retirement.MATERIAL_RETIREMENT_RECORD_MAX_BYTES = .ok 69632#u64 := by
+  have plan : UScalar.cast .U64 capture.retirement.MATERIAL_RETIREMENT_PLAN_MAX_BYTES = 16384#u64 := by
+    apply UScalar.eq_of_val_eq
+    have planVal : capture.retirement.MATERIAL_RETIREMENT_PLAN_MAX_BYTES.val = 16384 := by
+      simp [capture.retirement.MATERIAL_RETIREMENT_PLAN_MAX_BYTES]
+    have cast := UScalar.cast_inBounds_spec .U64 capture.retirement.MATERIAL_RETIREMENT_PLAN_MAX_BYTES
+      (by rw [planVal]; scalar_tac)
+    simp only [lift, WP.spec_ok, planVal] at cast
+    exact cast
+  simp only [capture.retirement.MATERIAL_RETIREMENT_RECORD_MAX_BYTES, plan, lift, bind_tc_ok,
+    multiply_exact 4#u64 16384#u64 65536#u64 (by decide)]
+  exact add_exact 65536#u64 4096#u64 69632#u64 (by decide)
+
+def fixedFields (bounds : Bounds) : I64 × I64 × I64 × I64 × I64 :=
+  (bounds.1, bounds.2.1, bounds.2.2.1, bounds.2.2.2.1, bounds.2.2.2.2.1)
+
+def longestPayload (bounds : Bounds) : I64 := bounds.2.2.2.2.2
+
+/-- The first decision after a successful aggregate reply. Length is measured
+    against the original per-row reservation. -/
+def decision (cap reserve rows : U64) (reported : Bounds) : Option SaveRows.Error :=
+  if cap < reserve ∨ recordValueLimit < reserve then some .CorruptStore
+  else if I64.max < (rows.val : Int) ∨ I64.max < (reserve.val : Int) then some .MaintenanceCapacity
+  else if fixedFields reported ≠
+      (UScalar.hcast .I64 rows, 1#i64, UScalar.hcast .I64 rows,
+       UScalar.hcast .I64 reserve, UScalar.hcast .I64 reserve) then some .CorruptStore
+  else if (longestPayload reported).val < 0 ∨ (longestPayload reported).val.toNat > reserve.val then
+    some .CorruptStore
+  else none
+
+def afterBounds {f : Fields} (scanRows : Scan f) (connection : SaveRows.Db)
+    (cap reserve rows : U64) (reported : Bounds) : Result (Returned f) :=
+  match decision cap reserve rows reported with
+  | none => scanRows connection
+  | some failure => .ok (.Err failure)
+
+abbrev Loader (Node : Type) (f : Fields) :=
+  PolicyRead → Scan f → SaveRows.Db → Config Node → Capacity → Result (Returned f)
+
+/-- The same contract for the original and the comparison variant. The first
+    three observations come from the actual arithmetic and aggregate read. -/
+def Contract {Node : Type} {f : Fields} (load : Loader Node f) : Prop :=
+  ∀ (policy : PolicyRead) (scanRows : Scan f) (connection : SaveRows.Db)
+    (config : Config Node) (cap : Capacity) (reserve rows : U64) (reported : Bounds),
+    reservation config.config 1#u64 = .ok reserve →
+    reserved policy connection config.max_sessions = .ok (.Ok rows) →
+    queryBounds connection = .ok (.Ok reported) →
+    load policy scanRows connection config cap =
+      afterBounds scanRows connection cap.max_sql_value_bytes reserve rows reported
+
+end SandboxModel.Stage1Protocol.SourceRecordBoundsContract
+
+namespace SandboxModel.Stage1Protocol.SourceRecordBoundsContract
+
+open SandproofSourceRowSqlSelect SourceRecordBoundsView
+
+def sampleConfig : Config Unit :=
+  ⟨⟨1024#u32, 1#u32, 1#u64, 1#u64, 1#u64, 1#u64⟩, (), 1#u16⟩
+
+def sampleCapacity : Capacity where
+  max_live_sandboxes := 1#u64
+  max_sql_rows := 32#u64
+  max_sql_bytes := 8388608#u64
+  max_sql_value_bytes := 4194304#u64
+  max_receipt_bytes := 65536#u64
+  max_transaction_inputs := 32#u64
+  max_transaction_bytes := 4194304#u64
+  max_database_bytes := 16777216#u64
+  max_wal_bytes := 16777216#u64
+  max_shm_bytes := 1048576#u64
+  checkpoint_scratch_bytes := 16777216#u64
+  max_online_storage_bytes := 67108864#u64
+
+def samplePolicy : PolicyRead := fun _ =>
+  .ok (.Ok (some ⟨3#u64, some sampleCapacity, 1#u64, 4194304#u64, 32#u64, 32#u64,
+    32#u64, 4194304#u64, 1048576#u64, 1#u64⟩))
+
+def sampleBounds (length : I64) : Bounds :=
+  (1#i64, 1#i64, 1#i64, 222212#i64, 222212#i64, length)
+
+/-- One original six-column aggregate carrying the chosen payload length. -/
+def sampleConnection (length : I64) : SaveRows.Db where
+  canonical := ⟨0, fun _ => .ok (.Ok 0), fun _ _ => ⟨0⟩, fun _ _ => .fail .panic⟩
+  statementObject := fun _ => 1
+  columns := fun _ => 6#usize
+  invalidIndex := fun _ index => ⟨index.val⟩
+  firstRow := fun _ statement => .ok (.Ok {
+    object := 2
+    statement := statement
+    column := fun index => .Integer <| match index.val with
+      | 0 | 1 | 2 => 1#i64
+      | 3 | 4 => 222212#i64
+      | _ => length
+    conversionError := fun index _ _ => ⟨index.val⟩
+  })
+
+def sampleScan {f : Fields} : Scan f := fun _ => .ok (.Ok (alloc.vec.Vec.new _))
+
+theorem sample_reservation_exact :
+    reservation sampleConfig.config 1#u64 = .ok 222212#u64 := by
+  have work : core.convert.num.FromU64U32.from 1024#u32 = 1024#u64 := by decide
+  have config : core.convert.num.FromU64U32.from 1#u32 = 1#u64 := by decide
+  simp only [reservation, capture.source.SourceObservationConfig.required_bytes, sampleConfig,
+    work, config, lift, bind_tc_ok, retirement_allowance,
+    capture.retirement.MATERIAL_RELEASE_RECORD_MAX_BYTES,
+    multiply_exact 4#u64 1#u64 4#u64 (by decide),
+    add_exact 1024#u64 4#u64 1028#u64 (by decide),
+    add_exact 1028#u64 8192#u64 9220#u64 (by decide),
+    add_exact 9220#u64 131072#u64 140292#u64 (by decide),
+    add_exact 140292#u64 69632#u64 209924#u64 (by decide),
+    add_exact 209924#u64 4096#u64 214020#u64 (by decide),
+    multiply_exact 1#u64 214020#u64 214020#u64 (by decide)]
+  exact add_exact 214020#u64 8192#u64 222212#u64 (by decide)
+
+theorem sample_count_exact (connection : SaveRows.Db) :
+    reserved samplePolicy connection sampleConfig.max_sessions = .ok (.Ok 1#u64) := by
+  have sessions : core.convert.num.FromU64U16.from 1#u16 = 1#u64 := by decide
+  simp [reserved, controller.lifecycle_inbox.source_work.codec.reserved_records,
+    controller.lifecycle_inbox.source_work.codec.records_per_session, samplePolicy, sampleConfig,
+    core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch, sessions,
+    subtract_exact 3#u64 2#u64 1#u64 (by decide) (by decide),
+    multiply_exact 1#u64 1#u64 1#u64 (by decide), lift]
+
+theorem sample_aggregate_exact (length : I64) :
+    queryBounds (sampleConnection length) = .ok (.Ok (sampleBounds length)) := by
+  simp [queryBounds, rusqlite.Connection.query_row, sampleConnection, issued,
+    ArrayShared0P0.Insts.RusqliteParamsParams, emptyBinding,
+    rusqlite.statement.Statement.ensure_parameter_count, sampleBounds, aggregateDictionary,
+    controller.lifecycle_inbox.source_work.codec.load_records.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultTupleI64I64I64I64I64I64Error,
+    controller.lifecycle_inbox.source_work.codec.load_records.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultTupleI64I64I64I64I64I64Error.call_once,
+    rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex.idx, asValueRef,
+    I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result, core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem sample_equal_length_passes :
+    decision sampleCapacity.max_sql_value_bytes 222212#u64 1#u64 (sampleBounds 222212#i64) = none := by
+  simp [decision, sampleCapacity, fixedFields, longestPayload, sampleBounds, I64.max_eq]
+
+theorem sample_one_over_fails :
+    decision sampleCapacity.max_sql_value_bytes 222212#u64 1#u64 (sampleBounds 222213#i64) =
+      some .CorruptStore := by
+  simp [decision, sampleCapacity, fixedFields, longestPayload, sampleBounds, I64.max_eq]
+
+end SandboxModel.Stage1Protocol.SourceRecordBoundsContract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBoundsContract.deployment_ceiling
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBoundsContract.retirement_allowance
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_reservation_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_count_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_aggregate_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_equal_length_passes
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_one_over_fails

@@ -1,0 +1,37 @@
+import SourceRecordBoundsContract
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRecordBoundsNegative
+
+open SourceRecordBoundsContract SourceRecordBoundsView
+
+variable {f : Fields}
+
+theorem original_guard_witness_reaches_scan_in_wrong_version :
+    loader samplePolicy (sampleScan (f := f)) (sampleConnection 222213#i64) sampleConfig sampleCapacity =
+      sampleScan (sampleConnection 222213#i64) := by
+  unfold loader controller.lifecycle_inbox.source_work.codec.load_records
+  change (do let reserve ← reservation sampleConfig.config 1#u64; _) = _
+  rw [sample_reservation_exact]
+  simp only [bind_tc_ok, sample_count_exact, core.result.Result.Insts.CoreOpsTry.branch]
+  change (do let reply ← queryBounds (sampleConnection 222213#i64); _) = _
+  rw [sample_aggregate_exact]
+  simp [deployment_ceiling, sampleCapacity, sampleBounds, i64TupleNe, anyMismatch, integerEq,
+    controller.lifecycle_inbox.source_work.codec.sql, toSigned, toUnsigned, I64.max_eq,
+    core.result.Result.map_err]
+
+theorem deployment_cap_breaks_same_contract : ¬ Contract (loader (Node := Unit) (f := f)) := by
+  intro contract
+  have required := contract samplePolicy sampleScan (sampleConnection 222213#i64) sampleConfig sampleCapacity
+    222212#u64 1#u64 (sampleBounds 222213#i64)
+    sample_reservation_exact (sample_count_exact _) (sample_aggregate_exact _)
+  rw [original_guard_witness_reaches_scan_in_wrong_version, afterBounds, sample_one_over_fails] at required
+  simp [sampleScan] at required
+
+end SandboxModel.Stage1Protocol.SourceRecordBoundsNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBoundsNegative.original_guard_witness_reaches_scan_in_wrong_version
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBoundsNegative.deployment_cap_breaks_same_contract
