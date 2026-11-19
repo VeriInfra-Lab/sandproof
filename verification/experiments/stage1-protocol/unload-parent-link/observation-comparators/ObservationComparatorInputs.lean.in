@@ -1,0 +1,37 @@
+import ObservationSlot
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.Core
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.Values
+
+open Aeneas Aeneas.Std SandproofObservationComparators
+open controller.lifecycle_inbox.source_work
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationComparators
+
+abbrev Raw := capture.source.RawSourceObservation
+abbrev rawDictionary := capture.source.RawSourceObservation.Insts.CoreCmpPartialEqRawSourceObservation
+
+theorem config_eq (left right : alloc.vec.Vec U8) :
+    alloc.vec.partial_eq.PartialEqVec.eq core.cmp.PartialEqU8 left right =
+      .ok (by classical exact decide (left = right)) := by
+  apply SourceWorkMatch.ContainerInstances.vec_eq
+  intro x y
+  simp
+
+def sample : Raw :=
+  ⟨SourceWorkMatch.Values.digest, ⟨.Vm, "vm"⟩, SourceWorkMatch.Values.source,
+    alloc.vec.Vec.from [123#u8, 125#u8] (by scalar_tac),
+    SourceWorkMatch.Values.digest, SourceWorkMatch.Values.digest, 12#u64, 24#u64⟩
+
+def changedExecutable : Raw :=
+  { sample with executable_sha256 := SourceWorkMatch.Values.otherDigest }
+
+theorem changed_executable_differs : sample ≠ changedExecutable := by
+  intro same
+  have equal := congrArg capture.source.RawSourceObservation.executable_sha256 same
+  exact (by decide : SourceWorkMatch.Values.digest ≠ SourceWorkMatch.Values.otherDigest) equal
+
+end SandboxModel.Stage1Protocol.ObservationComparators
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationComparators.config_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationComparators.changed_executable_differs
