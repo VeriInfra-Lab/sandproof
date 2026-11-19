@@ -1,0 +1,105 @@
+import ObservationPrefixInputs
+import SandboxModel.Lifecycle.Protocol.SourceObservation.Core
+import SandboxModel.Lifecycle.Protocol.ReplayContract
+
+open Aeneas Aeneas.Std SandproofObservationPrefix
+open controller.lifecycle_inbox.source_work
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationPrefix
+
+attribute [local simp] core.result.Result.Insts.CoreOpsTry.branch
+  core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+  core.convert.FromSame
+
+variable {P S T I R W C O A N E : Type}
+variable (q : Call P S T I R W C O A N E)
+
+theorem reject_evidence (p : q.inputs.«matches» q.observation q.work = .ok false) :
+    q.run = .ok (.Err q.rejected.evidence) := by
+  simp [Call.run, source_observation_prefix, p]
+
+theorem begin_error (snapshot : A) (ok : GuardPassed q snapshot) (error : E)
+    (fail : q.inputs.begin q.start = .ok (.Err error)) :
+    q.run = .ok (.Err error) := by
+  simp [Call.run, source_observation_prefix, ok.raw, ok.active, fail]
+
+theorem inbox_error (snapshot : A) (tx : T) (ok : Started q snapshot tx) (error : E)
+    (fail : q.inputs.inbox tx = .ok (.Err error)) :
+    q.run = .ok (.Err error) := by
+  simp [Call.run, source_observation_prefix, ok.raw, ok.active, ok.begin, fail]
+
+theorem missing_inbox (snapshot : A) (tx : T) (ok : Started q snapshot tx)
+    (missing : q.inputs.inbox tx = .ok (.Ok none)) :
+    q.run = .ok (.Err q.rejected.inbox) := by
+  simp [Call.run, source_observation_prefix, ok.raw, ok.active, ok.begin, missing]
+
+theorem authentication_error (snapshot : A) (tx : T) (inbox : I) (ok : InboxRead q snapshot tx inbox)
+    (error : E) (fail : q.inputs.authenticated inbox q.work q.context = .ok (.Err error)) :
+    q.run = .ok (.Err error) := by
+  simp [Call.run, source_observation_prefix, ok.raw, ok.active, ok.begin, ok.loaded, fail]
+
+theorem source_error (snapshot : A) (tx : T) (inbox : I) (ok : Ready q snapshot tx inbox)
+    (error : E) (fail : q.inputs.sources tx = .ok (.Err error)) :
+    q.run = .ok (.Err error) := by
+  simp [Call.run, source_observation_prefix, ok.raw, ok.active, ok.begin, ok.loaded, ok.authenticated, fail]
+
+theorem missing_sources (snapshot : A) (tx : T) (inbox : I) (ok : Ready q snapshot tx inbox)
+    (missing : q.inputs.sources tx = .ok (.Ok none)) :
+    q.run = .ok (.Err q.rejected.sources) := by
+  simp [Call.run, source_observation_prefix, ok.raw, ok.active, ok.begin, ok.loaded, ok.authenticated, missing]
+
+theorem current_error (snapshot : A) (tx : T) (inbox : I) (rows : R)
+    (ok : RowsRead q snapshot tx inbox rows) (error : E)
+    (fail : q.inputs.current tx q.location q.work q.now inbox rows snapshot = .ok (.Err error)) :
+    q.run = .ok (.Err error) := by
+  simp [Call.run, source_observation_prefix, ok.raw, ok.active, ok.begin, ok.loaded,
+    ok.authenticated, ok.loadedRows, fail]
+
+theorem checked_current (snapshot : A) (tx : T) (inbox : I) (rows : R)
+    (ok : RowsRead q snapshot tx inbox rows) (actual : W)
+    (read : q.inputs.current tx q.location q.work q.now inbox rows snapshot = .ok (.Ok actual))
+    (different : Bool) (compare : q.eq.ne actual q.work = .ok different) :
+    q.run = .ok (if different then .Err q.rejected.conflict else .Ok (tx, inbox, rows)) := by
+  simp [Call.run, source_observation_prefix, ok.raw, ok.active, ok.begin, ok.loaded,
+    ok.authenticated, ok.loadedRows, read, compare]
+  split <;> rfl
+
+theorem checked_complete_work (snapshot : A) (tx : T) (inbox : I) (rows : R)
+    (ok : RowsRead q snapshot tx inbox rows) (actual : W)
+    (read : q.inputs.current tx q.location q.work q.now inbox rows snapshot = .ok (.Ok actual))
+    (full : FullReplayContract q.eq.eq)
+    (standardNe : q.eq.ne actual q.work = (q.eq.eq actual q.work >>= fun same => Result.ok (!same))) :
+    q.run = .ok (by classical exact
+      if actual = q.work then .Ok (tx, inbox, rows) else .Err q.rejected.conflict) := by
+  classical
+  have compared : q.eq.ne actual q.work = .ok (decide (actual ≠ q.work)) := by
+    rw [standardNe, full actual q.work]
+    by_cases same : actual = q.work <;> simp [same]
+  rw [checked_current q snapshot tx inbox rows ok actual read _ compared]
+  by_cases same : actual = q.work <;> simp [same]
+
+/-- Reuse the actual decoded guard before the transaction and all later port responses. -/
+theorem actual_evidence_first (input : Call P S T I R W C SourceObservation.Observation A N E)
+    (requirement : W → SourceObservation.Requirement)
+    (in_original_call : input.inputs.«matches» input.observation input.work =
+      capture.source.RawSourceObservation.matches input.observation (requirement input.work))
+    (invalid : ¬ SourceObservation.Accepts input.observation (requirement input.work)) :
+    input.run = .ok (.Err input.rejected.evidence) := by
+  apply reject_evidence
+  rw [in_original_call, SourceObservation.matches_exact]
+  simp [SourceObservation.Expected, invalid]
+
+end SandboxModel.Stage1Protocol.ObservationPrefix
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.reject_evidence
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.begin_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.inbox_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.missing_inbox
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.authentication_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.source_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.missing_sources
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.current_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.checked_current
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.checked_complete_work
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.actual_evidence_first

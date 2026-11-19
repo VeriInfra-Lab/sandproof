@@ -1,0 +1,50 @@
+import SandproofObservationPrefix.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofObservationPrefix
+open controller.lifecycle_inbox.source_work
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationPrefix
+
+structure Call (P S T I R W C O A N E : Type) where
+  eq : core.cmp.PartialEq W W
+  clone : core.clone.Clone A
+  inputs : SourceObservationPrefix P S T I R W C O A N E
+  start : S
+  location : N
+  active : A
+  work : W
+  context : C
+  observation : O
+  now : I64
+  rejected : ObservationPrefixErrors E
+
+variable {P S T I R W C O A N E : Type}
+
+def Call.run (q : Call P S T I R W C O A N E) :
+    Result (core.result.Result (T × I × R) E) :=
+  source_observation_prefix q.eq q.clone q.inputs q.start q.location q.active
+    q.work q.context q.observation q.now q.rejected
+
+structure GuardPassed (q : Call P S T I R W C O A N E) (snapshot : A) : Prop where
+  raw : q.inputs.«matches» q.observation q.work = .ok true
+  active : q.clone.clone q.active = .ok snapshot
+
+structure Started (q : Call P S T I R W C O A N E) (snapshot : A) (tx : T)
+    : Prop extends GuardPassed q snapshot where
+  begin : q.inputs.begin q.start = .ok (.Ok tx)
+
+structure InboxRead (q : Call P S T I R W C O A N E) (snapshot : A) (tx : T) (inbox : I)
+    : Prop extends Started q snapshot tx where
+  loaded : q.inputs.inbox tx = .ok (.Ok (some inbox))
+
+structure Ready (q : Call P S T I R W C O A N E) (snapshot : A) (tx : T) (inbox : I)
+    : Prop extends InboxRead q snapshot tx inbox where
+  authenticated : q.inputs.authenticated inbox q.work q.context = .ok (.Ok ())
+
+structure RowsRead (q : Call P S T I R W C O A N E) (snapshot : A)
+    (tx : T) (inbox : I) (rows : R) : Prop extends Ready q snapshot tx inbox where
+  loadedRows : q.inputs.sources tx = .ok (.Ok (some rows))
+
+end SandboxModel.Stage1Protocol.ObservationPrefix

@@ -1,0 +1,109 @@
+use super::*;
+use rusqlite::{Connection, TransactionBehavior};
+use std::time::Duration;
+
+struct NoCommitHooks;
+
+impl CrashInjector for NoCommitHooks {
+    fn hit(&mut self, point: CrashPoint) -> Result<(), JournalError> {
+        panic!("a rejected observation prefix reached commit hook {point:?}");
+    }
+}
+
+#[test]
+fn source_observation_prefix_invalid_evidence_precedes_sqlite_begin() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("prefix.db");
+    let (mut journal, _) = ready(&path);
+    let stored = prepare(&mut journal);
+    let valid = observation(stored.work.requirement());
+    let mut invalid = valid.clone();
+    invalid.configuration.clear();
+    let context = v3::context();
+    journal
+        .journal
+        .connection
+        .busy_timeout(Duration::ZERO)
+        .unwrap();
+    let mut other = Connection::open(&path).unwrap();
+    let locked = other
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .unwrap();
+    let busy: i64 = journal
+        .journal
+        .connection
+        .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(
+        busy, 1,
+        "the separate SQLite writer must block WAL truncation"
+    );
+    let valid_result = journal.save_source_observation::<Evidence>(
+        &stored.work,
+        &context,
+        valid,
+        10,
+        &mut NoCommitHooks,
+    );
+    assert!(
+        matches!(valid_result, Err(JournalError::MaintenanceCapacity)),
+        "the actual Begin lock must reject a valid observation: {valid_result:?}"
+    );
+    let invalid_result = journal.save_source_observation::<Evidence>(
+        &stored.work,
+        &context,
+        invalid,
+        10,
+        &mut NoCommitHooks,
+    );
+    assert!(
+        matches!(invalid_result, Err(JournalError::InvalidHostEvidence)),
+        "invalid observation must precede actual SQLite Begin: {invalid_result:?}"
+    );
+    locked.rollback().unwrap();
+    let after = codec::load(&journal.journal.connection).unwrap().unwrap();
+    assert_eq!(after.records.as_slice(), &[stored]);
+}
+
+#[test]
+fn source_observation_prefix_authentication_precedes_corrupt_sources() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("prefix.db");
+    let (mut journal, _) = ready(&path);
+    let stored = prepare(&mut journal);
+    let valid = observation(stored.work.requirement());
+    let context = v3::context();
+    let mut other_node = context.expected_node().clone();
+    other_node.node_generation = 999.try_into().unwrap();
+    assert_ne!(&other_node, context.expected_node());
+    let wrong_context = AuthenticatedCenterContext::from_verified_peer_registration(
+        context.center().clone(),
+        other_node,
+    );
+    assert_eq!(
+        journal.journal.connection.execute(
+            "UPDATE controller_source_work_records SET sha256=zeroblob(32) WHERE work_key IS NOT NULL",
+            [],
+        ).unwrap(),
+        1
+    );
+    let wrong = journal.save_source_observation::<Evidence>(
+        &stored.work,
+        &wrong_context,
+        valid.clone(),
+        10,
+        &mut NoCommitHooks,
+    );
+    assert!(matches!(wrong, Err(JournalError::Conflict)), "{wrong:?}");
+    let correct = journal.save_source_observation::<Evidence>(
+        &stored.work,
+        &context,
+        valid,
+        10,
+        &mut NoCommitHooks,
+    );
+    assert!(
+        matches!(correct, Err(JournalError::CorruptStore)),
+        "{correct:?}"
+    );
+}

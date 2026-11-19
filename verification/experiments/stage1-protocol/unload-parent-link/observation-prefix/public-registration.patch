@@ -1,0 +1,12 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39,1 +39,9 @@
++## V3 来源观察保存的前置首错候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。实际前缀复用完整原观察守卫。
++定理保持 Begin、Inbox、认证、来源读回、当前来源及全值冲突的原拒绝顺序。
++父 IR 核对同一事务及仅成功进入查找。实际将 Begin 提前的 Rust 错误版被同一规格拒绝。
++[精确输入与复验](../verification/experiments/stage1-protocol/unload-parent-link/observation-prefix/README.md)。
++
++
+ ## V3 首次卸载使用同一条原执行记录
