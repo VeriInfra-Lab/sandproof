@@ -1,0 +1,67 @@
+trait SourceObservationPrefix<S, T, I, R, W, C, O, A, N, E> {
+    fn matches(observation: &O, work: &W) -> bool;
+    fn begin(start: S) -> Result<T, E>;
+    fn inbox(tx: &T) -> Result<Option<I>, E>;
+    fn authenticated(inbox: &I, work: &W, context: &C) -> Result<(), E>;
+    fn sources(tx: &T) -> Result<Option<R>, E>;
+    fn current(
+        tx: &T, namespace: &N, work: &W, now_ms: i64, inbox: &I, sources: &R, active: &A,
+    ) -> Result<W, E>;
+}
+
+struct ObservationPrefixErrors<E> {
+    evidence: E,
+    inbox: E,
+    sources: E,
+    conflict: E,
+}
+
+fn source_observation_prefix<S, T, I, R, W: PartialEq, C, O, A: Clone, N, E,
+    Inputs: SourceObservationPrefix<S, T, I, R, W, C, O, A, N, E>>(
+    start: S, namespace: &N, active: &A, work: &W, context: &C, observation: &O, now_ms: i64,
+    rejected: ObservationPrefixErrors<E>,
+) -> Result<(T, I, R), E> {
+    OBSERVATION_PREFIX
+    Ok((tx, inbox, sources))
+}
+
+struct JournalObservationPrefix<E>(std::marker::PhantomData<E>);
+impl<'a, E: HostEvidence + DeserializeOwned>
+    SourceObservationPrefix<
+        (&'a mut rusqlite::Connection, &'a super::super::transaction::CommittedWorld),
+        super::WorldTransaction<'a>, super::Inbox, codec::Sources, SourceWork, AuthenticatedCenterContext,
+        RawSourceObservation, Option<crate::capture::HostEpochObservation>, String, JournalError,
+    > for JournalObservationPrefix<E>
+{
+    fn matches(observation: &RawSourceObservation, work: &SourceWork) -> bool {
+        observation.matches(work.requirement())
+    }
+    fn begin(
+        start: (&'a mut rusqlite::Connection, &'a super::super::transaction::CommittedWorld),
+    ) -> Result<super::WorldTransaction<'a>, JournalError> {
+        super::WorldTransaction::begin(start.0, start.1)
+    }
+    fn inbox(tx: &super::WorldTransaction<'a>) -> Result<Option<super::Inbox>, JournalError> {
+        super::codec::load(tx)
+    }
+    fn authenticated(
+        inbox: &super::Inbox, work: &SourceWork, context: &AuthenticatedCenterContext,
+    ) -> Result<(), JournalError> {
+        authenticated(inbox, work.request(), context)
+    }
+    fn sources(tx: &super::WorldTransaction<'a>) -> Result<Option<codec::Sources>, JournalError> {
+        codec::load(tx)
+    }
+    fn current(
+        tx: &super::WorldTransaction<'a>, namespace: &String, work: &SourceWork, now_ms: i64,
+        inbox: &super::Inbox, sources: &codec::Sources,
+        active: &Option<crate::capture::HostEpochObservation>,
+    ) -> Result<SourceWork, JournalError> {
+        snapshot::current::<E>(
+            tx, namespace, work.request(), now_ms,
+            snapshot::CurrentSource {
+                world: &tx.world(), inbox, limits: &sources.config, active: active.as_ref(),
+            },
+        )
+    }
+}

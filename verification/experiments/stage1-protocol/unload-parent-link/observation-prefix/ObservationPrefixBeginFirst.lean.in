@@ -1,0 +1,35 @@
+import ObservationPrefixInputs
+import SandboxModel.Lifecycle.Protocol.SourceObservation.Core
+
+open Aeneas Aeneas.Std SandproofObservationPrefix
+open controller.lifecycle_inbox.source_work
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationPrefix
+
+variable {P S T I R W C A N E : Type}
+
+theorem moved_begin_masks_invalid_evidence
+    (q : Call P S T I R W C SourceObservation.Observation A N E)
+    (requirement : W → SourceObservation.Requirement) (error : E)
+    (real_guard : q.inputs.«matches» q.observation q.work =
+      capture.source.RawSourceObservation.matches q.observation (requirement q.work))
+    (invalid : ¬ SourceObservation.Accepts q.observation (requirement q.work))
+    (failing_begin : q.inputs.begin q.start = .ok (.Err error))
+    (distinct : error ≠ q.rejected.evidence) :
+    q.inputs.«matches» q.observation q.work = .ok false ∧
+    q.run = .ok (.Err error) ∧ q.run ≠ .ok (.Err q.rejected.evidence) := by
+  have raw : q.inputs.«matches» q.observation q.work = .ok false := by
+    rw [real_guard, SourceObservation.matches_exact]
+    simp [SourceObservation.Expected, invalid]
+  have actual : q.run = .ok (.Err error) := by
+    simp [Call.run, source_observation_prefix, failing_begin,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  refine ⟨raw, actual, ?_⟩
+  intro equal
+  exact distinct (core.result.Result.Err.inj (Result.ok_injective (actual.symm.trans equal)))
+
+end SandboxModel.Stage1Protocol.ObservationPrefix
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationPrefix.moved_begin_masks_invalid_evidence
