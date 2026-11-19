@@ -39,6 +39,21 @@ fn assert_payload(row: &Row, record: &SourceWorkRecord, reserve: i64) {
     assert_eq!(row.reserve, reserve);
 }
 
+fn swap_fixture_slots(connection: &Connection, first: i64, second: i64) {
+    // This fixture operation preserves both payloads and all pre-reservations.
+    for (new, old) in [(i64::MAX, second), (second, first), (first, i64::MAX)] {
+        assert_eq!(
+            connection
+                .execute(
+                    "UPDATE controller_source_work_records SET id=?1 WHERE id=?2",
+                    [new, old],
+                )
+                .unwrap(),
+            1
+        );
+    }
+}
+
 #[test]
 fn retains_existing_slot_then_uses_minimum_vacancy_for_an_absent_key() {
     let dir = tempfile::tempdir().unwrap();
@@ -49,17 +64,7 @@ fn retains_existing_slot_then_uses_minimum_vacancy_for_an_absent_key() {
     let empty = row(&tx, 3);
     assert_payload(&occupied, &original, empty.reserve);
     assert!(empty.key.is_none());
-    // Swap two fixture IDs before the save, preserving row count and reservations.
-    for (new, old) in [(i64::MAX, 3), (3, 1), (1, i64::MAX)] {
-        assert_eq!(
-            tx.execute(
-                "UPDATE controller_source_work_records SET id=?1 WHERE id=?2",
-                [new, old],
-            )
-            .unwrap(),
-            1
-        );
-    }
+    swap_fixture_slots(&tx, 1, 3);
     let other_empty = row(&tx, 2);
     let mut candidate = codec::load(&tx).unwrap().unwrap();
     assert_eq!(
@@ -111,4 +116,132 @@ fn rejects_zero_updates_without_reporting_a_saved_payload() {
     assert_payload(&row(&tx, 1), &candidate.records[0], before.reserve);
     assert_eq!(row(&tx, 2), vacant);
     assert_eq!(codec::load(&tx).unwrap().unwrap(), candidate);
+}
+
+const OBSERVED_PREFIX: &str = "second source update rejected after observing the exact first row";
+
+fn reject_second_update_after_prefix(connection: &Connection, expected: &SourceWorkRecord) {
+    let bytes = serde_json::to_vec(expected).unwrap();
+    let sha: [u8; 32] = Sha256::digest(&bytes).into();
+    connection
+        .execute_batch(
+            "CREATE TEMP TABLE expected_source_prefix(state_json BLOB, sha256 BLOB, work_key BLOB);",
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO expected_source_prefix VALUES (?1, ?2, ?3)",
+            params![
+                bytes,
+                sha.as_slice(),
+                expected.work.requirement.work_binding.as_bytes().as_slice()
+            ],
+        )
+        .unwrap();
+    connection
+        .execute_batch(&format!(
+            "CREATE TEMP TRIGGER reject_second_source_update
+             BEFORE UPDATE ON controller_source_work_records WHEN OLD.id = 2 BEGIN
+                SELECT CASE WHEN EXISTS (
+                    SELECT 1 FROM controller_source_work_records AS row, expected_source_prefix AS expected
+                    WHERE row.id = 1 AND row.state_json = expected.state_json
+                      AND row.sha256 = expected.sha256 AND row.work_key = expected.work_key
+                ) THEN RAISE(ABORT, '{OBSERVED_PREFIX}')
+                  ELSE RAISE(ABORT, 'second update did not observe the exact first row') END;
+             END;"
+        ))
+        .unwrap();
+}
+
+#[test]
+fn second_update_failure_rolls_back_the_source_observation_prefix() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("row-writer-rollback.db");
+    let (mut journal, _, intent) = running_successor(&path);
+    let next = second_unload(&intent);
+    journal
+        .record_lifecycle_intent(&next, &v3::context(), &mut NeverCrash)
+        .unwrap();
+    let current = journal
+        .prepare_lifecycle_source_work::<FullEvidence>(&next, &v3::context(), 10, &mut NeverCrash)
+        .unwrap();
+    let observed = observation(current.work.requirement());
+    let mut expected = current.clone();
+    expected.observation = Some(observed.clone());
+
+    let tx = journal.journal.connection.unchecked_transaction().unwrap();
+    swap_fixture_slots(&tx, 1, 2);
+    tx.commit().unwrap();
+    let before = journal.lifecycle_source_work(&v3::config().node).unwrap();
+    assert_eq!(before[0], current);
+    assert_eq!(before.len(), 2);
+    assert!(before[1].restore.as_ref().unwrap().material_use);
+    let world = journal.world().unwrap();
+    let rows = (
+        row(&journal.journal.connection, 1),
+        row(&journal.journal.connection, 2),
+    );
+    reject_second_update_after_prefix(&journal.journal.connection, &expected);
+
+    let result = journal.save_source_observation::<FullEvidence>(
+        &current.work,
+        &v3::context(),
+        observed.clone(),
+        10,
+        &mut NeverCrash,
+    );
+    let Err(JournalError::Sqlite(rusqlite::Error::SqliteFailure(error, Some(message)))) = result
+    else {
+        panic!("expected the second SQLite update failure, got {result:?}");
+    };
+    assert_eq!(
+        error.extended_code,
+        rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER
+    );
+    assert_eq!(message, OBSERVED_PREFIX);
+    assert!(journal.journal.connection.is_autocommit());
+    assert_eq!(
+        row(&journal.journal.connection, 1),
+        rows.0,
+        "the failed save must roll back the updated first row"
+    );
+    assert_eq!(row(&journal.journal.connection, 2), rows.1);
+
+    // The failure trigger was connection-local. Reopen the exact file and check
+    // durable state before issuing the same observation once more.
+    drop(journal);
+    let mut journal = v3::open(&path);
+    assert_eq!(row(&journal.journal.connection, 1), rows.0);
+    assert_eq!(row(&journal.journal.connection, 2), rows.1);
+    assert_eq!(journal.world().unwrap(), world);
+    assert_eq!(
+        journal.lifecycle_source_work(&v3::config().node).unwrap(),
+        before
+    );
+    bootstrap(&mut journal);
+    assert_eq!(
+        journal
+            .save_source_observation::<FullEvidence>(
+                &current.work,
+                &v3::context(),
+                observed,
+                10,
+                &mut NeverCrash,
+            )
+            .unwrap(),
+        expected
+    );
+    drop(journal);
+    let journal = v3::open(&path);
+    assert_payload(
+        &row(&journal.journal.connection, 1),
+        &expected,
+        rows.0.reserve,
+    );
+    assert_eq!(row(&journal.journal.connection, 2), rows.1);
+    assert_eq!(
+        journal.lifecycle_source_work(&v3::config().node).unwrap(),
+        [expected, before[1].clone()]
+    );
+    assert_eq!(journal.world().unwrap(), world);
 }
