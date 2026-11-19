@@ -564,6 +564,19 @@ Linux/XFS 的写入隔离按[精确 A3 合同](formal/dependencies.md#a3整文�
 helper 可编译或新合同已写完报告验收通过。逻辑预算保持保守全量上界，不从共享块占用
 推导允许提前删除、退额或后续 CoW 写入不会失败；#745 自动回收仍单独处理。
 
+## E9 位置复用后迟到动作的工程验收范围
+
+[E9 验收场景](testing-plan.md)的独立增量覆盖位置复用后的旧材料回执及旧 Stop/Cleanup
+重放，来源见 [#641](https://github.com/VeriInfra-Lab/sandproof/issues/641)。改动的 Rust
+只在 `controller-service` 的 `source_work/tests/material_retirement/application.rs` 测试中。
+真实 SQLite 回归使用受控宿主回执，检查数据库重开后旧回执只能结算原材料计划；物理
+位置复用、同伴仍能执行命令及实际资源回收以各自 KVM 场景在最终候选上的记录为准。
+
+七份既有冻结清单收录上述 Rust 测试文件，其中五份也收录实机场景共用的
+`tests/system/lifecycle_unload_retirement.py`。该工程增量分别新增一条或两条输入失配。
+历史定理保留各自原输入和适用版本；相应证明批次核对完整闭包并执行原有验收后，
+才能更新冻结记录。迟到回执的实现对应和系统组合仍按原证明计划追踪。
+
 ## 后继接管后的材料退休：变更与待证边界（#745）
 
 本批基线为 integration `da45aa1e934ee6931f6c45ea517419992811757d`（[#746](https://github.com/VeriInfra-Lab/sandproof/pull/746)），

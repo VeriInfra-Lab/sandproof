@@ -80,8 +80,10 @@ def terminal_outbox(runtime, conn, local, operation, capacity, expected_identity
                 or not equal(identity['generation'], expected_identity['generation'])
                 or not equal(identity['attempt'], command['attempt'])):
             raise ValueError('terminal observation action has a foreign complete identity')
-        result.append((action, state, None if receipt is None else
-                       json.loads(receipt, object_pairs_hook=unique_keys)))
+        decoded_receipt = None if receipt is None else json.loads(receipt, object_pairs_hook=unique_keys)
+        if decoded_receipt is None and receipt is not None:
+            raise ValueError('stored outbox receipt cannot be JSON null')
+        result.append((action, state, decoded_receipt))
     return result
 
 
