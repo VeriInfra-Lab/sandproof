@@ -1,0 +1,58 @@
+import RowWriteInputs
+
+open Aeneas Aeneas.Std SandproofSourceRowWrite
+open controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowWrite
+
+variable {Db E Check : Type} (ops : SourceRowEffects Check Db E)
+variable (connection : Db) (key : Key) (bytes : Slice U8)
+
+local macro "row_simp" : tactic => `(tactic|
+  simp [write_candidate_record_using, rowOutcome, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, *])
+
+theorem existing_error (error : E) (found : ops.existing connection key = .ok (.Err error)) :
+    write_candidate_record_using ops connection key bytes = .ok (.Err error) := by
+  row_simp
+
+theorem vacancy_error (error : E) (missing : ops.existing connection key = .ok (.Ok none))
+    (vacancy : ops.vacant connection = .ok (.Err error)) :
+    write_candidate_record_using ops connection key bytes = .ok (.Err error) := by
+  row_simp
+
+theorem no_vacancy (error : E) (missing : ops.existing connection key = .ok (.Ok none))
+    (vacancy : ops.vacant connection = .ok (.Ok none)) (capacity : ops.capacity = .ok error) :
+    write_candidate_record_using ops connection key bytes = .ok (.Err error) := by
+  row_simp
+
+theorem original_update_result (slot : I64) (sha : Key) (badCount : E)
+    (selected : Selected ops connection key slot) (hashed : ops.digest bytes = .ok sha)
+    (returned : core.result.Result Usize E) (written : ops.update connection bytes sha key slot = .ok returned)
+    (corrupt : ops.corrupt = .ok badCount) :
+    write_candidate_record_using ops connection key bytes = .ok (rowOutcome badCount returned) := by
+  cases selected <;> cases returned <;> row_simp
+  all_goals split <;> simp_all
+
+private theorem witness_response (count : Usize) :
+    write_candidate_record_using (witness count) 17 keyWitness bytesWitness = .ok (rowOutcome .corruptCount (.Ok count)) := by
+  have found : Selected (witness count) 17 keyWitness 13#i64 := .existing (by simp [witness])
+  exact original_update_result (witness count) 17 keyWitness bytesWitness 13#i64 digestWitness .corruptCount found rfl
+    (.Ok count) (by simp [witness]) rfl
+
+theorem exact_update_witness : write_candidate_record_using (witness 1#usize) 17 keyWitness bytesWitness = .ok (.Ok ()) := by
+  simpa [rowOutcome] using witness_response 1#usize
+
+theorem zero_update_rejected : write_candidate_record_using (witness 0#usize) 17 keyWitness bytesWitness =
+    .ok (.Err .corruptCount) := by
+  simpa [rowOutcome] using witness_response 0#usize
+
+end SandboxModel.Stage1Protocol.SourceRowWrite
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowWrite.existing_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowWrite.vacancy_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowWrite.no_vacancy
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowWrite.original_update_result
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowWrite.exact_update_witness
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowWrite.zero_update_rejected

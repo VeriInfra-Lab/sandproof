@@ -1,0 +1,20 @@
+import RowWriteInputs
+
+open Aeneas Aeneas.Std SandproofSourceRowWrite
+open controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowWrite
+
+theorem zero_update_accepted : write_candidate_record_using (witness 0#usize) 17 keyWitness bytesWitness = .ok (.Ok ()) := by
+  simp [write_candidate_record_using, witness, core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem zero_update_violates_same_result : write_candidate_record_using (witness 0#usize) 17 keyWitness bytesWitness ≠
+    .ok (rowOutcome RowFault.corruptCount (.Ok 0#usize)) := by
+  rw [zero_update_accepted]
+  simp [rowOutcome]
+
+end SandboxModel.Stage1Protocol.SourceRowWrite
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowWrite.zero_update_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowWrite.zero_update_violates_same_result
