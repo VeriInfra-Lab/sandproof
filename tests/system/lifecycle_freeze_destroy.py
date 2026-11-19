@@ -165,6 +165,7 @@ def pending_stop_facts(runtime,conn,local,capacity):
 class FreezeDestroyProbe(CaptureHandoffProbe):
     hold_source_process = True
     continue_source_before_stop = True
+    require_recovered_freeze_receipt = False
 
     def __init__(self,runtime,client,physical_running):
         super().__init__(runtime,client,physical_running,'freeze-receipt')
@@ -367,7 +368,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         snapshot['original_actions']=snapshot.pop('resume_actions')
         return snapshot
 
-    def _inventory(self,snapshot):
+    def _inventory(self,snapshot,*,terminal_effects=False):
         originals=snapshot['original_actions'];all_rows=originals+snapshot['terminal_actions']
         freeze=[r for r in originals if 'FreezeVm' in r[0]['command']['logical']['command']]
         if len(freeze)!=1 or not equal(freeze[0][0],self.action):raise ValueError('original Freeze missing or replaced')
@@ -376,13 +377,15 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
             raise ValueError('terminal frozen Unload scheduled new capture or execution')
         self._no_full(snapshot['sources'],terminal=True)
         observed=self._success_observation(freeze[0],'Frozen')
+        if terminal_effects and self.require_recovered_freeze_receipt and observed is None:
+            raise ValueError('successful receipt for the original Freeze required before Stop or Cleanup')
         if observed is not None and not equal(observed,dict(pid=self.prior['source']['pid'],
                 start_ticks=self.prior['source']['start_time_ticks'],boot_id=self.prior['source']['boot_id'])):
             raise ValueError('late original Freeze observation names another process')
         return all_rows
 
     def _stop_barrier(self,snapshot,*,held_stop=None):
-        self._inventory(snapshot);native=snapshot['native'];operation=native['current_operation']
+        self._inventory(snapshot, terminal_effects=True);native=snapshot['native'];operation=native['current_operation']
         binding=self.prior['context']['binding']
         _u64(native['epoch'])
         if (native['terminal'] is not True or native['phase']!='Revoking'
@@ -482,7 +485,8 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
             raise ValueError('one original Stop release required before cleanup cut')
         deadline=min(deadline,self.deadline)
         if self.terminal_host.wait(timeout=remaining(deadline))!=86:raise ValueError('original Cleanup-success/pre-SQL cut required')
-        self._configuration();snapshot=self._read_terminal(deadline);self._inventory(snapshot)
+        self._configuration();snapshot=self._read_terminal(deadline)
+        self._inventory(snapshot, terminal_effects=True)
         epoch=self.before_stop['native']['epoch'];binding=self.prior['context']['binding']
         expected=dict(sandbox=self.prior['local']['sandbox'],generation=binding['generation'],vm=binding['vm'])
         stops=[r for r in snapshot['terminal_actions'] if 'StopVm' in r[0]['command']['logical']['command']]
@@ -529,6 +533,7 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
     or Stop whose scheduling itself needs the original Freeze observation.
     """
     response_restore_snapshot = None
+    require_recovered_freeze_receipt = True
 
     def _read_kill_ledger(self, conn, local, terminal, capacity):
         namespace = self.runtime.services.native_pools[0]['namespace']
