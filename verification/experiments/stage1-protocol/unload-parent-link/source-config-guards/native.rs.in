@@ -1,0 +1,110 @@
+#[cfg(test)]
+mod source_config_guard_contract {
+    use super::*;
+
+    type LimitCase = (
+        &'static str,
+        u64,
+        u64,
+        fn(&mut SourceObservationConfig, u64),
+    );
+
+    fn healthy() -> SourceObservationConfig {
+        SourceObservationConfig {
+            max_work_bytes: 1024,
+            max_configuration_bytes: 1,
+            max_executable_bytes: 1,
+            max_kernel_bytes: 1,
+            max_disk_bytes: 1,
+            max_material_bytes: 1,
+        }
+    }
+
+    #[test]
+    fn source_config_guard_has_every_inclusive_bound() {
+        let cases: [LimitCase; 6] = [
+            ("max_work_bytes", 1024, 1_048_576, |c, v| {
+                c.max_work_bytes = u32::try_from(v).unwrap();
+            }),
+            ("max_configuration_bytes", 1, 1_048_576, |c, v| {
+                c.max_configuration_bytes = u32::try_from(v).unwrap();
+            }),
+            ("max_executable_bytes", 1, 67_108_864, |c, v| {
+                c.max_executable_bytes = v;
+            }),
+            ("max_kernel_bytes", 1, 268_435_456, |c, v| {
+                c.max_kernel_bytes = v;
+            }),
+            ("max_disk_bytes", 1, i64::MAX as u64, |c, v| {
+                c.max_disk_bytes = v;
+            }),
+            ("max_material_bytes", 1, i64::MAX as u64, |c, v| {
+                c.max_material_bytes = v;
+            }),
+        ];
+        assert!(healthy().valid());
+        let mut upper = healthy();
+        for (field, low, high, set) in cases {
+            for value in [low - 1, low, high, high + 1] {
+                let mut candidate = healthy();
+                set(&mut candidate, value);
+                assert_eq!(
+                    candidate.valid(),
+                    low <= value && value <= high,
+                    "every source configuration bound must be checked: {field}={value}"
+                );
+            }
+            set(&mut upper, high);
+        }
+        assert!(upper.valid());
+    }
+
+    #[test]
+    fn source_config_guard_rejects_before_record_aggregate() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal =
+            super::super::tests::proof_source_config_guard_fixture(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let baseline = load(connection).unwrap().unwrap();
+        for (sessions, zero_configuration) in [(1, true), (0, false), (4097, false)] {
+            let tx = connection.unchecked_transaction().unwrap();
+            let bytes: Vec<u8> = tx
+                .query_row(
+                    "SELECT state_json FROM controller_source_work WHERE id=1",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            let mut config: Configuration = serde_json::from_slice(&bytes).unwrap();
+            config.max_sessions = sessions;
+            if zero_configuration {
+                config.config.max_configuration_bytes = 0;
+            }
+            let changed = serde_json::to_vec(&config).unwrap();
+            let sha = Sha256::digest(&changed);
+            assert_eq!(
+                tx.execute(
+                    "UPDATE controller_source_work SET state_json=?1,sha256=?2 WHERE id=1",
+                    params![changed, sha.as_slice()],
+                )
+                .unwrap(),
+                1
+            );
+            assert!(
+                tx.execute(
+                    "UPDATE controller_source_work_records SET reserve_bytes='guard-sentinel'",
+                    [],
+                )
+                .unwrap()
+                    > 0
+            );
+            let outcome = load(&tx);
+            assert!(
+                matches!(outcome, Err(JournalError::CorruptStore)),
+                "invalid source configuration must reject before the aggregate: {outcome:?}"
+            );
+            tx.rollback().unwrap();
+            assert_eq!(load(connection).unwrap().unwrap(), baseline);
+        }
+    }
+}

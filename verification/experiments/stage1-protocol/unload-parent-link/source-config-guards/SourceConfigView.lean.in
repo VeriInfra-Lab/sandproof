@@ -1,0 +1,16 @@
+import SourceMetadata
+
+open Aeneas Aeneas.Std Result
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Limits Config)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceConfigView
+
+local notation "capture.source.SourceObservationConfig" => Limits
+local notation "core.ops.range.RangeInclusive.contains" => SourceMetadataView.rangeContains
+
+-- ACTUAL VALID
+
+abbrev valid := capture.source.SourceObservationConfig.valid
+
+end SandboxModel.Stage1Protocol.SourceConfigView

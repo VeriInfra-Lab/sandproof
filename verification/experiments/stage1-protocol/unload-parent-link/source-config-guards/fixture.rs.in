@@ -1,0 +1,5 @@
+pub(super) fn proof_source_config_guard_fixture(path: &Path) -> ControllerJournal {
+    let (mut journal, _) = ready(path);
+    let _ = prepare(&mut journal);
+    journal
+}

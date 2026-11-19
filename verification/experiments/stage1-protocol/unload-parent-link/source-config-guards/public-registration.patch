@@ -1,0 +1,11 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,8 @@
++## V3 来源配置合法域候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。六项原限制及 1 到 4096 会话范围
++有实际生成体充要条件；非法配置在原父读取中直接拒绝并跳过原记录回调。
++原版与遗漏配置长度检查版使用同一合同。解码、同事务与实际资源继续具名提供。
++[原版和错误版复验](../verification/experiments/stage1-protocol/unload-parent-link/source-config-guards/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录

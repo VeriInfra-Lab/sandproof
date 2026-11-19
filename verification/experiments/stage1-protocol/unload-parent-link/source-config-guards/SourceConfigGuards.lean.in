@@ -1,0 +1,101 @@
+import SourceConfigSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Limits Config Capacity)
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceConfigGuards
+
+open SourceConfigSpec
+
+theorem actual_valid_is_parent (limits : Limits) :
+    SourceConfigView.valid limits = SourceMetadataView.valid limits := by rfl
+
+theorem actual_guard_has_all_six_bounds : Contract SourceConfigView.valid := by
+  intro limits
+  simp only [SourceConfigView.valid,
+    SourceConfigView.capture.source.SourceObservationConfig.valid,
+    core.ops.range.RangeInclusive.new, bind_tc_ok, range32, range64, lift]
+  split_ifs <;> simp_all [Valid, I64.rMax]
+
+theorem session_guard_is_exact (value : U16) :
+    SourceMetadataView.sessionValid value = .ok (decide (SessionsValid value)) := by
+  simp [SourceMetadataView.sessionValid, core.ops.range.RangeInclusive.new, range16, SessionsValid]
+
+theorem original_limits_accepted : SourceConfigView.valid sample = .ok true := by
+  rw [actual_guard_has_all_six_bounds]
+  simp only [sample_valid, decide_true]
+
+theorem zero_configuration_rejected :
+    SourceConfigView.valid zeroConfiguration = .ok false := by
+  rw [actual_guard_has_all_six_bounds]
+  simp only [zero_configuration_invalid, decide_false]
+
+theorem inclusive_sessions_accepted :
+    SourceMetadataView.sessionValid 1#u16 = .ok true ∧
+    SourceMetadataView.sessionValid 4096#u16 = .ok true := by
+  simp [session_guard_is_exact, SessionsValid]
+
+theorem outside_sessions_rejected :
+    SourceMetadataView.sessionValid 0#u16 = .ok false ∧
+    SourceMetadataView.sessionValid 4097#u16 = .ok false := by
+  simp [session_guard_is_exact, SessionsValid]
+
+variable {Node : Type} {f : Fields}
+
+theorem invalid_limits_skip_original_records (ports : SourceMetadataView.Ports Node f)
+    (db : SourceMetadataView.Db) (capacity : Capacity) (config : Config Node)
+    (invalid : ¬Valid config.config) :
+    SourceMetadataSpec.afterConfiguration ports db capacity config = .ok (.Err .CorruptStore) := by
+  have exactGuard := actual_guard_has_all_six_bounds config.config
+  rw [actual_valid_is_parent] at exactGuard
+  unfold SourceMetadataSpec.afterConfiguration
+  rw [exactGuard]
+  simp [invalid]
+
+theorem invalid_sessions_skip_original_records (ports : SourceMetadataView.Ports Node f)
+    (db : SourceMetadataView.Db) (capacity : Capacity) (config : Config Node)
+    (limitsOk : Valid config.config) (invalid : ¬SessionsValid config.max_sessions) :
+    SourceMetadataSpec.afterConfiguration ports db capacity config = .ok (.Err .CorruptStore) := by
+  have exactGuard := actual_guard_has_all_six_bounds config.config
+  rw [actual_valid_is_parent] at exactGuard
+  have sessions := session_guard_is_exact config.max_sessions
+  simp only [SourceMetadataView.sessionValid, core.ops.range.RangeInclusive.new, bind_tc_ok] at sessions
+  unfold SourceMetadataSpec.afterConfiguration
+  rw [exactGuard]
+  simp [limitsOk, invalid, core.ops.range.RangeInclusive.new, sessions]
+
+theorem actual_load_rejects_before_original_records
+    (ports : SourceMetadataView.Ports Node f) (db : SourceMetadataView.Db)
+    (header : SourceMetadataSpec.Header ports db)
+    (fits : SourceMetadataSpec.metadataFits header.count header.length header.reserve header.capacity)
+    (bytes sha : SourceMetadataView.Bytes) (config : Config Node)
+    (payload : SourceMetadataView.queryPayload db = .ok (.Ok (bytes, sha)))
+    (decoded : SourceMetadataView.checked ports.codec bytes.deref sha.deref = .ok (.Ok config))
+    (invalid : ¬Valid config.config ∨ ¬SessionsValid config.max_sessions) :
+    SourceMetadataView.load ports db = .ok (.Err .CorruptStore) := by
+  rw [SourceMetadata.actual_metadata_contract ports db header, if_pos fits]
+  unfold SourceMetadataSpec.readPayload SourceMetadataSpec.stepReply
+  rw [payload]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch]
+  rw [decoded]
+  simp only [bind_tc_ok]
+  rcases invalid with limitsBad | sessionsBad
+  · exact invalid_limits_skip_original_records ports db header.capacity config limitsBad
+  · by_cases limitsOk : Valid config.config
+    · exact invalid_sessions_skip_original_records ports db header.capacity config limitsOk sessionsBad
+    · exact invalid_limits_skip_original_records ports db header.capacity config limitsOk
+
+end SandboxModel.Stage1Protocol.SourceConfigGuards
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigGuards.actual_valid_is_parent
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigGuards.actual_guard_has_all_six_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigGuards.session_guard_is_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigGuards.original_limits_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigGuards.zero_configuration_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigGuards.inclusive_sessions_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigGuards.outside_sessions_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigGuards.invalid_limits_skip_original_records
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigGuards.invalid_sessions_skip_original_records
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigGuards.actual_load_rejects_before_original_records
