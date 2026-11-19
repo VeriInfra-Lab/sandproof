@@ -575,27 +575,46 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
         return dict(native_kill_ledger=native_operation_ledger(
             conn, operation_id, self.action['identity'], capacity, 'Kill'))
 
-    def _terminal_manager_started(self,deadline):
-        while True:
-            try:
-                snapshot=self._read_terminal(deadline, extra=self._read_kill_ledger)
-                break
-            except _AwaitTerminal:
-                time.sleep(min(.01,remaining(deadline)))
-        native=snapshot['native'];binding=self.prior['context']['binding'];operation=native['current_operation']
+    def _require_unresolved_kill(self, snapshot):
+        native = snapshot['native']
+        binding = self.prior['context']['binding']
+        operation = native['current_operation']
         epoch = _u64(native['epoch'])
         if (native['terminal'] is not True or native['phase']!='Revoking' or operation is None
                 or operation['kind']!='Kill' or not equal(operation['id'],snapshot['terminal']['local_operation'])
                 or not equal(operation['epoch'],epoch) or epoch<=self.action['identity']['epoch']
                 or not equal(native['owner'],self.prior['local']['owner'])
-                or not equal(native['generation'],binding['generation'])
-                or not equal(native['current_vm'],binding['vm']) or not equal(native['net_slot'],binding['network'])):
-            raise ValueError('durable exact original Kill required before restoring VMM response')
+                or not equal(native['generation'],binding['generation'])):
+            raise ValueError('durable exact original Kill required in the terminal snapshot')
         if (operation['status'] not in ('Pending', 'OutcomeUnknown')
                 or not equal(snapshot['native_kill_ledger'], dict(
                     sandbox=self.prior['local']['sandbox'], operation=operation,
                     input={'Kill': {'generation': binding['generation']}}, result=None))):
             raise ValueError('original native Kill ledger must match the unresolved current Kill')
+        return operation
+
+    def _read_terminal(self, deadline):
+        # Read the ledger in the same transaction as the inbox, outbox and native state.
+        snapshot = super()._read_terminal(deadline, extra=self._read_kill_ledger)
+        if self.response_restore_snapshot is not None:
+            current = self._require_unresolved_kill(snapshot)
+            original = self.response_restore_snapshot['native_kill_ledger']['operation']
+            if any(not equal(current[field], original[field]) for field in ('id', 'epoch')):
+                raise ValueError('original native Kill identity changed after restoring VMM response')
+        return snapshot
+
+    def _terminal_manager_started(self,deadline):
+        while True:
+            try:
+                snapshot=self._read_terminal(deadline)
+                break
+            except _AwaitTerminal:
+                time.sleep(min(.01,remaining(deadline)))
+        self._require_unresolved_kill(snapshot)
+        native = snapshot['native']
+        binding = self.prior['context']['binding']
+        if not equal(native['current_vm'], binding['vm']) or not equal(native['net_slot'], binding['network']):
+            raise ValueError('original Kill VM and slot required before restoring VMM response')
         self._inventory(snapshot)
         backing=self._backing(snapshot['sources'])
         if (not equal(self._responsibilities(snapshot['sources']),self._responsibilities(self.initial_sources))

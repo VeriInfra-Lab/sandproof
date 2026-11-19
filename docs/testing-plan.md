@@ -396,6 +396,10 @@ SQL NULL Freeze 回执、原 VMM 端点和材料 pin/正额度。若后一轮检
 `original_vmm_endpoint_before_response_restored` 记录同一端点的设备号、inode 和 UID。
 首次到达 Stop 门、同伴推进后与实际放行前，关联同一完整 InstallFence 动作和成功回执及
 实际围栏文件。Cleanup-success/pre-SQL 快照须仍含同一围栏动作和回执。
+以上四次读取还须在同一个 Host SQLite 快照中核对 `native_kill_ledger`。账本须保留恢复
+VMM 应答前的原 Kill 操作编号、epoch 和原运行代输入，与当前 Kill 完全相符，状态仍为
+`Pending` 或 `OutcomeUnknown`，结果为空。检查失败时保留此前观察，停止该次 Stop 放行
+或 Cleanup 后的 Host 重开。
 
 捕获点复用原第二次卸载，LoadPaused 点复用原第一次恢复；不为每个错误码新建虚拟机。
 命中故障开关、退出码 86、发送 gate 命令都不是通过条件，仍须比对完整请求、动作、
