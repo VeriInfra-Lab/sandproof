@@ -1,0 +1,28 @@
+#[cfg(test)]
+mod observation_drop_memo_tests {
+    use super::*;
+
+    #[test]
+    fn original_drop_invalidates_memo_when_sqlite_has_already_rolled_back() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut journal = crate::controller::tests_support::open(
+            dir.path().join("controller.db"),
+            "0123456789abcdef",
+        )
+        .unwrap();
+        let original = journal.world().unwrap();
+        assert!(journal.committed_world.value.borrow().is_some());
+
+        {
+            let tx =
+                WorldTransaction::begin(&mut journal.journal.connection, &journal.committed_world)
+                    .unwrap();
+            tx.execute_batch("ROLLBACK").unwrap();
+        }
+        assert!(
+            journal.committed_world.value.borrow().is_none(),
+            "failed original Drop rollback must clear the memo before any read"
+        );
+        assert_eq!(journal.world().unwrap(), original);
+    }
+}

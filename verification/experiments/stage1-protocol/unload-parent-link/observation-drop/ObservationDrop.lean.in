@@ -1,0 +1,99 @@
+import ObservationSqlSave
+import ObservationDropNegative
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.ObservationDropCore
+open SandboxModel.Stage1Protocol.ObservationParent
+open SandboxModel.Stage1Protocol.ObservationSuffix
+open SandboxModel.Stage1Protocol.ObservationSql
+open SandboxModel.Stage1Protocol.SourceRowSqlComposition (actualSpecAt)
+open SandboxModel.Stage1Protocol.SourceRowSqlSelect (vacantSql)
+
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationDrop
+
+abbrev RollbackError := SandproofSqliteRust.rusqlite.error.Error
+abbrev Slots := SandproofSqliteRust.Model.Slots
+
+/-- V5's live-slot and original memo representation for the owner from Begin. -/
+structure LiveDrop (c : Carriers) (W : Type) (owner : c.transaction) (raw : c.rawTransaction) where
+  slot : c.transaction → Option c.rawTransaction
+  state : c.transaction → Slots W
+  live : slot owner = some raw
+  rollback : c.rawTransaction → Result (core.result.Result Unit RollbackError)
+
+def rollbackApi {T : Type} (run : T → Result (core.result.Result Unit RollbackError)) :
+    core.ops.function.FnOnce Unit T (core.result.Result Unit RollbackError) :=
+  { call_once := fun _ raw => run raw }
+
+/-- Keep the cell backflow of the actual generic core. The production alias that
+    implements this view is checked in Charon's actual Drop and cell adapter. -/
+def closeOwner {c : Carriers} {W : Type} {owner : c.transaction} {raw : c.rawTransaction}
+    (drop : LiveDrop c W owner raw) : Result (Option c.rawTransaction × Slots W) :=
+  ObservationDropCore.controller.transaction.memo.rollback_if_live
+    (ObservationDropCore.slotOps W) (rollbackApi drop.rollback) (drop.slot owner) (drop.state owner) ()
+
+theorem live_rollback_success {c : Carriers} {W : Type} {owner : c.transaction} {raw : c.rawTransaction}
+    (drop : LiveDrop c W owner raw) (returned : drop.rollback raw = .ok (.Ok ())) :
+    closeOwner drop = .ok (none, drop.state owner) := by
+  unfold closeOwner
+  rw [drop.live]
+  exact ObservationDropCore.rollback_success_exact (drop.state owner) raw
+    (rollbackApi drop.rollback) () returned
+
+theorem live_rollback_failure {c : Carriers} {W : Type} {owner : c.transaction} {raw : c.rawTransaction}
+    (drop : LiveDrop c W owner raw) (error : RollbackError) (returned : drop.rollback raw = .ok (.Err error)) :
+    closeOwner drop = .ok (none, {drop.state owner with committed := none}) := by
+  unfold closeOwner
+  rw [drop.live]
+  exact ObservationDropCore.rollback_unknown_exact (drop.state owner) raw
+    (rollbackApi drop.rollback) () error returned
+
+variable {c : Carriers} {t : ReadTypes} {Keys E C W : Type}
+variable (attached : CodecInputs c Keys) (calls : Calls c) (reads : ReadCalls c t)
+variable (host : t.host E) (decoder : t.decoder E) (hooks : Hooks c C)
+variable (journal : Journal c) (work : c.work) (context : t.context)
+variable (observation : c.observation) (now : I64) (crashes : C)
+variable (current : CurrentReady attached calls reads host decoder journal work context observation now)
+variable (selected : Selected attached calls reads host decoder journal work context observation now current)
+variable (write : WriteReady attached calls reads host decoder journal work context observation now current selected)
+
+theorem row_error_and_original_rollback
+    (drop : LiveDrop c W current.started.tx current.started.transactionView)
+    (completed later : List SaveRows.Encoded) (key : SaveRows.Key) (bytes : alloc.vec.Vec U8)
+    (error : SaveRows.Error)
+    (order : write.encoded.val = completed ++ (key, bytes) :: later)
+    (written : ∀ row ∈ completed,
+      actualSpecAt (cast attached.connection current.started.readConnection) row.1 row.2 vacantSql = .ok (.Ok ()))
+    (rejected : actualSpecAt (cast attached.connection current.started.readConnection) key bytes vacantSql =
+      .ok (.Err error))
+    (rollbackReply : core.result.Result Unit RollbackError)
+    (returned : drop.rollback current.started.transactionView = .ok rollbackReply) :
+    actual (bindCodec attached calls) reads host decoder hooks journal work context observation now crashes =
+      .ok (.Err (cast attached.error error), withConnection journal current.started.writeback, crashes) ∧
+    closeOwner drop = .ok (none, match rollbackReply with
+      | .Ok _ => drop.state current.started.tx
+      | .Err _ => {drop.state current.started.tx with committed := none}) := by
+  refine ⟨first_row_error_precedes_commit attached calls reads host decoder hooks journal work
+    context observation now crashes current selected write completed later key bytes error order written rejected, ?_⟩
+  cases rollbackReply with
+  | Ok value =>
+      cases value
+      exact live_rollback_success drop returned
+  | Err rollbackError =>
+      exact live_rollback_failure drop rollbackError returned
+
+/-- An already empty raw slot does not call the rollback callback. -/
+theorem consumed_slot_has_no_rollback {W T : Type} (memo : Slots W)
+    (rollback : T → Result (core.result.Result Unit RollbackError)) :
+    ObservationDropCore.controller.transaction.memo.rollback_if_live
+      (ObservationDropCore.slotOps W) (rollbackApi rollback) none memo () = .ok (none, memo) :=
+  ObservationDropCore.rollback_absent_exact memo (rollbackApi rollback) ()
+
+end SandboxModel.Stage1Protocol.ObservationDrop
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationDrop.live_rollback_success
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationDrop.live_rollback_failure
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationDrop.row_error_and_original_rollback
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationDrop.consumed_slot_has_no_rollback
