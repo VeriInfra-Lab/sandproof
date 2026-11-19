@@ -10,6 +10,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 use v3::fixture::{State, TestEpoch, TestHost};
+mod codec_rows;
 mod continue_application;
 mod continued_exit;
 mod end_pipeline;
