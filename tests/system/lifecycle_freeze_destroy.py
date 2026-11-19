@@ -256,7 +256,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         ledger = native_operation_ledger(conn, identity['operation'], identity, capacity, 'Pause')
         return registered, native, ledger
 
-    def _observe_destroy_endpoint(self, deadline):
+    def _observe_frozen_endpoint(self, deadline):
         with original_vmm_endpoint(self.runtime, self.prior, deadline) as (_, uid, identity):
             endpoint = dict(identity, uid=uid)
             if (self.frozen['state'] != 'Paused'
@@ -266,16 +266,16 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         return endpoint
 
     def observe_destroy_window(self, deadline):
-        """Re-read the original cut on either side of the public Destroy."""
+        """Re-read the original Host cut around public Destroy or audited expiry."""
         deadline = min(deadline, self.deadline)
         self._configuration()
         entry, rows, actions, (registered, native, ledger) = self._read(
             deadline, extra=self._destroy_window_facts, require_nonterminal=True)
         action = self._original_action(actions, entry)
         if not equal(entry, self.unload_entry) or not equal(action, self.action):
-            raise ValueError('original Unload or complete Freeze changed at public Destroy')
+            raise ValueError('original Unload or complete Freeze changed in the receipt window')
         if not registered:
-            raise ValueError('original Freeze logical registration differs at public Destroy')
+            raise ValueError('original Freeze logical registration differs in the receipt window')
         binding = self.prior['context']['binding']
         epoch = action['identity']['epoch']
         pause = dict(id=entry['local_operation'], epoch=epoch, kind='Pause', status='Pending')
@@ -286,22 +286,22 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
                 or not equal(native['generation'], binding['generation'])
                 or not equal(native['current_vm'], binding['vm'])
                 or not equal(native['net_slot'], binding['network'])):
-            raise ValueError('original nonterminal native Pause must remain current at public Destroy')
+            raise ValueError('original nonterminal native Pause must remain current in the receipt window')
         if not equal(ledger, dict(sandbox=self.prior['local']['sandbox'], operation=pause,
                                   input={'Pause': {'generation': binding['generation']}}, result=None)):
             raise ValueError('original native Pause ledger must match the pending current Pause')
         if any(CAPTURE_COMMANDS & saved['command']['logical']['command'].keys()
                for saved, _, _ in actions):
-            raise ValueError('original Unload outbox contains a capture action at public Destroy')
+            raise ValueError('original Unload outbox contains a capture action in the receipt window')
         self._no_full(rows)
         if not equal(self._responsibilities(rows), self._responsibilities(self.initial_sources)):
-            raise ValueError('original work, backing pin or material responsibility changed at public Destroy')
+            raise ValueError('original work, backing pin or material responsibility changed in the receipt window')
         self._backing(rows)
         self._check_source_hold(deadline)
         host = self.runtime.services.processes.children.get('host-0')
         if host is None or host is not self.host or host.poll() != self._cut_exit_code():
-            raise ValueError('original Freeze cut Host must remain exited at public Destroy')
-        endpoint = self._observe_destroy_endpoint(deadline)
+            raise ValueError('original Freeze cut Host must remain exited in the receipt window')
+        endpoint = self._observe_frozen_endpoint(deadline)
         remaining(deadline)
         return dict(host_pid=host.pid, host_exit_code=self._cut_exit_code(),
                     unload_accepted_version=entry['intent']['accepted_version'],
@@ -400,7 +400,15 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
             raise ValueError('late original Freeze observation names another process')
         return all_rows
 
-    def _stop_barrier(self,snapshot,*,held_stop=None):
+    @staticmethod
+    def _terminal_fence(snapshot):
+        fences = [row for row in snapshot['terminal_actions']
+                  if 'InstallFence' in row[0]['command']['logical']['command']]
+        if len(fences) != 1:
+            raise ValueError('one original terminal fence required')
+        return fences[0]
+
+    def _stop_barrier(self,snapshot,*,held_stop=None,held_fence=None):
         self._inventory(snapshot);native=snapshot['native'];operation=native['current_operation']
         binding=self.prior['context']['binding']
         _u64(native['epoch'])
@@ -413,13 +421,13 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         if not equal(self._responsibilities(snapshot['sources']),self._responsibilities(self.initial_sources)):
             raise ValueError('original work, backing pin or material responsibility changed before Stop')
         self._backing(snapshot['sources'])
-        fences=[r for r in snapshot['terminal_actions'] if 'InstallFence' in r[0]['command']['logical']['command']]
+        fence_row = self._terminal_fence(snapshot)
         stops=[r for r in snapshot['terminal_actions'] if 'StopVm' in r[0]['command']['logical']['command']]
-        if len(fences)!=1 or len(stops)!=1 or stops[0][1:]!=('dispatched',None):
-            raise ValueError('one original terminal fence and unacknowledged Stop required')
+        if len(stops)!=1 or stops[0][1:]!=('dispatched',None):
+            raise ValueError('one unacknowledged original Stop required')
         if snapshot['logical_action_registered'] is not True:
             raise ValueError('original terminal Stop lacks its complete logical effect registration')
-        fence=fences[0][0];stop=stops[0][0];epoch=native['epoch'];sandbox=snapshot['local']['sandbox']
+        fence=fence_row[0];stop=stops[0][0];epoch=native['epoch'];sandbox=snapshot['local']['sandbox']
         expected=dict(sandbox=sandbox,generation=binding['generation'],vm=binding['vm'],epoch=epoch)
         if (not equal(stop['command']['logical']['command'],{'StopVm':expected})
                 or not equal(stop['identity']['resource'],self.action['identity']['resource'])
@@ -429,7 +437,11 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
             raise ValueError('generic Stop gate does not name the one exact original terminal Stop')
         if held_stop is not None and not equal(stop,held_stop):
             raise ValueError('complete terminal Stop changed while its gate was held')
-        observed=self._success_observation(fences[0],'Fence')
+        if not equal(fence['identity']['resource'], {'kind': 'sandbox', 'id': self.config['sandbox']}):
+            raise ValueError('terminal fence must name the original sandbox resource')
+        if held_fence is not None and not equal(fence_row, held_fence):
+            raise ValueError('complete original terminal fence changed while the Stop gate was held')
+        observed=self._success_observation(fence_row,'Fence')
         if observed is None:raise _AwaitTerminal('terminal fence not yet successfully observed')
         path=Path(self.runtime.services.native_pools[0]['node_state_dir'])/'fences'/self.config['sandbox']
         actual=original_json(path.with_suffix('.json'),16384)
@@ -464,6 +476,7 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         if (before.st_dev,before.st_ino)!=(after.st_dev,after.st_ino):raise ValueError('Stop gate replaced during connection')
         snapshot=self._read_terminal(deadline);fence=self._stop_barrier(snapshot)
         held_stop=copy.deepcopy(snapshot['global_pending_stops'][0])
+        held_fence = copy.deepcopy(self._terminal_fence(snapshot))
         if pidfd_exited(self.pidfd):raise ValueError('original source exited before Stop release')
         self._check_source_hold(deadline)
         backing=self._backing(snapshot['sources'])
@@ -471,14 +484,16 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
         if not equal(material,self.backing_material):raise ValueError('original backing files changed before Stop')
         if not callable(observe_peer):raise ValueError('original independent peer progress required')
         progress=observe_peer()
-        self._configuration();again=self._read_terminal(deadline);self._stop_barrier(again,held_stop=held_stop)
+        self._configuration();again=self._read_terminal(deadline)
+        self._stop_barrier(again, held_stop=held_stop, held_fence=held_fence)
         if not equal(self._responsibilities(again['sources']),self._responsibilities(self.initial_sources)) or pidfd_exited(self.pidfd):
             raise ValueError('original source or responsibilities changed during peer progress')
         self._check_source_hold(deadline)
         if not equal(self.runtime._materials(backing['capture']['full'],backing['capture']),self.backing_material):
             raise ValueError('peer progress changed original frozen backing files')
         paused=self._prepare_source_for_stop(deadline)
-        final=self._read_terminal(deadline);self._stop_barrier(final,held_stop=held_stop)
+        final=self._read_terminal(deadline)
+        self._stop_barrier(final, held_stop=held_stop, held_fence=held_fence)
         self.before_stop=copy.deepcopy(final);remaining(deadline)
         peer.settimeout(min(2,remaining(deadline)));peer.sendall(b'g');self.stop_released=True;peer.close();self.stop_peer=None;self.recovered=True
         result=dict(public_destroy_reached_host=True,terminal_fence=fence,paused=paused,
@@ -513,6 +528,8 @@ class FreezeDestroyProbe(CaptureHandoffProbe):
             if (not equal(row[0]['command']['logical']['command'],command) or not equal(row[0]['identity']['epoch'],epoch)
                     or not equal(row[0]['identity']['resource'],self.action['identity']['resource'])):
                 raise ValueError('terminal stop/cleanup changed original VM or epoch')
+        if not equal(self._terminal_fence(snapshot), self._terminal_fence(self.before_stop)):
+            raise ValueError('Cleanup does not retain the complete original terminal fence and receipt')
         stopped=self._success_observation(stops[0],'Stopped')
         if (not equal(stopped,dict(pid=self.prior['source']['pid'],start_ticks=self.prior['source']['start_time_ticks']))
                 or not pidfd_exited(self.pidfd) or original_process(self.prior['source']) or self.stop_path.exists()):
@@ -548,6 +565,7 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
     or Stop whose scheduling itself needs the original Freeze observation.
     """
     response_restore_snapshot = None
+    response_restore_endpoint = None
 
     def _read_kill_ledger(self, conn, local, terminal, capacity):
         namespace = self.runtime.services.native_pools[0]['namespace']
@@ -585,6 +603,9 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
             raise ValueError('original backing responsibility changed before VMM response restored')
         self._check_source_hold(deadline)
         self.response_restore_snapshot=copy.deepcopy(snapshot)
+        endpoint = self._observe_frozen_endpoint(deadline)
+        self._check_source_hold(deadline)
+        self.response_restore_endpoint = endpoint
         signal.pidfd_send_signal(self.pidfd,signal.SIGCONT);self.continue_sent=True
         while self._source_state(deadline)=='T':time.sleep(min(.01,remaining(deadline)))
         self.hold_source_process=False
@@ -594,10 +615,13 @@ class OrderedFreezeDestroyProbe(FreezeDestroyProbe):
         result['original_pidfd_continued_after_fence']=False
         result['source_continued_after_terminal_acceptance']=True
         result['terminal_acceptance_before_response_restored']=self.response_restore_snapshot
+        result['original_vmm_endpoint_before_response_restored'] = self.response_restore_endpoint
         return result
 
     def terminal_failure_state(self):
         result = super().terminal_failure_state()
         if self.response_restore_snapshot is not None:
             result['terminal_acceptance_before_response_restored'] = copy.deepcopy(self.response_restore_snapshot)
+        if self.response_restore_endpoint is not None:
+            result['original_vmm_endpoint_before_response_restored'] = copy.deepcopy(self.response_restore_endpoint)
         return result
