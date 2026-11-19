@@ -1,0 +1,29 @@
+import UnloadFinishInputs
+
+open Aeneas Aeneas.Std SandproofUnloadFinish
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.UnloadFinish
+
+local notation "finish" => controller.lifecycle_inbox.source_work.finish_source_work
+local notation "observeFinish" => controller.lifecycle_inbox.source_work.finish_observation_save
+
+theorem observation_finish_reply {Rows C Record : Type} (writer : Writer Rows) (hooks : CrashInjector C)
+    (owner : Owner) (sources : Rows) (limit : U16) (input returned : C) (record : Record)
+    (reply : core.result.Result Unit JournalError)
+    (finished : finish writer hooks owner sources limit input = .ok (reply, returned)) :
+    observeFinish writer hooks owner sources limit input record =
+      .ok ((match reply with | .Ok _ => .Ok record | .Err error => .Err error), returned) := by
+  cases reply with
+  | Ok value =>
+    cases value
+    simp [controller.lifecycle_inbox.source_work.finish_observation_save, finished,
+      core.result.Result.Insts.CoreOpsTry.branch]
+  | Err error =>
+    simp [controller.lifecycle_inbox.source_work.finish_observation_save, finished,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+end SandboxModel.Stage1Protocol.UnloadFinish
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFinish.observation_finish_reply

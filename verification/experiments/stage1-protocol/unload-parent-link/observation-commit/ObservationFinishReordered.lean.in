@@ -1,0 +1,29 @@
+import UnloadFinishReordered
+import ObservationFinishResult
+
+open Aeneas Aeneas.Std SandproofUnloadFinish
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.UnloadFinish
+
+local notation "observeFinish" => controller.lifecycle_inbox.source_work.finish_observation_save
+
+theorem observation_reordered_hook_hides_commit_uncertain {Rows C Record : Type}
+    (writer : Writer Rows) (hooks : CrashInjector C) (owner : Owner) (raw : Raw)
+    (live : owner.transaction = some raw) (sources : Rows) (limit : U16) (input before after : C)
+    (record : Record) (error : SandproofParentCommitRust.rusqlite.error.Error)
+    (saved : writer.save raw.conn sources limit = .ok (.Ok ()))
+    (checked : hooks.hit input .BeforeCommit = .ok (.Ok (), before))
+    (committed : controller.transaction.WorldTransaction.commit owner = .ok (.Err (.CommitUncertain error)))
+    (called : hooks.hit before .AfterCommit = .ok (.Err (.InjectedCrash .AfterCommit), after)) :
+    observeFinish writer hooks owner sources limit input record = .ok (.Err (.InjectedCrash .AfterCommit), after) ∧
+      observeFinish writer hooks owner sources limit input record ≠ .ok (.Err (.CommitUncertain error), before) := by
+  have result := reordered_hook_hides_commit_uncertain writer hooks owner raw live sources limit
+    input before after error saved checked committed called
+  have returned := observation_finish_reply writer hooks owner sources limit input after record _ result.1
+  refine ⟨returned, ?_⟩
+  simp [returned, Result.ok.injEq]
+
+end SandboxModel.Stage1Protocol.UnloadFinish
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFinish.observation_reordered_hook_hides_commit_uncertain

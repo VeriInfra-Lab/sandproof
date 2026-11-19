@@ -1,0 +1,13 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39,1 +39,10 @@
++## V3 来源观察保存的提交尾部候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。实际父调用 IR 连通同一事务、
++原来源集合、Inbox 容量、钩子，以及原观察写入后的记录返回。独立生成的提交尾部
++复用 V5 条件证明，给出保存、提交及钩子的原首错和 memo 读回。真实 SQLite 正错
++证据核对提交前后可见性、写锁和重开重试。父方法完整 Lean、原保存数据与逐行 SQL
++的活事务桥接及公共 Stage1 封口仍分别验收。
++[精确输入与复验](../verification/experiments/stage1-protocol/unload-parent-link/observation-commit/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录
