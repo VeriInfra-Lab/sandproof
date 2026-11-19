@@ -1,0 +1,118 @@
+import ObservationSlotInputs
+
+open Aeneas Aeneas.Std SandproofObservationSlot alloc.vec
+open controller.lifecycle_inbox.source_work
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationSlot
+
+private theorem vector_lookup {R : Type} (v : Vec R) (i : Usize) (inside : i.val < v.val.length) :
+    alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice R) v i = .ok v.val[i.val] := by
+  obtain ⟨actual, returned, rfl⟩ := WP.spec_imp_exists (Vec.index_usize_spec v i inside)
+  exact returned
+
+private theorem add_one (i : Usize) (bound : i.val + 1 ≤ Usize.max) (next : Usize)
+    (value : next.val = i.val + 1) : ((i + 1#usize) : Result Usize) = .ok next := by
+  obtain ⟨actual, returned, _⟩ := WP.spec_imp_exists
+    (Usize.add_bv_spec (x := i) (y := 1#usize) (by simpa using bound))
+  have same : actual = next := by scalar_tac
+  simpa only [same] using returned
+
+theorem loop_returns_first {R W Check : Type} (checks : ObservationWork Check R W)
+    (records : Vec R) (work : W) (select : R → Bool)
+    (observed : ∀ record, checks.same_work record work = .ok (select record))
+    (index : Usize) :
+    ∃ slot, observation_slot_using_loop checks records work index = .ok slot ∧
+      slot.map (fun i => i.val) = List.findIdx?.go select (records.val.drop index.val) index.val := by
+  induction remaining : records.val.length - index.val using Nat.strong_induction_on generalizing index with
+  | h remaining ih =>
+    by_cases inside : index.val < records.val.length
+    · have head := List.drop_eq_getElem_cons inside
+      by_cases yes : select records.val[index.val] = true
+      · refine ⟨some index, ?_, ?_⟩
+        · unfold observation_slot_using_loop
+          conv_lhs => rw [loop]
+          simp [observation_slot_using_loop.body, UScalar.lt_equiv, inside,
+            vector_lookup records index inside, observed, yes]
+        · rw [head]
+          change some index.val = (if select records.val[index.val] then some index.val
+            else List.findIdx?.go select (records.val.drop (index.val + 1)) (index.val + 1))
+          simp [yes]
+      · have miss : select records.val[index.val] = false := Bool.eq_false_iff.mpr yes
+        have bound := Nat.le_trans (Nat.succ_le_of_lt inside) records.property
+        let next := Usize.ofNatCore (index.val + 1) (by scalar_tac)
+        have advanced : next.val = index.val + 1 := rfl
+        obtain ⟨slot, returned, first⟩ := ih (records.val.length - next.val) (by omega) next rfl
+        refine ⟨slot, ?_, ?_⟩
+        · unfold observation_slot_using_loop at returned ⊢
+          conv_lhs => rw [loop]
+          simpa [observation_slot_using_loop.body, UScalar.lt_equiv, inside,
+            vector_lookup records index inside, observed, miss, add_one index bound next advanced] using returned
+        · rw [head]
+          change slot.map (fun i => i.val) = (if select records.val[index.val] then some index.val
+            else List.findIdx?.go select (records.val.drop (index.val + 1)) (index.val + 1))
+          simpa only [miss, Bool.false_eq_true, ↓reduceIte, advanced] using first
+    · refine ⟨none, ?_, ?_⟩
+      · unfold observation_slot_using_loop
+        conv_lhs => rw [loop]
+        simp [observation_slot_using_loop.body, UScalar.lt_equiv, inside]
+      · rw [List.drop_eq_nil_of_le (Nat.le_of_not_lt inside)]
+        rfl
+
+/-- The first complete match, or no match, for any finite original record vector. -/
+theorem lookup_returns_first_complete {R W Check : Type} (checks : ObservationWork Check R W)
+    (records : Vec R) (workOf : R → W) (work : W) (compare : W → W → Result Bool)
+    (full : FullReplayContract compare)
+    (observed : ∀ record, checks.same_work record work = compare (workOf record) work) :
+    ∃ slot, observation_slot_using checks records work = .ok slot ∧
+      slot.map (fun i => i.val) = firstComplete workOf records.val work := by
+  classical
+  have h : ∀ record, checks.same_work record work = .ok (decide (workOf record = work)) := by
+    intro record
+    rw [observed]
+    exact full _ _
+  simpa [observation_slot_using, firstComplete, List.findIdx?] using
+    loop_returns_first checks records work (fun r => decide (workOf r = work)) h 0#usize
+
+/-- The selected record only yields replay on full saved-observation equality. -/
+theorem selected_slot_decision {O : Type} (checks : core.cmp.PartialEq O O)
+    (full : FullReplayContract checks.eq)
+    (standardNe : ∀ old incoming, checks.ne old incoming =
+      (checks.eq old incoming >>= fun same => Result.ok (!same)))
+    (saved : Option O) (incoming : O) :
+    observation_slot_decision checks saved incoming = .ok (sameObservation saved incoming) := by
+  classical
+  cases saved with
+  | none => rfl
+  | some old =>
+    by_cases same : old = incoming
+    · subst old
+      simp [observation_slot_decision, sameObservation, core.cmp.impls.PartialEqShared.ne,
+        standardNe, full incoming incoming]
+    · have eq := full old incoming
+      simp [observation_slot_decision, sameObservation, core.cmp.impls.PartialEqShared.ne, standardNe, eq, same]
+
+theorem earliest_complete_witness :
+    ∃ slot, observation_slot_using witnessChecks witnessRecords witnessWork = .ok slot ∧
+      slot.map (fun i => i.val) = some 1 := by
+  let cmp : (Nat × Nat) → (Nat × Nat) → Result Bool := witnessChecks.same_work
+  have full : FullReplayContract cmp := by
+    classical
+    intro x y
+    by_cases h : x = y <;> simp [cmp, witnessChecks, h]
+  have accepted := lookup_returns_first_complete witnessChecks witnessRecords id witnessWork cmp full fun _ => rfl
+  simpa [firstComplete, List.findIdx?, List.findIdx?.go, witnessRecords, witnessWrongRecord, witnessWork] using accepted
+
+theorem guard_witness :
+    observation_slot_decision core.cmp.PartialEqBool none true = .ok .Fresh ∧
+    observation_slot_decision core.cmp.PartialEqBool (some true) true = .ok .Replay ∧
+    observation_slot_decision core.cmp.PartialEqBool (some false) true = .ok .Conflict := by
+  simp [observation_slot_decision, core.cmp.impls.PartialEqBool.eq]
+
+end SandboxModel.Stage1Protocol.ObservationSlot
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSlot.loop_returns_first
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSlot.lookup_returns_first_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSlot.selected_slot_decision
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSlot.earliest_complete_witness
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSlot.guard_witness
