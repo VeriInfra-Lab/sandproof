@@ -378,6 +378,11 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 | `material-retirement-restart` | 原 A 已按固定计划实际删除、SQL 仍为 Retiring 时同步重启管理服务；同一计划结算，当前 B 完整并合法恢复，最后产品 Destroy 退额（E10/E11/E13，G7） |
 | `unload-receipt-restart` | 首次完整 Unloaded 回执在回复头之前截住；只强停中心、审计同一待办且未保存结果，再显式丢弃并恢复；故障窗口 Host/Redis 原进程保持，前后计划读取分列；接续原 A/B/C 三代、位置复用、材料与最终收尾（E13 的一个中心回执窗口，实机未执行） |
 
+显式 Destroy 返回 202 后，在 Resume 检查与 Destroy 重放之间，用当前 Destroy 版本及
+与 Resume 不同的新键发送一次 Unload。要求返回 409，完整公开 Terminating 视图保持，
+并在 `freeze_destroy_acceptance_window.after_rejected_unload` 保存同一冻结窗口。
+任一检查失败时保留此前证据，停止原 Host 重开与 Stop 放行。
+
 在 `capture-freeze-receipt-destroy` 的 Host 重开前，以当前 Destroy 版本和新键尝试 Resume，
 要求 409。原样重放 Destroy 须返回同一完整接受，仅改 `expected_version` 的同键请求须返回
 409。每次请求后核对完整公开 Terminating 视图。Resume 拒绝及 Destroy 重放检查后，分别
