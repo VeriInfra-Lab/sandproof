@@ -1,0 +1,10 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,7 @@
++## V3 来源观察编码与原槽候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。原编码循环保留完整 32 字节工作键和顺序。
++在原 load 图像和 A4 正常 SELECT 条件下，观察更新后任意成功前缀的下一行仍命中已登记槽。
++[复验范围](../verification/experiments/stage1-protocol/unload-parent-link/source-key-history/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录

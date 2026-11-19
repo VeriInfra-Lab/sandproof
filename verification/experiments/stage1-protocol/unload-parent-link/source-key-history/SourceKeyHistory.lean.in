@@ -1,0 +1,100 @@
+import ObservationSqlHistory
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.ObservationParent
+open SandboxModel.Stage1Protocol.ObservationSql
+open SandboxModel.Stage1Protocol.ObservationSuffix
+open SandboxModel.Stage1Protocol.SourceHistory
+open SandboxModel.Stage1Protocol.SourceRowSqlSelect (existingSpec vacantSql)
+open SandboxModel.Stage1Protocol.SourceRowSqlComposition (chooseSlot)
+
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceKeyHistory
+
+def workKeys {c : Carriers} (keyOf : c.work → SaveRows.Key) (records : List (Record c)) :
+    List SaveRows.Key :=
+  records.map fun record => keyOf record.work
+
+/-- The original parent only changes the selected observation. All work-record
+    keys survive, in the original order and with the original multiplicity. -/
+theorem observation_update_preserves_key_vector {c : Carriers} (keyOf : c.work → SaveRows.Key)
+    (sources : Sources c) (i : Usize) (inside : i.val < sources.records.val.length)
+    (incoming : c.observation) :
+    workKeys keyOf (updatedSources sources i sources.records.val[i.val] incoming).records.val =
+      workKeys keyOf sources.records.val := by
+  simp only [workKeys, updatedSources, alloc.vec.Vec.set_val_eq, List.map_set, updated]
+  have mapped : i.val < (sources.records.val.map fun record => keyOf record.work).length := by
+    simpa using inside
+  simpa only [List.getElem_map] using List.set_getElem_self mapped
+
+def Registered (image : Image) (key : SaveRows.Key) : Prop :=
+  ∃ id cell, image id = some cell ∧ cell.workKey = some key.val
+
+theorem registered_after_writes {Raw : Type} {invocation : Invocation Raw} {before after : Image}
+    {rows : List SaveRows.Encoded} (history : Written invocation before rows after)
+    {key : SaveRows.Key} (present : Registered before key) : Registered after key := by
+  obtain ⟨id, cell, found, keyMatches⟩ := present
+  have layout := history.preserves_allocation id
+  simp only [allocation, found, Option.map_some, keyMatches] at layout
+  cases slot : after id with
+  | none => simp [slot] at layout
+  | some current =>
+      refine ⟨id, current, slot, ?_⟩
+      simpa [slot] using congrArg (Option.map Prod.snd) layout
+
+/-- A4's successful original BLOB SELECT. SQL errors remain possible; successful
+    none must be justified by the absence of the complete original key. -/
+def A4Lookup (db : SaveRows.Db) (image : Image) (key : SaveRows.Key) : Prop :=
+  ∀ response, existingSpec db key = .ok (.Ok response) →
+    match response with
+    | none => ¬ Registered image key
+    | some id => ∃ cell, image id = some cell ∧ cell.workKey = some key.val
+
+theorem registered_normal_select_uses_original_slot (db : SaveRows.Db) (image : Image)
+    (key : SaveRows.Key) (present : Registered image key) (read : A4Lookup db image key)
+    (response : Option I64) (returned : existingSpec db key = .ok (.Ok response))
+    (vacancy : Result (core.result.Result (Option I64) SaveRows.Error)) :
+    ∃ id cell, response = some id ∧ image id = some cell ∧ cell.workKey = some key.val ∧
+      chooseSlot (existingSpec db key) vacancy (.ok .MaintenanceCapacity) = .ok (.Ok id) := by
+  cases response with
+  | none => exact (read none returned present).elim
+  | some id =>
+      obtain ⟨cell, row, binding⟩ := read (some id) returned
+      exact ⟨id, cell, rfl, row, binding, by simp [chooseSlot, returned]⟩
+
+variable {c : Carriers} {t : ReadTypes} {Keys E : Type}
+variable (attached : CodecInputs c Keys) (calls : Calls c) (reads : ReadCalls c t)
+variable (host : t.host E) (decoder : t.decoder E) (journal : Journal c)
+variable (work : c.work) (context : t.context) (raw : c.observation) (now : I64)
+variable (current : CurrentReady attached calls reads host decoder journal work context raw now)
+variable (selected : Selected attached calls reads host decoder journal work context raw now current)
+variable (write : WriteReady attached calls reads host decoder journal work context raw now current selected)
+
+local notation "invocation" => ObservationSqlHistory.originalInvocation attached calls reads
+  host decoder journal work context raw now current
+
+/-- Use the original encoded Vec, its full-key encoding correspondence, and
+    the original load image to eliminate vacant selection whenever the
+    production exact-key SELECT returns normally. -/
+theorem encoded_key_stays_registered_after_prefix
+    (keyOf : c.work → SaveRows.Key) (initial interim : Image) (processed : List SaveRows.Encoded)
+    (encoded : write.encoded.val.map Prod.fst = workKeys keyOf selected.savedRows.records.val)
+    (loaded : ∀ key ∈ workKeys keyOf current.rows.records.val, Registered initial key)
+    (history : Written invocation initial processed interim)
+    (entry : SaveRows.Encoded) (member : entry ∈ write.encoded.val) :
+    Registered interim entry.1 := by
+  have before : entry.1 ∈ workKeys keyOf current.rows.records.val := by
+    have mapped : entry.1 ∈ write.encoded.val.map Prod.fst :=
+      List.mem_map.mpr ⟨entry, member, rfl⟩
+    rw [encoded] at mapped
+    have same := observation_update_preserves_key_vector keyOf current.rows selected.index selected.inside raw
+    exact same ▸ mapped
+  exact registered_after_writes history (loaded entry.1 before)
+
+end SandboxModel.Stage1Protocol.SourceKeyHistory
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceKeyHistory.observation_update_preserves_key_vector
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceKeyHistory.registered_after_writes
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceKeyHistory.registered_normal_select_uses_original_slot
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceKeyHistory.encoded_key_stays_registered_after_prefix
