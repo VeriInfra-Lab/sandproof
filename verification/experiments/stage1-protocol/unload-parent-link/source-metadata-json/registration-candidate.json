@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "parent_pr": 981,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-metadata-json",
+  "source_variants": [
+    "original",
+    "swapped-limit-names"
+  ],
+  "structures": {
+    "Configuration": 3,
+    "SourceObservationConfig": 6,
+    "NodeIdentity": 3
+  },
+  "unknown_field_visitors": 6,
+  "source_admission": "admit.py",
+  "capture": "capture.py",
+  "new_lean_theorems": 0,
+  "library_refinement_proved": false,
+  "native_candidate": {
+    "name": "stage1-source-metadata-json",
+    "test": "source_metadata_json_preserves_every_field_and_decode_shape",
+    "mutated_assertion": "original Configuration complete JSON fields",
+    "full_functional_required": true
+  },
+  "public_registration_accepted": false
+}

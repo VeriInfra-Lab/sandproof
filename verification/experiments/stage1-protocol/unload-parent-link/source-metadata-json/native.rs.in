@@ -1,0 +1,142 @@
+#[cfg(test)]
+mod metadata_json_contract {
+    use super::*;
+    use sandproof_protocol::internal::NodeIdentity;
+    use serde_json::{Value, json};
+
+    fn configuration() -> Configuration {
+        Configuration {
+            config: SourceObservationConfig {
+                max_work_bytes: 32_768,
+                max_configuration_bytes: 1024,
+                max_executable_bytes: 1_048_576,
+                max_kernel_bytes: 8_388_608,
+                max_disk_bytes: 67_108_864,
+                max_material_bytes: 268_435_456,
+            },
+            node: NodeIdentity {
+                deployment_id: "metadata-deployment".try_into().unwrap(),
+                node_id: "metadata-node".try_into().unwrap(),
+                node_generation: 7.try_into().unwrap(),
+            },
+            max_sessions: 13,
+        }
+    }
+
+    fn expected(value: &Configuration) -> Value {
+        json!({
+            "config": {
+                "max_work_bytes": value.config.max_work_bytes,
+                "max_configuration_bytes": value.config.max_configuration_bytes,
+                "max_executable_bytes": value.config.max_executable_bytes,
+                "max_kernel_bytes": value.config.max_kernel_bytes,
+                "max_disk_bytes": value.config.max_disk_bytes,
+                "max_material_bytes": value.config.max_material_bytes,
+            },
+            "node": {
+                "deployment_id": value.node.deployment_id.as_str(),
+                "node_id": value.node.node_id.as_str(),
+                "node_generation": value.node.node_generation.get(),
+            },
+            "max_sessions": value.max_sessions,
+        })
+    }
+
+    fn assert_configuration(actual: Configuration, expected: &Configuration) {
+        assert_eq!(actual.config, expected.config);
+        assert_eq!(actual.node, expected.node);
+        assert_eq!(actual.max_sessions, expected.max_sessions);
+    }
+
+    fn reject(value: &Value) {
+        let bytes = serde_json::to_vec(value).unwrap();
+        assert!(
+            serde_json::from_slice::<Configuration>(&bytes).is_err(),
+            "invalid Configuration JSON was accepted: {value}"
+        );
+    }
+
+    #[test]
+    fn source_metadata_json_preserves_every_field_and_decode_shape() {
+        let original = configuration();
+        assert!(original.config.valid());
+        let bytes = serde_json::to_vec(&original).unwrap();
+        let reference = expected(&original);
+        assert_eq!(
+            serde_json::from_slice::<Value>(&bytes).unwrap(),
+            reference,
+            "original Configuration complete JSON fields"
+        );
+        assert_configuration(
+            serde_json::from_slice::<Configuration>(&serde_json::to_vec(&reference).unwrap())
+                .unwrap(),
+            &original,
+        );
+        assert_configuration(
+            checked::<Configuration>(&bytes, Sha256::digest(&bytes).as_slice()).unwrap(),
+            &original,
+        );
+
+        for field in ["config", "node", "max_sessions"] {
+            let mut missing = reference.clone();
+            missing.as_object_mut().unwrap().remove(field);
+            reject(&missing);
+        }
+        for field in [
+            "max_work_bytes",
+            "max_configuration_bytes",
+            "max_executable_bytes",
+            "max_kernel_bytes",
+            "max_disk_bytes",
+            "max_material_bytes",
+        ] {
+            let mut missing = reference.clone();
+            missing["config"].as_object_mut().unwrap().remove(field);
+            reject(&missing);
+        }
+        for field in ["deployment_id", "node_id", "node_generation"] {
+            let mut missing = reference.clone();
+            missing["node"].as_object_mut().unwrap().remove(field);
+            reject(&missing);
+        }
+        for path in ["", "/config", "/node"] {
+            let mut unknown = reference.clone();
+            unknown
+                .pointer_mut(path)
+                .unwrap()
+                .as_object_mut()
+                .unwrap()
+                .insert("foreign".into(), json!(1));
+            reject(&unknown);
+        }
+        for (path, value) in [
+            ("/max_sessions", json!(65_536u64)),
+            ("/max_sessions", json!(-1)),
+            ("/node/node_generation", json!(0)),
+            ("/node/node_id", json!("")),
+            ("/config/max_work_bytes", json!(4_294_967_296u64)),
+            ("/config/max_disk_bytes", json!(-1)),
+        ] {
+            let mut invalid = reference.clone();
+            *invalid.pointer_mut(path).unwrap() = value;
+            reject(&invalid);
+        }
+
+        let text = String::from_utf8(bytes.clone()).unwrap();
+        let duplicate = text.replacen('{', "{\"max_sessions\":13,", 1);
+        assert!(serde_json::from_slice::<Configuration>(duplicate.as_bytes()).is_err());
+        assert!(serde_json::from_slice::<Configuration>(format!("{text}x").as_bytes()).is_err());
+        let spaced = format!(" {text}").into_bytes();
+        assert_configuration(serde_json::from_slice(&spaced).unwrap(), &original);
+        assert!(matches!(
+            checked::<Configuration>(&spaced, Sha256::digest(&spaced).as_slice()),
+            Err(JournalError::CorruptStore)
+        ));
+        let mut wrong_hash = Sha256::digest(&bytes);
+        wrong_hash[31] ^= 1;
+        assert!(matches!(
+            checked::<Configuration>(&bytes, wrong_hash.as_slice()),
+            Err(JournalError::CorruptStore)
+        ));
+    }
+}
