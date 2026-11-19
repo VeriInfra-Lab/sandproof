@@ -1,0 +1,20 @@
+import SandproofSqlite.SlotData
+import SandproofSqlite.TypesExternal
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std Result
+open SandproofSqliteRust SandproofSqliteRust.Model
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationDropCore
+
+-- ORIGINAL RESULT TEST
+-- ACTUAL MEMO CORE
+-- ORIGINAL B2 MODEL
+-- ORIGINAL ROLLBACK EQUATIONS
+
+end SandboxModel.Stage1Protocol.ObservationDropCore
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationDropCore.rollback_absent_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationDropCore.rollback_success_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationDropCore.rollback_unknown_exact
