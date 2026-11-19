@@ -1,0 +1,12 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39,1 +39,9 @@
++## V3 观察保存的父调用及逐行 SQL 候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df` 的联合抽取。实际所选保存字典在
++同一事务连接上调用原 codec，首个失败行先于提交返回，成功保持原提交与钩子顺序。
++真实 SQLite 的跨行状态、Drop 回滚和持久发布继续按 V5 条件核对。
++[精确输入与复验](../verification/experiments/stage1-protocol/unload-parent-link/observation-sql-save/README.md)。
++
++
+ ## V3 首次卸载使用同一条原执行记录
