@@ -1,0 +1,41 @@
+import SourceMetadataSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceMetadataNegative
+
+open SourceMetadataView SourceMetadataSpec
+
+theorem inflated_reserve_reaches_payload_in_wrong_version (f : Fields) :
+    SourceMetadataView.load (samplePorts f) (sampleDb 8193#i64) =
+      .ok (.Err (.Sqlite sampleError)) := by
+  reduce_metadata_header (sampleHeader f 8193#i64)
+  simp only [sampleHeader, bne_self_eq_false, Bool.false_eq_true, if_false, metadata_sql_exact,
+    bind_tc_ok]
+  simp [SourceRecordBoundsView.toUnsigned, core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.codec.METADATA_BYTES,
+    SourceRecordBoundsContract.sampleCapacity]
+  change (do let result ← queryPayload (sampleDb 8193#i64); _) = _
+  unfold queryPayload
+  reduce_sample_columns
+  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SourceLoadView.fromSql]
+
+theorem inflated_reserve_breaks_same_contract (f : Fields) :
+    ¬ Contract (SourceMetadataView.load (Node := Unit) (f := f)) := by
+  intro contract
+  have wrong := contract (samplePorts f) (sampleDb 8193#i64) (sampleHeader f 8193#i64)
+  rw [inflated_reserve_reaches_payload_in_wrong_version] at wrong
+  have rejected : ¬ metadataFits 1#i64 8192#i64 8193#i64 SourceRecordBoundsContract.sampleCapacity := by
+    intro fits
+    exact (by decide : (8193#i64 : I64) ≠ 8192#i64) fits.2.1
+  simp only [sampleHeader, rejected, if_false] at wrong
+  simp only [Result.ok.injEq, core.result.Result.Err.injEq] at wrong
+  cases wrong
+
+end SandboxModel.Stage1Protocol.SourceMetadataNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadataNegative.inflated_reserve_reaches_payload_in_wrong_version
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadataNegative.inflated_reserve_breaks_same_contract

@@ -1,0 +1,275 @@
+import SourceMetadataView
+
+open Aeneas
+open Aeneas.Std hiding Error
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields Row)
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Config Limits Capacity)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceMetadataSpec
+
+open SourceMetadataView
+open SandproofSourceRowSqlSelect hiding SqlReply
+
+def metadataFits (count length reserve : I64) (capacity : Capacity) : Prop :=
+  count = 1#i64 ∧ reserve = 8192#i64 ∧
+  (0 ≤ length.val ∧ length.val ≤ 8192) ∧ 8192 ≤ capacity.max_sql_value_bytes.val
+
+instance (count length reserve : I64) (capacity : Capacity) :
+    Decidable (metadataFits count length reserve capacity) :=
+  inferInstanceAs (Decidable (_ ∧ _ ∧ (_ ∧ _) ∧ _))
+
+structure Header {Node : Type} {f : Fields} (ports : Ports Node f) (db : Db) where
+  presence : Bool
+  count : I64
+  length : I64
+  reserve : I64
+  capacity : Capacity
+  version : queryVersion db = .ok (.Ok currentVersion)
+  existsReply : queryExists db = .ok (.Ok presence)
+  schemaSource : schema ports.text db sourceName sourceSchema = .ok (.Ok ())
+  schemaWork : schema ports.text db workName workSchema = .ok (.Ok ())
+  countReply : queryCount db = .ok (.Ok count)
+  numbers : queryNumbers db = .ok (.Ok (length, reserve))
+  capacityReply : ports.capacity db = .ok (.Ok (some capacity))
+
+abbrev Loaded (Node : Type) (f : Fields) := Reply (Option (Sources Node f))
+abbrev Loader (Node : Type) (f : Fields) := Ports Node f → Db → Result (Loaded Node f)
+
+def stepReply {A B E F : Type} (read : Result (core.result.Result A E))
+    (convert : core.convert.From F E) (next : A → Result (core.result.Result B F)) :
+    Result (core.result.Result B F) := do
+  let result ← read
+  let branch ← core.result.Result.Insts.CoreOpsTry.branch result
+  match branch with
+  | .Continue value => next value
+  | .Break failure =>
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual B convert failure
+
+def afterConfiguration {Node : Type} {f : Fields} (ports : Ports Node f) (db : Db)
+    (capacity : Capacity) (config : Config Node) : Result (Loaded Node f) := do
+  let limitsOk ← valid config.config
+  if limitsOk then
+    let range ← core.ops.range.RangeInclusive.new 1#u16 4096#u16
+    let sessionsOk ← rangeContains core.cmp.PartialOrdU16 core.cmp.PartialOrdU16 core.cmp.PartialOrdU16
+      range config.max_sessions
+    if sessionsOk then
+      stepReply (ports.records db config capacity) (core.convert.FromSame Error) fun values =>
+        .ok (.Ok (some ⟨config.config, config.node, config.max_sessions, values⟩))
+    else .ok (.Err .CorruptStore)
+  else .ok (.Err .CorruptStore)
+
+def readPayload {Node : Type} {f : Fields} (ports : Ports Node f) (db : Db)
+    (capacity : Capacity) : Result (Loaded Node f) :=
+  stepReply (queryPayload db) SourceLoadView.fromSql fun payload =>
+    let (bytes, sha) := payload
+    stepReply (checked ports.codec bytes.deref sha.deref) (core.convert.FromSame Error)
+      (afterConfiguration ports db capacity)
+
+macro "reduce_metadata_header " header:term : tactic =>
+  `(tactic|
+    (have metadataVersion := ($header).version
+     have metadataExists := ($header).existsReply
+     have sourceDdl := ($header).schemaSource
+     have workDdl := ($header).schemaWork
+     have metadataCount := ($header).countReply
+     have metadataNumbers := ($header).numbers
+     simp only [queryVersion, queryExists, queryCount, queryNumbers, queryZero]
+       at metadataVersion metadataExists metadataCount metadataNumbers
+     simp only [sourceName, workName] at sourceDdl workDdl
+     unfold load controller.lifecycle_inbox.source_work.codec.load
+     simp only [metadataVersion, metadataExists, sourceDdl, workDdl, metadataCount,
+       metadataNumbers, ($header).capacityReply, bind_tc_ok, bne_self_eq_false, Bool.false_eq_true,
+       if_false, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch]
+     dsimp! (config := { failIfUnchanged := false }) only))
+
+def Contract {Node : Type} {f : Fields} (loader : Loader Node f) : Prop :=
+  ∀ (ports : Ports Node f) (db : Db) (header : Header ports db),
+    loader ports db =
+      if metadataFits header.count header.length header.reserve header.capacity
+      then readPayload ports db header.capacity else .ok (.Err .CorruptStore)
+
+def withOriginalRows {Node : Type} {f : Fields}
+    (ports : Ports Node f) (policy : SourceRecordBoundsView.PolicyRead)
+    (library : SourceSqlCursorView.Library) (reader : SourceLoadView.Ports f) : Ports Node f :=
+  {ports with records := SourceRecordBoundsView.loader policy (SourceSqlCursorView.scan library reader)}
+
+theorem metadata_sql_exact : SourceRecordBoundsView.sqlConvert metadataBytes = .ok (.Ok 8192#i64) := by
+  rw [SourceRecordBounds.convert_sql_uses_exact_signed_limit]
+  rw [if_pos (by rw [I64.max_eq]; decide)]
+  rfl
+
+theorem unsigned_length_exact (value : I64) (nonnegative : 0 ≤ value.val) :
+    (IScalar.hcast .U64 value).val = value.val.toNat := by
+  have exactCast := IScalar.hcast_inBounds_spec .U64 value ⟨nonnegative, by scalar_tac⟩
+  have casts : ((IScalar.hcast .U64 value).val : Int) = value.val := by
+    simpa [lift, WP.spec_ok] using exactCast
+  omega
+
+/-- A successful metadata header with original table text and no metadata payload
+    reply. The reserved size is the only varied metadata value. -/
+def sampleRows (reserved : I64) (sql : Str) (arguments : List SqlValue) :
+    Option (Usize → SandproofSourceSlotRead.rusqlite.types.value_ref.ValueRef) :=
+  if sql = schemaSql then
+    if arguments = [.text sourceName] then some (fun _ => .Text sourceSchema)
+    else if arguments = [.text workName] then some (fun _ => .Text workSchema)
+    else none
+  else if sql = queryVersionSql then some (fun _ => .Integer 24#i64)
+  else if sql = queryExistsSql ∨ sql = queryCountSql then some (fun _ => .Integer 1#i64)
+  else if sql = queryNumbersSql then
+    some (fun index => .Integer (if index.val = 0 then 8192#i64 else reserved))
+  else none
+
+def sampleError : SqlError := ⟨⟨7⟩, false⟩
+
+def sampleDb (reserved : I64) : Db where
+  canonical := ⟨0, fun sql => .ok (.Ok (if sql = schemaSql then 1 else 0)),
+    fun _ _ => ⟨0⟩, fun _ _ => .fail .panic⟩
+  statementObject := fun _ => 1
+  columns := fun sql => if sql = queryNumbersSql then 2#usize else 1#usize
+  invalidIndex := fun _ index => ⟨index.val⟩
+  firstRow := fun sql statement =>
+    match sampleRows reserved sql statement.canonical.arguments with
+    | some columns => .ok (.Ok ⟨2, statement, columns, fun index _ _ => ⟨index.val⟩⟩)
+    | none => .ok (.Err sampleError)
+
+def samplePorts (f : Fields) : Ports Unit f where
+  text := fun bytes => .ok (.Ok bytes)
+  codec := ⟨fun _ => .fail .panic, fun _ => .fail .panic, fun _ => .fail .panic⟩
+  capacity := fun _ => .ok (.Ok (some SourceRecordBoundsContract.sampleCapacity))
+  records := fun _ _ _ => .fail .panic
+
+private theorem string_size {text : String} {bounded : text.toByteArray.size ≤ U32.max} :
+    (Aeneas.Std.toStr text bounded).val.length = text.utf8ByteSize := by
+  simp [Aeneas.Std.toStr, ByteArray.length_toList, String.size_toByteArray]
+
+macro "distinct_sql" : tactic =>
+  `(tactic|
+    (apply ne_of_apply_ne (fun value : Str => value.val.length)
+     simp only [schemaSql, sourceName, workName, string_size]
+     decide))
+
+private theorem sample_version_distinct :
+    queryVersionSql ≠ schemaSql ∧ queryVersionSql ≠ queryNumbersSql := by
+  constructor <;> distinct_sql
+
+private theorem sample_existence_distinct :
+    queryExistsSql ≠ schemaSql ∧ queryExistsSql ≠ queryNumbersSql ∧ queryExistsSql ≠ queryVersionSql := by
+  constructor
+  · distinct_sql
+  constructor <;> distinct_sql
+
+private theorem sample_count_distinct :
+    queryCountSql ≠ schemaSql ∧ queryCountSql ≠ queryNumbersSql ∧ queryCountSql ≠ queryVersionSql := by
+  constructor
+  · distinct_sql
+  constructor <;> distinct_sql
+
+private theorem sample_numbers_distinct :
+    queryNumbersSql ≠ schemaSql ∧ queryNumbersSql ≠ queryVersionSql ∧ queryNumbersSql ≠ queryExistsSql ∧
+      queryNumbersSql ≠ queryCountSql := by
+  constructor
+  · distinct_sql
+  constructor
+  · distinct_sql
+  constructor <;> distinct_sql
+
+private theorem sample_payload_distinct :
+    queryPayloadSql ≠ schemaSql ∧ queryPayloadSql ≠ queryVersionSql ∧ queryPayloadSql ≠ queryExistsSql ∧
+      queryPayloadSql ≠ queryCountSql ∧ queryPayloadSql ≠ queryNumbersSql := by
+  constructor
+  · distinct_sql
+  constructor
+  · distinct_sql
+  constructor
+  · distinct_sql
+  constructor <;> distinct_sql
+
+private theorem sample_schema_distinct :
+    schemaSql ≠ queryNumbersSql ∧
+      ([(.text workName : SqlValue)] ≠ [(.text sourceName : SqlValue)]) := by
+  constructor
+  · distinct_sql
+  · have different : workName ≠ sourceName := by distinct_sql
+    simpa only [ne_eq, List.cons.injEq, and_true,
+      SandproofSqliteStatementsRust.SqlValue.text.injEq] using different
+
+open controller.lifecycle_inbox.source_work.codec
+
+macro "reduce_sample_columns" : tactic =>
+  `(tactic|
+    (simp [queryZero, querySchema, sampleDb, sampleRows, issued, bindText, appendValue, withArguments,
+      rusqlite.Connection.query_row, SourceRecordBoundsView.ArrayShared0P0.Insts.RusqliteParamsParams,
+      SourceRecordBoundsView.emptyBinding, rusqlite.statement.Statement.ensure_parameter_count,
+      rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex.idx, asValueRef,
+      fromBool, I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result,
+      sample_version_distinct.1, sample_version_distinct.2, sample_existence_distinct.1,
+      sample_existence_distinct.2.1, sample_existence_distinct.2.2, sample_count_distinct.1,
+      sample_count_distinct.2.1, sample_count_distinct.2.2, sample_numbers_distinct.1,
+      sample_numbers_distinct.2.1, sample_numbers_distinct.2.2.1, sample_numbers_distinct.2.2.2,
+      sample_payload_distinct.1, sample_payload_distinct.2.1, sample_payload_distinct.2.2.1,
+      sample_payload_distinct.2.2.2.1, sample_payload_distinct.2.2.2.2, sample_schema_distinct.1,
+      sample_schema_distinct.2, samplePorts, strToSql, sharedToSql, readText,
+      SourceMetadataView.ArrayT1.Insts.RusqliteParamsParams,
+      SourceMetadataView.Shared0T.Insts.RusqliteTypesTo_sqlToSql,
+      Str.Insts.RusqliteTypesTo_sqlToSql,
+      alloc.string.String.Insts.RusqliteTypesFrom_sqlFromSql,
+      schema.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultStringError,
+      schema.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultStringError.call_once,
+      load.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error.call_once,
+      load.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultBoolError.call_once,
+      load.closure_2.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error.call_once,
+      load.closure_3.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultPairI64I64Error.call_once,
+      I64.Insts.RusqliteTypesFrom_sqlFromSql, Bool.Insts.RusqliteTypesFrom_sqlFromSql,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.ResultTError.Insts.RusqliteOptionalExtension.optional,
+      optionalDeref, textDeref, optionalCompare, strCompare,
+      core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      core.cmp.impls.PartialEqShared.eq]))
+
+def sampleHeader (f : Fields) (reserved : I64) : Header (samplePorts f) (sampleDb reserved) where
+  presence := true
+  count := 1#i64
+  length := 8192#i64
+  reserve := reserved
+  capacity := SourceRecordBoundsContract.sampleCapacity
+  version := by
+    unfold queryVersion
+    unfold load.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error
+    reduce_sample_columns
+    rfl
+  existsReply := by
+    unfold queryExists
+    unfold load.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultBoolError
+    reduce_sample_columns
+  schemaSource := by
+    unfold SourceMetadataView.schema controller.lifecycle_inbox.source_work.codec.schema
+    change (do let result ← querySchema (samplePorts f).text (sampleDb reserved) sourceName; _) = _
+    reduce_sample_columns
+  schemaWork := by
+    unfold SourceMetadataView.schema controller.lifecycle_inbox.source_work.codec.schema
+    change (do let result ← querySchema (samplePorts f).text (sampleDb reserved) workName; _) = _
+    reduce_sample_columns
+  countReply := by
+    unfold queryCount
+    unfold load.closure_2.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error
+    reduce_sample_columns
+  numbers := by
+    unfold queryNumbers
+    unfold load.closure_3.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultPairI64I64Error
+    reduce_sample_columns
+  capacityReply := by rfl
+
+theorem sample_payload_error {f : Fields} (reserved : I64) :
+    readPayload (samplePorts f) (sampleDb reserved) SourceRecordBoundsContract.sampleCapacity =
+      .ok (.Err (.Sqlite sampleError)) := by
+  unfold readPayload stepReply queryPayload
+  reduce_sample_columns
+  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SourceLoadView.fromSql]
+
+end SandboxModel.Stage1Protocol.SourceMetadataSpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadataSpec.metadata_sql_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadataSpec.unsigned_length_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadataSpec.sample_payload_error

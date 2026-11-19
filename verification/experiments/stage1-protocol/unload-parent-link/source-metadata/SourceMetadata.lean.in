@@ -1,0 +1,227 @@
+import SourceMetadataSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceMetadata
+
+open SourceMetadataView SourceMetadataSpec
+open controller.lifecycle_inbox.source_work.codec
+
+variable {Node : Type} {f : Fields}
+
+theorem schema_reads_complete_text (decode : TextDecode) (db : Db) (table expected found : Str)
+    (reply : querySchema decode db table = .ok (.Ok found)) :
+    SourceMetadataView.schema decode db table expected =
+      .ok (if found = expected then .Ok () else .Err .CorruptStore) := by
+  unfold SourceMetadataView.schema controller.lifecycle_inbox.source_work.codec.schema
+  change (do let result ← querySchema decode db table; _) = _
+  rw [reply]
+  by_cases same : found = expected <;>
+    simp [SandproofSourceRowSqlSelect.core.result.ResultTError.Insts.RusqliteOptionalExtension.optional,
+      core.result.Result.Insts.CoreOpsTry.branch, optionalDeref, textDeref, optionalCompare,
+      strCompare, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      core.cmp.impls.PartialEqShared.eq, same]
+
+theorem checked_decode_error_is_first (codec : Codec Node) (bytes sha : Slice U8)
+    (failure : SandproofSourceRowSqlSelect.serde_json.error.Error)
+    (reply : codec.decode bytes = .ok (.Err failure)) :
+    checked codec bytes sha = .ok (.Err .CorruptStore) := by
+  simp [checked, checked_source_configuration, reply, core.result.Result.map_err,
+    checked_source_configuration.closure.Insts.CoreOpsFunctionFnOnceTupleErrorJournalError,
+    checked_source_configuration.closure.Insts.CoreOpsFunctionFnOnceTupleErrorJournalError.call_once,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem checked_requires_digest_and_complete_encoding (codec : Codec Node) (bytes sha : Slice U8)
+    (config : SourceRecordBoundsView.Config Node) (digest : Array U8 32#usize) (encoded : Bytes)
+    (decoded : codec.decode bytes = .ok (.Ok config))
+    (hashed : codec.digest bytes = .ok digest)
+    (serialized : codec.encode config = .ok (.Ok encoded)) :
+    checked codec bytes sha =
+      .ok (if digest.val = sha.val ∧ encoded.val = bytes.val
+        then .Ok config else .Err .CorruptStore) := by
+  by_cases digestMatches : digest.val = sha.val <;>
+    by_cases bytesMatch : encoded.val = bytes.val <;>
+      simp [checked, checked_source_configuration, decoded, hashed, serialized,
+        core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+        core.cmp.impls.PartialEqShared.ne, bytesCompare, vecBytesDiffer,
+        lift, Array.val_to_slice, digestMatches, bytesMatch]
+
+theorem version_error_is_first (ports : Ports Node f) (db : Db) (failure : SqlError)
+    (reply : queryVersion db = .ok (.Err failure)) :
+    SourceMetadataView.load ports db = .ok (.Err (.Sqlite failure)) := by
+  unfold SourceMetadataView.load controller.lifecycle_inbox.source_work.codec.load
+  change (do let result ← queryVersion db; _) = _
+  rw [reply]
+  simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SourceLoadView.fromSql]
+
+theorem presence_error_precedes_version_rejection (ports : Ports Node f) (db : Db)
+    (version : I64) (failure : SqlError)
+    (versionReply : queryVersion db = .ok (.Ok version))
+    (presenceReply : queryExists db = .ok (.Err failure)) :
+    SourceMetadataView.load ports db = .ok (.Err (.Sqlite failure)) := by
+  unfold SourceMetadataView.load controller.lifecycle_inbox.source_work.codec.load
+  change (do let result ← queryVersion db; _) = _
+  rw [versionReply]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch]
+  change (do let result ← queryExists db; _) = _
+  rw [presenceReply]
+  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SourceLoadView.fromSql]
+
+theorem legacy_tables_determine_rejection (ports : Ports Node f) (db : Db)
+    (version : I64) (presence : Bool)
+    (versionReply : queryVersion db = .ok (.Ok version))
+    (presenceReply : queryExists db = .ok (.Ok presence)) (legacy : version ≠ currentVersion) :
+    SourceMetadataView.load ports db =
+      .ok (if presence then .Err .CorruptStore else .Ok none) := by
+  unfold SourceMetadataView.load controller.lifecycle_inbox.source_work.codec.load
+  change (do let result ← queryVersion db; _) = _
+  rw [versionReply]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch]
+  change (do let result ← queryExists db; _) = _
+  rw [presenceReply]
+  simp only [bind_tc_ok]
+  rw [if_pos (bne_iff_ne.mpr legacy)]
+  cases presence <;> rfl
+
+theorem actual_metadata_contract : Contract (SourceMetadataView.load (Node := Node) (f := f)) := by
+  intro ports db header
+  reduce_metadata_header header
+  by_cases count : header.count = 1#i64
+  · simp only [count, bne_self_eq_false, Bool.false_eq_true, if_false, metadata_sql_exact, bind_tc_ok]
+    by_cases reserve : header.reserve = 8192#i64
+    · simp only [reserve, bne_self_eq_false, Bool.false_eq_true, if_false]
+      by_cases nonnegative : 0 ≤ header.length.val
+      · simp only [SourceRecordBoundsView.toUnsigned, nonnegative, if_true, bind_tc_ok,
+          core.result.Result.map_err]
+        by_cases lengthFits : header.length.val ≤ 8192 <;>
+          by_cases capFits : 8192 ≤ header.capacity.max_sql_value_bytes.val
+        all_goals
+          have len : 8192 < header.length.val.toNat ↔ ¬ header.length.val ≤ 8192 := by omega
+          have cap : header.capacity.max_sql_value_bytes.val < 8192 ↔
+              ¬8192 ≤ header.capacity.max_sql_value_bytes.val := by omega
+          simp [metadataFits, nonnegative, len, lengthFits, capFits, cap,
+            unsigned_length_exact _ nonnegative, METADATA_BYTES,
+            readPayload, stepReply, afterConfiguration, queryPayload, queryZero,
+            core.result.Result.Insts.CoreOpsTry.branch]
+        all_goals
+          congr 1
+          funext result
+          cases result with
+          | Err failure => simp only [bind_tc_ok]
+          | Ok payload =>
+            rcases payload with ⟨bytes, sha⟩
+            simp only [bind_tc_ok, valid, core.ops.range.RangeInclusive.new]
+            congr 1
+            funext decoded
+            cases decoded with
+            | Err failure => simp only [bind_tc_ok]
+            | Ok config =>
+              simp only [bind_tc_ok]
+              congr 1
+              funext limitsOk
+              cases limitsOk <;> simp only [Bool.false_eq_true, if_false, if_true]
+              congr 1
+              funext sessionsOk
+              cases sessionsOk <;> simp only [Bool.false_eq_true, if_false, if_true]
+              congr 1
+              funext rows
+              cases rows <;> simp only [bind_tc_ok]
+      · simp [metadataFits, nonnegative, SourceRecordBoundsView.toUnsigned,
+          core.result.Result.map_err,
+          load.closure_4.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError,
+          load.closure_4.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError.call_once,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    · rw [if_pos (bne_iff_ne.mpr reserve)]
+      simp only [metadataFits, reserve, false_and, and_false, if_false]
+  · rw [if_pos (bne_iff_ne.mpr count)]
+    simp only [metadataFits, count, false_and, if_false]
+
+theorem after_config_forwards_every_field (ports : Ports Node f) (db : Db)
+    (capacity : SourceRecordBoundsView.Capacity) (config : SourceRecordBoundsView.Config Node)
+    (records : alloc.vec.Vec (SourceKeyEncode.Row f))
+    (configOk : valid config.config = .ok true)
+    (sessionsOk : sessionValid config.max_sessions = .ok true)
+    (rows : ports.records db config capacity = .ok (.Ok records)) :
+    afterConfiguration ports db capacity config =
+      .ok (.Ok (some ⟨config.config, config.node, config.max_sessions, records⟩)) := by
+  unfold afterConfiguration
+  rw [configOk]
+  simp only [bind_tc_ok, if_true]
+  simp only [sessionValid, core.ops.range.RangeInclusive.new, bind_tc_ok] at sessionsOk ⊢
+  rw [sessionsOk]
+  simp [stepReply, rows, core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem actual_success_retains_full_configuration (ports : Ports Node f) (db : Db)
+    (header : Header ports db) (fits : metadataFits header.count header.length header.reserve header.capacity)
+    (bytes sha : Bytes) (config : SourceRecordBoundsView.Config Node)
+    (records : alloc.vec.Vec (SourceKeyEncode.Row f))
+    (payload : queryPayload db = .ok (.Ok (bytes, sha)))
+    (decoded : checked ports.codec bytes.deref sha.deref = .ok (.Ok config))
+    (configOk : valid config.config = .ok true)
+    (sessionsOk : sessionValid config.max_sessions = .ok true)
+    (rows : ports.records db config header.capacity = .ok (.Ok records)) :
+    SourceMetadataView.load ports db =
+      .ok (.Ok (some ⟨config.config, config.node, config.max_sessions, records⟩)) := by
+  rw [actual_metadata_contract ports db header, if_pos fits]
+  unfold readPayload stepReply
+  rw [payload]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch]
+  rw [decoded]
+  simp only [bind_tc_ok]
+  exact after_config_forwards_every_field ports db header.capacity config records configOk sessionsOk rows
+
+theorem original_guarded_rows_keep_transaction_keys {Raw : Type}
+    {invocation : SourceHistory.Invocation Raw} {image : SourceHistory.Image}
+    (policy : SourceRecordBoundsView.PolicyRead) (library : SourceSqlCursorView.Library)
+    (reader : SourceLoadView.Ports f) (ports : Ports Node f)
+    (active : SourceSqlCursor.ActiveCursor library invocation image)
+    (config : SourceRecordBoundsView.Config Node) (capacity : SourceRecordBoundsView.Capacity)
+    (reserve rows : U64) (bounds : SourceRecordBoundsView.Bounds)
+    (records : alloc.vec.Vec (SourceKeyEncode.Row f))
+    (reserveReply : SourceRecordBoundsView.reservation config.config 1#u64 = .ok reserve)
+    (countReply : SourceRecordBoundsView.reserved policy invocation.connection config.max_sessions = .ok (.Ok rows))
+    (aggregate : SourceRecordBoundsView.queryBounds invocation.connection = .ok (.Ok bounds))
+    (normal : (withOriginalRows ports policy library reader).records invocation.connection config capacity =
+      .ok (.Ok records)) :
+    ∀ key ∈ SourceKeyHistory.workKeys (SourceKeyEncode.keyOf f) records.val,
+      SourceKeyHistory.Registered image key := by
+  exact SourceRecordBounds.guarded_scan_registers_full_keys policy library reader active config capacity
+    reserve rows bounds records reserveReply countReply aggregate normal
+
+theorem actual_equal_reserve_reaches_payload (f : Fields) :
+    SourceMetadataView.load (samplePorts f) (sampleDb 8192#i64) =
+      .ok (.Err (.Sqlite sampleError)) := by
+  rw [actual_metadata_contract (samplePorts f) _ (sampleHeader f 8192#i64)]
+  have fits : metadataFits 1#i64 8192#i64 8192#i64 SourceRecordBoundsContract.sampleCapacity := by
+    simp [metadataFits, SourceRecordBoundsContract.sampleCapacity]
+  simp only [sampleHeader, fits, if_true]
+  exact sample_payload_error _
+
+theorem actual_one_over_reserve_rejects_before_payload (f : Fields) :
+    SourceMetadataView.load (samplePorts f) (sampleDb 8193#i64) = .ok (.Err .CorruptStore) := by
+  rw [actual_metadata_contract (samplePorts f) _ (sampleHeader f 8193#i64)]
+  have rejected : ¬ metadataFits 1#i64 8192#i64 8193#i64 SourceRecordBoundsContract.sampleCapacity := by
+    intro fits
+    exact (by decide : (8193#i64 : I64) ≠ 8192#i64) fits.2.1
+  simp only [sampleHeader, rejected, if_false]
+
+end SandboxModel.Stage1Protocol.SourceMetadata
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.actual_metadata_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.version_error_is_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.presence_error_precedes_version_rejection
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.legacy_tables_determine_rejection
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.schema_reads_complete_text
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.checked_decode_error_is_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.checked_requires_digest_and_complete_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.after_config_forwards_every_field
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.actual_success_retains_full_configuration
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.original_guarded_rows_keep_transaction_keys
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.actual_equal_reserve_reaches_payload
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMetadata.actual_one_over_reserve_rejects_before_payload

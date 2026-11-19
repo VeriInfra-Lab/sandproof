@@ -1,0 +1,223 @@
+import SourceRecordBounds
+
+open Aeneas Aeneas.Std Result
+open SandproofSourceRowSqlSelect hiding toStr
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity Config Limits)
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields Row)
+set_option autoImplicit false
+set_option maxRecDepth 2048
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+
+namespace SandboxModel.Stage1Protocol.SourceMetadataView
+
+private abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+abbrev Db := SaveRows.Db
+abbrev Error := SaveRows.Error
+abbrev Bytes := alloc.vec.Vec U8
+abbrev SqlError := rusqlite.error.Error
+abbrev SqlReply (T : Type) := core.result.Result T SqlError
+abbrev Reply (T : Type) := core.result.Result T Error
+
+local notation "capture.source.SourceObservationConfig" => Limits
+local notation "controller.capacity.CapacityConfig" => Capacity
+local notation "U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from" => SourceRecordBoundsView.toUnsigned
+local notation "controller.lifecycle_inbox.source_work.codec.sql" => SourceRecordBoundsView.sqlConvert
+local notation "JournalError.Insts.CoreConvertFromError" => SourceLoadView.fromSql
+local notation "alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql" => SourceSqlCursorView.blobDictionary
+local notation "Dyn" => (fun (_ : Type → Type) => Unit)
+local notation "ArrayShared0P0.Insts.RusqliteParamsParams" =>
+  SourceRecordBoundsView.ArrayShared0P0.Insts.RusqliteParamsParams
+
+-- ACTUAL STRUCTURE
+-- ACTUAL CLOSURE TYPES
+-- ACTUAL CONSTANTS
+
+abbrev Sources (Node : Type) (f : Fields) :=
+  controller.lifecycle_inbox.source_work.codec.Sources Limits Node (Row f)
+
+abbrev currentVersion := LIFECYCLE_STORE_FORMAT_VERSION
+abbrev sourceSchema := controller.lifecycle_inbox.source_work.codec.TABLE
+abbrev workSchema := controller.lifecycle_inbox.source_work.codec.RECORDS_TABLE
+abbrev metadataBytes := controller.lifecycle_inbox.source_work.codec.METADATA_BYTES
+
+def sourceName : Str := toStr "controller_source_work"
+def workName : Str := toStr "controller_source_work_records"
+def schemaSql : Str := toStr "SELECT sql FROM sqlite_master WHERE type='table' AND name=?1"
+
+def rangeContains {A B : Type} (_ : core.cmp.PartialOrd A A)
+    (lower : core.cmp.PartialOrd A B) (upper : core.cmp.PartialOrd B A)
+    (range : core.ops.range.RangeInclusive A) (value : B) : Result Bool := do
+  let lowerOk ← lower.le range.start value
+  if lowerOk then upper.le value range.end else .ok false
+
+local notation "core.ops.range.RangeInclusive.contains" => rangeContains
+
+-- ACTUAL VALID
+abbrev valid := capture.source.SourceObservationConfig.valid
+
+def sessionValid (value : U16) : Result Bool := do
+  let range ← core.ops.range.RangeInclusive.new 1#u16 4096#u16
+  rangeContains core.cmp.PartialOrdU16 core.cmp.PartialOrdU16 core.cmp.PartialOrdU16 range value
+
+/-- A4 validates the underlying SQLite text before providing its original
+    UTF-8 bytes. A failing conversion keeps the issued Row's exact error. -/
+abbrev TextDecode := Slice U8 → Result (core.result.Result Str rusqlite.types.from_sql.FromSqlError)
+
+def readText (decode : TextDecode) (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result Str rusqlite.types.from_sql.FromSqlError) :=
+  match value with
+  | .Text bytes => decode bytes
+  | _ => .ok (.Err .invalidType)
+
+def fromBool (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result Bool rusqlite.types.from_sql.FromSqlError) :=
+  match value with
+  | .Integer number => .ok (.Ok (number != 0#i64))
+  | _ => .ok (.Err .invalidType)
+
+def strToSql (table : Str) : Result (SqlReply rusqlite.types.to_sql.ToSqlOutput) :=
+  .ok (.Ok (.Borrowed (.Text table)))
+
+def sharedToSql {T : Type} (encoder : rusqlite.types.to_sql.ToSql T) (value : T) :=
+  encoder.to_sql value
+
+/-- The original singleton array contains the table name as TEXT. The
+    canonical firstRow provider includes fallible SQLite binding and stepping. -/
+def bindText {T : Type} (encode : rusqlite.types.to_sql.ToSql T)
+    (values : Array T 1#usize) (statement : rusqlite.statement.Statement) : Result BindReply :=
+  rusqlite.statement.Statement.ensure_parameter_count statement 1#usize >>= fun result =>
+  match result with
+  | .Err failure => .ok (.Err failure, statement)
+  | .Ok () =>
+    encode.to_sql (getElem values 0 (by simp)) >>= fun encoded =>
+    match encoded with
+    | .Err failure => .ok (.Err failure, statement)
+    | .Ok (.Borrowed (.Text bytes)) => .ok (.Ok (), appendValue statement (.text bytes))
+    | _ => .fail .panic
+
+def optionalCompare {T : Type} (compare : core.cmp.PartialEq T T) :
+    core.cmp.PartialEq (Option T) (Option T) :=
+  { eq := fun left right =>
+      match left, right with
+      | some left, some right => compare.eq left right
+      | none, none => .ok true
+      | _, _ => .ok false }
+
+def strCompare : core.cmp.PartialEq Str Str :=
+  { eq := fun left right => .ok (decide (left = right)) }
+
+def optionalDeref {T V : Type} (deref : core.ops.deref.Deref T V) :
+    Option T → Result (Option V)
+  | none => .ok none
+  | some value => do let view ← deref.deref value; .ok (some view)
+
+def textDeref : core.ops.deref.Deref Str Str := { deref := .ok }
+
+def bytesCompare (_ : core.cmp.PartialEq U8 U8) : core.cmp.PartialEq (Slice U8) (Slice U8) :=
+  { eq := fun left right => .ok (left.val == right.val) }
+
+def vecBytesDiffer (_ : Type) (_ : core.cmp.PartialEq U8 U8)
+    (left : Bytes) (right : Slice U8) : Result Bool := .ok (!(left.val == right.val))
+
+local notation "Bool.Insts.RusqliteTypesFrom_sqlFromSql.column_result" => fromBool
+local notation "ArrayT1.Insts.RusqliteParamsParams.__bind_in" => bindText
+local notation "Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql" => sharedToSql
+local notation "Str.Insts.RusqliteTypesTo_sqlToSql.to_sql" => strToSql
+local notation "core.option.Option.Insts.CoreCmpPartialEqOption" => optionalCompare
+local notation "Str.Insts.CoreCmpPartialEqStr" => strCompare
+local notation "core.option.Option.as_deref" => optionalDeref
+local notation "alloc.string.String.Insts.CoreOpsDerefDerefStr" => textDeref
+local notation "Slice.Insts.CoreCmpPartialEqSlice" => bytesCompare
+local notation "alloc.vec.Vec.Insts.CoreCmpPartialEqShared0Slice.ne" => vecBytesDiffer
+local notation "Global" => Unit
+
+-- ACTUAL SQL DICTIONARIES
+
+section
+variable (decode : TextDecode)
+local notation "String" => Str
+local notation "alloc.string.String.Insts.RusqliteTypesFrom_sqlFromSql.column_result" => readText decode
+
+-- ACTUAL TEXT DICTIONARY
+
+local notation "alloc.string.String.Insts.RusqliteTypesFrom_sqlFromSql" =>
+  alloc.string.String.Insts.RusqliteTypesFrom_sqlFromSql decode
+
+-- ACTUAL SCHEMA CALLBACK
+
+local notation "controller.lifecycle_inbox.source_work.codec.schema.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultStringError.call_once" =>
+  controller.lifecycle_inbox.source_work.codec.schema.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultStringError.call_once decode
+
+-- ACTUAL SCHEMA FN DICTIONARY
+
+local notation "controller.lifecycle_inbox.source_work.codec.schema.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultStringError" =>
+  controller.lifecycle_inbox.source_work.codec.schema.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultStringError decode
+
+def querySchema (connection : Db) (table : Str) : Result (SqlReply Str) :=
+  rusqlite.Connection.query_row (ArrayT1.Insts.RusqliteParamsParams
+      (Shared0T.Insts.RusqliteTypesTo_sqlToSql Str.Insts.RusqliteTypesTo_sqlToSql))
+    controller.lifecycle_inbox.source_work.codec.schema.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultStringError
+    connection schemaSql (Array.make 1#usize [table]) ()
+
+-- ACTUAL SCHEMA
+
+end
+
+abbrev schema := controller.lifecycle_inbox.source_work.codec.schema
+
+structure Codec (Node : Type) where
+  decode : Slice U8 → Result (core.result.Result (Config Node) serde_json.error.Error)
+  encode : Config Node → Result (Reply Bytes)
+  digest : Slice U8 → Result (Array U8 32#usize)
+
+-- ACTUAL JSON ERROR MAP
+
+section
+variable {Node : Type} (codec : Codec Node)
+local notation "controller.lifecycle_inbox.source_work.codec.Configuration" => Config Node
+local notation "controller.lifecycle_inbox.source_work.codec.decode_source_configuration" => codec.decode
+local notation "controller.lifecycle_inbox.source_work.codec.encode_source_configuration" => codec.encode
+local notation "controller.lifecycle_inbox.source_work.codec.digest_source_configuration" => codec.digest
+
+-- ACTUAL CHECKED
+
+end
+
+abbrev checked := @controller.lifecycle_inbox.source_work.codec.checked_source_configuration
+
+-- ACTUAL LOAD CALLBACKS
+
+def queryZero {T : Type} (statement : Str)
+    (callback : core.ops.function.FnOnce Unit rusqlite.row.Row (SqlReply T))
+    (connection : Db) : Result (SqlReply T) :=
+  rusqlite.Connection.query_row ArrayShared0P0.Insts.RusqliteParamsParams callback connection statement
+    (Std.Array.empty Unit) ()
+
+-- ACTUAL QUERY ALIASES
+
+structure Ports (Node : Type) (f : Fields) where
+  text : TextDecode
+  codec : Codec Node
+  capacity : Db → Result (Reply (Option Capacity))
+  records : Db → Config Node → Capacity → Result (Reply (alloc.vec.Vec (Row f)))
+
+section
+variable {Node : Type} {f : Fields} (ports : Ports Node f)
+local notation "controller.lifecycle_inbox.source_work.codec.schema" => schema ports.text
+local notation "controller.lifecycle_inbox.source_work.codec.checked_source_configuration" => checked ports.codec
+local notation "controller.lifecycle_inbox.source_work.codec.load_records" => ports.records
+local notation "controller.capacity.config" => ports.capacity
+local notation "sandproof_protocol.internal.NodeIdentity" => Node
+local notation "controller.lifecycle_inbox.source_work.SourceWorkRecord" => Row f
+
+-- ACTUAL LOAD
+
+end
+
+abbrev load := @controller.lifecycle_inbox.source_work.codec.load
+
+end SandboxModel.Stage1Protocol.SourceMetadataView
