@@ -1,0 +1,102 @@
+import UnloadFinish
+import ObservationFinishResult
+
+open Aeneas Aeneas.Std SandproofUnloadFinish
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.UnloadFinish
+
+local notation "observeFinish" => controller.lifecycle_inbox.source_work.finish_observation_save
+
+theorem observation_save_error {Rows C Record : Type} (writer : Writer Rows) (hooks : CrashInjector C)
+    (owner : Owner) (raw : Raw) (live : owner.transaction = some raw)
+    (sources : Rows) (limit : U16) (input : C) (record : Record) (error : JournalError)
+    (saved : writer.save raw.conn sources limit = .ok (.Err error)) :
+    observeFinish writer hooks owner sources limit input record = .ok (.Err error, input) :=
+  observation_finish_reply writer hooks owner sources limit input input record _
+    (save_error writer hooks owner raw live sources limit input error saved)
+
+theorem observation_before_commit_error {Rows C Record : Type}
+    (writer : Writer Rows) (hooks : CrashInjector C) (owner : Owner) (raw : Raw)
+    (live : owner.transaction = some raw) (sources : Rows) (limit : U16) (input before : C)
+    (record : Record) (error : JournalError)
+    (saved : writer.save raw.conn sources limit = .ok (.Ok ()))
+    (called : hooks.hit input .BeforeCommit = .ok (.Err error, before)) :
+    observeFinish writer hooks owner sources limit input record = .ok (.Err error, before) :=
+  observation_finish_reply writer hooks owner sources limit input before record _
+    (before_commit_error writer hooks owner raw live sources limit input before error saved called)
+
+theorem observation_commit_error {Rows C Record : Type} (writer : Writer Rows) (hooks : CrashInjector C)
+    (owner : Owner) (raw : Raw) (live : owner.transaction = some raw)
+    (sources : Rows) (limit : U16) (input before : C) (record : Record) (error : JournalError)
+    (saved : writer.save raw.conn sources limit = .ok (.Ok ()))
+    (checked : hooks.hit input .BeforeCommit = .ok (.Ok (), before))
+    (committed : controller.transaction.WorldTransaction.commit owner = .ok (.Err error)) :
+    observeFinish writer hooks owner sources limit input record = .ok (.Err error, before) :=
+  observation_finish_reply writer hooks owner sources limit input before record _
+    (commit_error writer hooks owner raw live sources limit input before error saved checked committed)
+
+theorem observation_post_commit_reply {Rows C Record : Type} (writer : Writer Rows) (hooks : CrashInjector C)
+    (owner : Owner) (raw : Raw) (live : owner.transaction = some raw)
+    (sources : Rows) (limit : U16) (input before after : C) (record : Record)
+    (reply : core.result.Result Unit JournalError)
+    (saved : writer.save raw.conn sources limit = .ok (.Ok ()))
+    (checked : hooks.hit input .BeforeCommit = .ok (.Ok (), before))
+    (committed : controller.transaction.WorldTransaction.commit owner = .ok (.Ok ()))
+    (called : hooks.hit before .AfterCommit = .ok (reply, after)) :
+    observeFinish writer hooks owner sources limit input record =
+      .ok ((match reply with | .Ok _ => .Ok record | .Err error => .Err error), after) := by
+  cases reply <;> exact observation_finish_reply writer hooks owner sources limit input after record _
+    (post_commit_reply writer hooks owner raw live sources limit input before after _ saved checked committed called)
+
+theorem observation_commit_uncertain_keeps_error_and_empty_memo {Rows C Record : Type}
+    (writer : Writer Rows) (hooks : CrashInjector C) (owner : Owner) (raw : Raw)
+    (world : SandproofParentCommitRust.World) (observed : Option SandproofParentCommitRust.World)
+    (live : owner.transaction = some raw)
+    (candidate : SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt
+      (SandproofParentCommitRust.CurrentViews.ownerToRead owner) world)
+    (checks : SandproofParentCommitRust.ParentResults.ChecksReturnedOk owner raw world)
+    (available : owner.committed.value.beforeBorrowCount = 0)
+    (error : SandproofParentCommitRust.rusqlite.error.Error)
+    (returned : SandproofParentCommitRust.rusqlite.transaction.Transaction.commit raw = .ok (.Err error))
+    (physical : SandproofParentCommitRust.PhysicalLink.LinkedCommitted observed (SandproofParentCommitRust.ActualFinish.memoInvocation owner)
+      (fun output => output.2.2))
+    (sources : Rows) (limit : U16) (input before : C) (record : Record)
+    (saved : writer.save raw.conn sources limit = .ok (.Ok ()))
+    (checked : hooks.hit input .BeforeCommit = .ok (.Ok (), before)) :
+    observeFinish writer hooks owner sources limit input record = .ok (.Err (.CommitUncertain error), before) ∧
+      observed = none := by
+  have outcome := commit_uncertain_keeps_the_original_error writer hooks owner raw world observed
+    live candidate checks available error returned physical sources limit input before saved checked
+  exact ⟨observation_finish_reply writer hooks owner sources limit input before record _ outcome.1, outcome.2⟩
+
+theorem observation_post_commit_error_keeps_the_candidate {Rows C Record : Type}
+    (writer : Writer Rows) (hooks : CrashInjector C) (owner : Owner) (raw : Raw)
+    (world : SandproofParentCommitRust.World) (observed : Option SandproofParentCommitRust.World)
+    (live : owner.transaction = some raw)
+    (candidate : SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt
+      (SandproofParentCommitRust.CurrentViews.ownerToRead owner) world)
+    (checks : SandproofParentCommitRust.ParentResults.ChecksReturnedOk owner raw world)
+    (available : owner.committed.value.beforeBorrowCount = 0)
+    (candidateAvailable : owner.candidate.beforeBorrowCount = 0)
+    (returned : SandproofParentCommitRust.rusqlite.transaction.Transaction.commit raw = .ok (.Ok ()))
+    (physical : SandproofParentCommitRust.PhysicalLink.LinkedCommitted observed (SandproofParentCommitRust.ActualFinish.memoInvocation owner)
+      (fun output => output.2.2))
+    (sources : Rows) (limit : U16) (input before after : C) (record : Record) (error : JournalError)
+    (saved : writer.save raw.conn sources limit = .ok (.Ok ()))
+    (checked : hooks.hit input .BeforeCommit = .ok (.Ok (), before))
+    (called : hooks.hit before .AfterCommit = .ok (.Err error, after)) :
+    observeFinish writer hooks owner sources limit input record = .ok (.Err error, after) ∧
+      observed = owner.candidate.value := by
+  have outcome := post_commit_error_keeps_the_published_candidate writer hooks owner raw world observed
+    live candidate checks available candidateAvailable returned physical sources limit input before after error saved checked called
+  exact ⟨observation_finish_reply writer hooks owner sources limit input after record _ outcome.1, outcome.2⟩
+
+end SandboxModel.Stage1Protocol.UnloadFinish
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFinish.observation_save_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFinish.observation_before_commit_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFinish.observation_commit_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFinish.observation_post_commit_reply
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFinish.observation_commit_uncertain_keeps_error_and_empty_memo
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFinish.observation_post_commit_error_keeps_the_candidate
