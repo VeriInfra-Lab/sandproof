@@ -1,0 +1,202 @@
+import SourceRecordBoundsContract
+
+open Aeneas Aeneas.Std SandproofSourceRowSqlSelect
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields Row keyOf)
+open SandboxModel.Stage1Protocol.SourceKeyHistory (Registered workKeys)
+open SandboxModel.Stage1Protocol.SourceHistory (Invocation Image)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRecordBounds
+
+open SourceRecordBoundsView SourceRecordBoundsContract
+
+theorem convert_sql_uses_exact_signed_limit (value : U64) :
+    sqlConvert value = .ok (if (value.val : Int) ≤ I64.max
+      then .Ok (UScalar.hcast .I64 value) else .Err .MaintenanceCapacity) := by
+  by_cases valid : (value.val : Int) ≤ I64.max <;>
+    simp [sqlConvert, controller.lifecycle_inbox.source_work.codec.sql, toSigned, valid,
+      core.result.Result.map_err,
+      controller.lifecycle_inbox.source_work.codec.sql.closure.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError,
+      controller.lifecycle_inbox.source_work.codec.sql.closure.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError.call_once]
+
+def integerColumn (row : rusqlite.row.Row) (index : Usize) :
+    core.result.Result I64 rusqlite.error.Error :=
+  SourceSqlCursorView.columnResult (fun
+    | .Integer value => .Ok value
+    | _ => .Err .invalidType) row index
+
+theorem bounded_aggregate_column_exact (row : rusqlite.row.Row) (index : Usize) :
+    rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex I64.Insts.RusqliteTypesFrom_sqlFromSql row index =
+      .ok (integerColumn row index) := by
+  by_cases valid : index.val < row.statement.columns.val
+  · cases raw : row.column index <;>
+      simp [rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex.idx,
+        I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result, asValueRef,
+        integerColumn, SourceSqlCursorView.columnResult, valid, raw]
+  · simp [rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex.idx,
+      integerColumn, SourceSqlCursorView.columnResult, valid]
+
+def readColumns (row : rusqlite.row.Row) : BoundsReply :=
+  match integerColumn row 0#usize, integerColumn row 1#usize, integerColumn row 2#usize,
+      integerColumn row 3#usize, integerColumn row 4#usize, integerColumn row 5#usize with
+  | .Err failure, _, _, _, _, _
+  | .Ok _, .Err failure, _, _, _, _
+  | .Ok _, .Ok _, .Err failure, _, _, _
+  | .Ok _, .Ok _, .Ok _, .Err failure, _, _
+  | .Ok _, .Ok _, .Ok _, .Ok _, .Err failure, _
+  | .Ok _, .Ok _, .Ok _, .Ok _, .Ok _, .Err failure => .Err failure
+  | .Ok count, .Ok smallest, .Ok largest, .Ok minReserve, .Ok maxReserve, .Ok maxLength =>
+    .Ok (count, smallest, largest, minReserve, maxReserve, maxLength)
+
+theorem original_aggregate_reads_six_columns_in_order (row : rusqlite.row.Row) :
+    aggregateMapper () row = .ok (readColumns row) := by
+  unfold aggregateMapper
+    controller.lifecycle_inbox.source_work.codec.load_records.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultTupleI64I64I64I64I64I64Error.call_once
+  simp only [bounded_aggregate_column_exact, bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch, readColumns]
+  cases integerColumn row 0#usize <;> simp
+  cases integerColumn row 1#usize <;> simp
+  cases integerColumn row 2#usize <;> simp
+  cases integerColumn row 3#usize <;> simp
+  cases integerColumn row 4#usize <;> simp
+  cases integerColumn row 5#usize <;> simp
+  all_goals simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    core.convert.FromSame.from]
+
+private theorem tuple_test (a b : I64 × I64 × I64 × I64 × I64) :
+    i64TupleNe integerEq integerEq integerEq integerEq integerEq a b =
+      .ok (decide (a ≠ b)) := by
+  obtain ⟨a0, a1, a2, a3, a4⟩ := a
+  obtain ⟨b0, b1, b2, b3, b4⟩ := b
+  by_cases h0 : a0 = b0 <;> by_cases h1 : a1 = b1 <;> by_cases h2 : a2 = b2 <;>
+    by_cases h3 : a3 = b3 <;> by_cases h4 : a4 = b4 <;>
+      simp [i64TupleNe, integerEq, anyMismatch, h0, h1, h2, h3, h4]
+
+private theorem unsigned_cast_value (value : I64) (nonnegative : 0 ≤ value.val) :
+    (IScalar.hcast .U64 value).val = value.val.toNat := by
+  have exactCast := IScalar.hcast_inBounds_spec .U64 value ⟨nonnegative, by scalar_tac⟩
+  have casts : ((IScalar.hcast .U64 value).val : Int) = value.val := by
+    simpa [lift, WP.spec_ok] using exactCast
+  omega
+
+variable {Node : Type} {f : Fields}
+
+theorem reserved_count_comes_from_policy (policy : PolicyRead) (connection : SaveRows.Db)
+    (config : Policy) (sessions : U16)
+    (found : policy connection = .ok (.Ok (some config))) :
+    reserved policy connection sessions =
+      (do
+        let perSession ← config.max_operations_per_sandbox - 2#u64
+        let total ← core.convert.num.FromU64U16.from sessions * perSession
+        .ok (.Ok total)) := by
+  simp [reserved, controller.lifecycle_inbox.source_work.codec.reserved_records,
+    controller.lifecycle_inbox.source_work.codec.records_per_session,
+    core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or, found, lift]
+
+theorem actual_loader_has_exact_first_decision : Contract (loader (Node := Node) (f := f)) := by
+  intro policy scanRows connection config cap reserve rows bounds reserveReply countReply aggregateReply
+  unfold loader controller.lifecycle_inbox.source_work.codec.load_records
+  change (do let reserve ← reservation config.config 1#u64; _) = _
+  rw [reserveReply]
+  simp only [bind_tc_ok, countReply, core.result.Result.Insts.CoreOpsTry.branch]
+  change (do let reply ← queryBounds connection; _) = _
+  rw [aggregateReply]
+  simp only [bind_tc_ok, deployment_ceiling]
+  unfold afterBounds decision
+  by_cases capBound : cap.max_sql_value_bytes < reserve
+  · simp [capBound]
+  by_cases valueBound : recordValueLimit < reserve
+  · simp [capBound, valueBound]
+  have reserveFits : (reserve.val : Int) ≤ I64.max := by scalar_tac
+  by_cases rowsFit : (rows.val : Int) ≤ I64.max
+  · simp only [capBound, valueBound, if_false, false_or, not_lt.mpr rowsFit,
+      not_lt.mpr reserveFits, convert_sql_uses_exact_signed_limit, rowsFit, reserveFits, if_true,
+      bind_tc_ok]
+    rcases bounds with ⟨a, b, c, d, e, len⟩
+    simp only [fixedFields, longestPayload, tuple_test, bind_tc_ok]
+    let expected := (UScalar.hcast .I64 rows, 1#i64, UScalar.hcast .I64 rows,
+      UScalar.hcast .I64 reserve, UScalar.hcast .I64 reserve)
+    change ((if decide ((a, b, c, d, e) ≠ expected) = true
+      then .ok (.Err .CorruptStore) else _) : Result (Returned f)) = _
+    by_cases samePrefix :
+        (a, b, c, d, e) = (UScalar.hcast .I64 rows, 1#i64, UScalar.hcast .I64 rows,
+          UScalar.hcast .I64 reserve, UScalar.hcast .I64 reserve)
+    · rw [samePrefix]
+      dsimp only [expected]
+      by_cases nonnegative : 0 ≤ len.val
+      · simp [toUnsigned, nonnegative, unsigned_cast_value len nonnegative,
+          not_lt.mpr nonnegative, core.result.Result.map_err]
+        by_cases oversized : (reserve.val : Int) < len.val <;> simp [oversized]
+      · simp [toUnsigned, nonnegative, show len.val < 0 by omega,
+          core.result.Result.map_err, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+          controller.lifecycle_inbox.source_work.codec.load_records.closure_1.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError,
+          controller.lifecycle_inbox.source_work.codec.load_records.closure_1.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError.call_once]
+    · rw [if_pos (decide_eq_true samePrefix), if_pos samePrefix]
+  · rcases bounds with ⟨a, b, c, d, e, len⟩
+    simp [capBound, valueBound, convert_sql_uses_exact_signed_limit, rowsFit,
+      show I64.max < (rows.val : Int) by omega,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem count_error_precedes_aggregate (policy : PolicyRead) (scanRows : Scan f)
+    (connection : SaveRows.Db) (config : Config Node) (cap : Capacity) (reserve : U64)
+    (failure : SaveRows.Error) (reserveReply : reservation config.config 1#u64 = .ok reserve)
+    (countReply : reserved policy connection config.max_sessions = .ok (.Err failure)) :
+    loader policy scanRows connection config cap = .ok (.Err failure) := by
+  simp [loader, controller.lifecycle_inbox.source_work.codec.load_records, reserveReply, countReply, core.result.Result.Insts.CoreOpsTry.branch, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem aggregate_error_precedes_capacity (policy : PolicyRead) (scanRows : Scan f)
+    (connection : SaveRows.Db) (config : Config Node) (cap : Capacity) (reserve rows : U64)
+    (failure : rusqlite.error.Error) (reserveReply : reservation config.config 1#u64 = .ok reserve)
+    (countReply : reserved policy connection config.max_sessions = .ok (.Ok rows))
+    (queryReply : queryBounds connection = .ok (.Err failure)) :
+    loader policy scanRows connection config cap = .ok (.Err (.Sqlite failure)) := by
+  unfold loader controller.lifecycle_inbox.source_work.codec.load_records
+  change (do let reserve ← reservation config.config 1#u64; _) = _
+  rw [reserveReply]
+  simp only [bind_tc_ok, countReply, core.result.Result.Insts.CoreOpsTry.branch]
+  change (do let reply ← queryBounds connection; _) = _
+  rw [queryReply]
+  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, SourceLoadView.fromSql]
+
+theorem actual_equal_length_reaches_scan :
+    loader samplePolicy (sampleScan (f := f)) (sampleConnection 222212#i64) sampleConfig sampleCapacity =
+      sampleScan (sampleConnection 222212#i64) := by
+  rw [actual_loader_has_exact_first_decision samplePolicy _ (sampleConnection _) sampleConfig sampleCapacity
+    222212#u64 1#u64 (sampleBounds _) sample_reservation_exact (sample_count_exact _) (sample_aggregate_exact _)]
+  simp only [afterBounds, sample_equal_length_passes]
+
+theorem actual_one_over_rejects_before_scan :
+    loader samplePolicy (sampleScan (f := f)) (sampleConnection 222213#i64) sampleConfig sampleCapacity =
+      .ok (.Err .CorruptStore) := by
+  rw [actual_loader_has_exact_first_decision samplePolicy _ (sampleConnection _) sampleConfig sampleCapacity
+    222212#u64 1#u64 (sampleBounds _) sample_reservation_exact (sample_count_exact _) (sample_aggregate_exact _)]
+  simp only [afterBounds, sample_one_over_fails]
+
+theorem guarded_scan_registers_full_keys {Raw : Type} {invocation : Invocation Raw} {image : Image}
+    (policy : PolicyRead) (library : SourceSqlCursorView.Library) (ports : SourceLoadView.Ports f)
+    (active : SourceSqlCursor.ActiveCursor library invocation image) (config : Config Node)
+    (cap : Capacity) (reserve rows : U64) (reported : Bounds) (records : alloc.vec.Vec (Row f))
+    (reserveReply : reservation config.config 1#u64 = .ok reserve)
+    (countReply : reserved policy invocation.connection config.max_sessions = .ok (.Ok rows))
+    (queryReply : queryBounds invocation.connection = .ok (.Ok reported))
+    (normal : loader policy (SourceSqlCursorView.scan library ports) invocation.connection config cap =
+      .ok (.Ok records)) :
+    ∀ key ∈ workKeys (keyOf f) records.val, Registered image key := by
+  rw [actual_loader_has_exact_first_decision policy _ invocation.connection config cap reserve rows
+    reported reserveReply countReply queryReply] at normal
+  unfold afterBounds at normal
+  split at normal
+  · exact SourceSqlCursor.actual_scan_registers_returned_keys library ports active records normal
+  · simp at normal
+
+end SandboxModel.Stage1Protocol.SourceRecordBounds
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBounds.convert_sql_uses_exact_signed_limit
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBounds.bounded_aggregate_column_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBounds.original_aggregate_reads_six_columns_in_order
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBounds.reserved_count_comes_from_policy
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBounds.actual_loader_has_exact_first_decision
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBounds.count_error_precedes_aggregate
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBounds.aggregate_error_precedes_capacity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBounds.actual_equal_length_reaches_scan
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBounds.actual_one_over_rejects_before_scan
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordBounds.guarded_scan_registers_full_keys

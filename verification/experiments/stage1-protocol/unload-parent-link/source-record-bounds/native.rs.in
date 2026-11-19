@@ -1,0 +1,51 @@
+#[test]
+fn source_loader_enforces_per_row_reserve_before_scanning() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let original = prepare(&mut journal);
+    let connection = &journal.journal.connection;
+    let key = original.work.requirement.work_binding.as_bytes();
+    assert_eq!(
+        codec::load(connection).unwrap().unwrap().records,
+        vec![original.clone()]
+    );
+
+    let cap = crate::controller::capacity::config(connection)
+        .unwrap()
+        .unwrap();
+    let tx = connection.unchecked_transaction().unwrap();
+    let reserve: i64 = tx
+        .query_row(
+            "SELECT reserve_bytes FROM controller_source_work_records WHERE work_key=?1",
+            [key.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(u64::try_from(reserve + 1).unwrap() <= cap.max_sql_value_bytes);
+    assert_eq!(
+        tx.execute(
+            "UPDATE controller_source_work_records SET state_json=printf('%0*d',reserve_bytes+1,0) WHERE work_key=?1",
+            [key.as_slice()],
+        )
+        .unwrap(),
+        1
+    );
+    let (length, storage): (i64, String) = tx
+        .query_row(
+            "SELECT length(state_json),typeof(state_json) FROM controller_source_work_records WHERE work_key=?1",
+            [key.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!((length, storage.as_str()), (reserve + 1, "text"));
+    let outcome = codec::load(&tx);
+    assert!(
+        matches!(outcome, Err(JournalError::CorruptStore)),
+        "per-row reservation must reject before decoding the oversized TEXT: {outcome:?}"
+    );
+    tx.rollback().unwrap();
+    assert_eq!(
+        codec::load(connection).unwrap().unwrap().records,
+        vec![original]
+    );
+}

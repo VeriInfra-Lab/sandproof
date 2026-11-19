@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "source_tree": "7ca91afd9cd79601d562f3c636066d192fc25fc5",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-record-bounds",
+  "prior": {
+    "pr": 977,
+    "formal_root": "SourceSqlCursor",
+    "physical_files": 49,
+    "full_audits": 128
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceRecordBounds",
+      "physical_files": 52,
+      "full_audits": 145,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.deployment_ceiling",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.retirement_allowance",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_reservation_exact",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_count_exact",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_aggregate_exact",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_equal_length_passes",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_one_over_fails",
+        "SandboxModel.Stage1Protocol.SourceRecordBounds.convert_sql_uses_exact_signed_limit",
+        "SandboxModel.Stage1Protocol.SourceRecordBounds.bounded_aggregate_column_exact",
+        "SandboxModel.Stage1Protocol.SourceRecordBounds.original_aggregate_reads_six_columns_in_order",
+        "SandboxModel.Stage1Protocol.SourceRecordBounds.reserved_count_comes_from_policy",
+        "SandboxModel.Stage1Protocol.SourceRecordBounds.actual_loader_has_exact_first_decision",
+        "SandboxModel.Stage1Protocol.SourceRecordBounds.count_error_precedes_aggregate",
+        "SandboxModel.Stage1Protocol.SourceRecordBounds.aggregate_error_precedes_capacity",
+        "SandboxModel.Stage1Protocol.SourceRecordBounds.actual_equal_length_reaches_scan",
+        "SandboxModel.Stage1Protocol.SourceRecordBounds.actual_one_over_rejects_before_scan",
+        "SandboxModel.Stage1Protocol.SourceRecordBounds.guarded_scan_registers_full_keys"
+      ],
+      "own_modules": [
+        "SourceRecordBoundsView.lean",
+        "SourceRecordBoundsContract.lean",
+        "SourceRecordBounds.lean"
+      ]
+    },
+    {
+      "variant": "deployment-cap-for-length",
+      "formal_root": "SourceRecordBoundsNegative",
+      "physical_files": 52,
+      "full_audits": 137,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.deployment_ceiling",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.retirement_allowance",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_reservation_exact",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_count_exact",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_aggregate_exact",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_equal_length_passes",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsContract.sample_one_over_fails",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsNegative.original_guard_witness_reaches_scan_in_wrong_version",
+        "SandboxModel.Stage1Protocol.SourceRecordBoundsNegative.deployment_cap_breaks_same_contract"
+      ],
+      "own_modules": [
+        "SourceRecordBoundsView.lean",
+        "SourceRecordBoundsContract.lean",
+        "SourceRecordBoundsNegative.lean"
+      ]
+    }
+  ],
+  "native_candidate": {
+    "name": "stage1-source-record-bounds",
+    "variants": [
+      "original",
+      "deployment-cap-for-length"
+    ],
+    "test": "source_loader_enforces_per_row_reserve_before_scanning",
+    "mutated_assertion": "per-row reservation must reject before decoding the oversized TEXT",
+    "full_functional_required": true
+  },
+  "public_registration_accepted": false
+}
