@@ -613,7 +613,7 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                     sent.assert_not_called();self.assertFalse(p.continue_sent)
                     raise frozen._AwaitTerminal('original Host Kill not yet admitted')
                 reads=iter((not_yet_host_accepted,lambda:snapshot))
-                p._read_terminal=Mock(side_effect=lambda _, *, extra:next(reads)())
+                p._read_terminal=Mock(side_effect=lambda _:next(reads)())
                 p._source_state=Mock(side_effect=lambda _:'S' if p.continue_sent else 'T')
                 if fault=='none':
                     p._terminal_manager_started(p.deadline)
@@ -630,8 +630,8 @@ class OrderedFrozenExpiryTests(unittest.TestCase):
                     endpoint.assert_not_called()
                     self.assertTrue(p.hold_source_process)
                 sleep.assert_called_once();self.assertFalse(p.stop_released)
-                self.assertEqual([call.kwargs['extra'] for call in p._read_terminal.call_args_list],
-                                 [p._read_kill_ledger, p._read_kill_ledger])
+                self.assertEqual([call.args for call in p._read_terminal.call_args_list],
+                                 [(p.deadline,), (p.deadline,)])
                 p.client.destroy.assert_not_called()
 
     def test_scene_keeps_audited_expiry_and_original_peer_cleanup_checks(self):
