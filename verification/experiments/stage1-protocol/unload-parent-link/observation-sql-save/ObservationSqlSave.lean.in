@@ -1,0 +1,218 @@
+import ObservationParent
+import SaveRows
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.ObservationParent
+open SandboxModel.Stage1Protocol.ObservationSuffix
+open SandboxModel.Stage1Protocol.SourceRowSqlComposition (actualSpecAt)
+open SandboxModel.Stage1Protocol.SourceRowSqlSelect (vacantSql)
+open SandproofObservationSlot (controller.lifecycle_inbox.source_work.ObservationSlotDecision)
+
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationSql
+
+def sourceFields {c : Carriers} (source : Sources c) :
+    SaveRows.Sources c.limits c.node (Record c) :=
+  { config := source.config, node := source.node, max_sessions := source.max_sessions,
+    records := source.records }
+
+structure CodecInputs (c : Carriers) (Keys : Type) where
+  connection : c.connection = SaveRows.Db
+  error : SaveRows.Error = c.error
+  read : SaveRows.ReadEffects c.limits c.node (Record c) Keys
+
+def bindCodec {c : Carriers} {Keys : Type} (attached : CodecInputs c Keys) (calls : Calls c) : Calls c :=
+  { calls with save := fun connection rows cap => do
+      let answer ← SaveRows.save attached.read (cast attached.connection connection) (sourceFields rows) cap
+      match answer with
+      | .Ok reply => .ok (.Ok reply)
+      | .Err error => .ok (.Err (cast attached.error error)) }
+
+def observationFields {c : Carriers} (source : SaveRows.Sources c.limits c.node (Record c)) :
+    Sources c :=
+  { config := source.config, node := source.node, max_sessions := source.max_sessions,
+    records := source.records }
+
+theorem source_fields_round_trip {c : Carriers} (observation : Sources c)
+    (storage : SaveRows.Sources c.limits c.node (Record c)) :
+    observationFields (sourceFields observation) = observation ∧
+      sourceFields (observationFields storage) = storage :=
+  ⟨rfl, rfl⟩
+
+def codecReply {c : Carriers} {Keys : Type} (attached : CodecInputs c Keys) :
+    core.result.Result Unit SaveRows.Error → core.result.Result Unit c.error
+  | .Ok value => .Ok value
+  | .Err error => .Err (cast attached.error error)
+
+theorem forwards_codec_reply {c : Carriers} {Keys : Type} (attached : CodecInputs c Keys) (calls : Calls c)
+    (connection : c.connection) (rows : Sources c) (current : SaveRows.Sources c.limits c.node (Record c))
+    (sessions : U16) (reserved : U64) (keys : Keys) (encoded : alloc.vec.Vec SaveRows.Encoded)
+    (validated : SaveRows.Validated attached.read (cast attached.connection connection)
+      (sourceFields rows) current sessions reserved keys encoded)
+    (retained : attached.read.retains current (sourceFields rows) keys = .ok true)
+    (result : core.result.Result Unit SaveRows.Error)
+    (written : SaveRows.writeList (cast attached.connection connection) encoded.val = .ok result) :
+    (bindCodec attached calls).save connection rows sessions = .ok (codecReply attached result) := by
+  have released := SaveRows.save_after_retention attached.read (cast attached.connection connection)
+    (sourceFields rows) current sessions reserved keys encoded validated true retained
+  cases result <;> simp [bindCodec, released, written, codecReply]
+
+variable {c : Carriers} {t : ReadTypes} {Keys E C : Type}
+variable (attached : CodecInputs c Keys) (calls : Calls c) (reads : ReadCalls c t)
+variable (host : t.host E) (decoder : t.decoder E) (hooks : Hooks c C)
+variable (journal : Journal c) (work : c.work) (context : t.context)
+variable (raw : c.observation) (now : I64) (crashes : C)
+
+local notation "ops" => bindCodec attached calls
+local notation "parent" => actual ops reads host decoder hooks journal work context raw now crashes
+
+structure CurrentReady where
+  guard : Checked reads journal work raw
+  started : Started ops reads journal
+  inbox : InboxRead reads started.readConnection work
+  rows : Sources c
+  view : CurrentInputs reads journal started.tx guard.active inbox.inbox rows
+  authenticated : reads.authenticate inbox.inbox inbox.request context = .ok (.Ok ())
+  loaded : reads.loadSources started.readConnection = .ok (.Ok (some rows))
+  rebuilt : reads.current host decoder started.transactionView view.namespaceValue inbox.request now view.arguments =
+    .ok (.Ok work)
+  full : FullReplayContract (ops).workEq
+
+variable (current : CurrentReady attached calls reads host decoder journal work context raw now)
+
+structure Selected where
+  index : Usize
+  inside : index.val < current.rows.records.val.length
+  found : scan ops current.rows.records work = .ok (some index)
+  fresh : judge ops current.rows.records.val[index.val].observation raw = .ok .Fresh
+  cloned : (ops).clone (updated current.rows.records.val[index.val] raw)
+    = .ok (updated current.rows.records.val[index.val] raw)
+
+def Selected.row (selected : Selected attached calls reads host decoder journal work context raw now current) : Record c :=
+  current.rows.records.val[selected.index.val]'selected.inside
+
+def Selected.savedRows (selected : Selected attached calls reads host decoder journal work context raw now current) :
+    Sources c :=
+  updatedSources current.rows selected.index
+    (current.rows.records.val[selected.index.val]'selected.inside) raw
+
+variable (selected : Selected attached calls reads host decoder journal work context raw now current)
+
+structure WriteReady where
+  stored : SaveRows.Sources c.limits c.node (Record c)
+  reserved : U64
+  keys : Keys
+  encoded : alloc.vec.Vec SaveRows.Encoded
+  validated : SaveRows.Validated attached.read (cast attached.connection current.started.readConnection)
+    (sourceFields selected.savedRows) stored current.inbox.inbox.config.max_sessions reserved keys encoded
+  retained : attached.read.retains stored (sourceFields selected.savedRows) keys = .ok true
+
+variable (write : WriteReady attached calls reads host decoder journal work context raw now current selected)
+
+private theorem original_fresh_branch
+    (result : core.result.Result Unit SaveRows.Error)
+    (written : SaveRows.writeList (cast attached.connection current.started.readConnection) write.encoded.val
+      = .ok result) :
+    (ops).save current.started.readConnection selected.savedRows current.inbox.inbox.config.max_sessions =
+      .ok (codecReply attached result) :=
+  forwards_codec_reply attached calls current.started.readConnection selected.savedRows write.stored
+    current.inbox.inbox.config.max_sessions write.reserved write.keys write.encoded write.validated
+    write.retained result written
+
+theorem sql_error_precedes_commit (error : SaveRows.Error)
+    (failed : SaveRows.writeList (cast attached.connection current.started.readConnection) write.encoded.val
+      = .ok (.Err error)) :
+    parent = .ok (.Err (cast attached.error error), withConnection journal current.started.writeback, crashes) := by
+  rw [exact_current_continues ops reads host decoder hooks journal work context raw now crashes
+    current.guard current.started current.inbox current.rows current.view current.authenticated current.loaded
+    current.rebuilt current.full]
+  rw [selected_dispatch ops hooks journal work raw crashes current.started.writeback current.started.tx
+    current.inbox.inbox current.rows selected.index selected.inside selected.found .Fresh selected.fresh]
+  have saved := original_fresh_branch attached calls reads host decoder journal work context raw now
+    current selected write (.Err error) failed
+  have finished := finish_save_error ops hooks crashes current.started.tx current.started.transactionView
+    current.started.readConnection selected.savedRows current.inbox.inbox.config.max_sessions
+    (updated selected.row raw) (cast attached.error error)
+    current.started.transactionOk current.started.connectionOk saved
+  unfold Selected.savedRows Selected.row at finished
+  simp [selected.cloned, finished]
+
+theorem first_row_error_precedes_commit (completed later : List SaveRows.Encoded)
+    (key : SaveRows.Key) (bytes : alloc.vec.Vec U8) (error : SaveRows.Error)
+    (order : write.encoded.val = completed ++ (key, bytes) :: later)
+    (written : ∀ row ∈ completed,
+      actualSpecAt (cast attached.connection current.started.readConnection) row.1 row.2 vacantSql = .ok (.Ok ()))
+    (rejected : actualSpecAt (cast attached.connection current.started.readConnection) key bytes vacantSql
+      = .ok (.Err error)) :
+    parent = .ok (.Err (cast attached.error error), withConnection journal current.started.writeback, crashes) := by
+  apply sql_error_precedes_commit attached calls reads host decoder hooks journal work context raw now crashes
+    current selected write error
+  rw [← SaveRows.rows_use_same_connection]
+  exact SaveRows.codec_rows_return_first_error (cast attached.connection current.started.readConnection)
+    write.encoded completed key bytes later error order written rejected
+
+theorem sql_success_then_commit
+    (written : SaveRows.writeList (cast attached.connection current.started.readConnection) write.encoded.val
+      = .ok (.Ok ()))
+    (before after : C) (checked : hooks.hit crashes .BeforeCommit = .ok (.Ok (), before))
+    (committed : (ops).commit current.started.tx = .ok (.Ok ()))
+    (notified : hooks.hit before .AfterCommit = .ok (.Ok (), after)) :
+    parent = .ok (.Ok (updated selected.row raw), withConnection journal current.started.writeback, after) := by
+  exact fresh_commit_uses_started_transaction ops reads host decoder hooks journal work context raw now crashes
+    current.guard current.started current.inbox current.rows current.view current.authenticated current.loaded
+    current.rebuilt current.full selected.index selected.inside selected.found selected.fresh selected.cloned
+    (original_fresh_branch attached calls reads host decoder journal work context raw now
+      current selected write (.Ok ()) written)
+    before after checked committed notified
+
+theorem sql_success_then_commit_error
+    (written : SaveRows.writeList (cast attached.connection current.started.readConnection) write.encoded.val
+      = .ok (.Ok ()))
+    (before : C) (checked : hooks.hit crashes .BeforeCommit = .ok (.Ok (), before))
+    (error : c.error) (committed : (ops).commit current.started.tx = .ok (.Err error)) :
+    parent = .ok (.Err error, withConnection journal current.started.writeback, before) := by
+  rw [exact_current_continues ops reads host decoder hooks journal work context raw now crashes
+    current.guard current.started current.inbox current.rows current.view current.authenticated current.loaded
+    current.rebuilt current.full]
+  rw [selected_dispatch ops hooks journal work raw crashes current.started.writeback current.started.tx
+    current.inbox.inbox current.rows selected.index selected.inside selected.found .Fresh selected.fresh]
+  have saved := original_fresh_branch attached calls reads host decoder journal work context raw now
+    current selected write (.Ok ()) written
+  have finished := finish_commit_error ops hooks crashes current.started.tx current.started.transactionView
+    current.started.readConnection selected.savedRows current.inbox.inbox.config.max_sessions
+    (updated selected.row raw) error before
+    current.started.transactionOk current.started.connectionOk saved checked committed
+  unfold Selected.savedRows Selected.row at finished
+  simp [selected.cloned, finished]
+
+theorem after_commit_error_is_returned
+    (written : SaveRows.writeList (cast attached.connection current.started.readConnection) write.encoded.val
+      = .ok (.Ok ()))
+    (before after : C) (checked : hooks.hit crashes .BeforeCommit = .ok (.Ok (), before))
+    (committed : (ops).commit current.started.tx = .ok (.Ok ()))
+    (error : c.error) (notified : hooks.hit before .AfterCommit = .ok (.Err error, after)) :
+    parent = .ok (.Err error, withConnection journal current.started.writeback, after) := by
+  rw [exact_current_continues ops reads host decoder hooks journal work context raw now crashes
+    current.guard current.started current.inbox current.rows current.view current.authenticated current.loaded
+    current.rebuilt current.full]
+  rw [selected_dispatch ops hooks journal work raw crashes current.started.writeback current.started.tx
+    current.inbox.inbox current.rows selected.index selected.inside selected.found .Fresh selected.fresh]
+  have saved := original_fresh_branch attached calls reads host decoder journal work context raw now
+    current selected write (.Ok ()) written
+  have finished := finish_post_commit_reply ops hooks crashes current.started.tx current.started.transactionView
+    current.started.readConnection selected.savedRows current.inbox.inbox.config.max_sessions
+    (updated selected.row raw) before after (.Err error)
+    current.started.transactionOk current.started.connectionOk saved checked committed notified
+  unfold Selected.savedRows Selected.row at finished
+  simp [selected.cloned, finished]
+
+end SandboxModel.Stage1Protocol.ObservationSql
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSql.source_fields_round_trip
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSql.forwards_codec_reply
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSql.sql_error_precedes_commit
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSql.first_row_error_precedes_commit
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSql.sql_success_then_commit
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSql.sql_success_then_commit_error
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSql.after_commit_error_is_returned
