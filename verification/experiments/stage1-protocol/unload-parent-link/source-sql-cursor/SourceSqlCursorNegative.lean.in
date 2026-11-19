@@ -1,0 +1,28 @@
+import SourceSqlCursorWitness
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceSqlCursorNegative
+
+open SourceSqlCursorView SourceSqlCursorWitness
+
+theorem checksum_first_returns_column_one_error :
+    mapper twoTextColumns = .ok (.Err ⟨⟨1⟩, false⟩) := by
+  simp [mapper, controller.lifecycle_inbox.source_work.codec.read_source_columns, twoTextColumns,
+    rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex.idx, asValueRef,
+    alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql, fromBlob,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, bind_tc_ok]
+
+theorem checksum_first_violates_column_contract : ¬ ColumnContract := by
+  intro contract
+  have witness := contract twoTextColumns
+  rw [checksum_first_returns_column_one_error, contract_witness_has_column_zero_error] at witness
+  simp at witness
+
+end SandboxModel.Stage1Protocol.SourceSqlCursorNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursorNegative.checksum_first_returns_column_one_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursorNegative.checksum_first_violates_column_contract

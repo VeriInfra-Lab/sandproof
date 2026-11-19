@@ -1,0 +1,261 @@
+import SourceSqlCursorWitness
+
+open Aeneas Aeneas.Std SandproofSourceRowSqlSelect
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields Row keyOf)
+open SandboxModel.Stage1Protocol.SourceKeyHistory (Registered workKeys)
+open SandboxModel.Stage1Protocol.SourceHistory (Cell Image Invocation)
+open SandboxModel.Stage1Protocol.SourceLoadView (Bytes Columns Cursor CursorItem SqlError)
+open SandboxModel.Stage1Protocol.SourceLoadBinding (FromImage Snapshot rowIterator sourceSelect)
+open SandboxModel.Stage1Protocol.ObservationParent
+open SandboxModel.Stage1Protocol.ObservationSql
+open SandboxModel.Stage1Protocol.ObservationSuffix hiding scan
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceSqlCursor
+
+open SourceSqlCursorView SourceSqlCursorWitness
+
+theorem blob_column_is_exact (row : RawRow) (index : Usize) :
+    rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex blobDictionary row index =
+      .ok (columnResult blobColumn row index) := by
+  by_cases within : index.val < row.statement.columns.val
+  · cases value : row.column index <;> simp [rusqlite.row.Row.get,
+      Usize.Insts.RusqliteRowRowIndex.idx, columnResult, within, value, asValueRef, blobDictionary,
+      alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql, fromBlob, blobColumn, bind_tc_ok]
+  · simp [rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex.idx, columnResult, within, bind_tc_ok]
+
+theorem nullable_column_is_exact (row : RawRow) (index : Usize) :
+    rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex nullableDictionary row index =
+      .ok (columnResult nullableColumn row index) := by
+  by_cases within : index.val < row.statement.columns.val
+  · cases value : row.column index <;> simp [rusqlite.row.Row.get,
+      Usize.Insts.RusqliteRowRowIndex.idx, columnResult, within, value, asValueRef,
+      nullableDictionary, SourceSqlCursorView.core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql, blobDictionary,
+      alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql, fromBlob,
+      nullableColumn, SandproofSourceRowSqlSelect.core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql.column_result,
+      bind_tc_ok]
+  · simp [rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex.idx, columnResult, within, bind_tc_ok]
+
+/-- The original get(0), get(1), get(2) stop at the first rejected column. -/
+theorem mapper_reads_three_columns_in_order : ColumnContract := by
+  intro row
+  unfold mapper controller.lifecycle_inbox.source_work.codec.read_source_columns columnsResult
+  rw [blob_column_is_exact]
+  cases first : columnResult blobColumn row 0#usize with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      bind_tc_ok]
+  | Ok bytes =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+    rw [blob_column_is_exact]
+    cases second : columnResult blobColumn row 1#usize with
+    | Err error =>
+      simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, bind_tc_ok]
+    | Ok checksum =>
+      simp only [bind_tc_ok]
+      rw [nullable_column_is_exact]
+      cases columnResult nullableColumn row 2#usize <;>
+        simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, bind_tc_ok]
+
+theorem mapper_witness_has_column_zero_error :
+    mapper twoTextColumns = .ok (.Err ⟨⟨0⟩, false⟩) :=
+  (mapper_reads_three_columns_in_order twoTextColumns).trans (congrArg Result.ok
+    contract_witness_has_column_zero_error)
+
+/-- The provider's ordered raw SQL reply is mapped once pointwise. This is a
+    value representation of the lazy cursor, including all step errors. -/
+theorem cursor_preserves_order_and_errors (raw : RawCursor) :
+    (mappedCursor raw).val = raw.val.map mapRawItem ∧
+      (∀ row : RawRow, mapper row = .ok (mapRawItem (.Ok row))) ∧
+      (∀ error : SqlError, mapRawItem (.Err error) = .Err error) := by
+  exact ⟨alloc.vec.Vec.from_val _ _, mapper_reads_three_columns_in_order, fun _ => rfl⟩
+
+variable {f : Fields} (library : Library) (ports : SourceLoadView.Ports f)
+
+private theorem returned_from_bind {A B : Type} (first : Result A) (continueWith : A → Result B)
+    {value : B} (returned : first >>= continueWith = .ok value) :
+    ∃ step, first = .ok step ∧ continueWith step = .ok value := by
+  cases first <;> simp_all
+
+theorem prepare_preserves_connection_sql_and_arguments (connection : SaveRows.Db)
+    (sql : Str) (statement : Prepared)
+    (prepared : prepareScan connection sql = .ok (.Ok statement)) :
+    statement.connection = connection ∧ statement.sql = sql ∧
+      statement.parameters.canonical.arguments = [] := by
+  unfold prepareScan at prepared
+  obtain ⟨outcome, _, prepared⟩ := returned_from_bind _ _ prepared
+  cases outcome with
+  | Ok count =>
+    simp at prepared
+    subst statement
+    exact ⟨rfl, rfl, rfl⟩
+  | Err error => simp at prepared
+
+private theorem reader_depends_only_on_next (left right : core.iter.traits.iterator.Iterator Cursor CursorItem)
+    (sameNext : left.next = right.next) (cursor : Cursor) :
+    SourceLoadView.reader ports left cursor = SourceLoadView.reader ports right cursor := by
+  unfold SourceLoadView.reader SourceLoadView.controller.lifecycle_inbox.source_work.codec.read_loaded_rows
+    SourceLoadView.controller.lifecycle_inbox.source_work.codec.read_loaded_rows_loop
+  congr 1
+  funext pair
+  obtain ⟨it, buffer⟩ := pair
+  unfold SourceLoadView.controller.lifecycle_inbox.source_work.codec.read_loaded_rows_loop.body
+  rw [sameNext]
+
+/-- With the actual prepare and query replies, the original caller passes the
+    cursor in order to the same collector proved in SourceLoadBinding. -/
+theorem scan_uses_original_mapped_cursor (connection : SaveRows.Db)
+    (statement after : Prepared) (raw : RawCursor)
+    (prepared : prepareScan connection sourceSelect = .ok (.Ok statement))
+    (emptyArgs : statement.parameters.canonical.expectedParameters = 0)
+    (opened : library.openRows statement = .ok (.Ok raw, after)) :
+    scan library ports connection = SourceLoadView.reader ports rowIterator (mappedCursor raw) := by
+  unfold scan controller.lifecycle_inbox.source_work.codec.scan_loaded_records
+  change (do let answer ← prepareScan connection sourceSelect; _) = _
+  rw [prepared]
+  simp [core.result.Result.Insts.CoreOpsTry.branch, openScan, emptyArgs, opened]
+  exact reader_depends_only_on_next ports cursorDictionary rowIterator rfl _
+
+theorem scan_prepare_error_is_first (connection : SaveRows.Db) (error : SqlError)
+    (failed : prepareScan connection sourceSelect = .ok (.Err error)) :
+    scan library ports connection = .ok (.Err (.Sqlite error)) := by
+  unfold scan controller.lifecycle_inbox.source_work.codec.scan_loaded_records
+  change (do let answer ← prepareScan connection sourceSelect; _) = _
+  rw [failed]
+  simp [core.result.Result.Insts.CoreOpsTry.branch, SourceLoadView.fromSql,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem scan_open_error_precedes_row_read (connection : SaveRows.Db) (statement after : Prepared)
+    (error : SqlError) (prepared : prepareScan connection sourceSelect = .ok (.Ok statement))
+    (failed : openScan library statement = .ok (.Err error, after)) :
+    scan library ports connection = .ok (.Err (.Sqlite error)) := by
+  unfold scan controller.lifecycle_inbox.source_work.codec.scan_loaded_records
+  change (do let answer ← prepareScan connection sourceSelect; _) = _
+  rw [prepared]
+  simp [core.result.Result.Insts.CoreOpsTry.branch, failed, SourceLoadView.fromSql,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+/-- The three storage values and the issuing Statement are provided by A4.
+    The slot, nullable key and entire BLOB values come from the same cell. -/
+def ProjectedRow (statement : Prepared) (image : Image) (row : RawRow) : Prop :=
+  row.statement = statement.parameters ∧
+  ∃ (id : I64) (cell : Cell) (key : Option Bytes),
+    image id = some cell ∧
+    2 < row.statement.columns.val ∧
+    row.column 0#usize = .Blob cell.stateBytes.slice ∧
+    row.column 1#usize = .Blob cell.checksum.to_slice ∧
+    row.column 2#usize = (key.map (fun value => (show RawValue from .Blob value.slice))).getD .Null ∧
+    key.map alloc.vec.Vec.val = cell.workKey
+
+theorem projected_columns_belong_to_same_image (statement : Prepared) (image : Image)
+    (row : RawRow) (columns : Columns) (projected : ProjectedRow statement image row)
+    (returned : columnsResult row = .Ok columns) : FromImage image columns := by
+  obtain ⟨_, id, cell, key, found, within, bytes, checksum, blob, keyEq⟩ := projected
+  have zero : 0 < row.statement.columns.val := by omega
+  have one : 1 < row.statement.columns.val := by omega
+  have stored : (⟨cell.stateBytes.slice⟩ : Bytes) = cell.stateBytes := by
+    cases cell.stateBytes
+    rfl
+  have sha : (⟨cell.checksum.to_slice⟩ : Bytes).val = cell.checksum.val :=
+    Array.val_to_slice _
+  have keyVec (value : Bytes) : (⟨value.slice⟩ : Bytes) = value := by
+    cases value
+    rfl
+  cases key with
+  | none =>
+    simp [columnsResult, columnResult, zero, one, within, bytes, checksum, blob, blobColumn,
+      nullableColumn] at returned
+    subst columns
+    exact ⟨id, cell, found, stored, sha, keyEq⟩
+  | some value =>
+    simp [columnsResult, columnResult, zero, one, within, bytes, checksum, blob, blobColumn,
+      nullableColumn] at returned
+    subst columns
+    exact ⟨id, cell, found, stored, sha, by simpa only [keyVec] using keyEq⟩
+
+/-- V5 supplies the raw replies of the real SELECT issued on the same
+    transaction connection. Nothing is asserted about malformed replies
+    outside that physical contract or about rows after an SQL step error. -/
+structure ActiveCursor {Raw : Type} (library : Library) (invocation : Invocation Raw) (image : Image) where
+  statement : Prepared
+  after : Prepared
+  raw : RawCursor
+  prepared : prepareScan invocation.connection sourceSelect = .ok (.Ok statement)
+  emptyArgs : statement.parameters.canonical.expectedParameters = 0
+  opened : library.openRows statement = .ok (.Ok raw, after)
+  projected : ∀ row, .Ok row ∈ raw.val → ProjectedRow statement image row
+
+def asSnapshot {Raw : Type} {invocation : Invocation Raw} {image : Image}
+    (active : ActiveCursor library invocation image) : Snapshot invocation image where
+  statement := sourceSelect
+  connection := invocation.connection
+  originalStatement := rfl
+  originalConnection := rfl
+  cursor := mappedCursor active.raw
+  rows := by
+    intro columns member
+    rw [(cursor_preserves_order_and_errors active.raw).1] at member
+    obtain ⟨item, found, mapped⟩ := List.mem_map.mp member
+    cases item with
+    | Err error => cases mapped
+    | Ok row =>
+      exact projected_columns_belong_to_same_image active.statement image row columns
+        (active.projected row found) mapped
+
+theorem actual_scan_registers_returned_keys {Raw : Type} {invocation : Invocation Raw} {image : Image}
+    (active : ActiveCursor library invocation image) (records : alloc.vec.Vec (Row f))
+    (normal : scan library ports invocation.connection = .ok (.Ok records)) :
+    ∀ key ∈ workKeys (keyOf f) records.val, Registered image key := by
+  have read := scan_uses_original_mapped_cursor library ports invocation.connection
+    active.statement active.after active.raw active.prepared active.emptyArgs active.opened
+  exact SourceLoadBinding.original_loader_registers_all_returned_keys ports
+    (asSnapshot library active) records (read.symm.trans normal)
+
+variable {t : ReadTypes} {Keys E : Type}
+variable (encoder : SourceKeyEncode.Ports f Keys)
+variable (attached : CodecInputs (SourceKeyEncode.carriers f) Keys)
+variable (calls : Calls (SourceKeyEncode.carriers f)) (reads : ReadCalls (SourceKeyEncode.carriers f) t)
+variable (host : t.host E) (decoder : t.decoder E) (journal : Journal (SourceKeyEncode.carriers f))
+variable (work : (SourceKeyEncode.carriers f).work) (context : t.context)
+variable (raw : (SourceKeyEncode.carriers f).observation) (now : I64)
+variable (current : CurrentReady attached calls reads host decoder journal work context raw now)
+variable (selected : Selected attached calls reads host decoder journal work context raw now current)
+variable (write : WriteReady attached calls reads host decoder journal work context raw now current selected)
+
+local notation "invocation" => ObservationSqlHistory.originalInvocation attached calls reads
+  host decoder journal work context raw now current
+local notation "db" => Invocation.connection invocation
+
+theorem scan_then_save_selects_same_transaction_slot
+    (encodes : ∀ sources : SourceKeyEncode.Rows f, attached.read.encode sources = SourceKeyEncode.actual encoder sources)
+    (initial interim : Image) (active : ActiveCursor library invocation initial)
+    (loaded : scan library ports db = .ok (.Ok current.rows.records))
+    (processed : List SaveRows.Encoded) (history : SourceHistory.Written invocation initial processed interim)
+    (entry : SaveRows.Encoded) (member : entry ∈ write.encoded.val)
+    (read : SourceKeyHistory.A4Lookup db interim entry.1) (response : Option I64)
+    (returned : SourceRowSqlSelect.existingSpec db entry.1 = .ok (.Ok response))
+    (vacancy : Result (core.result.Result (Option I64) SaveRows.Error)) :
+    ∃ id cell, response = some id ∧ interim id = some cell ∧ cell.workKey = some entry.1.val ∧
+      SourceRowSqlComposition.chooseSlot (SourceRowSqlSelect.existingSpec db entry.1)
+        vacancy (.ok .MaintenanceCapacity) = .ok (.Ok id) := by
+  have mapped := scan_uses_original_mapped_cursor library ports db
+    active.statement active.after active.raw active.prepared active.emptyArgs active.opened
+  exact SourceLoadBinding.original_load_then_save_selects_registered_slots ports encoder attached calls reads
+    host decoder journal work context raw now current selected write encodes initial interim (asSnapshot library active)
+    (mapped.symm.trans loaded) processed history entry member read response returned vacancy
+
+end SandboxModel.Stage1Protocol.SourceSqlCursor
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.blob_column_is_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.nullable_column_is_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.mapper_reads_three_columns_in_order
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.mapper_witness_has_column_zero_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.cursor_preserves_order_and_errors
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.prepare_preserves_connection_sql_and_arguments
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.scan_uses_original_mapped_cursor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.scan_prepare_error_is_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.scan_open_error_precedes_row_read
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.projected_columns_belong_to_same_image
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.actual_scan_registers_returned_keys
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSqlCursor.scan_then_save_selects_same_transaction_slot
