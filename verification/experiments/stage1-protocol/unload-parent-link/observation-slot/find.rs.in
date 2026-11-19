@@ -1,0 +1,52 @@
+trait ObservationWork<R, W> {
+    fn same_work(record: &R, work: &W) -> bool;
+    fn same_binding(record: &R, work: &W) -> bool;
+}
+
+struct JournalObservationWork;
+
+impl ObservationWork<SourceWorkRecord, SourceWork> for JournalObservationWork {
+    fn same_work(record: &SourceWorkRecord, work: &SourceWork) -> bool {
+        record.work == *work
+    }
+
+    fn same_binding(record: &SourceWorkRecord, work: &SourceWork) -> bool {
+        record.work.requirement.work_binding == work.requirement.work_binding
+    }
+}
+
+fn observation_slot_using<R, W, Check: ObservationWork<R, W>>(
+    records: &Vec<R>,
+    work: &W,
+) -> Option<usize> {
+    let mut index = 0;
+    while index < records.len() {
+        if Check::same_work(&records[index], work) {
+            return Some(index);
+        }
+        index += 1;
+    }
+    None
+}
+
+enum ObservationSlotDecision {
+    Fresh,
+    Replay,
+    Conflict,
+}
+
+fn observation_slot_decision<O: PartialEq>(
+    saved: &Option<O>,
+    observation: &O,
+) -> ObservationSlotDecision {
+    match saved {
+        None => ObservationSlotDecision::Fresh,
+        Some(old) => {
+            if old != observation {
+                ObservationSlotDecision::Conflict
+            } else {
+                ObservationSlotDecision::Replay
+            }
+        }
+    }
+}

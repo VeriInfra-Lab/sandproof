@@ -1,0 +1,32 @@
+import ObservationSlotInputs
+
+open Aeneas Aeneas.Std SandproofObservationSlot alloc.vec
+open controller.lifecycle_inbox.source_work
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationSlot
+
+theorem binding_only_returns_changed_work :
+    observation_slot_using witnessChecks witnessChanged witnessWork = .ok (some 0#usize) := by
+  have found : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice (Nat × Nat))
+      witnessChanged 0#usize = .ok witnessWrongRecord := by
+    change Vec.index_usize witnessChanged 0#usize = .ok witnessWrongRecord
+    simp [Vec.index_usize, witnessChanged]
+  have inside : 0#usize < alloc.vec.Vec.len witnessChanged := by
+    simp [UScalar.lt_equiv, witnessChanged]
+  unfold observation_slot_using observation_slot_using_loop
+  rw [loop]
+  simp [observation_slot_using_loop.body, inside, found, witnessChecks, witnessWrongRecord, witnessWork]
+
+theorem binding_only_violates_first_complete :
+    ¬ ∃ slot, observation_slot_using witnessChecks witnessChanged witnessWork = .ok slot ∧
+      slot.map (fun i => i.val) = firstComplete id witnessChanged.val witnessWork := by
+  rintro ⟨slot, returned, first⟩
+  rw [binding_only_returns_changed_work] at returned
+  rw [← Result.ok_injective returned] at first
+  simp [firstComplete, List.findIdx?, List.findIdx?.go, witnessChanged, witnessWrongRecord, witnessWork] at first
+
+end SandboxModel.Stage1Protocol.ObservationSlot
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSlot.binding_only_returns_changed_work
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationSlot.binding_only_violates_first_complete

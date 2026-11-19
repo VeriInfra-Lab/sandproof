@@ -1,0 +1,33 @@
+import SandproofObservationSlot.Funs
+import SandboxModel.Lifecycle.Protocol.ReplayContract
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofObservationSlot alloc.vec
+open controller.lifecycle_inbox.source_work
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationSlot
+
+noncomputable def firstComplete {R W : Type} (workOf : R → W) (records : List R)
+    (work : W) : Option Nat := by
+  classical
+  exact records.findIdx? (fun record => decide (workOf record = work))
+
+noncomputable def sameObservation {O : Type} (saved : Option O) (incoming : O) :
+    ObservationSlotDecision := by
+  classical
+  exact match saved with
+    | none => .Fresh
+    | some old => if old = incoming then .Replay else .Conflict
+
+def witnessChecks : ObservationWork Unit (Nat × Nat) (Nat × Nat) where
+  same_work record work := .ok (decide (record = work))
+  same_binding record work := .ok (decide (record.1 = work.1))
+
+def witnessWork : Nat × Nat := (7, 1)
+def witnessWrongRecord : Nat × Nat := (7, 2)
+def witnessChanged : Vec (Nat × Nat) := Vec.from [witnessWrongRecord] (by scalar_tac)
+def witnessRecords : Vec (Nat × Nat) :=
+  Vec.from [witnessWrongRecord, witnessWork, witnessWork] (by scalar_tac)
+
+end SandboxModel.Stage1Protocol.ObservationSlot

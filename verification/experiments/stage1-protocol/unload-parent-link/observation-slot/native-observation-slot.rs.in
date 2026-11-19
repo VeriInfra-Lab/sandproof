@@ -1,0 +1,74 @@
+use super::*;
+
+#[test]
+fn source_observation_slot_uses_the_first_complete_work() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("slot.db"));
+    let exact = prepare(&mut journal);
+    let mut other = exact.clone();
+    other.work.requirement.limits.max_configuration_bytes += 1;
+    assert_eq!(
+        other.work.requirement.work_binding,
+        exact.work.requirement.work_binding
+    );
+    assert_ne!(other.work, exact.work);
+    for (records, expected) in [
+        (vec![other.clone()], None),
+        (vec![other, exact.clone(), exact.clone()], Some(1)),
+    ] {
+        assert_eq!(
+            records.iter().position(|record| record.work == exact.work),
+            expected
+        );
+        assert_eq!(
+            observation_slot_using::<_, _, JournalObservationWork>(&records, &exact.work),
+            expected,
+            "observation slot must match the complete SourceWork"
+        );
+    }
+}
+
+#[derive(Default)]
+struct Hooks(Vec<CrashPoint>);
+
+impl CrashInjector for Hooks {
+    fn hit(&mut self, point: CrashPoint) -> Result<(), JournalError> {
+        self.0.push(point);
+        Ok(())
+    }
+}
+
+#[test]
+fn source_observation_slot_preserves_fresh_replay_and_conflict() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("observation.db"));
+    let exact = prepare(&mut journal);
+    let raw = observation(exact.work.requirement());
+    let context = v3::context();
+    let mut hooks = Hooks::default();
+    let stored = journal
+        .save_source_observation::<Evidence>(&exact.work, &context, raw.clone(), 10, &mut hooks)
+        .unwrap();
+    assert_eq!(stored.observation.as_ref(), Some(&raw));
+    assert_eq!(hooks.0, [CrashPoint::BeforeCommit, CrashPoint::AfterCommit]);
+
+    let mut changed = raw.clone();
+    changed.executable_sha256[0] ^= 1;
+    assert!(changed.matches(exact.work.requirement()));
+    assert_eq!(changed.work_binding, raw.work_binding);
+    hooks.0.clear();
+    assert!(matches!(
+        journal.save_source_observation::<Evidence>(&exact.work, &context, changed, 10, &mut hooks),
+        Err(JournalError::Conflict)
+    ));
+    assert!(hooks.0.is_empty());
+    assert_eq!(
+        journal
+            .save_source_observation::<Evidence>(&exact.work, &context, raw, 10, &mut hooks)
+            .unwrap(),
+        stored
+    );
+    assert!(hooks.0.is_empty());
+    let rows = codec::load(&journal.journal.connection).unwrap().unwrap();
+    assert_eq!(rows.records.as_slice(), &[stored]);
+}

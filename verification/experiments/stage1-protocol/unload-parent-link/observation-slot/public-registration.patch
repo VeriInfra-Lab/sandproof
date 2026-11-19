@@ -1,0 +1,13 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39,1 +39,10 @@
++## V3 来源观察首个完整匹配与重放候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。实际索引扫描在逐符号完整相等
++合同下返回首个等值行。实际判定区分新观察、全文重放与冲突。父 IR 连通同一原来源
++向量、所选行、观察值与已验的提交尾部。仅比较绑定的错误版在同一规格下实际失败。
++具体相等提供者、完整父组合与活事务逐行接线留作后续验收。
++[精确输入与复验](../verification/experiments/stage1-protocol/unload-parent-link/observation-slot/README.md)。
++
++
+ ## V3 首次卸载使用同一条原执行记录
