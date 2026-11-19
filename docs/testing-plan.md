@@ -387,6 +387,16 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 应属于原沙箱及 owner，含当前待定 Pause、原运行代输入和空结果。任何一处失败均保留
 已取得的接受和观察记录，停止后续 Host 重开与 Stop 放行。
 
+在 `capture-freeze-receipt-expiry` 中，`automatic_expiry.freeze_receipt_window`
+记录实际 TTL 前与只读审计取得自动接受后的两次原 Host 快照。两次都须保留原 Pause 账本、
+SQL NULL Freeze 回执、原 VMM 端点和材料 pin/正额度。若后一轮检查失败，保留原审计接受
+与前一轮快照，在启动原 Host 终止恢复前退出。时间记录仍由读到原自动接受的一刻确定。
+
+两条场景均在持久 Kill 核对后、恢复应答前再次核对原 Paused VMM 端点和 pidfd。
+`original_vmm_endpoint_before_response_restored` 记录同一端点的设备号、inode 和 UID。
+首次到达 Stop 门、同伴推进后与实际放行前，关联同一完整 InstallFence 动作和成功回执及
+实际围栏文件。Cleanup-success/pre-SQL 快照须仍含同一围栏动作和回执。
+
 捕获点复用原第二次卸载，LoadPaused 点复用原第一次恢复；不为每个错误码新建虚拟机。
 命中故障开关、退出码 86、发送 gate 命令都不是通过条件，仍须比对完整请求、动作、
 来源、实际工作器/进程与持久记录，并完成各分支的公开结果和原产品回收。测试控制文件

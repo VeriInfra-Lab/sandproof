@@ -172,6 +172,8 @@ def wait_expired_cleaned(client, deadline):
 
 class FreezeExpiryProbe(FreezeDestroyProbe):
     """Reuse exact Freeze/Stop/receipt/pin/exit checks; change only authority."""
+    expiry_freeze_receipt_window = None
+
     def _audit(self, deadline):
         remaining(deadline)
         processes = self.runtime.services.processes
@@ -209,6 +211,8 @@ class FreezeExpiryProbe(FreezeDestroyProbe):
         deadline = min(deadline, self.deadline)
         lifetime = self.prior['lifetime']
         require_before_expiry(lifetime)
+        self.expiry_freeze_receipt_window = {'before': self.observe_destroy_window(deadline)}
+        require_before_expiry(lifetime)
         processes = self.runtime.services.processes
         # Pausing has no Host-native Running expiry scan. Keep Center live
         # across TTL; stopping it until after TTL would test a different path.
@@ -232,14 +236,18 @@ class FreezeExpiryProbe(FreezeDestroyProbe):
             time.sleep(min(1, remaining(deadline)))
         self.automatic_acceptance = copy.deepcopy(accepted)
         self.client.current_acceptance = copy.deepcopy(accepted)  # Observe actual key; allocate nothing.
-        return dict(acceptance=accepted, end_at_ms=lifetime['end_at_ms'], observed_at_ms=now_ms(),
-            observed_monotonic=time.monotonic(),
+        observed_at_ms, observed_monotonic = now_ms(), time.monotonic()
+        self.expiry_freeze_receipt_window['after'] = self.observe_destroy_window(deadline)
+        return dict(acceptance=accepted, end_at_ms=lifetime['end_at_ms'], observed_at_ms=observed_at_ms,
+            observed_monotonic=observed_monotonic,
+            freeze_receipt_window=copy.deepcopy(self.expiry_freeze_receipt_window),
             center_audits=polls, explicit_destroy_sent=False, public_query_before_durable_expiry=False,
             acceptance_time='unsampled: no invented expiry acceptance timestamp')
 
     def _bind_destroy(self, accepted):
         if (self.client.destroy_request is not None or self.terminal_accepted is not None or self.recovered
                 or self.automatic_acceptance is None or not equal(accepted, self.automatic_acceptance)
+                or self.expiry_freeze_receipt_window is None or 'after' not in self.expiry_freeze_receipt_window
                 or not equal(accepted, self.client.current_acceptance)):
             raise ValueError('only the audited automatic terminal acceptance may reach Stop')
         self.terminal_accepted = copy.deepcopy(accepted)
@@ -253,6 +261,8 @@ class FreezeExpiryProbe(FreezeDestroyProbe):
         result = super().terminal_failure_state()
         result['automatic_terminal'] = result.pop('destroy')
         result['observed_automatic_acceptance'] = copy.deepcopy(getattr(self, 'automatic_acceptance', None))
+        if self.expiry_freeze_receipt_window is not None:
+            result['freeze_receipt_window'] = copy.deepcopy(self.expiry_freeze_receipt_window)
         result['explicit_destroy_sent'] = self.client.destroy_request is not None
         return result
 
