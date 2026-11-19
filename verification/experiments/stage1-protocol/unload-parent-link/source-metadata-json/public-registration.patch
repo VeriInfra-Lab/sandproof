@@ -1,0 +1,11 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,8 @@
++## V3 来源配置 JSON 字段接线候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。重新捕获配置及嵌套限制/节点
++的原 Serde 字典，核对 3/6/3 个字段、原首错与未知字段 visitor。
++完整 JSON 根的 Aeneas 预检失败保留，具体字段机器精化仍待证。
++[源码准入与原生复验](../verification/experiments/stage1-protocol/unload-parent-link/source-metadata-json/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录
