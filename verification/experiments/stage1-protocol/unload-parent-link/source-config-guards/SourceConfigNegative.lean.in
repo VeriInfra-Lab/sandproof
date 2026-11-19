@@ -1,0 +1,25 @@
+import SourceConfigSpec
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceConfigNegative
+
+open SourceConfigSpec
+
+theorem zero_configuration_reaches_acceptance :
+    SourceConfigView.valid zeroConfiguration = .ok true := by
+  simp [SourceConfigView.valid,
+    SourceConfigView.capture.source.SourceObservationConfig.valid,
+    core.ops.range.RangeInclusive.new, range32, range64, lift, zeroConfiguration, sample, I64.rMax]
+
+theorem omitted_field_breaks_same_contract : ¬Contract SourceConfigView.valid := by
+  intro contract
+  have required := contract zeroConfiguration
+  rw [zero_configuration_reaches_acceptance] at required
+  simp only [zero_configuration_invalid, decide_false, Result.ok.injEq, Bool.true_eq_false] at required
+
+end SandboxModel.Stage1Protocol.SourceConfigNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigNegative.zero_configuration_reaches_acceptance
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigNegative.omitted_field_breaks_same_contract

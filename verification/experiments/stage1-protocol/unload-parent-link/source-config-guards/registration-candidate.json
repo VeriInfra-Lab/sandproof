@@ -1,0 +1,79 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-config-guards",
+  "parent_prs": [
+    981,
+    982
+  ],
+  "prior": {
+    "formal_root": "SourceMetadata",
+    "physical_files": 55,
+    "full_audits": 160
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceConfigGuards",
+      "physical_files": 58,
+      "full_audits": 175,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceConfigSpec.range32",
+        "SandboxModel.Stage1Protocol.SourceConfigSpec.range64",
+        "SandboxModel.Stage1Protocol.SourceConfigSpec.range16",
+        "SandboxModel.Stage1Protocol.SourceConfigSpec.sample_valid",
+        "SandboxModel.Stage1Protocol.SourceConfigSpec.zero_configuration_invalid",
+        "SandboxModel.Stage1Protocol.SourceConfigGuards.actual_valid_is_parent",
+        "SandboxModel.Stage1Protocol.SourceConfigGuards.actual_guard_has_all_six_bounds",
+        "SandboxModel.Stage1Protocol.SourceConfigGuards.session_guard_is_exact",
+        "SandboxModel.Stage1Protocol.SourceConfigGuards.original_limits_accepted",
+        "SandboxModel.Stage1Protocol.SourceConfigGuards.zero_configuration_rejected",
+        "SandboxModel.Stage1Protocol.SourceConfigGuards.inclusive_sessions_accepted",
+        "SandboxModel.Stage1Protocol.SourceConfigGuards.outside_sessions_rejected",
+        "SandboxModel.Stage1Protocol.SourceConfigGuards.invalid_limits_skip_original_records",
+        "SandboxModel.Stage1Protocol.SourceConfigGuards.invalid_sessions_skip_original_records",
+        "SandboxModel.Stage1Protocol.SourceConfigGuards.actual_load_rejects_before_original_records"
+      ],
+      "own_modules": [
+        "SourceConfigView.lean",
+        "SourceConfigSpec.lean",
+        "SourceConfigGuards.lean"
+      ]
+    },
+    {
+      "variant": "omit-configuration-bound",
+      "formal_root": "SourceConfigNegative",
+      "physical_files": 58,
+      "full_audits": 167,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceConfigSpec.range32",
+        "SandboxModel.Stage1Protocol.SourceConfigSpec.range64",
+        "SandboxModel.Stage1Protocol.SourceConfigSpec.range16",
+        "SandboxModel.Stage1Protocol.SourceConfigSpec.sample_valid",
+        "SandboxModel.Stage1Protocol.SourceConfigSpec.zero_configuration_invalid",
+        "SandboxModel.Stage1Protocol.SourceConfigNegative.zero_configuration_reaches_acceptance",
+        "SandboxModel.Stage1Protocol.SourceConfigNegative.omitted_field_breaks_same_contract"
+      ],
+      "own_modules": [
+        "SourceConfigView.lean",
+        "SourceConfigSpec.lean",
+        "SourceConfigNegative.lean"
+      ]
+    }
+  ],
+  "native_candidate": {
+    "name": "stage1-source-config-guards",
+    "variants": [
+      "original",
+      "omit-configuration-bound"
+    ],
+    "tests": [
+      "source_config_guard_has_every_inclusive_bound",
+      "source_config_guard_rejects_before_record_aggregate"
+    ],
+    "full_functional_required": true
+  },
+  "public_registration_accepted": false
+}

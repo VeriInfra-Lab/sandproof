@@ -1,0 +1,58 @@
+import SourceConfigView
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Limits)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceConfigSpec
+
+def Valid (limits : Limits) : Prop :=
+  (1024 ≤ limits.max_work_bytes.val ∧ limits.max_work_bytes.val ≤ 1048576) ∧
+  (1 ≤ limits.max_configuration_bytes.val ∧ limits.max_configuration_bytes.val ≤ 1048576) ∧
+  (1 ≤ limits.max_executable_bytes.val ∧ limits.max_executable_bytes.val ≤ 67108864) ∧
+  (1 ≤ limits.max_kernel_bytes.val ∧ limits.max_kernel_bytes.val ≤ 268435456) ∧
+  (1 ≤ limits.max_disk_bytes.val ∧ limits.max_disk_bytes.val ≤ 9223372036854775807) ∧
+  (1 ≤ limits.max_material_bytes.val ∧ limits.max_material_bytes.val ≤ 9223372036854775807)
+
+instance (limits : Limits) : Decidable (Valid limits) :=
+  inferInstanceAs (Decidable (_ ∧ _ ∧ _ ∧ _ ∧ _ ∧ _))
+
+def SessionsValid (sessions : U16) : Prop := 1 ≤ sessions.val ∧ sessions.val ≤ 4096
+
+instance (sessions : U16) : Decidable (SessionsValid sessions) :=
+  inferInstanceAs (Decidable (_ ∧ _))
+
+def Contract (valid : Limits → Result Bool) : Prop :=
+  ∀ limits, valid limits = .ok (decide (Valid limits))
+
+theorem range32 (low high value : U32) :
+    SourceMetadataView.rangeContains core.cmp.PartialOrdU32 core.cmp.PartialOrdU32 core.cmp.PartialOrdU32
+      ⟨low, high, false⟩ value = .ok (decide (low.val ≤ value.val ∧ value.val ≤ high.val)) := by
+  by_cases lower : low.val ≤ value.val <;>
+    simp [SourceMetadataView.rangeContains, core.cmp.impls.PartialOrdU32.le, liftFun2, lower]
+
+theorem range64 (low high value : U64) :
+    SourceMetadataView.rangeContains core.cmp.PartialOrdU64 core.cmp.PartialOrdU64 core.cmp.PartialOrdU64
+      ⟨low, high, false⟩ value = .ok (decide (low.val ≤ value.val ∧ value.val ≤ high.val)) := by
+  by_cases lower : low.val ≤ value.val <;>
+    simp [SourceMetadataView.rangeContains, core.cmp.impls.PartialOrdU64.le, liftFun2, lower]
+
+theorem range16 (low high value : U16) :
+    SourceMetadataView.rangeContains core.cmp.PartialOrdU16 core.cmp.PartialOrdU16 core.cmp.PartialOrdU16
+      ⟨low, high, false⟩ value = .ok (decide (low.val ≤ value.val ∧ value.val ≤ high.val)) := by
+  by_cases lower : low.val ≤ value.val <;>
+    simp [SourceMetadataView.rangeContains, core.cmp.impls.PartialOrdU16.le, liftFun2, lower]
+
+def sample : Limits := ⟨1024#u32, 1#u32, 1#u64, 1#u64, 1#u64, 1#u64⟩
+def zeroConfiguration : Limits := {sample with max_configuration_bytes := 0#u32}
+
+theorem sample_valid : Valid sample := by simp [Valid, sample]
+theorem zero_configuration_invalid : ¬Valid zeroConfiguration := by simp [Valid, zeroConfiguration]
+
+end SandboxModel.Stage1Protocol.SourceConfigSpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigSpec.range32
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigSpec.range64
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigSpec.range16
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigSpec.sample_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceConfigSpec.zero_configuration_invalid
