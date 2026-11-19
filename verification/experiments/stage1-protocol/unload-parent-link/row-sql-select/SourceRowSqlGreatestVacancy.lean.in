@@ -1,0 +1,70 @@
+import SourceRowSelectInputs
+
+open Aeneas Aeneas.Std SandproofSourceRowSqlSelect
+
+namespace SandboxModel.Stage1Protocol.SourceRowSqlSelect
+
+theorem actual_greatest (connection : rusqlite.Connection) :
+    vacantRoot connection = vacantSpecAt connection greatestSql := by
+  change vacantAdapter connection = _
+  calc
+    _ = (do
+      let reply ← rusqlite.Connection.query_row Tuple.Insts.RusqliteParamsParams
+        vacantCallback connection greatestSql vacantInput ()
+      .ok (wrap reply)) := by
+        unfold vacantAdapter
+        simp only [controller.lifecycle_inbox.source_work.codec.SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.vacant]
+        congr 1
+        funext reply
+        exact finish_result reply
+    _ = _ := vacant_query connection greatestSql
+
+private theorem byteList (bytes : ByteArray) : bytes.toList = bytes.data.toList := by
+  have loop (i : Nat) (saved : List UInt8) :
+      ByteArray.toList.loop bytes i saved = saved.reverse ++ bytes.data.toList.drop i := by
+    fun_induction ByteArray.toList.loop bytes i saved with
+    | case1 i saved less next =>
+        have inside : i < bytes.data.toList.length := less
+        have byte : bytes.get! i = bytes.data.toList[i] :=
+          getElem!_pos bytes.data i less
+        rw [next, List.drop_eq_getElem_cons inside]
+        simp only [List.reverse_cons, byte, List.append_assoc, List.singleton_append]
+    | case2 i saved outside =>
+        have ends : bytes.data.toList.length ≤ i := Nat.le_of_not_gt outside
+        rw [List.drop_eq_nil_of_le ends, List.append_nil]
+  simpa only [ByteArray.toList, List.reverse_nil, List.nil_append, List.drop_zero] using loop 0 []
+
+set_option maxRecDepth 2048 in
+theorem actual_greatest_sample :
+    vacantRoot sampleConnection = .ok (.Ok (some 11#i64)) := by
+  rw [actual_greatest]
+  have different : greatestSql ≠ vacantSql := by
+    intro same
+    let secondAggregateByte (sql : Str) : Option Nat :=
+      (show Slice U8 from sql).val[8]?.map (fun byte => byte.val)
+    have largest : secondAggregateByte greatestSql = some 97 := by
+      simp only [secondAggregateByte, greatestSql, Aeneas.Std.toStr, Slice.from_val,
+        byteList, List.getElem?_map, Option.map_map]
+      rfl
+    have smallest : secondAggregateByte vacantSql = some 105 := by
+      simp only [secondAggregateByte, vacantSql, Aeneas.Std.toStr, Slice.from_val,
+        byteList, List.getElem?_map, Option.map_map]
+      rfl
+    have byte := congrArg secondAggregateByte same
+    rw [largest, smallest] at byte
+    cases byte
+  simp [vacantSpecAt, sampleConnection, issued, wrap, columnZero, different]
+
+theorem same_min_contract_rejected :
+    ¬ ∀ connection : rusqlite.Connection, vacantRoot connection = vacantSpec connection := by
+  intro contract
+  have observation := contract sampleConnection
+  rw [actual_greatest_sample, min_sample] at observation
+  have different : (11#i64 : I64) ≠ 7#i64 := by decide
+  exact different (Option.some.inj (core.result.Result.Ok.inj (Result.ok_injective observation)))
+
+end SandboxModel.Stage1Protocol.SourceRowSqlSelect
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.actual_greatest
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.actual_greatest_sample
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.same_min_contract_rejected

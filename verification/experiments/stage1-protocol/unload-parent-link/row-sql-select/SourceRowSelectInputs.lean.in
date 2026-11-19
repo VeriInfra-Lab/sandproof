@@ -1,0 +1,255 @@
+import SandproofSourceRowSqlSelect.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofSourceRowSqlSelect
+
+namespace SandboxModel.Stage1Protocol.SourceRowSqlSelect
+
+abbrev Reply := core.result.Result (Option I64) JournalError
+abbrev ReadError := rusqlite.error.Error
+abbrev existingRoot := controller.lifecycle_inbox.source_work.codec.proof_source_slot_sql.existing
+abbrev vacantRoot := controller.lifecycle_inbox.source_work.codec.proof_source_slot_sql.vacant
+
+abbrev existingAdapter :=
+  controller.lifecycle_inbox.source_work.codec.SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.existing
+abbrev vacantAdapter :=
+  controller.lifecycle_inbox.source_work.codec.SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.vacant
+abbrev existingCallback :=
+  controller.lifecycle_inbox.source_work.codec.SourceRowEffectsSqliteSourceRowConnectionJournalError.existing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error
+abbrev vacantCallback :=
+  controller.lifecycle_inbox.source_work.codec.SourceRowEffectsSqliteSourceRowConnectionJournalError.vacant.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultOptionI64Error
+
+def existingSql : Str :=
+  SandproofSourceRowSqlSelect.toStr "SELECT id FROM controller_source_work_records WHERE work_key=?1"
+
+def vacantSql : Str :=
+  SandproofSourceRowSqlSelect.toStr "SELECT min(id) FROM controller_source_work_records WHERE work_key IS NULL"
+
+def greatestSql : Str :=
+  SandproofSourceRowSqlSelect.toStr "SELECT max(id) FROM controller_source_work_records WHERE work_key IS NULL"
+
+def existingInput (key : Slice U8) : Array (Slice U8) 1#usize := Array.make 1#usize [key]
+
+abbrev existingParams := ArrayT1.Insts.RusqliteParamsParams
+  (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql)
+
+def vacantInput : Unit := ()
+
+def wrap (reply : core.result.Result (Option I64) ReadError) : Reply :=
+  match reply with
+  | .Ok value => .Ok value
+  | .Err error => .Err (.Sqlite error)
+
+def noRows (error : ReadError) : core.result.Result (Option I64) ReadError :=
+  if error.queryReturnedNoRows then .Ok none else .Err error
+
+/-- Both SQL callbacks read column zero. Only the aggregate admits SQL NULL. -/
+def columnZero (row : rusqlite.row.Row) (nullable : Bool) :
+    core.result.Result (Option I64) ReadError :=
+  if 0 < row.statement.columns.val then
+    match row.column 0#usize with
+    | .Integer id => .Ok (some id)
+    | .Null => if nullable then .Ok none
+        else .Err ⟨row.conversionError 0#usize .Null .invalidType, false⟩
+    | value => .Err ⟨row.conversionError 0#usize value .invalidType, false⟩
+  else .Err ⟨row.statement.invalidIndex 0#usize, false⟩
+
+def existingSpec (connection : rusqlite.Connection) (key : Array U8 32#usize) : Result Reply := do
+  let prepared ← connection.canonical.prepare existingSql
+  match prepared with
+  | .Err error => .ok (.Err (.Sqlite ⟨error, false⟩))
+  | .Ok count =>
+      let row ← connection.firstRow existingSql
+        (withArguments (issued connection existingSql count) [.blob ⟨key.to_slice⟩])
+      match row with
+      | .Err error => .ok (wrap (noRows error))
+      | .Ok row => .ok (wrap (columnZero row false))
+
+def vacantSpecAt (connection : rusqlite.Connection) (sql : Str) : Result Reply := do
+  let prepared ← connection.canonical.prepare sql
+  match prepared with
+  | .Err error => .ok (.Err (.Sqlite ⟨error, false⟩))
+  | .Ok count =>
+      if count = 0 then
+        let row ← connection.firstRow sql (issued connection sql count)
+        match row with
+        | .Err error => .ok (.Err (.Sqlite error))
+        | .Ok row => .ok (wrap (columnZero row true))
+      else .ok (.Err (.Sqlite ⟨connection.canonical.countError count 0, false⟩))
+
+abbrev vacantSpec (connection : rusqlite.Connection) : Result Reply := vacantSpecAt connection vacantSql
+
+theorem existing_bind (stmt : rusqlite.statement.Statement) (key : Slice U8) :
+    ArrayT1.Insts.RusqliteParamsParams.__bind_in
+      (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql)
+      (existingInput key) stmt = .ok (.Ok (), withArguments stmt (stmt.canonical.arguments ++ [.blob ⟨key⟩])) := by
+  simp only [ArrayT1.Insts.RusqliteParamsParams.__bind_in, rusqlite.statement.Statement.bind_parameters,
+    bindOne, bindBlobReply,
+    SharedArray.Insts.CoreIterTraitsCollectIntoIteratorSharedIter.into_iter,
+    core.slice.iter.IteratorSliceIter.next, existingInput,
+    Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql,
+    SliceU8.Insts.RusqliteTypesTo_sqlToSql.to_sql,
+    Slice.len_val, Array.make_val, bind_tc_ok, Nat.reduceAdd]
+  dsimp only [getElem, instGetElemSliceNatLtLengthVal, Slice.from, Slice.val,
+    Aeneas.Data.ListN.ListN.fromList, Aeneas.Data.ListN.ListN.toList]
+  simp [Slice.val, Slice.length, Aeneas.Data.ListN.ListN.toList]
+
+theorem existing_column (row : rusqlite.row.Row) :
+    (do
+      let reply ← existingCallback.call_once () row
+      core.result.ResultTError.Insts.RusqliteOptionalExtension.optional reply) =
+      .ok (columnZero row false) := by
+  change (do
+    let reply ← rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex
+      I64.Insts.RusqliteTypesFrom_sqlFromSql row 0#usize
+    core.result.ResultTError.Insts.RusqliteOptionalExtension.optional reply) = _
+  by_cases h : 0 < row.statement.columns.val
+  · cases value : row.column 0#usize <;>
+      simp [rusqlite.row.Row.get,
+        Usize.Insts.RusqliteRowRowIndex.idx,
+        I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result,
+        core.result.ResultTError.Insts.RusqliteOptionalExtension.optional, columnZero, h, value]
+  · simp [rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex.idx,
+      core.result.ResultTError.Insts.RusqliteOptionalExtension.optional, columnZero, h]
+
+theorem vacant_column (row : rusqlite.row.Row) :
+    vacantCallback.call_once () row = .ok (columnZero row true) := by
+  change rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex
+    (core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql I64.Insts.RusqliteTypesFrom_sqlFromSql)
+    row 0#usize = _
+  by_cases h : 0 < row.statement.columns.val
+  · cases value : row.column 0#usize <;>
+      simp [rusqlite.row.Row.get,
+        Usize.Insts.RusqliteRowRowIndex.idx,
+        I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result, columnZero, h, value,
+        core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql.column_result]
+  · simp [rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex.idx,
+      columnZero, h]
+
+theorem finish_result (result : core.result.Result (Option I64) ReadError) :
+    (do
+      let control ← core.result.Result.Insts.CoreOpsTry.branch result
+      match control with
+      | .Continue value => .ok (core.result.Result.Ok value)
+      | .Break error =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            (Option I64) JournalError.Insts.CoreConvertFromError error) = .ok (wrap result) := by
+  cases result <;> simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalError.Insts.CoreConvertFromError.from, wrap]
+
+private theorem existing_after_read
+    (read : Result (core.result.Result rusqlite.row.Row ReadError)) :
+    (do
+      let got ← (do
+        let observed ← read
+        match observed with
+        | .Err error => .ok (core.result.Result.Err error)
+        | .Ok row => existingCallback.call_once () row)
+      let optional ← core.result.ResultTError.Insts.RusqliteOptionalExtension.optional got
+      .ok (wrap optional)) =
+    (do
+      let row ← read
+      match row with
+      | .Err error => .ok (wrap (noRows error))
+      | .Ok row => .ok (wrap (columnZero row false))) := by
+  rw [bind_assoc_eq]
+  congr 1
+  funext observation
+  cases observation with
+  | Err error =>
+      cases h : error.queryReturnedNoRows <;>
+        simp [core.result.ResultTError.Insts.RusqliteOptionalExtension.optional, noRows, h]
+  | Ok row =>
+      rw [← bind_assoc_eq, existing_column, bind_tc_ok]
+
+private theorem vacant_after_read
+    (read : Result (core.result.Result rusqlite.row.Row ReadError)) :
+    (do
+      let reply ← (do
+        let observed ← read
+        match observed with
+        | .Err error => .ok (core.result.Result.Err error)
+        | .Ok row => vacantCallback.call_once () row)
+      .ok (wrap reply)) =
+    (do
+      let row ← read
+      match row with
+      | .Err error => .ok (.Err (.Sqlite error))
+      | .Ok row => .ok (wrap (columnZero row true))) := by
+  rw [bind_assoc_eq]
+  congr 1
+  funext observation
+  cases observation with
+  | Err error => simp [wrap]
+  | Ok row =>
+      change (do
+        let reply ← vacantCallback.call_once () row
+        .ok (wrap reply)) = _
+      rw [vacant_column, bind_tc_ok]
+
+theorem existing_query (connection : rusqlite.Connection) (key : Array U8 32#usize) :
+    (do
+      let result ← rusqlite.Connection.query_row existingParams existingCallback
+        connection existingSql (existingInput key.to_slice) ()
+      let optional ← core.result.ResultTError.Insts.RusqliteOptionalExtension.optional result
+      .ok (wrap optional)) = existingSpec connection key := by
+  simp only [rusqlite.Connection.query_row, existingSpec, bind_assoc_eq]
+  congr 1
+  funext prepared
+  cases prepared with
+  | Err error =>
+      simp [core.result.ResultTError.Insts.RusqliteOptionalExtension.optional, wrap]
+  | Ok count =>
+      simp only [existing_bind, bind_tc_ok, issued, List.nil_append]
+      exact existing_after_read _
+
+theorem vacant_query (connection : rusqlite.Connection) (sql : Str) :
+    (do
+      let reply ← rusqlite.Connection.query_row Tuple.Insts.RusqliteParamsParams
+        vacantCallback connection sql vacantInput ()
+      .ok (wrap reply)) = vacantSpecAt connection sql := by
+  simp only [rusqlite.Connection.query_row, vacantSpecAt, bind_assoc_eq]
+  congr 1
+  funext prepared
+  cases prepared with
+  | Err error => simp [wrap]
+  | Ok count =>
+      by_cases h : count = 0
+      · simp only [Tuple.Insts.RusqliteParamsParams.__bind_in,
+          rusqlite.statement.Statement.ensure_parameter_count, issued,
+          show (0#usize : Usize).val = 0 by rfl, h, if_pos, bind_tc_ok]
+        exact vacant_after_read _
+      · simp [Tuple.Insts.RusqliteParamsParams.__bind_in,
+          rusqlite.statement.Statement.ensure_parameter_count, issued, h, wrap]
+
+
+def sampleConnection : rusqlite.Connection where
+  canonical := {
+    identity := 11
+    prepare := fun _ => .ok (.Ok 0)
+    countError := fun expected actual => ⟨expected + actual⟩
+    run := fun _ _ => .ok (.Ok 0#usize)
+  }
+  statementObject := fun _ => 17
+  columns := fun _ => 1#usize
+  invalidIndex := fun _ index => ⟨index.val⟩
+  firstRow := fun sql stmt => .ok (.Ok {
+    object := 19
+    statement := stmt
+    column := fun _ => .Integer (if sql = vacantSql then 7#i64 else 11#i64)
+    conversionError := fun index _ _ => ⟨index.val⟩
+  })
+
+theorem min_sample : vacantSpec sampleConnection = .ok (.Ok (some 7#i64)) := by
+  simp [vacantSpec, vacantSpecAt, sampleConnection, issued, wrap, columnZero]
+
+end SandboxModel.Stage1Protocol.SourceRowSqlSelect
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.existing_bind
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.existing_column
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.vacant_column
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.finish_result
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.vacant_query
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.existing_query
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlSelect.min_sample

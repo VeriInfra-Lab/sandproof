@@ -1,0 +1,143 @@
+#[cfg(test)]
+mod proof_source_select_binding {
+    use super::*;
+
+    fn insert(connection: &Connection, id: i64, key: Option<&[u8; 32]>) {
+        connection
+            .execute(
+                "INSERT INTO controller_source_work_records VALUES (?1, X'6E756C6C', zeroblob(32), 8192, ?2)",
+                params![id, key.map(<[u8; 32]>::as_slice)],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn existing_uses_the_complete_work_key_and_only_absence_returns_none() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(RECORDS_TABLE).unwrap();
+        let key = [41_u8; 32];
+        let mut near = key;
+        near[31] = 42;
+        let mut absent = key;
+        absent[31] = 43;
+        let large_slot = 1_i64 << 40;
+        insert(&connection, large_slot, Some(&key));
+        insert(&connection, 3, Some(&near));
+        insert(&connection, 5, None);
+
+        assert_eq!(
+            SqliteSourceRow::existing(&connection, &key).unwrap(),
+            Some(large_slot)
+        );
+        assert_eq!(
+            SqliteSourceRow::existing(&connection, &near).unwrap(),
+            Some(3)
+        );
+        assert_eq!(
+            SqliteSourceRow::existing(&connection, &absent).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn vacant_uses_the_minimum_null_key_slot_and_keeps_aggregate_null() {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(RECORDS_TABLE).unwrap();
+        insert(&connection, 11, None);
+        insert(&connection, 3, Some(&[19_u8; 32]));
+        insert(&connection, 7, None);
+        assert_eq!(
+            SqliteSourceRow::vacant(&connection).unwrap(),
+            Some(7),
+            "vacant SELECT must return the minimum unassigned slot"
+        );
+        connection
+            .execute(
+                "UPDATE controller_source_work_records SET work_key=?1 WHERE id=?2",
+                params![[20_u8; 32].as_slice(), 7],
+            )
+            .unwrap();
+        assert_eq!(SqliteSourceRow::vacant(&connection).unwrap(), Some(11));
+        connection
+            .execute(
+                "DELETE FROM controller_source_work_records WHERE work_key IS NULL",
+                [],
+            )
+            .unwrap();
+        assert_eq!(SqliteSourceRow::vacant(&connection).unwrap(), None);
+    }
+
+    #[test]
+    fn both_preserve_the_original_sqlite_prepare_error() {
+        let connection = Connection::open_in_memory().unwrap();
+        let key = [41_u8; 32];
+        let original = [
+            connection
+                .query_row(
+                    "SELECT id FROM controller_source_work_records WHERE work_key=?1",
+                    [key.as_slice()],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap_err(),
+            connection
+                .query_row(
+                    "SELECT min(id) FROM controller_source_work_records WHERE work_key IS NULL",
+                    [],
+                    |row| row.get::<_, Option<i64>>(0),
+                )
+                .unwrap_err(),
+        ];
+        for (result, expected) in [
+            SqliteSourceRow::existing(&connection, &key),
+            SqliteSourceRow::vacant(&connection),
+        ]
+        .into_iter()
+        .zip(original)
+        {
+            let Err(JournalError::Sqlite(error)) = result else {
+                panic!("expected the original SQLite prepare error, got {result:?}");
+            };
+            match (error, expected) {
+                (
+                    rusqlite::Error::SqlInputError { error, msg, .. },
+                    rusqlite::Error::SqlInputError {
+                        error: expected_error,
+                        msg: expected_msg,
+                        ..
+                    },
+                ) => {
+                    assert_eq!(error, expected_error);
+                    assert_eq!(msg, expected_msg);
+                    assert!(msg.contains("no such table"));
+                }
+                (error, expected) => {
+                    assert_eq!(error, expected);
+                    assert!(error.to_string().contains("no such table"));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn existing_keeps_a_real_column_type_error() {
+        let connection = Connection::open_in_memory().unwrap();
+        // Exercise the adapter decoder on a deliberately ill-shaped schema.
+        connection
+            .execute_batch("CREATE TABLE controller_source_work_records(id TEXT, work_key BLOB)")
+            .unwrap();
+        let key = [41_u8; 32];
+        connection
+            .execute(
+                "INSERT INTO controller_source_work_records VALUES ('invalid id', ?1)",
+                [key.as_slice()],
+            )
+            .unwrap();
+        let result = SqliteSourceRow::existing(&connection, &key);
+        let Err(JournalError::Sqlite(rusqlite::Error::InvalidColumnType(0, name, ty))) = result
+        else {
+            panic!("expected SQLite's integer column type error, got {result:?}");
+        };
+        assert_eq!(name, "id");
+        assert_eq!(ty, rusqlite::types::Type::Text);
+    }
+}
