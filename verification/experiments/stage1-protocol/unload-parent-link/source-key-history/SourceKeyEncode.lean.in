@@ -1,0 +1,102 @@
+import SourceKeyHistory
+import Aeneas.Std.SliceIter
+
+open Aeneas Aeneas.Std Result ControlFlow SandproofSourceRowSqlSelect
+open SandboxModel.Stage1Protocol.ObservationSuffix
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceKeyEncode
+
+structure Fields where
+  base : Carriers
+  anchor : Type
+  resource : Type
+  source : Type
+
+section
+variable (f : Fields)
+local notation "sandproof_protocol.lifecycle.digest.ContentDigest" => SaveRows.Key
+local notation "sandproof_protocol.internal.NodeIdentity" => f.base.node
+local notation "capture.HostEpochRegistration" => f.base.registration
+local notation "capture.source.SourceObservationConfig" => f.base.limits
+local notation "sandproof_protocol.ResourceRef" => f.resource
+local notation "capture.SourceProcessIdentity" => f.source
+
+-- ACTUAL REQUIREMENT
+
+local notation "capture.source.SourceObservationRequirement" => capture.source.SourceObservationRequirement f
+local notation "controller.lifecycle_inbox.source_work.SourceAnchor" => f.anchor
+
+-- ACTUAL WORK
+end
+
+def carriers (f : Fields) : Carriers :=
+  { f.base with work := controller.lifecycle_inbox.source_work.SourceWork f }
+
+abbrev Row (f : Fields) := Record (carriers f)
+abbrev Rows (f : Fields) := SaveRows.Sources f.base.limits f.base.node (Row f)
+abbrev Encoded := alloc.vec.Vec SaveRows.Encoded
+abbrev Iter (f : Fields) := core.slice.iter.Iter (Row f)
+
+def keyOf (f : Fields) (work : (carriers f).work) : SaveRows.Key :=
+  work.requirement.work_binding
+
+structure Ports (f : Fields) (Keys : Type) where
+  reserved : f.base.limits → U64 → Result U64
+  newKeys : Result Keys
+  allocator : core.clone.Clone Unit
+  order : core.cmp.Ord SaveRows.Key
+  insert : core.clone.Clone Unit → core.cmp.Ord SaveRows.Key → Keys → SaveRows.Key → Result (Bool × Keys)
+  anchorJson : f.anchor → Result (core.result.Result (alloc.vec.Vec U8) serde_json.error.Error)
+  recordJson : Row f → Result (core.result.Result (alloc.vec.Vec U8) serde_json.error.Error)
+  digest : Slice U8 → Result SaveRows.Key
+
+def startIter {R : Type} (_allocator : Type) (rows : alloc.vec.Vec R) : Result (core.slice.iter.Iter R) :=
+  .ok ⟨rows.slice, 0⟩
+
+def castJsonError : core.convert.From JournalError serde_json.error.Error :=
+  { «from» := fun error => .ok (.Json error) }
+
+def fullDigestEq : core.cmp.PartialEq SaveRows.Key SaveRows.Key :=
+  { eq := fun a b => .ok (a.val == b.val), ne := fun a b => .ok (!(a.val == b.val)) }
+
+section
+variable {f : Fields} {Keys : Type} (ops : Ports f Keys)
+local notation "Global" => Unit
+local notation "alloc.collections.btree.set.BTreeSet" => (fun (_ _ : Type) => Keys)
+local notation "alloc.collections.btree.set.BTreeSet.insert" => ops.insert
+local notation "alloc.collections.btree.set.BTreeSetTGlobal.new" => (fun (_ : Type) => ops.newKeys)
+local notation "core.core.clone.CloneGlobal" => ops.allocator
+local notation "Array.Insts.CoreCmpOrd" => (fun (_ : Usize) (_ : core.cmp.Ord U8) => ops.order)
+local notation "sandproof_protocol.lifecycle.digest.ContentDigest.as_bytes" => (fun (key : SaveRows.Key) => Result.ok key)
+local notation "sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest" => fullDigestEq
+local notation "SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter" => startIter
+local notation "JournalError.Insts.CoreConvertFromError" => castJsonError
+local notation "controller.lifecycle_inbox.source_work.SourceWorkRecord" => Row f
+local notation "controller.lifecycle_inbox.source_work.codec.Sources" => SaveRows.Sources
+local notation "sandproof_protocol.internal.NodeIdentity" => f.base.node
+local notation "capture.source.SourceObservationConfig" => f.base.limits
+local notation "capture.source.SourceObservationConfig.required_bytes" => ops.reserved
+local notation "controller.lifecycle_inbox.source_work.codec.encode_anchor_json" => ops.anchorJson
+local notation "controller.lifecycle_inbox.source_work.codec.encode_record_json" => ops.recordJson
+local notation "controller.lifecycle_inbox.source_work.digest" => ops.digest
+
+-- ACTUAL LOOP BODY
+
+local notation "controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop.body" =>
+  controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop.body ops
+
+-- ACTUAL LOOP
+
+local notation "controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop" =>
+  controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop ops
+
+-- ACTUAL ENCODER
+
+end
+
+abbrev actual := @controller.lifecycle_inbox.source_work.codec.encode_candidate_records
+abbrev actualLoop := @controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop
+abbrev actualStep := @controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop.body
+
+end SandboxModel.Stage1Protocol.SourceKeyEncode

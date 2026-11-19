@@ -1,0 +1,179 @@
+import SourceKeyEncode
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.ObservationParent
+open SandboxModel.Stage1Protocol.ObservationSql
+open SandboxModel.Stage1Protocol.ObservationSuffix
+open SandboxModel.Stage1Protocol.SourceKeyHistory
+open SandboxModel.Stage1Protocol.SourceHistory
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceKeyEncode
+
+variable {f : Fields} {Keys : Type} (ops : Ports f Keys)
+
+def encodedKeys (bytes : Encoded) : List SaveRows.Key :=
+  bytes.val.map Prod.fst
+
+private def remaining (iter : Iter f) : List (Row f) :=
+  iter.slice.val.drop iter.i
+
+private theorem normal_bind {A B : Type} (input : Result A) (next : A → Result B)
+    {output : B} (returned : input >>= next = .ok output) :
+    ∃ value, input = .ok value ∧ next value = .ok output := by
+  cases input <;> simp_all
+
+private theorem pushed_projection (encoded next : Encoded) (key : SaveRows.Key)
+    (bytes : alloc.vec.Vec U8) (pushed : encoded.push (key, bytes) = .ok next) :
+    encodedKeys next = encodedKeys encoded ++ [key] := by
+  unfold alloc.vec.Vec.push at pushed
+  dsimp only at pushed
+  split at pushed
+  · simp only [Result.ok.injEq] at pushed
+    rw [← pushed]
+    simp [encodedKeys, List.concat_eq_append]
+  · simp at pushed
+
+private abbrev Step (f : Fields) (Keys : Type) :=
+  ControlFlow (Iter f × Keys × Encoded)
+    (core.result.Result (Keys × Encoded) SaveRows.Error)
+
+private def AccountsFor (iter : Iter f) (encoded : Encoded) : Step f Keys → Prop
+  | .cont (next, _, collected) =>
+      ∃ row, remaining iter = row :: remaining next ∧
+        encodedKeys collected = encodedKeys encoded ++ [keyOf f row.work]
+  | .done (.Ok (_, collected)) => remaining iter = [] ∧ collected = encoded
+  | .done (.Err _) => True
+
+private theorem normal_step (reserve : U64) (iter : Iter f) (keys : Keys)
+    (encoded : Encoded) (out : Step f Keys)
+    (ran : actualStep ops reserve iter keys encoded = .ok out) : AccountsFor iter encoded out := by
+  unfold actualStep controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop.body at ran
+  by_cases inside : iter.i < iter.slice.val.length
+  · have head := List.drop_eq_getElem_cons inside
+    simp only [core.slice.iter.IteratorSliceIter.next, Slice.len_val, inside,
+      ↓reduceDIte, bind_tc_ok] at ran
+    obtain ⟨⟨added, nextKeys⟩, _, ran⟩ := normal_bind _ _ ran
+    cases added
+    · simp at ran
+      subst out
+      trivial
+    · obtain ⟨anchor, _, ran⟩ := normal_bind _ _ ran
+      cases anchor with
+      | Err error =>
+          simp [core.result.Result.Insts.CoreOpsTry.branch,
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+            castJsonError] at ran
+          subst out
+          trivial
+      | Ok anchor =>
+          simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok] at ran
+          obtain ⟨digest, _, ran⟩ := normal_bind _ _ ran
+          simp only [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+            fullDigestEq, bind_tc_ok] at ran
+          split at ran
+          · simp at ran
+            subst out
+            trivial
+          · obtain ⟨encodedRecord, _, ran⟩ := normal_bind _ _ ran
+            cases encodedRecord with
+            | Err error =>
+                simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                  castJsonError] at ran
+                subst out
+                trivial
+            | Ok bytes =>
+                simp only [bind_tc_ok, lift] at ran
+                split at ran
+                · simp at ran
+                  subst out
+                  trivial
+                · obtain ⟨collected, pushed, ran⟩ := normal_bind _ _ ran
+                  simp only [Result.ok.injEq] at ran
+                  subst out
+                  refine ⟨iter.slice.val[iter.i], head, ?_⟩
+                  exact pushed_projection _ _ _ _ pushed
+  · simp only [core.slice.iter.IteratorSliceIter.next, Slice.len_val, inside,
+      ↓reduceDIte, bind_tc_ok] at ran
+    change Result.ok (.done (.Ok (keys, encoded))) = .ok out at ran
+    simp only [Result.ok.injEq] at ran
+    subst out
+    exact ⟨List.drop_eq_nil_of_le (Nat.le_of_not_lt inside), rfl⟩
+
+theorem actual_loop_keeps_full_keys (reserve : U64) (iter : Iter f) (keys : Keys)
+    (encoded : Encoded) (resultKeys : Keys) (result : Encoded)
+    (ran : actualLoop ops iter reserve keys encoded = .ok (.Ok (resultKeys, result))) :
+    encodedKeys result =
+      encodedKeys encoded ++ workKeys (keyOf f) (remaining iter) := by
+  induction size : (remaining iter).length using Nat.strong_induction_on generalizing iter keys encoded with
+  | h _ ih =>
+    unfold actualLoop controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop at ran
+    rw [loop] at ran
+    obtain ⟨step, ranStep, ran⟩ := normal_bind _ _ ran
+    have account := normal_step ops reserve iter keys encoded step ranStep
+    cases step with
+    | done resultStep =>
+        simp only [Result.ok.injEq] at ran
+        subst resultStep
+        obtain ⟨empty, rfl⟩ := account
+        simp [empty, workKeys]
+    | cont pending =>
+        obtain ⟨next, nextKeys, collected⟩ := pending
+        obtain ⟨row, head, appended⟩ := account
+        have smaller : (remaining next).length < (remaining iter).length := by simp [head]
+        have resumed : actualLoop ops next reserve nextKeys collected = .ok (.Ok (resultKeys, result)) := ran
+        have exactKeys := ih (remaining next).length (size ▸ smaller) next nextKeys collected resumed rfl
+        simp [exactKeys, appended, head, workKeys, List.append_assoc]
+
+theorem actual_encoding_keeps_full_keys (sources : Rows f) (resultKeys : Keys) (result : Encoded)
+    (ran : actual ops sources = .ok (.Ok (resultKeys, result))) :
+    encodedKeys result = workKeys (keyOf f) sources.records.val := by
+  unfold actual controller.lifecycle_inbox.source_work.codec.encode_candidate_records at ran
+  obtain ⟨reserve, _, ran⟩ := normal_bind _ _ ran
+  obtain ⟨keys, _, ran⟩ := normal_bind _ _ ran
+  simp only [startIter, bind_tc_ok] at ran
+  have empty : encodedKeys (alloc.vec.Vec.new SaveRows.Encoded) = [] := by simp [encodedKeys]
+  change encodedKeys result = workKeys (keyOf f) sources.records.slice.val
+  simpa only [empty, List.nil_append, remaining, List.drop_zero] using actual_loop_keeps_full_keys ops reserve
+    ⟨sources.records.slice, 0⟩ keys (alloc.vec.Vec.new SaveRows.Encoded) resultKeys result ran
+
+variable {t : ReadTypes} {E : Type}
+variable (attached : CodecInputs (carriers f) Keys) (calls : Calls (carriers f))
+variable (reads : ReadCalls (carriers f) t) (host : t.host E) (decoder : t.decoder E)
+variable (journal : Journal (carriers f)) (work : (carriers f).work) (context : t.context)
+variable (raw : (carriers f).observation) (now : I64)
+variable (current : CurrentReady attached calls reads host decoder journal work context raw now)
+variable (selected : Selected attached calls reads host decoder journal work context raw now current)
+variable (write : WriteReady attached calls reads host decoder journal work context raw now current selected)
+
+local notation "invocation" => ObservationSqlHistory.originalInvocation attached calls reads
+  host decoder journal work context raw now current
+local notation "db" => Invocation.connection invocation
+
+theorem original_encoded_rows_select_registered_slots
+    (encodes : ∀ sources : Rows f, attached.read.encode sources = actual ops sources)
+    (initial interim : Image) (processed : List SaveRows.Encoded)
+    (loaded : ∀ key ∈ workKeys (keyOf f) current.rows.records.val, Registered initial key)
+    (history : Written invocation initial processed interim)
+    (entry : SaveRows.Encoded) (member : entry ∈ write.encoded.val)
+    (read : A4Lookup db interim entry.1)
+    (response : Option I64)
+    (returned : SourceRowSqlSelect.existingSpec db entry.1 = .ok (.Ok response))
+    (vacancy : Result (core.result.Result (Option I64) SaveRows.Error)) :
+    ∃ id cell, response = some id ∧ interim id = some cell ∧ cell.workKey = some entry.1.val ∧
+      SourceRowSqlComposition.chooseSlot (SourceRowSqlSelect.existingSpec db entry.1)
+        vacancy (.ok .MaintenanceCapacity) = .ok (.Ok id) := by
+  have ran := write.validated.encode
+  rw [encodes] at ran
+  have encoded := actual_encoding_keeps_full_keys ops _ write.keys write.encoded ran
+  have present := encoded_key_stays_registered_after_prefix attached calls reads host decoder
+    journal work context raw now current selected write (keyOf f) initial interim processed encoded
+    loaded history entry member
+  exact registered_normal_select_uses_original_slot db interim entry.1
+    present read response returned vacancy
+
+end SandboxModel.Stage1Protocol.SourceKeyEncode
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceKeyEncode.actual_loop_keeps_full_keys
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceKeyEncode.actual_encoding_keeps_full_keys
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceKeyEncode.original_encoded_rows_select_registered_slots
