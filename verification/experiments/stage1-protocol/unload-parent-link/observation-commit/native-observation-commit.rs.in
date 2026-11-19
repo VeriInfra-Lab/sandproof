@@ -1,0 +1,143 @@
+use super::*;
+use rusqlite::{Connection, Error, ErrorCode, TransactionBehavior};
+use sha2::{Digest, Sha256};
+use std::time::Duration;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct StoredSlot {
+    id: i64,
+    payload: Vec<u8>,
+    checksum: Vec<u8>,
+    work_key: Vec<u8>,
+    reserve: i64,
+}
+
+fn read_slot(connection: &Connection, key: &[u8]) -> StoredSlot {
+    connection
+        .query_row(
+            "SELECT id,state_json,sha256,work_key,reserve_bytes
+             FROM controller_source_work_records WHERE work_key=?1",
+            [key],
+            |row| {
+                Ok(StoredSlot {
+                    id: row.get(0)?,
+                    payload: row.get(1)?,
+                    checksum: row.get(2)?,
+                    work_key: row.get(3)?,
+                    reserve: row.get(4)?,
+                })
+            },
+        )
+        .unwrap()
+}
+
+struct PublicationProbe<'a> {
+    reader: &'a mut Connection,
+    before: &'a StoredSlot,
+    after: &'a StoredSlot,
+    fail_at: Option<CrashPoint>,
+    points: Vec<CrashPoint>,
+}
+
+impl CrashInjector for PublicationProbe<'_> {
+    fn hit(&mut self, point: CrashPoint) -> Result<(), JournalError> {
+        self.points.push(point);
+        let expected = match point {
+            CrashPoint::BeforeCommit => self.before,
+            CrashPoint::AfterCommit => self.after,
+            unexpected => panic!("unexpected source observation boundary: {unexpected:?}"),
+        };
+        assert_eq!(
+            &read_slot(self.reader, &expected.work_key),
+            expected,
+            "source observation visibility at {point:?}",
+        );
+        let competing_writer = self
+            .reader
+            .transaction_with_behavior(TransactionBehavior::Immediate);
+        if point == CrashPoint::BeforeCommit {
+            assert!(
+                matches!(competing_writer, Err(Error::SqliteFailure(error, _))
+                    if error.code == ErrorCode::DatabaseBusy),
+                "the original writer must still hold the SQLite lock before commit"
+            );
+        } else {
+            competing_writer.unwrap().rollback().unwrap();
+        }
+        if self.fail_at == Some(point) {
+            return Err(JournalError::InjectedCrash(point));
+        }
+        Ok(())
+    }
+}
+
+#[test]
+fn source_observation_commit_publishes_exact_bytes_between_hooks_and_replays_after_reopen() {
+    for failure in [CrashPoint::BeforeCommit, CrashPoint::AfterCommit] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let (mut journal, _) = ready(&path);
+        let original = prepare(&mut journal);
+        let raw = observation(original.work.requirement());
+        let saved = SourceWorkRecord {
+            observation: Some(raw.clone()),
+            ..original.clone()
+        };
+        let mut reader = Connection::open(&path).unwrap();
+        reader.busy_timeout(Duration::ZERO).unwrap();
+        let before = read_slot(&reader, original.work.requirement().work_binding.as_bytes());
+        assert_eq!(before.payload, serde_json::to_vec(&original).unwrap());
+        assert_eq!(before.checksum, Sha256::digest(&before.payload).to_vec());
+        let payload = serde_json::to_vec(&saved).unwrap();
+        let after = StoredSlot {
+            checksum: Sha256::digest(&payload).to_vec(),
+            payload,
+            ..before.clone()
+        };
+        let mut probe = PublicationProbe {
+            reader: &mut reader,
+            before: &before,
+            after: &after,
+            fail_at: Some(failure),
+            points: Vec::new(),
+        };
+        let context = v3::context();
+        assert!(matches!(
+            journal.save_source_observation::<Evidence>(
+                &original.work,
+                &context,
+                raw.clone(),
+                10,
+                &mut probe,
+            ),
+            Err(JournalError::InjectedCrash(point)) if point == failure
+        ));
+        let committed = failure == CrashPoint::AfterCommit;
+        let all_points = [CrashPoint::BeforeCommit, CrashPoint::AfterCommit];
+        let (durable_record, durable_slot, saved_points, retry_points) = if committed {
+            (&saved, &after, &all_points[..], &[][..])
+        } else {
+            (&original, &before, &all_points[..1], &all_points[..])
+        };
+        assert_eq!(probe.points, saved_points);
+        drop(journal);
+        let mut journal = v3::open(&path);
+        bootstrap(&mut journal);
+        assert_eq!(read_slot(probe.reader, &before.work_key), *durable_slot);
+        assert_eq!(
+            journal.lifecycle_source_work(&v3::config().node).unwrap(),
+            std::slice::from_ref(durable_record),
+        );
+
+        probe.fail_at = None;
+        probe.points.clear();
+        assert_eq!(
+            journal
+                .save_source_observation::<Evidence>(&original.work, &context, raw, 10, &mut probe)
+                .unwrap(),
+            saved,
+        );
+        assert_eq!(probe.points, retry_points);
+        assert_eq!(read_slot(probe.reader, &before.work_key), after);
+    }
+}
