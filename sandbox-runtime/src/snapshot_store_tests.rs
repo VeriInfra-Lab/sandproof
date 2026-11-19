@@ -456,6 +456,20 @@ fn actual_clone_size_limit_failure_keeps_empty_target_and_original_source() {
 #[test]
 #[ignore = "requires root and independently prepared source/store XFS project quotas"]
 fn actual_project_quota_clone_failure_keeps_original_source_and_staging() {
+    check_project_quota_clone_failure(None);
+}
+
+#[test]
+#[ignore = "requires root and a third private XFS project with enough quota for the control clone"]
+fn actual_project_quota_clone_failure_with_healthy_control() {
+    let control = PathBuf::from(
+        std::env::var_os("SANDPROOF_UNIT_CLONE_QUOTA_CONTROL")
+            .expect("explicit prepared healthy control store required"),
+    );
+    check_project_quota_clone_failure(Some(&control));
+}
+
+fn check_project_quota_clone_failure(control_path: Option<&Path>) {
     assert_eq!(rustix::process::geteuid().as_raw(), 0, "root required");
     let source_path = std::path::PathBuf::from(
         std::env::var_os("SANDPROOF_UNIT_CLONE_QUOTA_SOURCE")
@@ -478,6 +492,21 @@ fn actual_project_quota_clone_failure_keeps_original_source_and_staging() {
         )
         .unwrap(),
     );
+    let control = control_path.map(|path| {
+        assert!(path.is_absolute());
+        assert_eq!(path.canonicalize().unwrap(), path);
+        assert!(fs::read_dir(path).unwrap().next().is_none());
+        let control = SnapshotStore::open(path).unwrap();
+        require_same_xfs_mount(&store.directory, &control.directory).unwrap();
+        let limited = store.directory.metadata().unwrap();
+        let healthy = control.directory.metadata().unwrap();
+        assert_ne!(
+            limited.ino(),
+            healthy.ino(),
+            "independent control store required"
+        );
+        control
+    });
     let original = source.metadata().unwrap();
     assert_eq!(original.uid(), 0);
     assert_eq!(original.len(), 2 * 1024 * 1024);
@@ -487,11 +516,77 @@ fn actual_project_quota_clone_failure_keeps_original_source_and_staging() {
     );
     let source_before = FileStamp::from_metadata(&original);
     let digest_before: [u8; 32] = Sha256::digest(fs::read(&source_path).unwrap()).into();
+    let (partial, target) = check_limited_project_clone(
+        &store,
+        &mut source,
+        &source_path,
+        &original,
+        &source_before,
+        digest_before,
+    );
+
+    if let Some(control) = control {
+        let control_key = [34; 32];
+        let mut stage = control.begin(control_key).unwrap();
+        let measurement = stage
+            .copy_artifact(&mut source, 0, SnapshotArtifact::Memory, original.len())
+            .unwrap();
+        assert_eq!(measurement.length, original.len());
+        assert_eq!(measurement.sha256, digest_before);
+        assert_eq!(stage.measurements(), [measurement]);
+        let control_file = control
+            .path
+            .join(key_name("staging-", &control_key))
+            .join("memory.bin");
+        let healthy = fs::symlink_metadata(control_file).unwrap();
+        assert_eq!(healthy.dev(), original.dev());
+        assert_ne!(healthy.ino(), original.ino());
+        assert_ne!(healthy.ino(), target.ino());
+        assert_eq!(
+            (healthy.len(), healthy.nlink(), healthy.mode() & 0o777),
+            (original.len(), 1, 0o400)
+        );
+        assert_eq!(
+            FileStamp::from_metadata(&source.metadata().unwrap()),
+            source_before
+        );
+        assert_eq!(
+            FileStamp::from_metadata(&fs::symlink_metadata(partial.join("memory.bin")).unwrap()),
+            FileStamp::from_metadata(&target)
+        );
+        eprintln!(
+            "healthy control after quota refusal inode={} bytes={} source_sha256={digest_before:?}",
+            healthy.ino(),
+            healthy.len()
+        );
+    }
+}
+
+fn check_limited_project_clone(
+    store: &SnapshotStore,
+    source: &mut File,
+    source_path: &Path,
+    original: &std::fs::Metadata,
+    source_before: &FileStamp,
+    digest_before: [u8; 32],
+) -> (PathBuf, std::fs::Metadata) {
+    let store_path = &store.path;
     let key = [33; 32];
     let partial = store_path.join(key_name("staging-", &key));
     let mut stage = store.begin(key).unwrap();
     let staging_before = fs::symlink_metadata(&partial).unwrap();
-    let result = stage.copy_artifact(&mut source, 0, SnapshotArtifact::Memory, original.len());
+    let mut phases = Vec::new();
+    let result = stage.copy_artifact_observing(
+        source,
+        0,
+        SnapshotArtifact::Memory,
+        original.len(),
+        &mut |artifact, event| {
+            assert_eq!(artifact, SnapshotArtifact::Memory);
+            phases.push(event);
+            Ok(())
+        },
+    );
     let RuntimeError::Io(error) = result.unwrap_err() else {
         panic!("expected actual kernel project space/quota refusal");
     };
@@ -501,16 +596,17 @@ fn actual_project_quota_clone_failure_keeps_original_source_and_staging() {
             || errno == rustix::io::Errno::DQUOT.raw_os_error(),
         "expected ENOSPC or EDQUOT, got {errno}"
     );
+    assert_eq!(phases, [SnapshotArtifactEvent::BeforeClone]);
     assert!(stage.measurements().is_empty());
     assert_eq!(
         FileStamp::from_metadata(&source.metadata().unwrap()),
-        source_before
+        *source_before
     );
     assert_eq!(
-        FileStamp::from_metadata(&fs::symlink_metadata(&source_path).unwrap()),
-        source_before
+        FileStamp::from_metadata(&fs::symlink_metadata(source_path).unwrap()),
+        *source_before
     );
-    let digest_after: [u8; 32] = Sha256::digest(fs::read(&source_path).unwrap()).into();
+    let digest_after: [u8; 32] = Sha256::digest(fs::read(source_path).unwrap()).into();
     assert_eq!(digest_after, digest_before);
     drop(stage);
     let retained = fs::symlink_metadata(&partial).unwrap();
@@ -547,6 +643,7 @@ fn actual_project_quota_clone_failure_keeps_original_source_and_staging() {
         target.ino(),
         target.len()
     );
+    (partial, target)
 }
 
 #[test]
@@ -601,6 +698,129 @@ fn real_parent_sync_error_after_publish_keeps_original_bundle_reopenable() {
             b"actual bytes"
         );
     }
+}
+
+fn assert_short_manifest_retained(stage: &Path, before: &Metadata, expected: &[u8]) {
+    let retained = stage.symlink_metadata().unwrap();
+    assert_eq!(
+        (retained.dev(), retained.ino(), retained.mode() & 0o777),
+        (before.dev(), before.ino(), 0o700)
+    );
+    let manifest = stage.join("manifest.json");
+    assert_eq!(fs::read(&manifest).unwrap().as_slice(), expected);
+    let saved = manifest.symlink_metadata().unwrap();
+    assert_eq!((saved.mode() & 0o777, saved.nlink()), (0o600, 1));
+}
+
+fn assert_path_missing(path: &Path) {
+    let error = path.symlink_metadata().unwrap_err();
+    assert_eq!(error.kind(), io::ErrorKind::NotFound, "{path:?}");
+}
+
+#[test]
+#[ignore = "requires approved XFS and an isolated child with RLIMIT_FSIZE=128 and SIGXFSZ ignored"]
+fn actual_manifest_short_write_retains_stage_and_allows_healthy_publication() {
+    use rustix::process::{Resource, getrlimit, setrlimit};
+
+    const PREFIX_BYTES: usize = 128;
+    let mut limit = getrlimit(Resource::Fsize);
+    assert_eq!(limit.current, Some(PREFIX_BYTES as u64));
+    let fixture = Fixture::new();
+    let store = fixture.open();
+    let key = [42; 32];
+    let healthy_key = [43; 32];
+    let stage = fixture.full_stage(key);
+    let measured = stage.measurements();
+    let stage_path = fixture.store.join(key_name("staging-", &key));
+    let stage_before = stage_path.symlink_metadata().unwrap();
+    let mut healthy = store.begin(healthy_key).unwrap();
+    let originals = measured
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            let path = fixture.root.path().join(format!("source-{index}"));
+            let mut source = File::open(&path).unwrap();
+            let stamp = FileStamp::from_metadata(&source.metadata().unwrap());
+            assert_eq!(
+                healthy
+                    .copy_artifact(&mut source, fixture.owner, entry.artifact, entry.length)
+                    .unwrap(),
+                *entry
+            );
+            let clone = stage_path.join(entry.artifact.relative_path());
+            (
+                path,
+                stamp,
+                FileStamp::from_metadata(&clone.metadata().unwrap()),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    // The storage primitive receives already validated, opaque manifest bytes.
+    let manifest = serde_json::to_vec(&serde_json::json!({"payload": "m".repeat(1024)})).unwrap();
+    assert!(manifest.len() > PREFIX_BYTES);
+    let result = stage.publish(&manifest, &measured);
+    let RuntimeError::Io(error) = result.unwrap_err() else {
+        panic!("the original manifest write must reach the process file-size limit");
+    };
+    assert_eq!(
+        error.raw_os_error(),
+        Some(rustix::io::Errno::FBIG.raw_os_error())
+    );
+    let prefix = &manifest[..PREFIX_BYTES];
+    assert_short_manifest_retained(&stage_path, &stage_before, prefix);
+    for (entry, (_, _, stamp)) in measured.iter().zip(&originals) {
+        let path = stage_path.join(entry.artifact.relative_path());
+        let metadata = path.symlink_metadata().unwrap();
+        assert_eq!(&FileStamp::from_metadata(&metadata), stamp);
+        assert_eq!(
+            <[u8; 32]>::from(Sha256::digest(fs::read(path).unwrap())),
+            entry.sha256
+        );
+    }
+    for kind in ["capture-", "completed-"] {
+        assert_path_missing(&fixture.store.join(key_name(kind, &key)));
+    }
+    let limits = BundleReadLimits {
+        state_bytes: 100,
+        memory_bytes: 100,
+        disk_bytes: 100,
+    };
+    assert!(store.open_bundle(key, limits).is_err());
+    assert!(matches!(store.begin(key), Err(RuntimeError::Io(error))
+        if error.raw_os_error() == Some(rustix::io::Errno::EXIST.raw_os_error())));
+    let plan = store.capture_retirement_plan(key).unwrap();
+    let plan: CaptureStoreRetirement =
+        serde_json::from_slice(&serde_json::to_vec(&plan).unwrap()).unwrap();
+
+    // Raise only this child's soft limit for the healthy key; never retry the
+    // interrupted publish or replace its partial manifest.
+    limit.current = Some(manifest.len() as u64);
+    setrlimit(Resource::Fsize, limit).unwrap();
+    let published = healthy.publish(&manifest, &measured).unwrap();
+    assert_eq!(
+        *published.manifest_sha256(),
+        <[u8; 32]>::from(Sha256::digest(&manifest))
+    );
+    assert_short_manifest_retained(&stage_path, &stage_before, prefix);
+    let reopened = fixture.open();
+    reopened.retire_capture_material(&plan).unwrap();
+    reopened.retire_capture_material(&plan).unwrap();
+    assert_path_missing(&stage_path);
+    let bundle = reopened.open_bundle(healthy_key, limits).unwrap();
+    assert_eq!(bundle.manifest_bytes(), manifest.as_slice());
+    assert_eq!(bundle.measurements(), measured);
+    for (path, stamp, _) in originals {
+        assert_eq!(
+            FileStamp::from_metadata(&path.symlink_metadata().unwrap()),
+            stamp
+        );
+    }
+    eprintln!(
+        "manifest short write kept {} of {} bytes, errno=EFBIG; healthy key reopened and original partial plan retired",
+        prefix.len(),
+        manifest.len()
+    );
 }
 
 #[test]

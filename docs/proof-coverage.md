@@ -586,6 +586,17 @@ CaptureHandoff 既有值方法及历史定理只保留原输入和 Step 闭包�
 业务不能整体列为外部可信假设。普通/组件/定向真实系统的实际结果只按 #745 交付 PR
 的精确候选记录；本节的合同和入口说明不表示已实测、局部机器证明或整套验收通过。
 
+### E11 材料故障回归的证明输入范围
+
+Refs #641、#888、#896、#897。相对 integration `43d19a9fa6ee85eb8b0990dea3661e3afae44277`，
+XFS 配额、清单短写和删除续做的 Rust 改动限于 `cfg(test)` 下的
+`snapshot_store_tests.rs` 与 `snapshot_material_retirement_tests.rs`。
+`capture-caller`、`create-delivery`、`pause-dispatch`、`pause-publication`、`pause-receipt`、
+`pause-stop` 和 `protocol-convergence` 的冻结清单按整文件收录这两条路径。七份清单在父版本
+已有其他失配，本批各新增这两条。历史形式结果继续按各自原输入和已验收提交使用。
+后续相应证明批次核对实际输入闭包并完成原验收后，再更新冻结记录。工程用例的范围见
+[验收清单](testing-plan.md)的 CoW 文件与后继材料回收章节。
+
 ## V3 Create 的固定交付范围
 
 固定同事交付点 `083580e59f66d185bb1d7a8a7c4a222a19cca17f` 的 12 个 Create 包，
