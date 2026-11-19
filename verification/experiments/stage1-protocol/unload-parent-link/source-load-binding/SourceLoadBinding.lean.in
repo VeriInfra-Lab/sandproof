@@ -1,0 +1,318 @@
+import SourceLoadView
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields Row keyOf fullDigestEq)
+open SandboxModel.Stage1Protocol.SourceKeyHistory (Registered workKeys)
+open SandboxModel.Stage1Protocol.SourceHistory (Cell Image Invocation)
+open SandboxModel.Stage1Protocol.SourceLoadView
+open SandboxModel.Stage1Protocol.ObservationParent
+open SandboxModel.Stage1Protocol.ObservationSql
+open SandboxModel.Stage1Protocol.ObservationSuffix
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceLoadBinding
+
+variable {f : Fields} (ports : Ports f)
+
+private theorem bind_normal {A B : Type} (input : Result A) (next : A → Result B)
+    {output : B} (returned : input >>= next = .ok output) :
+    ∃ value, input = .ok value ∧ next value = .ok output := by
+  cases input <;> simp_all
+
+private theorem bind_plain {A B : Type} (input : Result A) (next : A → Result B) :
+    Std.bind input next = (do let value ← input; next value) := rfl
+
+private theorem vec_appended {T : Type} (buffer output : alloc.vec.Vec T) (entry : T)
+    (appended : buffer.push entry = .ok output) : output.val = buffer.val ++ [entry] := by
+  unfold alloc.vec.Vec.push at appended
+  dsimp only at appended
+  split at appended
+  · simp only [Result.ok.injEq] at appended
+    rw [← appended]
+    simp [List.concat_eq_append]
+  · simp at appended
+
+
+theorem decoded_record_has_full_sql_key (bytes sha : Slice U8) (key : Option Bytes)
+    (record : Row f) (ran : decode ports bytes sha key = .ok (.Ok (some record))) :
+    ∃ blob, key = some blob ∧ blob.val = (keyOf f record.work).val := by
+  unfold decode controller.lifecycle_inbox.source_work.codec.decode_loaded_record at ran
+  obtain ⟨parsed, _, ran⟩ := bind_normal _ _ ran
+  cases parsed with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at ran
+  | Ok value =>
+    cases value with
+    | none => cases key <;> simp [core.result.Result.Insts.CoreOpsTry.branch] at ran
+    | some stored =>
+      cases key with
+      | none => simp [core.result.Result.Insts.CoreOpsTry.branch] at ran
+      | some blob =>
+        simp only [core.result.Result.Insts.CoreOpsTry.branch, asSlice, sliceKeyEq, bind_tc_ok] at ran
+        by_cases sameKey : blob.val = (keyOf f stored.work).val
+        · have sameSlice : blob.slice.val = (keyOf f stored.work).val := sameKey
+          simp [keyOf, sameSlice] at ran
+          obtain ⟨value, _, ran⟩ := bind_normal _ _ ran
+          cases value with
+          | Err error => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at ran
+          | Ok anchor =>
+            simp only [bind_tc_ok] at ran
+            obtain ⟨computed, _, ran⟩ := bind_normal _ _ ran
+            simp only [fullDigestEq, bind_tc_ok] at ran
+            split at ran
+            · simp at ran
+              subst stored
+              exact ⟨blob, rfl, sameKey⟩
+            · simp at ran
+        · have mismatch : blob.slice.val ≠ stored.work.requirement.work_binding.val := sameKey
+          simp [mismatch] at ran
+
+/-- The stored-key test must reject before reaching any anchor serialization
+    or digest reply when the optional decoded record is present. -/
+theorem foreign_blob_is_rejected_before_anchor (bytes sha : Slice U8) (blob : Bytes)
+    (record : Row f) (parsed : ports.checked bytes sha = .ok (.Ok (some record)))
+    (wrong : blob.val ≠ (keyOf f record.work).val) :
+    decode ports bytes sha (some blob) = .ok (.Err .CorruptStore) := by
+  have wrongSlice : blob.slice.val ≠ record.work.requirement.work_binding.val := wrong
+  simp [decode, controller.lifecycle_inbox.source_work.codec.decode_loaded_record, parsed,
+    core.result.Result.Insts.CoreOpsTry.branch, asSlice, sliceKeyEq, wrongSlice]
+
+def decodeColumns (columns : Columns) : Result (core.result.Result (Option (Row f)) SaveRows.Error) :=
+  decode ports columns.1.deref columns.2.1.deref columns.2.2
+
+/-- The exact source of each successfully collected record. Successful empty
+    slots contribute no record, and the list preserves the cursor order. -/
+inductive Decoded : List CursorItem → List (Row f) → Prop where
+  | endOfRows : Decoded [] []
+  | skip {columns : Columns} {items : List CursorItem} {rows : List (Row f)}
+      (checked : decodeColumns ports columns = .ok (.Ok none)) (tail : Decoded items rows) :
+      Decoded (.Ok columns :: items) rows
+  | add {columns : Columns} {items : List CursorItem} {rows : List (Row f)} {record : Row f}
+      (checked : decodeColumns ports columns = .ok (.Ok (some record))) (tail : Decoded items rows) :
+      Decoded (.Ok columns :: items) (record :: rows)
+
+abbrev rowIterator := core.iter.traits.iterator.IteratorVecIntoIter CursorItem
+abbrev ReadReply (f : Fields) := core.result.Result (alloc.vec.Vec (Row f)) SaveRows.Error
+
+private theorem next_empty (cursor : Cursor) (empty : cursor.val = []) :
+    rowIterator.next cursor = .ok (none, cursor) := by
+  let nilCursor : Cursor := .from [] (Nat.zero_le _)
+  have same : cursor = nilCursor := alloc.vec.Vec.ext _ _ (by simpa [nilCursor] using empty)
+  rw [same]
+  rfl
+
+private theorem next_cons (cursor : Cursor) (item : CursorItem) (rest : List CursorItem)
+    (shape : cursor.val = item :: rest) (bound : rest.length ≤ Usize.max) :
+    rowIterator.next cursor = .ok (some item, alloc.vec.Vec.from rest bound) := by
+  unfold rowIterator core.iter.traits.iterator.IteratorVecIntoIter alloc.vec.into_iter.IteratorIntoIter.next
+  dsimp only
+  split
+  · rename_i empty
+    rw [shape] at empty
+    cases empty
+  · rename_i head tail found
+    rw [shape] at found
+    injection found with headEq tailEq
+    subst head
+    subst tail
+    rfl
+
+private def rowStep (buffer : alloc.vec.Vec (Row f)) (next : Cursor) :
+    Option CursorItem → Result (ControlFlow (Cursor × alloc.vec.Vec (Row f))
+      (core.result.Result (alloc.vec.Vec (Row f)) SaveRows.Error))
+  | none => .ok (.done (.Ok buffer))
+  | some (.Err error) => .ok (.done (.Err (.Sqlite error)))
+  | some (.Ok columns) => do
+    let decoded ← decodeColumns ports columns
+    match decoded with
+    | .Err error => .ok (.done (.Err error))
+    | .Ok none => .ok (.cont (next, buffer))
+    | .Ok (some record) => do
+      let added ← buffer.push record
+      .ok (.cont (next, added))
+
+private theorem read_step_after_next (cursor : Cursor) (buffer : alloc.vec.Vec (Row f))
+    (item : Option CursorItem) (next : Cursor) (observed : rowIterator.next cursor = .ok (item, next)) :
+    readStep ports rowIterator cursor buffer = rowStep ports buffer next item := by
+  unfold readStep controller.lifecycle_inbox.source_work.codec.read_loaded_rows_loop.body
+  rw [observed, bind_tc_ok]
+  dsimp only
+  cases item with
+  | none => rfl
+  | some replied =>
+    cases replied with
+    | Err error =>
+      simp [rowStep, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, fromSql,
+        ← bind_plain, bind_ok]
+    | Ok columns =>
+      obtain ⟨bytes, sha, key⟩ := columns
+      simp [rowStep, core.result.Result.Insts.CoreOpsTry.branch, decodeColumns, ← bind_plain]
+      congr 1
+      funext decoded
+      cases decoded with
+      | Err error => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | Ok value => cases value <;> simp [bind_ok]
+
+private theorem unroll (cursor : Cursor) (buffer : alloc.vec.Vec (Row f)) :
+    readLoop ports rowIterator cursor buffer = Std.bind (readStep ports rowIterator cursor buffer) (fun step =>
+      match step with
+      | .done result => .ok result
+      | .cont pair => readLoop ports rowIterator pair.1 pair.2) := by
+  unfold readLoop controller.lifecycle_inbox.source_work.codec.read_loaded_rows_loop
+  conv_lhs => rw [loop]
+  congr 1
+  funext step
+  cases step with
+  | cont pair => cases pair; rfl
+  | done result => rfl
+
+theorem collector_accounts_for_complete_order (cursor : Cursor) (buffer result : alloc.vec.Vec (Row f))
+    (ran : readLoop ports rowIterator cursor buffer = .ok (.Ok result)) :
+    ∃ added, Decoded ports cursor.val added ∧ result.val = buffer.val ++ added := by
+  induction inputs : cursor.val generalizing cursor buffer with
+  | nil =>
+    rw [unroll] at ran
+    obtain ⟨step, taken, ran⟩ := bind_normal _ _ ran
+    rw [read_step_after_next ports cursor buffer none cursor (next_empty cursor inputs)] at taken
+    have done : step = .done (.Ok buffer) := Result.ok_injective taken.symm
+    subst step
+    change Result.ok (.Ok buffer : ReadReply f) = .ok (.Ok result) at ran
+    simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at ran
+    subst result
+    exact ⟨[], .endOfRows, by simp⟩
+  | cons item rest ih =>
+    have bound : rest.length ≤ Usize.max := by
+      have valid := cursor.property
+      rw [inputs] at valid
+      simpa only [List.length_cons] using Nat.le_trans (Nat.le_succ rest.length) valid
+    let tail : Cursor := .from rest bound
+    have next : rowIterator.next cursor = .ok (some item, tail) := next_cons cursor item rest inputs bound
+    rw [unroll] at ran
+    obtain ⟨step, taken, ran⟩ := bind_normal _ _ ran
+    rw [read_step_after_next ports cursor buffer (some item) tail next] at taken
+    cases item with
+    | Err error =>
+      have done : step = .done (.Err (.Sqlite error)) := Result.ok_injective taken.symm
+      subst step
+      change Result.ok (.Err (.Sqlite error) : ReadReply f) = .ok (.Ok result) at ran
+      simp at ran
+    | Ok columns =>
+      simp only [rowStep] at taken
+      obtain ⟨decoded, returned, taken⟩ := bind_normal _ _ taken
+      cases decoded with
+      | Err error =>
+        have done : step = .done (.Err error) := Result.ok_injective taken.symm
+        subst step
+        change Result.ok (.Err error : ReadReply f) = .ok (.Ok result) at ran
+        simp at ran
+      | Ok value =>
+        cases value with
+        | none =>
+          have cont : step = .cont (tail, buffer) := Result.ok_injective taken.symm
+          subst step
+          have remaining : readLoop ports rowIterator tail buffer = .ok (.Ok result) := ran
+          obtain ⟨added, accepted, resEq⟩ := ih tail buffer remaining (by simp [tail])
+          exact ⟨added, .skip returned accepted, resEq⟩
+        | some record =>
+          obtain ⟨buffer1, appended, taken⟩ := bind_normal _ _ taken
+          have cont : step = .cont (tail, buffer1) := Result.ok_injective taken.symm
+          subst step
+          have remaining : readLoop ports rowIterator tail buffer1 = .ok (.Ok result) := ran
+          obtain ⟨added, accepted, resEq⟩ := ih tail buffer1 remaining (by simp [tail])
+          refine ⟨record :: added, .add returned accepted, ?_⟩
+          rw [resEq, vec_appended buffer buffer1 record appended, List.append_assoc]
+          rfl
+
+theorem read_ordered_rows (cursor : Cursor) (result : alloc.vec.Vec (Row f))
+    (ran : reader ports rowIterator cursor = .ok (.Ok result)) :
+    Decoded ports cursor.val result.val := by
+  have ran : readLoop ports rowIterator cursor (alloc.vec.Vec.new (Row f)) = .ok (.Ok result) := ran
+  obtain ⟨added, decoded, resEq⟩ := collector_accounts_for_complete_order ports cursor _ _ ran
+  have exactRows : result.val = added := by simpa using resEq
+  rw [exactRows]
+  exact decoded
+
+def FromImage (image : Image) (columns : Columns) : Prop :=
+  ∃ id cell, image id = some cell ∧ columns.1 = cell.stateBytes ∧
+    columns.2.1.val = cell.checksum.val ∧ columns.2.2.map alloc.vec.Vec.val = cell.workKey
+
+def sourceSelect : Str := SandproofSourceRowSqlSelect.toStr
+  "SELECT state_json,sha256,work_key FROM controller_source_work_records ORDER BY id"
+
+/-- A4's original SELECT projection, indexed by the active transaction and the
+    physical image used by its cursor. SQL row errors need no fictitious row. -/
+structure Snapshot {Raw : Type} (invocation : Invocation Raw) (image : Image) where
+  statement : Str
+  connection : SaveRows.Db
+  originalStatement : statement = sourceSelect
+  originalConnection : connection = invocation.connection
+  cursor : Cursor
+  rows : ∀ columns, .Ok columns ∈ cursor.val → FromImage image columns
+
+theorem every_decoded_key_is_registered (image : Image) {items : List CursorItem} {rows : List (Row f)}
+    (decoded : Decoded ports items rows)
+    (selected : ∀ columns, .Ok columns ∈ items → FromImage image columns) :
+    ∀ key ∈ workKeys (keyOf f) rows, Registered image key := by
+  induction decoded with
+  | endOfRows => simp [workKeys]
+  | skip _ _ ih =>
+    exact ih (fun columns member => selected columns (List.mem_cons_of_mem _ member))
+  | @add cols items rows record hom _ ih =>
+    intro key member
+    simp only [workKeys, List.map_cons, List.mem_cons] at member
+    rcases member with rfl | later
+    · obtain ⟨id, cell, atId, _, _, physicalKey⟩ := selected cols (by simp)
+      obtain ⟨blob, blobEq, sameKey⟩ := decoded_record_has_full_sql_key ports
+        cols.1.deref cols.2.1.deref cols.2.2 record hom
+      rw [blobEq, Option.map_some, sameKey] at physicalKey
+      exact ⟨id, cell, atId, physicalKey.symm⟩
+    · exact ih (fun columns member => selected columns (List.mem_cons_of_mem _ member)) key later
+
+theorem original_loader_registers_all_returned_keys {Raw : Type} {invocation : Invocation Raw}
+    {image : Image} (snapshot : Snapshot invocation image) (result : alloc.vec.Vec (Row f))
+    (normal : reader ports rowIterator snapshot.cursor = .ok (.Ok result)) :
+    ∀ key ∈ workKeys (keyOf f) result.val, Registered image key :=
+  every_decoded_key_is_registered ports image (read_ordered_rows ports snapshot.cursor result normal) snapshot.rows
+
+variable {t : ReadTypes} {Keys E : Type}
+variable (encoder : SourceKeyEncode.Ports f Keys)
+variable (attached : CodecInputs (SourceKeyEncode.carriers f) Keys)
+variable (calls : Calls (SourceKeyEncode.carriers f)) (reads : ReadCalls (SourceKeyEncode.carriers f) t)
+variable (host : t.host E) (decoder : t.decoder E) (journal : Journal (SourceKeyEncode.carriers f))
+variable (work : (SourceKeyEncode.carriers f).work) (context : t.context)
+variable (raw : (SourceKeyEncode.carriers f).observation) (now : I64)
+variable (current : CurrentReady attached calls reads host decoder journal work context raw now)
+variable (selected : Selected attached calls reads host decoder journal work context raw now current)
+variable (write : WriteReady attached calls reads host decoder journal work context raw now current selected)
+
+local notation "invocation" => ObservationSqlHistory.originalInvocation attached calls reads
+  host decoder journal work context raw now current
+local notation "db" => Invocation.connection invocation
+
+theorem original_load_then_save_selects_registered_slots
+    (encodes : ∀ sources : SourceKeyEncode.Rows f, attached.read.encode sources = SourceKeyEncode.actual encoder sources)
+    (initial interim : Image) (snapshot : Snapshot invocation initial)
+    (loadedRows : reader ports rowIterator snapshot.cursor = .ok (.Ok current.rows.records))
+    (processed : List SaveRows.Encoded) (history : SourceHistory.Written invocation initial processed interim)
+    (entry : SaveRows.Encoded) (member : entry ∈ write.encoded.val)
+    (read : SourceKeyHistory.A4Lookup db interim entry.1) (response : Option I64)
+    (returned : SourceRowSqlSelect.existingSpec db entry.1 = .ok (.Ok response))
+    (vacancy : Result (core.result.Result (Option I64) SaveRows.Error)) :
+    ∃ id cell, response = some id ∧ interim id = some cell ∧ cell.workKey = some entry.1.val ∧
+      SourceRowSqlComposition.chooseSlot (SourceRowSqlSelect.existingSpec db entry.1)
+        vacancy (.ok .MaintenanceCapacity) = .ok (.Ok id) := by
+  have loaded := original_loader_registers_all_returned_keys ports snapshot current.rows.records loadedRows
+  exact SourceKeyEncode.original_encoded_rows_select_registered_slots encoder attached calls reads
+    host decoder journal work context raw now current selected write encodes initial interim processed
+    loaded history entry member read response returned vacancy
+
+end SandboxModel.Stage1Protocol.SourceLoadBinding
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadBinding.decoded_record_has_full_sql_key
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadBinding.foreign_blob_is_rejected_before_anchor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadBinding.collector_accounts_for_complete_order
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadBinding.read_ordered_rows
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadBinding.every_decoded_key_is_registered
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadBinding.original_loader_registers_all_returned_keys
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadBinding.original_load_then_save_selects_registered_slots

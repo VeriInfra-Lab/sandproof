@@ -1,0 +1,44 @@
+type SourceColumns = (Vec<u8>, Vec<u8>, Option<Vec<u8>>);
+
+fn read_loaded_rows<I: Iterator<Item = Result<SourceColumns, rusqlite::Error>>>(
+    rows: I,
+) -> Result<Vec<SourceWorkRecord>, JournalError> {
+    let mut records = Vec::new();
+    for row in rows {
+        let (bytes, sha, key) = row?;
+        if let Some(record) = decode_loaded_record(&bytes, &sha, key)? {
+            records.push(record);
+        }
+    }
+    Ok(records)
+}
+
+fn decode_loaded_record(
+    bytes: &[u8],
+    sha: &[u8],
+    key: Option<Vec<u8>>,
+) -> Result<Option<SourceWorkRecord>, JournalError> {
+    let record: Option<SourceWorkRecord> = checked_source_payload(bytes, sha)?;
+    match (record, key) {
+        (None, None) => Ok(None),
+        (Some(record), Some(key))
+            if key.as_slice() == record.work.requirement.work_binding.as_bytes()
+                && record.work.requirement.work_binding
+                    == super::digest(&encode_load_anchor(&record.work.anchor)?) =>
+        {
+            Ok(Some(record))
+        }
+        _ => Err(JournalError::CorruptStore),
+    }
+}
+
+fn checked_source_payload(
+    bytes: &[u8],
+    sha: &[u8],
+) -> Result<Option<SourceWorkRecord>, JournalError> {
+    checked(bytes, sha)
+}
+
+fn encode_load_anchor(anchor: &super::SourceAnchor) -> Result<Vec<u8>, JournalError> {
+    Ok(serde_json::to_vec(anchor)?)
+}

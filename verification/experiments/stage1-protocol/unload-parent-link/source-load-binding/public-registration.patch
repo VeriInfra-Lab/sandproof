@@ -1,0 +1,10 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,7 @@
++## V3 来源读取的原行键候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。原游标消费者的正常输出逐行绑定
++同一事务观察到的完整 SQL 键，再接原编码和写入前缀选槽。保留实际三列快照和 V5 调用条件。
++[复验范围](../verification/experiments/stage1-protocol/unload-parent-link/source-load-binding/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录

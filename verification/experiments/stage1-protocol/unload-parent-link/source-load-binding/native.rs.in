@@ -1,0 +1,55 @@
+#[test]
+fn load_rejects_a_foreign_full_sql_key_for_canonical_source_bytes() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let original = prepare(&mut journal);
+    let key = original.work.requirement.work_binding.as_bytes();
+    let connection = &journal.journal.connection;
+    let actual = codec::load(connection).unwrap().unwrap();
+    assert_eq!(actual.records, vec![original.clone()]);
+
+    let (slot, payload, checksum): (i64, Vec<u8>, Vec<u8>) = connection
+        .query_row(
+            "SELECT id,state_json,sha256 FROM controller_source_work_records WHERE work_key=?1",
+            [key.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    let mut foreign = *key;
+    foreign[31] ^= 1;
+    assert_eq!(
+        connection
+            .execute(
+                "UPDATE controller_source_work_records SET work_key=?1 WHERE id=?2",
+                rusqlite::params![foreign.as_slice(), slot],
+            )
+            .unwrap(),
+        1
+    );
+    let after: (Vec<u8>, Vec<u8>, Vec<u8>) = connection
+        .query_row(
+            "SELECT state_json,sha256,work_key FROM controller_source_work_records WHERE id=?1",
+            [slot],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(after, (payload, checksum, foreign.to_vec()));
+    assert!(
+        matches!(codec::load(connection), Err(JournalError::CorruptStore)),
+        "a different complete SQL key must reject the canonical original row"
+    );
+
+    assert_eq!(
+        connection
+            .execute(
+                "UPDATE controller_source_work_records SET work_key=?1 WHERE id=?2",
+                rusqlite::params![key.as_slice(), slot],
+            )
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        codec::load(connection).unwrap().unwrap().records,
+        vec![original]
+    );
+}
