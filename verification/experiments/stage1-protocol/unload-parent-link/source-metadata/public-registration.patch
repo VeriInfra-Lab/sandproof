@@ -1,0 +1,11 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,8 @@
++## V3 来源元数据读取候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。原格式、完整表定义、元数据数值
++和配置全文校验接回原预留行及游标。保留 SQLite 同事务、UTF-8、Serde 和摘要的
++逐符号提供责任。元数据预留必须恰好 8192，错误版在同一合同下有可达反例。
++[原版和错误版复验](../verification/experiments/stage1-protocol/unload-parent-link/source-metadata/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录

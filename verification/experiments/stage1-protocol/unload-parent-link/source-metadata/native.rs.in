@@ -1,0 +1,45 @@
+#[test]
+fn source_loader_rejects_inflated_metadata_reservation() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let original = prepare(&mut journal);
+    let connection = &journal.journal.connection;
+    let original_sources = codec::load(connection).unwrap().unwrap();
+    assert_eq!(original_sources.records, vec![original]);
+
+    let tx = connection.unchecked_transaction().unwrap();
+    let read_metadata = |connection: &rusqlite::Connection| {
+        connection
+            .query_row(
+                "SELECT state_json,sha256,reserve_bytes FROM controller_source_work WHERE id=1",
+                [],
+                |row| {
+                    Ok((
+                        row.get::<_, Vec<u8>>(0)?,
+                        row.get::<_, Vec<u8>>(1)?,
+                        row.get::<_, i64>(2)?,
+                    ))
+                },
+            )
+            .unwrap()
+    };
+    let (bytes, digest, reserve) = read_metadata(&tx);
+    assert_eq!(reserve, 8192);
+    assert_eq!(
+        tx.execute(
+            "UPDATE controller_source_work SET reserve_bytes=8193 WHERE id=1",
+            [],
+        )
+        .unwrap(),
+        1
+    );
+    assert_eq!(read_metadata(&tx), (bytes, digest, 8193));
+
+    let outcome = codec::load(&tx);
+    assert!(
+        matches!(outcome, Err(JournalError::CorruptStore)),
+        "metadata reservation must be exactly 8192: {outcome:?}"
+    );
+    tx.rollback().unwrap();
+    assert_eq!(codec::load(connection).unwrap().unwrap(), original_sources);
+}
