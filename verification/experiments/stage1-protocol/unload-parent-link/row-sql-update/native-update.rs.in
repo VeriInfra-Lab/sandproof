@@ -1,0 +1,69 @@
+#[cfg(test)]
+mod proof_source_update_binding {
+    use super::*;
+
+    fn slots() -> Connection {
+        let connection = Connection::open_in_memory().unwrap();
+        connection.execute_batch(RECORDS_TABLE).unwrap();
+        for id in [3, 7] {
+            connection.execute(
+                "INSERT INTO controller_source_work_records VALUES (?1, X'6E756C6C', zeroblob(32), 8192, NULL)",
+                [id],
+            ).unwrap();
+        }
+        connection
+    }
+
+    fn bindings(connection: &Connection, id: i64) -> (Vec<u8>, Vec<u8>, Option<Vec<u8>>, i64) {
+        connection
+            .query_row(
+                "SELECT state_json,sha256,work_key,reserve_bytes FROM controller_source_work_records WHERE id=?1",
+                [id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap()
+    }
+
+    #[test]
+    fn source_update_binds_the_original_bytes_digest_key_and_signed_slot() {
+        let connection = slots();
+        let unused = bindings(&connection, 3);
+        let payload = br#"{"source":7}"#;
+        let sha: [u8; 32] = Sha256::digest(payload).into();
+        let key = [91_u8; 32];
+        assert_ne!(sha, key);
+        assert_eq!(
+            SqliteSourceRow::update(&connection, payload, &sha, &key, 7).unwrap(),
+            1
+        );
+        assert_eq!(bindings(&connection, 3), unused);
+        assert_eq!(
+            bindings(&connection, 7),
+            (payload.to_vec(), sha.to_vec(), Some(key.to_vec()), 8192),
+            "source update must bind digest before work key"
+        );
+    }
+
+    #[test]
+    fn source_update_preserves_the_actual_sqlite_step_error() {
+        let connection = slots();
+        let before = bindings(&connection, 7);
+        connection.execute_batch(
+            "CREATE TEMP TRIGGER reject_source_update BEFORE UPDATE ON controller_source_work_records WHEN OLD.id=7 BEGIN SELECT RAISE(ABORT, 'source row update denied'); END;",
+        ).unwrap();
+        let payload = b"null";
+        let sha: [u8; 32] = Sha256::digest(payload).into();
+        let result = SqliteSourceRow::update(&connection, payload, &sha, &[91; 32], 7);
+        let Err(JournalError::Sqlite(rusqlite::Error::SqliteFailure(error, Some(message)))) =
+            result
+        else {
+            panic!("expected the original SQLite step error, got {result:?}");
+        };
+        assert_eq!(
+            error.extended_code,
+            rusqlite::ffi::SQLITE_CONSTRAINT_TRIGGER
+        );
+        assert_eq!(message, "source row update denied");
+        assert_eq!(bindings(&connection, 7), before);
+    }
+}
