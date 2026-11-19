@@ -1,0 +1,19 @@
+    fn update(
+        connection: &Connection,
+        bytes: &[u8],
+        sha: &[u8; 32],
+        key: &[u8; 32],
+        id: i64,
+    ) -> Result<usize, JournalError> {
+        use rusqlite::types::{ToSqlOutput::Borrowed, ValueRef};
+
+        Ok(connection.execute(
+            "UPDATE controller_source_work_records SET state_json=?1,sha256=?2,work_key=?3 WHERE id=?4 AND (work_key IS NULL OR work_key=?3)",
+            [
+                Borrowed(ValueRef::Blob(bytes)),
+                Borrowed(ValueRef::Blob(sha.as_slice())),
+                Borrowed(ValueRef::Blob(key.as_slice())),
+                Borrowed(ValueRef::Integer(id)),
+            ],
+        )?)
+    }
