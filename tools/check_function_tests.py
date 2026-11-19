@@ -28,6 +28,10 @@ LINUX_GROUPS = {
     'test_sparse_artifact_hash.LinuxSparseArtifactHashTests': 'real Linux sparse extent queries and positioned reads',
     'test_template_physical_storage.PhysicalProfileTests': 'Linux shared-filesystem lease and block rounding',
     'test_lifecycle_activation_destroy.ActualStopSocketTests': 'real Linux Unix SO_PEERCRED on the original terminal Stop gate',
+    'test_lifecycle_freeze_destroy.OriginalSourceHoldTests': 'real Linux procfs and pidfd source hold',
+    'test_lifecycle_freeze_destroy.OriginalUnixPauseTests': 'real Linux procfs and Unix SO_PEERCRED pause query',
+    'test_lifecycle_freeze_destroy.FreezeStopWiringTests': 'real Linux Unix SO_PEERCRED on the original Stop gate',
+    'test_lifecycle_freeze_expiry.OriginalCenterListenerTests': 'real Linux procfs socket ownership at Center restart',
 }
 
 

@@ -64,12 +64,31 @@ def deployment_directory(path):
     return directory
 
 
+def _mount_id(path):
+    fd = os.open(path, os.O_PATH | os.O_CLOEXEC)
+    try:
+        with open(f'/proc/self/fdinfo/{fd}', encoding='ascii') as info:
+            for line in info:
+                if line.startswith('mnt_id:'):
+                    return int(line.split()[1])
+            raise ValueError('opened storage path missing kernel mount ID')
+    finally:
+        os.close(fd)
+
+
 def mount_info(path):
+    selected = _mount_id(path)
     entries = json.loads(run(['/usr/bin/findmnt', '--json', '--target', str(path),
-                              '--output', 'TARGET,SOURCE,FSTYPE,OPTIONS,UUID']))['filesystems']
-    if len(entries) != 1:
+                              '--output', 'TARGET,SOURCE,FSTYPE,OPTIONS,UUID,ID']))['filesystems']
+    visible = [entry for entry in entries if entry['id'] == selected]
+    if len(visible) != 1 or visible[0]['fstype'] == 'autofs':
         raise ValueError('expected one filesystem for the designated storage path')
-    return entries[0]
+    entry = visible[0]
+    # systemd's automount remains in mountinfo after the real filesystem covers it.
+    if any(other['target'] != entry['target'] or other['fstype'] != 'autofs' or other['uuid'] is not None
+           for other in entries if other is not entry):
+        raise ValueError('expected one filesystem for the designated storage path')
+    return {key: value for key, value in entry.items() if key != 'id'}
 
 
 def quota_mount(entry):
