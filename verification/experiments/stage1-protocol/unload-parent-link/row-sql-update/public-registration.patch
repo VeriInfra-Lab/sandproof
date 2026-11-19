@@ -1,0 +1,16 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -35,5 +35,13 @@
+ 读取条件为前提。它补齐这一入口的循环对应，后续仍需把来源判断接到完整观察请求，
+ 再与 #637 的登记事务组合。原 #770 Rust 驱动维持自己的旧覆盖。
+ [可复现证明与调用边界](../verification/experiments/stage1-protocol/unload-continued-observation/README.md)。
++
++## V3 来源 UPDATE 四参数候选
++
++固定 `7b27876458a7212feb98a2aaf36560fe6443fb73` 的原 SQL。实际抽取的四元素适配器
++对旧接收者绑定完整 payload、32 字节摘要、32 字节工作键、原有符号 ID，保留原准备错误
++和后续 A4 执行结果。独立真实交换版不满足同一顺序规格。原生三版及工程行/事务证据、
++精确 Lean 闭包和各提供方见[来源 UPDATE](../verification/experiments/stage1-protocol/unload-parent-link/row-sql-update/README.md)。
++实际 WHERE 行语义、事务历史和公共验证入口需分别验收。
+
+ ## V3 首次卸载使用同一条原执行记录

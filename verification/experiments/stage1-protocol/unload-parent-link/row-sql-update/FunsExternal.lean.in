@@ -1,0 +1,53 @@
+import SandproofSourceRowSqlUpdate.Types
+import SandproofSourceRowSqlUpdate.SqliteCommonBinding
+
+open Aeneas Aeneas.Std
+
+namespace SandproofSourceRowSqlUpdate
+
+/-- The original generated literal uses the shared kernel-checked Str constructor. -/
+abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSqliteStatementsRust.toStr text bounded
+
+abbrev alloc.string.String.as_bytes :=
+  SandproofSqliteStatementsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+
+def observedParameter (value : rusqlite.types.to_sql.ToSqlOutput) : Result SandproofSqliteStatementsRust.SqlValue :=
+  match value with
+  | .Borrowed (.Blob bytes) => .ok (.blob ⟨bytes⟩)
+  | .Borrowed (.Integer id) => .ok (.integer id)
+  | _ => .fail .panic
+
+def observedReply (action : Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error)) :
+    Result (core.result.Result SandproofSqliteStatementsRust.SqlValue rusqlite.error.Error) := do
+  let reply ← action
+  match reply with
+  | .Err error => .ok (.Err error)
+  | .Ok value => do
+      let projected ← observedParameter value
+      .ok (.Ok projected)
+
+/-- The fixed four-parameter usepoint emits a full logical descriptor. The
+    existing whole execute contract still owns fallible raw bind and step/reset. -/
+def rusqlite.statement.Statement.bind_parameters {P Item Iter : Type}
+    (into : core.iter.traits.collect.IntoIterator P Item Iter) (encode : rusqlite.types.to_sql.ToSql Item)
+    (statement : rusqlite.statement.Statement) (parameters : P) := do
+  let initial ← into.into_iter parameters
+  let (first, next) ← into.iteratorInst.next initial
+  let (second, next) ← into.iteratorInst.next next
+  let (third, next) ← into.iteratorInst.next next
+  let (fourth, last) ← into.iteratorInst.next next
+  let (ended, _) ← into.iteratorInst.next last
+  match first, second, third, fourth, ended with
+  | some bytes, some digest, some key, some id, none =>
+      SandproofSqliteStatementsRust.bindValues
+        [observedReply (encode.to_sql bytes), observedReply (encode.to_sql digest),
+         observedReply (encode.to_sql key), observedReply (encode.to_sql id)] statement
+  | _, _, _, _, _ => .fail .panic
+
+def rusqlite.Connection.execute {P : Type} (dictionary : rusqlite.params.Params P)
+    (connection : rusqlite.Connection) (statement : Str) (parameters : P) :=
+  SandproofSqliteStatementsRust.rusqlite.Connection.execute dictionary connection statement parameters
+
+end SandproofSourceRowSqlUpdate

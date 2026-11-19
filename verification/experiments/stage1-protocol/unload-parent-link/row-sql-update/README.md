@@ -1,4 +1,4 @@
-# 来源 UPDATE 四参数原生对照
+# 来源 UPDATE 四参数
 
 [逐行写入控制流](../row-write/README.md) · [证明工作流](../../../../../docs/proof-workflow.md)
 
@@ -13,8 +13,62 @@
 物理行测试直接调用原 `SqliteSourceRow::update`。目标槽选择与父事务由 [#949](https://github.com/VeriInfra-Lab/sandproof/pull/949)、
 [#950](https://github.com/VeriInfra-Lab/sandproof/pull/950) 分项验证。
 
-原双 BLOB 的 A4 执行合同可复用已审的整次执行接口。四参的生成绑定、原参数描述符及形式审计
-另行接续。下列命令仅生成当前隔离版和 SQLite 回执。
+## 形式范围
+
+`actual_complete` 对原接收者、任意完整字节、两个 32 字节数组和任意 `i64` 证明：
+实际生成的 `SqliteSourceRow::update` 使用原 SQL 及 slot 1–4 的
+`state_json / sha256 / work_key / id`。A4 `prepare` 失败时保留原错误并结束，
+成功时原顺序和完整值进入同一 `run`；其错误经原 `JournalError::Sqlite` 返回，成功保留
+原 `usize` 行数。四项数组的 `Params::__bind_in`、共享迭代与 `ToSql` 都经过原生成体。
+`exact_contract_rejected` 在独立生成的交换版上，对同一 `expected` 合同给出反例。
+两版共用一个接收者见证，逻辑提供器按完整参数列表返回不同结果。
+实际 SQLite 原生对照另观察到错误版仍更新一行，却将两列内容写反。
+
+原 [A4 执行提供者](../../../../../docs/formal/dependencies.md#a4a6-v3-寿命-update-的两个参数)
+负责同一活连接的完整 `prepare/run`、首个原始绑定错误、事后参数数目检查及
+step/reset。这里的列表描述原始输入，实际原始绑定及其副作用由该提供者承担。
+字符串字面量使用原共享 `Str` 构造；三个普通 BLOB 和一个整数的元素投影只用于
+这个数组。源行选择、WHERE 对数据库状态的效果、真实摘要计算、事务身份/提交回执和
+重启继续由独立切片与提供者落实。
+
+## 证明机复验
+
+在本证明 checkout 运行。输入为集成源 `7b278764` 当前的原 SQL，
+固定 `x86_64-unknown-linux-gnu` 与仓库 Charon/Aeneas 版本；
+`capture_root` 使用已批准的证明数据盘，`fixed_tools` 指原 Aeneas 工具根。
+两个隔离项目共享原只读依赖和同服务客户端，使用各自的 `.lake/build`。
+`shared_lock` 指原证明重任务锁，`four_cpus` 是协调准入核组。
+
+```bash
+set -euo pipefail
+export SANDPROOF_ACCEPTANCE_ROLE=formal
+package=verification/experiments/stage1-protocol/unload-parent-link
+for variant in core swap-key-digest; do
+    taskset -c "$four_cpus" bash scripts/python-entry.sh "$package/source_row_sql_update.py" \
+        --mode "$variant" --output "$capture_root/capture-$variant" \
+        --tools "$fixed_tools" --lock "$shared_lock"
+done
+for variant in core swap-key-digest; do
+    project="$capture_root/lean-$variant"
+    root=SourceRowSqlUpdate
+    if [ "$variant" = swap-key-digest ]; then root=SourceRowSqlUpdateSwapped; fi
+    bash scripts/python-entry.sh "$package/prepare_source_row_sql_update.py" \
+        --mode "$variant" --capture "$capture_root/capture-$variant" \
+        --reference "$capture_root/capture-core" --output "$project" \
+        --lake-packages "$lake_packages" --lean-mcp "$registered_lean_mcp"
+    (cd "$project" && LEAN_NUM_THREADS=4 flock "$shared_lock" \
+        taskset -c "$four_cpus" lake build "$root")
+    taskset -c "$four_cpus" bash scripts/python-entry.sh "$package/diagnose.py" \
+        --project "$project" --output "$capture_root/audit-$variant" --lock "$shared_lock"
+done
+```
+
+每个 `plan.json` 固定该入口的 12 份实际 Lean 文件及摘要。物理闭包包含原生成
+Types/Funs、逐符号连接、原 SQL/SQLite/Foundations 类型模型和原证明审计。生成体
+保留原字节。错误版准入还核对同一生成类型，以及程序正文仅互换两个输入。
+`public-registration.patch` 为统筹登记的候选。统筹需将两份必检视图和 #952 原生
+三版作为同批义务接到系谱，并以精确输入运行 `verify-stage1-protocol.sh`；
+隔离检查回执只描述本切片。
 
 ## ning 复验
 

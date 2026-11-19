@@ -1,0 +1,37 @@
+import SourceRowSqlInputs
+
+open Aeneas Aeneas.Std SandproofSourceRowSqlUpdate
+
+namespace SandboxModel.Stage1Protocol.SourceRowSqlUpdate
+
+theorem actual_swapped (connection : rusqlite.Connection)
+    (bytes : Slice U8) (digest key : Array U8 32#usize) (id : I64) :
+    actual connection bytes digest key id = expected connection bytes key digest id := by
+  change adapter connection bytes digest key id = _
+  simp only [adapter,
+    controller.lifecycle_inbox.source_work.codec.SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.update,
+    lift, bind_tc_ok]
+  exact call_maps_original_result connection bytes key digest id
+
+theorem swapped_sample :
+    actual sampleConnection sampleBytes sampleDigest sampleKey 23#i64 = .ok (.Ok 0#usize) := by
+  rw [actual_swapped]
+  have different : completeInputs sampleBytes sampleKey.to_slice sampleDigest.to_slice 23#i64 ≠
+      completeInputs sampleBytes sampleDigest.to_slice sampleKey.to_slice 23#i64 := by decide
+  simp [expected, sampleConnection, bind_tc_ok, different]
+
+theorem exact_contract_rejected :
+    ¬ ∀ (connection : rusqlite.Connection) (bytes : Slice U8)
+      (digest key : Array U8 32#usize) (id : I64),
+      actual connection bytes digest key id = expected connection bytes digest key id := by
+  intro complete
+  have reply := complete sampleConnection sampleBytes sampleDigest sampleKey 23#i64
+  rw [swapped_sample, expected_sample] at reply
+  have unequal : (0#usize : Usize) ≠ 1#usize := by decide
+  exact unequal (core.result.Result.Ok.inj (Result.ok_injective reply))
+
+end SandboxModel.Stage1Protocol.SourceRowSqlUpdate
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlUpdate.actual_swapped
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlUpdate.swapped_sample
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlUpdate.exact_contract_rejected
