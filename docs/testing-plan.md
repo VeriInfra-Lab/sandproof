@@ -381,8 +381,11 @@ Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代�
 在 `capture-freeze-receipt-destroy` 的 Host 重开前，以当前 Destroy 版本和新键尝试 Resume，
 要求 409。原样重放 Destroy 须返回同一完整接受，仅改 `expected_version` 的同键请求须返回
 409。每次请求后核对完整公开 Terminating 视图。Resume 拒绝及 Destroy 重放检查后，分别
-复查同一冻结窗口、原 VMM 端点、待回执 Freeze 和 backing pin/正额度。任何一处失败均
-保留已取得的接受和观察记录，停止后续 Host 重开与 Stop 放行。
+复查同一冻结窗口、原 VMM 端点、待回执 Freeze 和 backing pin/正额度。四次
+`freeze_destroy_acceptance_window` 快照各自在同一个 Host SQLite 读事务内读取对应的 Freeze
+动作、当前 Pause 和 `operations` 中的原 Pause 账本。报告中的 `native_pause_ledger`
+应属于原沙箱及 owner，含当前待定 Pause、原运行代输入和空结果。任何一处失败均保留
+已取得的接受和观察记录，停止后续 Host 重开与 Stop 放行。
 
 捕获点复用原第二次卸载，LoadPaused 点复用原第一次恢复；不为每个错误码新建虚拟机。
 命中故障开关、退出码 86、发送 gate 命令都不是通过条件，仍须比对完整请求、动作、
