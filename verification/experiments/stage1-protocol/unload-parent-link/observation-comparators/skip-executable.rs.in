@@ -1,0 +1,12 @@
+
+impl PartialEq for RawSourceObservation {
+    fn eq(&self, other: &Self) -> bool {
+        self.work_binding == other.work_binding
+            && self.resource == other.resource
+            && self.source == other.source
+            && self.configuration == other.configuration
+            && self.kernel_sha256 == other.kernel_sha256
+            && self.kernel_bytes == other.kernel_bytes
+            && self.disk_bytes == other.disk_bytes
+    }
+}

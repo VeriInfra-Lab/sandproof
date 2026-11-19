@@ -1,0 +1,26 @@
+import ObservationComparatorInputs
+
+open Aeneas Aeneas.Std SandproofObservationComparators
+open controller.lifecycle_inbox.source_work
+open SandboxModel.Stage1Protocol.ObservationSlot
+open SandboxModel.Stage1Protocol.SourceWorkMatch
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationComparators
+
+theorem skipped_executable_replays :
+    observation_slot_raw (some sample) changedExecutable = .ok .Replay := by
+  simp [observation_slot_raw, observation_slot_decision, core.cmp.PartialEq.ne.default,
+    capture.source.RawSourceObservation.Insts.CoreCmpPartialEqRawSourceObservation.eq, changedExecutable,
+    Scalars.wire_content_digest_eq, SourceData.resource_eq, SourceData.process_eq,
+    config_eq, RequestEquality.array_eq]
+
+theorem skipped_executable_violates_full_replay :
+    observation_slot_raw (some sample) changedExecutable ≠
+      .ok (sameObservation (some sample) changedExecutable) := by
+  simp [skipped_executable_replays, sameObservation, changed_executable_differs]
+
+end SandboxModel.Stage1Protocol.ObservationComparators
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationComparators.skipped_executable_replays
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationComparators.skipped_executable_violates_full_replay

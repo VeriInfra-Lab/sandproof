@@ -1,0 +1,12 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39,1 +39,9 @@
++## V3 来源观察的实际全值相等候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。实际生成的比较字典连接
++SourceWork 首个完整匹配和八字段 RawSourceObservation 的全文重放判定。遗漏
++可执行摘要的实际 Rust 错误版在同一合同下失败。完整父方法及行级活事务连接待验收。
++[精确输入与复验](../verification/experiments/stage1-protocol/unload-parent-link/observation-comparators/README.md)。
++
++
+ ## V3 首次卸载使用同一条原执行记录

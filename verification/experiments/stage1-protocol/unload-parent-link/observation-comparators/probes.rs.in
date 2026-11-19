@@ -1,0 +1,11 @@
+
+fn observation_slot_full(records: &Vec<SourceWorkRecord>, work: &SourceWork) -> Option<usize> {
+    observation_slot_using::<_, _, JournalObservationWork>(records, work)
+}
+
+fn observation_slot_raw(
+    saved: &Option<RawSourceObservation>,
+    observation: &RawSourceObservation,
+) -> ObservationSlotDecision {
+    observation_slot_decision(saved, observation)
+}

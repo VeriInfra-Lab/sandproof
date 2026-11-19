@@ -1,0 +1,56 @@
+import ObservationComparatorInputs
+
+open Aeneas Aeneas.Std SandproofObservationComparators
+open controller.lifecycle_inbox.source_work
+open SandboxModel.Stage1Protocol.ObservationSlot
+open SandboxModel.Stage1Protocol.SourceWorkMatch
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.ObservationComparators
+
+/-- Exact equality of the eight fields of the actual derived observation comparison. -/
+theorem raw_eq (left right : Raw) :
+    capture.source.RawSourceObservation.Insts.CoreCmpPartialEqRawSourceObservation.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [capture.source.RawSourceObservation.Insts.CoreCmpPartialEqRawSourceObservation.eq, Scalars.wire_content_digest_eq,
+    SourceData.resource_eq, SourceData.process_eq, config_eq, RequestEquality.array_eq,
+    capture.source.RawSourceObservation.mk.injEq, RequestEquality.ok_and,
+    Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
+
+theorem raw_full_contract : FullReplayContract rawDictionary.eq := by
+  intro left right
+  exact raw_eq left right
+
+theorem journal_lookup_returns_first_complete (records : alloc.vec.Vec SourceWorkRecord)
+    (work : SourceWork) :
+    ∃ slot, observation_slot_full records work = .ok slot ∧
+      slot.map (fun i => i.val) = firstComplete SourceWorkRecord.work records.val work := by
+  unfold observation_slot_full
+  apply lookup_returns_first_complete _ _ SourceWorkRecord.work work
+    SourceWork.Insts.CoreCmpPartialEqSourceWork.eq full_derived_contract
+  intro record
+  rfl
+
+theorem journal_guard_refines (saved : Option Raw) (incoming : Raw) :
+    observation_slot_raw saved incoming = .ok (sameObservation saved incoming) := by
+  unfold observation_slot_raw
+  apply selected_slot_decision rawDictionary raw_full_contract
+  intro old new
+  change core.cmp.PartialEq.ne.trait_default rawDictionary old new = _
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default]
+
+theorem journal_guard_witness :
+    observation_slot_raw none sample = .ok .Fresh ∧
+    observation_slot_raw (some sample) sample = .ok .Replay ∧
+    observation_slot_raw (some sample) changedExecutable = .ok .Conflict := by
+  simp [journal_guard_refines, sameObservation, changed_executable_differs]
+
+end SandboxModel.Stage1Protocol.ObservationComparators
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationComparators.raw_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationComparators.raw_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationComparators.journal_lookup_returns_first_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationComparators.journal_guard_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ObservationComparators.journal_guard_witness
