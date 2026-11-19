@@ -1,0 +1,133 @@
+import SandproofSourceRowSqlUpdate.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofSourceRowSqlUpdate
+
+namespace SandboxModel.Stage1Protocol.SourceRowSqlUpdate
+
+abbrev SqlValue := SandproofSqliteStatementsRust.SqlValue
+abbrev Reply := core.result.Result Usize JournalError
+
+abbrev adapter :=
+  controller.lifecycle_inbox.source_work.codec.SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.update
+
+abbrev actual := controller.lifecycle_inbox.source_work.codec.proof_source_row_sql_update
+
+set_option maxRecDepth 2048 in
+def statement : Str :=
+  SandproofSourceRowSqlUpdate.toStr "UPDATE controller_source_work_records SET state_json=?1,sha256=?2,work_key=?3 WHERE id=?4 AND (work_key IS NULL OR work_key=?3)"
+
+def inputs (bytes digest key : Slice U8) (id : I64) :
+    Array rusqlite.types.to_sql.ToSqlOutput 4#usize :=
+  Array.make 4#usize [.Borrowed (.Blob bytes), .Borrowed (.Blob digest),
+    .Borrowed (.Blob key), .Borrowed (.Integer id)]
+
+def completeInputs (bytes digest key : Slice U8) (id : I64) : List SqlValue :=
+  [.blob ⟨bytes⟩, .blob ⟨digest⟩, .blob ⟨key⟩, .integer id]
+
+def expected (connection : rusqlite.Connection) (bytes : Slice U8)
+    (digest key : Array U8 32#usize) (id : I64) : Result Reply := do
+  let prepared ← connection.prepare statement
+  match prepared with
+  | .Err error => .ok (.Err (.Sqlite error))
+  | .Ok _ =>
+      let completed ← connection.run statement (completeInputs bytes digest.to_slice key.to_slice id)
+      match completed with
+      | .Err error => .ok (.Err (.Sqlite error))
+      | .Ok count => .ok (.Ok count)
+
+/-- The generated array dictionary produces the four complete inputs to the
+    existing whole execute contract. These are logical bind inputs. -/
+theorem array_complete_inputs (stmt : rusqlite.statement.Statement)
+    (bytes digest key : Slice U8) (id : I64) :
+    ArrayT4.Insts.RusqliteParamsParams.__bind_in
+      rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql
+      (inputs bytes digest key id) stmt =
+      .ok (.Ok (), {stmt with arguments := stmt.arguments ++ completeInputs bytes digest key id}) := by
+  simp only [ArrayT4.Insts.RusqliteParamsParams.__bind_in,
+    rusqlite.statement.Statement.bind_parameters,
+    SharedArray.Insts.CoreIterTraitsCollectIntoIteratorSharedIter.into_iter,
+    core.slice.iter.IteratorSliceIter.next, inputs,
+    Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql,
+    observedReply, observedParameter,
+    SandproofSqliteStatementsRust.bindValues, List.append_assoc,
+    Slice.len_val, Array.make_val, bind_tc_ok, Nat.reduceAdd]
+  dsimp only [getElem, instGetElemSliceNatLtLengthVal, Slice.from, Slice.val,
+    Aeneas.Data.ListN.ListN.fromList, Aeneas.Data.ListN.ListN.toList]
+  simp [Slice.val, Slice.length, Aeneas.Data.ListN.ListN.toList,
+    rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql.to_sql, completeInputs]
+
+theorem call_complete_inputs (connection : rusqlite.Connection) (sql : Str)
+    (bytes digest key : Slice U8) (id : I64) :
+    rusqlite.Connection.execute
+      (ArrayT4.Insts.RusqliteParamsParams
+        rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql)
+      connection sql (inputs bytes digest key id) = (do
+        let prepared ← connection.prepare sql
+        match prepared with
+        | .Err error => .ok (core.result.Result.Err error)
+        | .Ok _ => connection.run sql (completeInputs bytes digest key id)) := by
+  simp only [rusqlite.Connection.execute,
+    SandproofSqliteStatementsRust.rusqlite.Connection.execute]
+  change (do
+    let prepared ← connection.prepare sql
+    match prepared with
+    | .Err error => .ok (core.result.Result.Err error)
+    | .Ok count => do
+        let (bound, result) ← ArrayT4.Insts.RusqliteParamsParams.__bind_in
+          rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql
+          (inputs bytes digest key id) ⟨count, [], connection.countError count⟩
+        match bound with
+        | .Err error => .ok (core.result.Result.Err error)
+        | .Ok () => connection.run sql result.arguments) = _
+  simp only [array_complete_inputs, bind_tc_ok, List.nil_append]
+
+theorem call_maps_original_result (connection : rusqlite.Connection)
+    (bytes : Slice U8) (digest key : Array U8 32#usize) (id : I64) :
+    (do
+      let reply ← rusqlite.Connection.execute
+        (ArrayT4.Insts.RusqliteParamsParams
+          rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql)
+        connection statement (inputs bytes digest.to_slice key.to_slice id)
+      let control ← core.result.Result.Insts.CoreOpsTry.branch reply
+      match control with
+      | .Continue value => .ok (core.result.Result.Ok value)
+      | .Break error =>
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+            Usize JournalError.Insts.CoreConvertFromError error) =
+    expected connection bytes digest key id := by
+  rw [call_complete_inputs]
+  simp only [expected, bind_assoc_eq]
+  congr 1
+  funext prepared
+  cases prepared <;> simp [
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalError.Insts.CoreConvertFromError.from]
+  congr 1
+  funext finished
+  cases finished <;> simp only [bind_tc_ok]
+
+def sampleBytes : Slice U8 := Slice.from [] (by simp)
+
+def sampleDigest : Array U8 32#usize := Array.make 32#usize (List.replicate 32 7#u8)
+
+def sampleKey : Array U8 32#usize := Array.make 32#usize (List.replicate 32 9#u8)
+
+def sampleConnection : rusqlite.Connection where
+  identity := 17
+  prepare := fun _ => .ok (.Ok 4)
+  countError := fun expected actual => ⟨expected + actual⟩
+  run := fun _ values => .ok (.Ok (if values = completeInputs sampleBytes
+    sampleDigest.to_slice sampleKey.to_slice 23#i64 then 1#usize else 0#usize))
+
+theorem expected_sample :
+    expected sampleConnection sampleBytes sampleDigest sampleKey 23#i64 = .ok (.Ok 1#usize) := by
+  simp [expected, sampleConnection, bind_tc_ok]
+
+end SandboxModel.Stage1Protocol.SourceRowSqlUpdate
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlUpdate.array_complete_inputs
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlUpdate.call_complete_inputs
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlUpdate.call_maps_original_result
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlUpdate.expected_sample

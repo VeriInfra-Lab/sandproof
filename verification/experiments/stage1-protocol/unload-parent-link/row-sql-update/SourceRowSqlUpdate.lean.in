@@ -1,0 +1,23 @@
+import SourceRowSqlInputs
+
+open Aeneas Aeneas.Std SandproofSourceRowSqlUpdate
+
+namespace SandboxModel.Stage1Protocol.SourceRowSqlUpdate
+
+theorem actual_complete (connection : rusqlite.Connection)
+    (bytes : Slice U8) (digest key : Array U8 32#usize) (id : I64) :
+    actual connection bytes digest key id = expected connection bytes digest key id := by
+  change adapter connection bytes digest key id = _
+  simp only [adapter,
+    controller.lifecycle_inbox.source_work.codec.SqliteSourceRow.Insts.Sandproof_controller_serviceControllerLifecycle_inboxSource_workCodecSourceRowEffectsConnectionJournalError.update,
+    lift, bind_tc_ok]
+  exact call_maps_original_result connection bytes digest key id
+
+theorem actual_sample :
+    actual sampleConnection sampleBytes sampleDigest sampleKey 23#i64 = .ok (.Ok 1#usize) := by
+  rw [actual_complete, expected_sample]
+
+end SandboxModel.Stage1Protocol.SourceRowSqlUpdate
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlUpdate.actual_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowSqlUpdate.actual_sample
