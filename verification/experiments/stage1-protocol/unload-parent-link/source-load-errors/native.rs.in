@@ -1,0 +1,36 @@
+#[cfg(test)]
+mod source_load_first_error_contract {
+    use super::*;
+
+    #[test]
+    fn source_load_numbers_error_precedes_count_rejection() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal =
+            super::super::tests::proof_source_load_error_fixture(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let baseline = load(connection).unwrap().unwrap();
+        assert!(!baseline.records.is_empty());
+        let tx = connection.unchecked_transaction().unwrap();
+        assert_eq!(
+            tx.execute("DELETE FROM controller_source_work WHERE id=1", [])
+                .unwrap(),
+            1
+        );
+        let count: i64 = tx
+            .query_row("SELECT count(*) FROM controller_source_work", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(count, 0);
+        let outcome = load(&tx);
+        assert!(
+            matches!(
+                outcome,
+                Err(JournalError::Sqlite(rusqlite::Error::QueryReturnedNoRows))
+            ),
+            "original numbers query error must precede count rejection: {outcome:?}"
+        );
+        tx.rollback().unwrap();
+        assert_eq!(load(connection).unwrap().unwrap(), baseline);
+    }
+}

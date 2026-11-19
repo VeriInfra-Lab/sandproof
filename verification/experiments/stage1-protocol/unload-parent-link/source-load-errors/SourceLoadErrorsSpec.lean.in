@@ -1,0 +1,112 @@
+import SourceLoadErrorsView
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceKeyEncode (Fields)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceLoadErrorsSpec
+
+open SourceMetadataView SourceMetadataSpec
+
+structure CurrentPrefix {Node : Type} {f : Fields} (ports : Ports Node f) (db : Db) where
+  presence : Bool
+  version : queryVersion db = .ok (.Ok currentVersion)
+  existsReply : queryExists db = .ok (.Ok presence)
+
+structure FormatPrefix {Node : Type} {f : Fields} (ports : Ports Node f) (db : Db)
+    extends CurrentPrefix ports db where
+  schemaSource : schema ports.text db sourceName sourceSchema = .ok (.Ok ())
+  schemaWork : schema ports.text db workName workSchema = .ok (.Ok ())
+
+macro "reduce_current_prefix " stage:term : tactic =>
+  `(tactic|
+    (have metadataVersion := ($stage).version
+     have metadataExists := ($stage).existsReply
+     simp only [queryVersion, queryExists, queryZero] at metadataVersion metadataExists
+     unfold SourceLoadErrorsView.load SourceLoadErrorsView.controller.lifecycle_inbox.source_work.codec.load
+     simp only [metadataVersion, metadataExists, bind_tc_ok,
+       core.result.Result.Insts.CoreOpsTry.branch, bne_self_eq_false, Bool.false_eq_true, if_false]))
+
+macro "reduce_format_prefix " stage:term : tactic =>
+  `(tactic|
+    (reduce_current_prefix ($stage).toCurrentPrefix
+     have sourceDdl := ($stage).schemaSource
+     have workDdl := ($stage).schemaWork
+     simp only [sourceName, workName] at sourceDdl workDdl
+     simp only [sourceDdl, workDdl, bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch]))
+
+def Contract {Node : Type} {f : Fields} (loader : Loader Node f) : Prop :=
+  ∀ (ports : Ports Node f) (db : Db) (_ : FormatPrefix ports db) (count : I64) (failure : SqlError),
+    queryCount db = .ok (.Ok count) → queryNumbers db = .ok (.Err failure) →
+    loader ports db = .ok (.Err (.Sqlite failure))
+
+def noRows : SqlError := ⟨⟨7⟩, true⟩
+
+/-- A table with its sole metadata row absent. Count is zero and the subsequent
+    WHERE id=1 query returns the original QueryReturnedNoRows discriminator. -/
+def emptyMetadataDb : Db :=
+  { sampleDb 8192#i64 with
+    firstRow := fun sql statement =>
+      if sql = queryCountSql then
+        .ok (.Ok ⟨2, statement, (fun _ => .Integer 0#i64), (fun index _ _ => ⟨index.val⟩)⟩)
+      else if sql = queryNumbersSql then .ok (.Err noRows)
+      else (sampleDb 8192#i64).firstRow sql statement }
+
+private theorem untouched_sql :
+    (queryVersionSql ≠ queryCountSql ∧ queryVersionSql ≠ queryNumbersSql) ∧
+    (queryExistsSql ≠ queryCountSql ∧ queryExistsSql ≠ queryNumbersSql) ∧
+    (schemaSql ≠ queryCountSql ∧ schemaSql ≠ queryNumbersSql) := by
+  constructor
+  · constructor <;> distinct_sql
+  constructor <;> constructor <;> distinct_sql
+
+open SourceMetadataView.controller.lifecycle_inbox.source_work.codec
+
+/-- The same original table/schema model as the parent, with a missing id=1
+    row. The later capacity, codec and record ports remain unconstrained. -/
+def emptyPrefix (f : Fields) : FormatPrefix (samplePorts f) emptyMetadataDb where
+  presence := true
+  version := by
+    unfold queryVersion
+    unfold load.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error
+    unfold emptyMetadataDb
+    reduce_sample_columns
+    simp only [untouched_sql.1.1, if_false]
+    reduce_sample_columns
+    rfl
+  existsReply := by
+    unfold queryExists
+    unfold load.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultBoolError
+    unfold emptyMetadataDb
+    reduce_sample_columns
+    simp only [untouched_sql.2.1.1, if_false]
+    reduce_sample_columns
+  schemaSource := by
+    unfold SourceMetadataView.schema SourceMetadataView.controller.lifecycle_inbox.source_work.codec.schema
+    change (do let result ← querySchema (samplePorts f).text emptyMetadataDb sourceName; _) = _
+    unfold emptyMetadataDb
+    reduce_sample_columns
+    simp only [untouched_sql.2.2.1, if_false]
+    reduce_sample_columns
+  schemaWork := by
+    unfold SourceMetadataView.schema SourceMetadataView.controller.lifecycle_inbox.source_work.codec.schema
+    change (do let result ← querySchema (samplePorts f).text emptyMetadataDb workName; _) = _
+    unfold emptyMetadataDb
+    reduce_sample_columns
+    simp only [untouched_sql.2.2.1, if_false]
+    reduce_sample_columns
+
+theorem empty_count : queryCount emptyMetadataDb = .ok (.Ok 0#i64) := by
+  unfold queryCount
+  unfold load.closure_2.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error
+  unfold emptyMetadataDb
+  reduce_sample_columns
+
+theorem empty_numbers : queryNumbers emptyMetadataDb = .ok (.Err noRows) := by
+  unfold queryNumbers emptyMetadataDb
+  reduce_sample_columns
+
+end SandboxModel.Stage1Protocol.SourceLoadErrorsSpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrorsSpec.empty_count
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceLoadErrorsSpec.empty_numbers

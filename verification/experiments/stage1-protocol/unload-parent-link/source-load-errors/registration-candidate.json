@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-load-errors",
+  "parent_prs": [
+    983
+  ],
+  "prior": {
+    "formal_root": "SourceConfigGuards",
+    "physical_files": 58,
+    "full_audits": 175
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceLoadErrors",
+      "physical_files": 61,
+      "full_audits": 188,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceLoadErrorsSpec.empty_count",
+        "SandboxModel.Stage1Protocol.SourceLoadErrorsSpec.empty_numbers",
+        "SandboxModel.Stage1Protocol.SourceLoadErrors.actual_loader_is_parent",
+        "SandboxModel.Stage1Protocol.SourceLoadErrors.source_schema_error_precedes_work_schema",
+        "SandboxModel.Stage1Protocol.SourceLoadErrors.work_schema_error_precedes_count",
+        "SandboxModel.Stage1Protocol.SourceLoadErrors.count_error_precedes_numbers",
+        "SandboxModel.Stage1Protocol.SourceLoadErrors.numbers_error_precedes_count_guard",
+        "SandboxModel.Stage1Protocol.SourceLoadErrors.capacity_error_precedes_count_guard",
+        "SandboxModel.Stage1Protocol.SourceLoadErrors.missing_capacity_rejects_before_payload",
+        "SandboxModel.Stage1Protocol.SourceLoadErrors.payload_error_precedes_decoder",
+        "SandboxModel.Stage1Protocol.SourceLoadErrors.checked_error_precedes_valid_and_records",
+        "SandboxModel.Stage1Protocol.SourceLoadErrors.original_missing_row_keeps_sqlite_error",
+        "SandboxModel.Stage1Protocol.SourceLoadErrors.healthy_prefix_reaches_original_payload"
+      ],
+      "own_modules": [
+        "SourceLoadErrorsView.lean",
+        "SourceLoadErrorsSpec.lean",
+        "SourceLoadErrors.lean"
+      ]
+    },
+    {
+      "variant": "early-count-guard",
+      "formal_root": "SourceLoadErrorsNegative",
+      "physical_files": 61,
+      "full_audits": 179,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceLoadErrorsSpec.empty_count",
+        "SandboxModel.Stage1Protocol.SourceLoadErrorsSpec.empty_numbers",
+        "SandboxModel.Stage1Protocol.SourceLoadErrorsNegative.actual_early_count_rejects_before_missing_row",
+        "SandboxModel.Stage1Protocol.SourceLoadErrorsNegative.early_guard_breaks_same_contract"
+      ],
+      "own_modules": [
+        "SourceLoadErrorsView.lean",
+        "SourceLoadErrorsSpec.lean",
+        "SourceLoadErrorsNegative.lean"
+      ]
+    }
+  ],
+  "native_candidate": {
+    "name": "stage1-source-load-errors",
+    "variants": [
+      "original",
+      "early-count-guard"
+    ],
+    "tests": [
+      "source_load_numbers_error_precedes_count_rejection"
+    ],
+    "full_functional_required": true
+  },
+  "public_registration_accepted": false
+}
