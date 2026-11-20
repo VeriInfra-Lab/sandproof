@@ -1,0 +1,73 @@
+import SourceInitCapacityReadView
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open SandproofSourceRowSqlSelect
+open sandproof_controller_service.controller.checkpoint.config
+open SandboxModel.Stage1Protocol
+open SandboxModel.Stage1Protocol.InboxLoadConfig
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitCapacityReadView
+noncomputable section
+local notation "controller.capacity.CapacityConfig" => SourceRecordBoundsView.Capacity
+local notation "controller.checkpoint.config_using" =>
+  SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config_using
+
+
+def capacityReadView {E : Type} (io : ReadConfigEffects E) (state : E) :
+    Result ((core.result.Result (Option controller.capacity.CapacityConfig) JournalError) × E) := do
+  let (decoded, after) ← readFullView io state
+  match decoded with
+  | .Err error => .ok (.Err error, after)
+  | .Ok none => .ok (.Err .UnsupportedStore, after)
+  | .Ok (some config) =>
+    match config.capacity with
+    | none => .ok (.Err .UnsupportedStore, after)
+    | some capacity => .ok (.Ok (some capacity), after)
+
+theorem capacity_read_refines {E : Type} (io : ReadConfigEffects E) (state : E) :
+    controller.capacity.config_using io state = capacityReadView io state := by
+  unfold controller.capacity.config_using SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config_using capacityReadView
+  rw [read_full_refines]
+  apply congrArg (fun continuation => Bind.bind (m := Result) (readFullView io state) continuation)
+  funext read
+  rcases read with ⟨decoded, after⟩
+  cases decoded with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok policy =>
+    cases policy with
+    | none => simp [core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | some config =>
+      cases capacity : config.capacity <;>
+        simp [core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or, capacity,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem actual_standard_root (deserialize : SourcePolicyReadSpec.DeserializeMaintenance)
+    (decode : SourcePolicyReadSpec.DecodeSlice) (db : SaveRows.Db) :
+    controller.capacity.config deserialize decode db = (do
+      let (reply, _) ← controller.capacity.config_using
+        (SourcePolicyRead.standardEffects deserialize decode) {connection := db}
+      .ok reply) := by rfl
+
+theorem second_read_extracts_its_own_full_capacity {E : Type} (io : ReadConfigEffects E)
+    (before after : E) (policy : SourceRecordBoundsView.Policy) (cap : SourceRecordBoundsView.Capacity)
+    (read : read_using io before = .ok (.Ok (some policy), after))
+    (present : policy.capacity = some cap) :
+    controller.capacity.config_using io before = .ok (.Ok (some cap), after) := by
+  rw [capacity_read_refines, capacityReadView, ← InboxLoadConfig.read_full_refines, read]
+  simp [present]
+
+theorem normal_second_read :
+    controller.capacity.config_using (SourcePolicyReadSpec.decoded InboxLoadConfig.Values.normal) () =
+      .ok (.Ok (some InboxLoadConfig.Values.capacity), ()) :=
+  second_read_extracts_its_own_full_capacity _ _ _ _ _ SourcePolicyRead.normal_decoded_read rfl
+
+end
+end SandboxModel.Stage1Protocol.SourceInitCapacityReadView
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityReadView.capacity_read_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityReadView.actual_standard_root
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityReadView.second_read_extracts_its_own_full_capacity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityReadView.normal_second_read

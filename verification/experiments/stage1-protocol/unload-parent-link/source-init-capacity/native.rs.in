@@ -1,0 +1,134 @@
+#[cfg(test)]
+mod source_init_capacity_contract {
+    use super::*;
+    use crate::controller::{checkpoint, tests_support::lifecycle_application as v3};
+
+    fn source_tables(connection: &Connection) -> i64 {
+        connection
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE name IN ('controller_source_work','controller_source_work_records')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn set_budget(connection: &Connection, bytes: u64) {
+        let mut policy = checkpoint::config(connection).unwrap().unwrap();
+        policy.capacity.as_mut().unwrap().max_sql_bytes = bytes;
+        policy.validate().unwrap();
+        assert_eq!(
+            connection
+                .execute(
+                    "UPDATE controller_maintenance_config SET config_json=?1 WHERE id=1",
+                    [serde_json::to_vec(&policy).unwrap()],
+                )
+                .unwrap(),
+            1
+        );
+        assert_eq!(checkpoint::config(connection).unwrap().unwrap(), policy);
+    }
+
+    fn complete_budget(connection: &Connection) -> u64 {
+        let rows = u128::from(reserved_records(connection, v3::config().max_sessions).unwrap());
+        let future = u128::from(v3::source_limits().required_bytes(1));
+        u64::try_from(8192 + 48 + rows * (future + 80)).unwrap()
+    }
+
+    #[test]
+    fn source_init_capacity_normal_keeps_all_metadata_and_rows() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = v3::open(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let transaction = connection.unchecked_transaction().unwrap();
+        let inbox = v3::config();
+        let limits = v3::source_limits();
+        let rows = reserved_records(&transaction, inbox.max_sessions).unwrap();
+        let reserve = limits.required_bytes(1);
+        assert_eq!(source_tables(&transaction), 0);
+        initialize(&transaction, limits.clone(), &inbox).unwrap();
+        assert_eq!(source_tables(&transaction), 2);
+        let (bytes, digest, reserved): (Vec<u8>, Vec<u8>, i64) = transaction
+            .query_row(
+                "SELECT state_json,sha256,reserve_bytes FROM controller_source_work WHERE id=1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        let config: Configuration = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(config.config, limits);
+        assert_eq!(config.node, inbox.node);
+        assert_eq!(config.max_sessions, inbox.max_sessions);
+        assert_eq!(digest.as_slice(), Sha256::digest(&bytes).as_slice());
+        assert_eq!(reserved, 8192);
+        assert!(bytes.len() <= 8192);
+        let mut statement = transaction
+            .prepare("SELECT id,state_json,sha256,reserve_bytes,work_key FROM controller_source_work_records ORDER BY id")
+            .unwrap();
+        let records: Vec<(i64, Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>)> = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(u64::try_from(records.len()).unwrap(), rows);
+        for (index, (id, payload, hash, reserved, key)) in records.iter().enumerate() {
+            assert_eq!(*id, i64::try_from(index + 1).unwrap());
+            assert_eq!(payload.as_slice(), b"null");
+            assert_eq!(hash.as_slice(), Sha256::digest(b"null").as_slice());
+            assert_eq!(u64::try_from(*reserved).unwrap(), reserve);
+            assert!(key.is_none());
+        }
+        drop(statement);
+        transaction.rollback().unwrap();
+        assert_eq!(source_tables(connection), 0);
+    }
+
+    #[test]
+    fn source_init_capacity_accepts_exact_complete_source_budget() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = v3::open(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let transaction = connection.unchecked_transaction().unwrap();
+        set_budget(&transaction, complete_budget(&transaction));
+        initialize(&transaction, v3::source_limits(), &v3::config()).unwrap();
+        let count: u64 = transaction
+            .query_row(
+                "SELECT COUNT(*) FROM controller_source_work_records",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            count,
+            reserved_records(&transaction, v3::config().max_sessions).unwrap()
+        );
+        transaction.rollback().unwrap();
+        assert_eq!(source_tables(connection), 0);
+    }
+
+    #[test]
+    fn source_init_capacity_rejects_one_byte_short_before_any_source_ddl() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = v3::open(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let transaction = connection.unchecked_transaction().unwrap();
+        set_budget(&transaction, complete_budget(&transaction) - 1);
+        assert_eq!(source_tables(&transaction), 0);
+        let reply = initialize(&transaction, v3::source_limits(), &v3::config());
+        assert!(
+            matches!(&reply, Err(JournalError::MaintenanceCapacity)),
+            "source initialization must reject one-byte-short complete source reservation: {reply:?}"
+        );
+        assert_eq!(source_tables(&transaction), 0);
+        transaction.rollback().unwrap();
+        assert_eq!(source_tables(connection), 0);
+    }
+}

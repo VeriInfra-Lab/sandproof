@@ -1,0 +1,234 @@
+import SourceInitCapacitySpec
+import SourceInitCapacityRead
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity Limits Policy PolicyRead)
+open SandproofSourceInitCapacity
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitCapacity
+abbrev calculate := SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initial_source_bytes
+abbrev check := SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.ensure_source_capacity
+
+theorem value_limit : SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.VALUE_LIMIT = .ok 16777216#u64 := by
+  unfold SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.VALUE_LIMIT
+  have first : (16#u64 * 1024#u64 : Result U64) = .ok 16384#u64 := by
+    change UScalar.tryMk .U64 16384 = _
+    exact (SourceReservationSpec.try_mk_success_iff _ _).mpr rfl
+  rw [first]
+  simp only [bind_tc_ok]
+  change UScalar.tryMk .U64 16777216 = _
+  exact (SourceReservationSpec.try_mk_success_iff _ _).mpr rfl
+
+abbrev Inbox := SandproofSourceInitCapacity.controller.lifecycle_inbox.model.LifecycleInboxConfig
+abbrev CapacityRead := SaveRows.Db → Result (core.result.Result (Option Capacity) SaveRows.Error)
+abbrev run := SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initialize
+abbrev count := SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.reserved_records
+
+theorem original_count_is_parent (read : PolicyRead) (db : SaveRows.Db) (sessions : U16) :
+    count read db sessions = SourceRecordCountView.count read db sessions := by rfl
+
+theorem original_limits_result (limits : Limits) :
+    SandproofSourceInitCapacity.capture.source.SourceObservationConfig.valid limits =
+      .ok (decide (SourceConfigSpec.Valid limits)) := SourceConfigGuards.actual_guard_has_all_six_bounds limits
+
+theorem original_sessions_result (sessions : U16) :
+    SandproofSourceInitCapacity.core.ops.range.RangeInclusive.contains core.cmp.PartialOrdU16
+      core.cmp.PartialOrdU16 core.cmp.PartialOrdU16 ⟨1#u16,4096#u16,false⟩ sessions =
+      .ok (decide (SourceConfigSpec.SessionsValid sessions)) := by
+  unfold SandproofSourceInitCapacity.core.ops.range.RangeInclusive.contains
+    SandproofStage1RequestRust.core.ops.range.RangeInclusive.contains
+    SandproofStage1RequestRust.core.ops.range.RangeBounds.contains.default
+  simp only [SandproofStage1RequestRust.core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.start_bound,
+    SandproofStage1RequestRust.core.ops.range.RangeInclusive.Insts.CoreOpsRangeRangeBounds.end_bound,
+    bind_tc_ok]
+  by_cases lower : 1 ≤ sessions.val <;>
+    simp [core.cmp.impls.PartialOrdU16.le, liftFun2, SourceConfigSpec.SessionsValid, lower]
+
+theorem invalid_limits_precede_every_port (io : Ports) (read : PolicyRead) (capacityRead : CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) (bad : ¬ SourceConfigSpec.Valid limits) :
+    run io read capacityRead db limits inbox = .ok (.Err .UnsupportedInput) := by
+  unfold run SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initialize
+  rw [original_limits_result]
+  simp [bad]
+
+theorem invalid_sessions_precede_reads (io : Ports) (read : PolicyRead) (capacityRead : CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox)
+    (valid : SourceConfigSpec.Valid limits) (bad : ¬ SourceConfigSpec.SessionsValid inbox.max_sessions) :
+    run io read capacityRead db limits inbox = .ok (.Err .UnsupportedInput) := by
+  unfold run SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initialize
+  rw [original_limits_result]
+  simp only [valid, decide_true, bind_tc_ok]
+  have created : core.ops.range.RangeInclusive.new 1#u16 4096#u16 = .ok ⟨1#u16,4096#u16,false⟩ := by rfl
+  rw [created]
+  simp only [bind_tc_ok]
+  rw [original_sessions_result]
+  simp [bad]
+
+
+def afterCapacityRead (tail : Result SourceInitCapacitySpec.Reply) (rows reserve : U64)
+    (reply : core.result.Result (Option Capacity) SaveRows.Error) : Result SourceInitCapacitySpec.Reply :=
+  match reply with
+  | .Err failure => .ok (.Err failure)
+  | .Ok none => .ok (.Err .CorruptStore)
+  | .Ok (some cap) => do
+    let checked ← check rows reserve cap
+    match checked with
+    | .Err failure => .ok (.Err failure)
+    | .Ok () => tail
+
+theorem original_prefix_before_encoding_and_writes
+    (io : Ports) (read : PolicyRead) (capacityRead : CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) (rows reserve : U64)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (counted : count read db inbox.max_sessions = .ok (.Ok rows))
+    (reserved : SourceReservationView.reservation limits 1#u64 = .ok reserve) :
+    run io read capacityRead db limits inbox = (do
+      let reply ← capacityRead db
+      afterCapacityRead (SandproofSourceInitCapacity.afterAcceptedCapacity io db limits inbox rows reserve) rows reserve reply) := by
+  unfold run SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initialize
+  rw [original_limits_result]
+  simp only [valid, decide_true, bind_tc_ok]
+  simp only [core.ops.range.RangeInclusive.new, bind_tc_ok, original_sessions_result,
+    sessions, decide_true]
+  rw [show SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.reserved_records read db inbox.max_sessions = .ok (.Ok rows) from counted]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch]
+  rw [show SandproofSourceInitCapacity.capture.source.SourceObservationConfig.required_bytes limits 1#u64 = .ok reserve from reserved]
+  simp only [bind_tc_ok]
+  apply congrArg (fun next => capacityRead db >>= next)
+  funext reply
+  cases reply with
+  | Err failure => simp [afterCapacityRead,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok capacity =>
+    cases capacity with
+    | none => simp [afterCapacityRead, core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | some cap =>
+      simp only [core.option.Option.ok_or, bind_tc_ok,
+        afterCapacityRead]
+      unfold check
+      apply congrArg (fun next => SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.ensure_source_capacity rows reserve cap >>= next)
+      funext checked
+      cases checked with
+      | Err failure => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | Ok done =>
+        cases done
+        simp only [bind_tc_ok]
+        rfl
+
+
+theorem count_error_precedes_capacity_and_writes
+    (io : Ports) (read : PolicyRead) (capacityRead : CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) (failure : SaveRows.Error)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (failed : count read db inbox.max_sessions = .ok (.Err failure)) :
+    run io read capacityRead db limits inbox = .ok (.Err failure) := by
+  unfold run SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initialize
+  rw [original_limits_result]
+  simp only [valid, decide_true, bind_tc_ok, core.ops.range.RangeInclusive.new,
+    original_sessions_result, sessions]
+  rw [show SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.reserved_records read db inbox.max_sessions = .ok (.Err failure) from failed]
+  simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem count_failure_precedes_capacity_and_writes
+    (io : Ports) (read : PolicyRead) (capacityRead : CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) (failure : Error)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (failed : count read db inbox.max_sessions = .fail failure) :
+    run io read capacityRead db limits inbox = .fail failure := by
+  unfold run SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initialize
+  rw [original_limits_result]
+  simp only [valid, decide_true, bind_tc_ok, core.ops.range.RangeInclusive.new,
+    original_sessions_result, sessions]
+  rw [show SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.reserved_records read db inbox.max_sessions = .fail failure from failed]
+  simp
+
+theorem capacity_error_precedes_encoding_and_writes
+    (io : Ports) (read : PolicyRead) (capacityRead : CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) (rows reserve : U64) (failure : SaveRows.Error)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (counted : count read db inbox.max_sessions = .ok (.Ok rows))
+    (reserved : SourceReservationView.reservation limits 1#u64 = .ok reserve)
+    (failed : capacityRead db = .ok (.Err failure)) :
+    run io read capacityRead db limits inbox = .ok (.Err failure) := by
+  rw [original_prefix_before_encoding_and_writes io read capacityRead db limits inbox rows reserve valid sessions counted reserved,
+    failed]
+  simp [afterCapacityRead]
+
+theorem missing_capacity_precedes_encoding_and_writes
+    (io : Ports) (read : PolicyRead) (capacityRead : CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) (rows reserve : U64)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (counted : count read db inbox.max_sessions = .ok (.Ok rows))
+    (reserved : SourceReservationView.reservation limits 1#u64 = .ok reserve)
+    (missing : capacityRead db = .ok (.Ok none)) :
+    run io read capacityRead db limits inbox = .ok (.Err .CorruptStore) := by
+  rw [original_prefix_before_encoding_and_writes io read capacityRead db limits inbox rows reserve valid sessions counted reserved,
+    missing]
+  simp [afterCapacityRead]
+
+theorem rejected_capacity_does_not_enter_post_capacity_calls
+    (io : Ports) (read : PolicyRead) (capacityRead : CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) (rows reserve : U64) (cap : Capacity)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (counted : count read db inbox.max_sessions = .ok (.Ok rows))
+    (reserved : SourceReservationView.reservation limits 1#u64 = .ok reserve)
+    (found : capacityRead db = .ok (.Ok (some cap)))
+    (rejected : check rows reserve cap = .ok (.Err .MaintenanceCapacity)) :
+    run io read capacityRead db limits inbox = .ok (.Err .MaintenanceCapacity) := by
+  rw [original_prefix_before_encoding_and_writes io read capacityRead db limits inbox rows reserve valid sessions counted reserved,
+    found]
+  simp [afterCapacityRead, rejected]
+
+theorem accepted_capacity_enters_exact_original_suffix
+    (io : Ports) (read : PolicyRead) (capacityRead : CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) (rows reserve : U64) (cap : Capacity)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (counted : count read db inbox.max_sessions = .ok (.Ok rows))
+    (reserved : SourceReservationView.reservation limits 1#u64 = .ok reserve)
+    (found : capacityRead db = .ok (.Ok (some cap)))
+    (accepted : check rows reserve cap = .ok (.Ok ())) :
+    run io read capacityRead db limits inbox = SandproofSourceInitCapacity.afterAcceptedCapacity io db limits inbox rows reserve := by
+  rw [original_prefix_before_encoding_and_writes io read capacityRead db limits inbox rows reserve valid sessions counted reserved,
+    found]
+  simp [afterCapacityRead, accepted]
+
+theorem public_root_forwards_same_complete_input
+    (io : Ports) (read : PolicyRead) (capacityRead : CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) :
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.initialize io read capacityRead db limits inbox =
+      run io read capacityRead db limits inbox := by rfl
+
+
+end SandboxModel.Stage1Protocol.SourceInitCapacity
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.value_limit
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.original_count_is_parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.original_limits_result
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.original_sessions_result
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.invalid_limits_precede_every_port
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.invalid_sessions_precede_reads
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.original_prefix_before_encoding_and_writes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.count_error_precedes_capacity_and_writes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.count_failure_precedes_capacity_and_writes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.capacity_error_precedes_encoding_and_writes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.missing_capacity_precedes_encoding_and_writes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.rejected_capacity_does_not_enter_post_capacity_calls
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.accepted_capacity_enters_exact_original_suffix
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.public_root_forwards_same_complete_input
