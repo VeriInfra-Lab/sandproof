@@ -1,0 +1,18 @@
+import SourceRowLayout
+import SourceConfigGuards
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceReservationView
+
+local notation "capture.source.SourceObservationConfig" => SourceRecordBoundsView.Limits
+
+-- ACTUAL PLAN LIMIT
+-- ACTUAL RETIREMENT LIMIT
+-- ACTUAL RELEASE LIMIT
+-- ACTUAL RESERVATION
+
+abbrev reservation := capture.source.SourceObservationConfig.required_bytes
+
+end SandboxModel.Stage1Protocol.SourceReservationView

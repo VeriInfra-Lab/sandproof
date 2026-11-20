@@ -1,0 +1,119 @@
+import SourceReservationView
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Limits Config Capacity Policy PolicyRead)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceReservationSpec
+
+def perRecord (limits : Limits) : Nat :=
+  limits.max_work_bytes.val + 4 * limits.max_configuration_bytes.val +
+    8192 + 131072 + 69632 + 4096
+
+def total (limits : Limits) (records : U64) : Nat := records.val * perRecord limits + 8192
+
+abbrev Calculate := Limits → U64 → Result U64
+
+def Contract (calculate : Calculate) : Prop :=
+  ∀ limits records, calculate limits records = UScalar.tryMk .U64 (total limits records)
+
+theorem per_record_fits_all_typed_fields (limits : Limits) :
+    212992 ≤ perRecord limits ∧ perRecord limits ≤ 21475049467 := by
+  unfold perRecord
+  scalar_tac
+
+
+theorem multiplication_then_addition (left right suffix : U64) :
+    (do let product ← left * right; product + suffix) =
+      UScalar.tryMk .U64 (left.val * right.val + suffix.val) := by
+  change (UScalar.tryMk .U64 (left.val * right.val) >>= fun product =>
+    UScalar.tryMk .U64 (product.val + suffix.val)) = _
+  have inspected := UScalar.tryMkOpt_eq .U64 (left.val * right.val)
+  cases observed : UScalar.tryMkOpt .U64 (left.val * right.val) with
+  | some product =>
+    rw [observed] at inspected
+    simp only [UScalar.tryMk, observed, Result.ofOption, bind_tc_ok]
+    rw [inspected.1]
+  | none =>
+    rw [observed] at inspected
+    have totalMiss : ¬UScalar.inBounds .U64 (left.val * right.val + suffix.val) := by
+      simp only [UScalar.inBounds, UScalarTy.numBits] at inspected ⊢
+      omega
+    have totalNone : UScalar.tryMkOpt .U64 (left.val * right.val + suffix.val) = none := by
+      simp only [UScalar.tryMkOpt, UScalar.check_bounds]
+      simp only [UScalar.inBounds, UScalarTy.numBits] at totalMiss
+      simp only [UScalarTy.numBits, totalMiss, decide_false, Bool.false_eq_true, ↓reduceDIte]
+    simp only [UScalar.tryMk, observed, totalNone, Result.ofOption, bind_tc_fail]
+
+theorem try_mk_success_iff (value : Nat) (amount : U64) :
+    UScalar.tryMk .U64 value = .ok amount ↔ amount.val = value := by
+  have inspected := UScalar.tryMkOpt_eq .U64 value
+  cases observed : UScalar.tryMkOpt .U64 value with
+  | some computed =>
+    rw [observed] at inspected
+    simp only [UScalar.tryMk, observed, Result.ofOption, Result.ok.injEq]
+    constructor
+    · rintro rfl
+      exact inspected.1
+    · intro expected
+      exact UScalar.eq_of_val_eq (inspected.1.trans expected.symm)
+  | none =>
+    rw [observed] at inspected
+    have differs : amount.val ≠ value := by
+      intro same
+      rw [← same] at inspected
+      exact inspected amount.hBounds
+    simp [UScalar.tryMk, observed, Result.ofOption, differs]
+
+theorem try_mk_overflow_iff (value : Nat) :
+    UScalar.tryMk .U64 value = .fail .integerOverflow ↔ U64.max < value := by
+  have inspected := UScalar.tryMkOpt_eq .U64 value
+  cases observed : UScalar.tryMkOpt .U64 value with
+  | some computed =>
+    rw [observed] at inspected
+    have fits : value ≤ U64.max := by
+      rw [← inspected.1]
+      scalar_tac
+    simp [UScalar.tryMk, observed, Result.ofOption, not_lt.mpr fits]
+  | none =>
+    rw [observed] at inspected
+    have large : U64.max < value := by
+      simp only [UScalar.inBounds, UScalarTy.numBits] at inspected
+      rw [U64.max_eq]
+      omega
+    simp [UScalar.tryMk, observed, Result.ofOption, large]
+
+theorem try_mk_has_normal_return (value : Nat) (fits : value ≤ U64.max) :
+    ∃ amount : U64, UScalar.tryMk .U64 value = .ok amount ∧ amount.val = value := by
+  let amount : U64 := UScalar.ofNatCore value (by scalar_tac)
+  have exactValue : amount.val = value := UScalar.ofNatCore_val_eq _
+  exact ⟨amount, (try_mk_success_iff value amount).mpr exactValue, exactValue⟩
+
+theorem single_typed_fits (limits : Limits) : total limits 1#u64 ≤ U64.max := by
+  have bound := (per_record_fits_all_typed_fields limits).2
+  change 1 * perRecord limits + 8192 ≤ U64.max
+  rw [U64.max_eq]
+  omega
+
+theorem valid_coefficient_bounds (limits : Limits) (normal : SourceConfigSpec.Valid limits) :
+    214020 ≤ perRecord limits ∧ perRecord limits ≤ 5455872 := by
+  unfold SourceConfigSpec.Valid at normal
+  unfold perRecord
+  omega
+
+theorem valid_single_bounds (limits : Limits) (normal : SourceConfigSpec.Valid limits) :
+    222212 ≤ total limits 1#u64 ∧ total limits 1#u64 ≤ 5464064 := by
+  have bound := valid_coefficient_bounds limits normal
+  change 222212 ≤ 1 * perRecord limits + 8192 ∧ 1 * perRecord limits + 8192 ≤ 5464064
+  omega
+
+end SandboxModel.Stage1Protocol.SourceReservationSpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationSpec.per_record_fits_all_typed_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationSpec.multiplication_then_addition
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationSpec.try_mk_success_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationSpec.try_mk_overflow_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationSpec.try_mk_has_normal_return
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationSpec.single_typed_fits
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationSpec.valid_coefficient_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationSpec.valid_single_bounds
