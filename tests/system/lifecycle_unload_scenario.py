@@ -1346,7 +1346,11 @@ def exercise(args):
                     report['phase'] = 'recheck-original-freeze-after-destroy-replay'
                     report['freeze_destroy_acceptance_window']['after_destroy_replay'] = (
                         capture_probe.observe_destroy_window(deadline))
+                    report['phase'] = 'old-unload-replay-before-host-reopen'
                     report['terminal_unload_replays']=[client.assert_terminal_unload_replay(phase='terminating')]
+                    report['phase'] = 'recheck-original-freeze-after-unload-replay'
+                    report['freeze_destroy_acceptance_window']['after_unload_replay'] = (
+                        capture_probe.observe_destroy_window(deadline))
                 def observe_frozen_peer():
                     report['phase']=prefix.replace('_','-')+'-peer-progress-before-stop'
                     assert equal(control.query(),control_running)
@@ -1569,7 +1573,9 @@ def exercise(args):
         if freeze_destroy:
             report['freeze_response_mode'] = 'response-restored-after-terminal-acceptance'
             report['acceptance_cases'] = {
-                'E2':'in the Freeze receipt window exact Destroy replays and its altered same-key request conflicts; old Create/Unload preserve history and closed access through Cleaned',
+                'E2':('exact Destroy replays and its altered same-key request conflicts. Old Create/Unload '
+                      'preserve history and closed access through Cleaned. Freeze is still pending after '
+                      'the Terminating replay checks'),
                 'E8':'public Destroy after Freeze success and before SQL receipt vetoes a fresh Resume in the same window; exact fence/Stop, original exit/Cleanup/GC follow',
                 'E12':'original other owner actually reused the old position, made guest progress while terminal Stop was held, and retained its same candidate before explicit cleanup',
                 'E14':'old execution tokens remained rejected; peer continued with its original authorization',
