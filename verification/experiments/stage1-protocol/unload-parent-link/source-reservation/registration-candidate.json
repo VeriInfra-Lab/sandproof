@@ -1,0 +1,121 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-reservation",
+  "parent_prs": [
+    987,
+    983
+  ],
+  "prior_closures": [
+    {
+      "pr": 987,
+      "physical_files": 60,
+      "full_audits": 223
+    },
+    {
+      "pr": 983,
+      "physical_files": 58,
+      "full_audits": 175
+    }
+  ],
+  "shared_prior": {
+    "physical_files": 52,
+    "full_audits": 145,
+    "require_identical_complete_contents": true
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceReservation",
+      "physical_files": 69,
+      "full_audits": 275,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.per_record_fits_all_typed_fields",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.multiplication_then_addition",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.try_mk_success_iff",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.try_mk_overflow_iff",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.try_mk_has_normal_return",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.single_typed_fits",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.valid_coefficient_bounds",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.valid_single_bounds",
+        "SandboxModel.Stage1Protocol.SourceReservation.prefix_is_complete",
+        "SandboxModel.Stage1Protocol.SourceReservation.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceReservation.original_is_actual",
+        "SandboxModel.Stage1Protocol.SourceReservation.actual_success_iff",
+        "SandboxModel.Stage1Protocol.SourceReservation.actual_overflow_iff",
+        "SandboxModel.Stage1Protocol.SourceReservation.original_single_computed",
+        "SandboxModel.Stage1Protocol.SourceReservation.original_record_guard_uses_computed_reserve",
+        "SandboxModel.Stage1Protocol.SourceReservation.actual_guard_supplies_single_bounds",
+        "SandboxModel.Stage1Protocol.SourceReservation.zero_records_preserve_metadata",
+        "SandboxModel.Stage1Protocol.SourceReservation.normal_one_record_accepts",
+        "SandboxModel.Stage1Protocol.SourceReservation.original_count_error_precedes_aggregate",
+        "SandboxModel.Stage1Protocol.SourceReservation.original_aggregate_error_precedes_capacity",
+        "SandboxModel.Stage1Protocol.SourceReservation.multiplication_overflow_is_rejected",
+        "SandboxModel.Stage1Protocol.SourceReservation.final_metadata_addition_overflow_is_rejected"
+      ],
+      "own_modules": [
+        "SourceReservationView.lean",
+        "SourceReservationSpec.lean",
+        "SourceReservation.lean"
+      ]
+    },
+    {
+      "variant": "omit-release-budget",
+      "formal_root": "SourceReservationNegative",
+      "physical_files": 69,
+      "full_audits": 265,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.per_record_fits_all_typed_fields",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.multiplication_then_addition",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.try_mk_success_iff",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.try_mk_overflow_iff",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.try_mk_has_normal_return",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.single_typed_fits",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.valid_coefficient_bounds",
+        "SandboxModel.Stage1Protocol.SourceReservationSpec.valid_single_bounds",
+        "SandboxModel.Stage1Protocol.SourceReservationNegative.omitted_release_normal_value",
+        "SandboxModel.Stage1Protocol.SourceReservationNegative.omitted_release_breaks_same_contract",
+        "SandboxModel.Stage1Protocol.SourceReservationNegative.omitted_release_accepts_multiplication_overflow",
+        "SandboxModel.Stage1Protocol.SourceReservationNegative.omitted_release_accepts_final_metadata_addition_overflow"
+      ],
+      "own_modules": [
+        "SourceReservationView.lean",
+        "SourceReservationSpec.lean",
+        "SourceReservationNegative.lean"
+      ]
+    }
+  ],
+  "new_rust_capture": true,
+  "new_external_contracts": [],
+  "native_candidate": {
+    "name": "stage1-source-reservation",
+    "variants": [
+      "original",
+      "omit-release-budget"
+    ],
+    "tests": [
+      "source_reservation_preserves_every_original_allowance",
+      "source_reservation_rejects_multiplication_overflow",
+      "source_reservation_rejects_final_metadata_addition_overflow"
+    ],
+    "expected_original_passed": 3,
+    "expected_mutant_failed": 3,
+    "preparation": "native.py",
+    "full_functional_required": true
+  },
+  "inherited_pending_library_symbols": [
+    "#985 four Row projection operations",
+    "#986 Range next/IntoIterator and borrow binding"
+  ],
+  "remaining_providers": {
+    "V5": [
+      "maintenance policy/session row count provenance",
+      "full initialize source_bytes u64 arithmetic and writes",
+      "physical schema/query/transaction provenance",
+      "whole sql_usage and database budget"
+    ]
+  },
+  "public_registration_accepted": false
+}

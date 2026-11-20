@@ -1,0 +1,73 @@
+#[cfg(all(test, feature = "durable"))]
+mod source_reservation_contract {
+    use super::*;
+
+    fn limits(work: u32, configuration: u32) -> SourceObservationConfig {
+        SourceObservationConfig {
+            max_work_bytes: work,
+            max_configuration_bytes: configuration,
+            max_executable_bytes: 1,
+            max_kernel_bytes: 1,
+            max_disk_bytes: 1,
+            max_material_bytes: 1,
+        }
+    }
+
+    fn formula(config: &SourceObservationConfig, records: u64) -> u128 {
+        u128::from(records)
+            * (u128::from(config.max_work_bytes)
+                + 4 * u128::from(config.max_configuration_bytes)
+                + 8192
+                + 131_072
+                + 69_632
+                + 4096)
+            + 8192
+    }
+
+    #[test]
+    fn source_reservation_preserves_every_original_allowance() {
+        for (work, configuration) in [
+            (1024, 1),
+            (1025, 1),
+            (1024, 2),
+            (1_048_576, 1_048_576),
+            (u32::MAX, u32::MAX),
+        ] {
+            let config = limits(work, configuration);
+            for records in [0, 1, 2, 126, 4096, u64::from(u16::MAX)] {
+                assert_eq!(
+                    u128::from(config.required_bytes(records)),
+                    formula(&config, records),
+                    "source reservation must include every original allowance"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn source_reservation_rejects_multiplication_overflow() {
+        let config = limits(1024, 1);
+        assert!(config.valid());
+        let records = u64::MAX / 214_020 + 1;
+        assert!(formula(&config, records) > u128::from(u64::MAX));
+        let observed = std::panic::catch_unwind(|| config.required_bytes(records));
+        assert!(
+            observed.is_err(),
+            "source reservation multiplication overflow must not return a wrapped value"
+        );
+    }
+
+    #[test]
+    fn source_reservation_rejects_final_metadata_addition_overflow() {
+        let config = limits(1077, 1);
+        assert!(config.valid());
+        let records = u64::MAX / 214_073;
+        assert!(records.checked_mul(214_073).is_some());
+        assert!(formula(&config, records) > u128::from(u64::MAX));
+        let observed = std::panic::catch_unwind(|| config.required_bytes(records));
+        assert!(
+            observed.is_err(),
+            "source reservation final metadata addition overflow must not return a wrapped value"
+        );
+    }
+}

@@ -1,0 +1,152 @@
+import SourceReservationSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Limits Config Capacity Policy PolicyRead)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceReservation
+open SourceReservationSpec
+
+theorem prefix_is_complete (limits : Limits) (records : U64) :
+    ∃ coefficient : U64, coefficient.val = perRecord limits ∧
+      SourceReservationView.reservation limits records =
+        (do let scaled ← records * coefficient; scaled + 8192#u64) := by
+  let work := core.convert.num.FromU64U32.from limits.max_work_bytes
+  let configuration := core.convert.num.FromU64U32.from limits.max_configuration_bytes
+  have workValue := core.convert.num.FromU64U32.from_val_eq limits.max_work_bytes
+  have configurationValue := core.convert.num.FromU64U32.from_val_eq limits.max_configuration_bytes
+  change work.val = limits.max_work_bytes.val at workValue
+  change configuration.val = limits.max_configuration_bytes.val at configurationValue
+  obtain ⟨four, fourReply, fourValue⟩ := WP.spec_imp_exists (U64.mul_spec
+    (x := 4#u64) (y := configuration) (by scalar_tac))
+  obtain ⟨first, firstReply, firstValue⟩ := WP.spec_imp_exists (U64.add_spec
+    (x := work) (y := four) (by scalar_tac))
+  obtain ⟨second, secondReply, secondValue⟩ := WP.spec_imp_exists (U64.add_spec
+    (x := first) (y := 8192#u64) (by scalar_tac))
+  obtain ⟨third, thirdReply, thirdValue⟩ := WP.spec_imp_exists (U64.add_spec
+    (x := second) (y := 131072#u64) (by scalar_tac))
+  obtain ⟨fourth, fourthReply, fourthValue⟩ := WP.spec_imp_exists (U64.add_spec
+    (x := third) (y := 69632#u64) (by scalar_tac))
+  obtain ⟨coefficient, coefficientReply, coefficientValue⟩ := WP.spec_imp_exists (U64.add_spec
+    (x := fourth) (y := 4096#u64) (by scalar_tac))
+  have retired : SourceReservationView.capture.retirement.MATERIAL_RETIREMENT_RECORD_MAX_BYTES =
+      .ok 69632#u64 := SourceRecordBoundsContract.retirement_allowance
+  dsimp only [work, configuration] at fourReply firstReply
+  refine ⟨coefficient, ?_, ?_⟩
+  · unfold perRecord
+    scalar_tac
+  · simp only [SourceReservationView.reservation,
+      SourceReservationView.capture.source.SourceObservationConfig.required_bytes, lift, bind_tc_ok,
+      fourReply, firstReply, secondReply, thirdReply, retired, fourthReply,
+      SourceReservationView.capture.retirement.MATERIAL_RELEASE_RECORD_MAX_BYTES, coefficientReply]
+
+open SourceReservationSpec
+
+theorem actual_contract : Contract SourceReservationView.reservation := by
+  intro limits records
+  obtain ⟨coefficient, value, exactTail⟩ := prefix_is_complete limits records
+  rw [exactTail, multiplication_then_addition, value]
+  rfl
+
+theorem original_is_actual (limits : Limits) (records : U64) :
+    SourceRecordBoundsView.reservation limits records = SourceReservationView.reservation limits records := by
+  rfl
+
+theorem actual_success_iff (limits : Limits) (records amount : U64) :
+    SourceReservationView.reservation limits records = .ok amount ↔ amount.val = total limits records := by
+  rw [actual_contract]
+  exact try_mk_success_iff _ _
+
+theorem actual_overflow_iff (limits : Limits) (records : U64) :
+    SourceReservationView.reservation limits records = .fail .integerOverflow ↔
+      U64.max < total limits records := by
+  rw [actual_contract]
+  exact try_mk_overflow_iff _
+
+theorem original_single_computed (limits : Limits) :
+    ∃ reserve, SourceRecordBoundsView.reservation limits 1#u64 = .ok reserve ∧
+      reserve.val = total limits 1#u64 := by
+  rw [original_is_actual, actual_contract]
+  exact try_mk_has_normal_return _ (single_typed_fits limits)
+
+theorem original_record_guard_uses_computed_reserve {Node : Type} {f : SourceKeyEncode.Fields}
+    (policy : PolicyRead) (scan : SourceRecordBoundsView.Scan f) (db : SaveRows.Db)
+    (config : Config Node) (cap : Capacity) (rows : U64) (reported : SourceRecordBoundsView.Bounds)
+    (countReply : SourceRecordBoundsView.reserved policy db config.max_sessions = .ok (.Ok rows))
+    (queryReply : SourceRecordBoundsView.queryBounds db = .ok (.Ok reported)) :
+    ∃ reserve, SourceRecordBoundsView.reservation config.config 1#u64 = .ok reserve ∧
+      reserve.val = total config.config 1#u64 ∧
+      SourceRecordBoundsView.loader policy scan db config cap =
+        SourceRecordBoundsContract.afterBounds scan db cap.max_sql_value_bytes reserve rows reported := by
+  obtain ⟨reserve, computed, value⟩ := original_single_computed config.config
+  exact ⟨reserve, computed, value,
+    SourceRecordBounds.actual_loader_has_exact_first_decision policy scan db config cap reserve rows
+      reported computed countReply queryReply⟩
+
+theorem actual_guard_supplies_single_bounds (limits : Limits)
+    (accepted : SourceConfigView.valid limits = .ok true) :
+    ∃ reserve, SourceRecordBoundsView.reservation limits 1#u64 = .ok reserve ∧
+      222212 ≤ reserve.val ∧ reserve.val ≤ 5464064 := by
+  rw [SourceConfigGuards.actual_guard_has_all_six_bounds] at accepted
+  have normal : SourceConfigSpec.Valid limits := by simpa only [Result.ok.injEq, decide_eq_true_eq] using accepted
+  obtain ⟨reserve, computed, value⟩ := original_single_computed limits
+  have bounds := valid_single_bounds limits normal
+  exact ⟨reserve, computed, by omega, by omega⟩
+
+theorem zero_records_preserve_metadata (limits : Limits) :
+    SourceReservationView.reservation limits 0#u64 = .ok 8192#u64 := by
+  apply (actual_success_iff _ _ _).mpr
+  simp [total]
+
+theorem normal_one_record_accepts :
+    SourceReservationView.reservation SourceConfigSpec.sample 1#u64 = .ok 222212#u64 := by
+  apply (actual_success_iff _ _ _).mpr
+  simp [total, perRecord, SourceConfigSpec.sample]
+
+theorem original_count_error_precedes_aggregate {Node : Type} {f : SourceKeyEncode.Fields}
+    (policy : PolicyRead) (scan : SourceRecordBoundsView.Scan f) (db : SaveRows.Db)
+    (config : Config Node) (cap : Capacity) (failure : SaveRows.Error)
+    (countReply : SourceRecordBoundsView.reserved policy db config.max_sessions = .ok (.Err failure)) :
+    SourceRecordBoundsView.loader policy scan db config cap = .ok (.Err failure) := by
+  obtain ⟨reserve, computed, _⟩ := original_single_computed config.config
+  exact SourceRecordBounds.count_error_precedes_aggregate policy scan db config cap reserve failure computed countReply
+
+theorem original_aggregate_error_precedes_capacity {Node : Type} {f : SourceKeyEncode.Fields}
+    (policy : PolicyRead) (scan : SourceRecordBoundsView.Scan f) (db : SaveRows.Db)
+    (config : Config Node) (cap : Capacity) (rows : U64) (failure : SandproofSourceRowSqlSelect.rusqlite.error.Error)
+    (countReply : SourceRecordBoundsView.reserved policy db config.max_sessions = .ok (.Ok rows))
+    (queryReply : SourceRecordBoundsView.queryBounds db = .ok (.Err failure)) :
+    SourceRecordBoundsView.loader policy scan db config cap = .ok (.Err (.Sqlite failure)) := by
+  obtain ⟨reserve, computed, _⟩ := original_single_computed config.config
+  exact SourceRecordBounds.aggregate_error_precedes_capacity policy scan db config cap reserve rows failure
+    computed countReply queryReply
+
+theorem multiplication_overflow_is_rejected :
+    SourceReservationView.reservation SourceConfigSpec.sample 86191683364684#u64 = .fail .integerOverflow := by
+  apply (actual_overflow_iff _ _).mpr
+  rw [U64.max_eq]
+  decide
+
+theorem final_metadata_addition_overflow_is_rejected :
+    SourceReservationView.reservation {SourceConfigSpec.sample with max_work_bytes := 1077#u32}
+      86170344105560#u64 = .fail .integerOverflow := by
+  apply (actual_overflow_iff _ _).mpr
+  rw [U64.max_eq]
+  decide
+
+end SandboxModel.Stage1Protocol.SourceReservation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.prefix_is_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.original_is_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.actual_success_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.actual_overflow_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.original_single_computed
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.original_record_guard_uses_computed_reserve
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.actual_guard_supplies_single_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.zero_records_preserve_metadata
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.normal_one_record_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.original_count_error_precedes_aggregate
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.original_aggregate_error_precedes_capacity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.multiplication_overflow_is_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservation.final_metadata_addition_overflow_is_rejected

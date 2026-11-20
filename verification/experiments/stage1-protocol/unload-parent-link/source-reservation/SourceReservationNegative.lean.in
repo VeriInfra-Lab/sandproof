@@ -1,0 +1,59 @@
+import SourceReservationSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Limits)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceReservationNegative
+open SourceReservationSpec
+
+private theorem retired : SourceReservationView.capture.retirement.MATERIAL_RETIREMENT_RECORD_MAX_BYTES =
+    .ok 69632#u64 := SourceRecordBoundsContract.retirement_allowance
+
+theorem omitted_release_normal_value :
+    SourceReservationView.reservation SourceConfigSpec.sample 1#u64 = .ok 218116#u64 := by
+  have spec : SourceReservationView.reservation SourceConfigSpec.sample 1#u64
+      ⦃ output => output.val = 218116 ⦄ := by
+    unfold SourceReservationView.reservation SourceReservationView.capture.source.SourceObservationConfig.required_bytes
+    simp only [lift, bind_tc_ok, retired, SourceConfigSpec.sample]
+    step*
+  obtain ⟨amount, returned, value⟩ := WP.spec_imp_exists spec
+  have same : amount = 218116#u64 := UScalar.eq_of_val_eq value
+  exact same ▸ returned
+
+theorem omitted_release_breaks_same_contract : ¬Contract SourceReservationView.reservation := by
+  intro contract
+  have expected := (contract SourceConfigSpec.sample 1#u64).symm.trans omitted_release_normal_value
+  have value := (try_mk_success_iff _ _).mp expected
+  norm_num [total, perRecord, SourceConfigSpec.sample] at value
+
+theorem omitted_release_accepts_multiplication_overflow :
+    SourceReservationView.reservation SourceConfigSpec.sample 86191683364684#u64 =
+      .ok 18093702938647932208#u64 := by
+  have spec : SourceReservationView.reservation SourceConfigSpec.sample 86191683364684#u64
+      ⦃ output => output.val = 18093702938647932208 ⦄ := by
+    unfold SourceReservationView.reservation SourceReservationView.capture.source.SourceObservationConfig.required_bytes
+    simp only [lift, bind_tc_ok, retired, SourceConfigSpec.sample]
+    step*
+  obtain ⟨amount, returned, value⟩ := WP.spec_imp_exists spec
+  have same : amount = 18093702938647932208#u64 := UScalar.eq_of_val_eq value
+  exact same ▸ returned
+
+theorem omitted_release_accepts_final_metadata_addition_overflow :
+    SourceReservationView.reservation {SourceConfigSpec.sample with max_work_bytes := 1077#u32}
+      86170344105560#u64 = .ok 18093790344253180312#u64 := by
+  have spec : SourceReservationView.reservation {SourceConfigSpec.sample with max_work_bytes := 1077#u32}
+      86170344105560#u64 ⦃ output => output.val = 18093790344253180312 ⦄ := by
+    unfold SourceReservationView.reservation SourceReservationView.capture.source.SourceObservationConfig.required_bytes
+    simp only [lift, bind_tc_ok, retired, SourceConfigSpec.sample]
+    step*
+  obtain ⟨amount, returned, value⟩ := WP.spec_imp_exists spec
+  have same : amount = 18093790344253180312#u64 := UScalar.eq_of_val_eq value
+  exact same ▸ returned
+
+end SandboxModel.Stage1Protocol.SourceReservationNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationNegative.omitted_release_normal_value
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationNegative.omitted_release_breaks_same_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationNegative.omitted_release_accepts_multiplication_overflow
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceReservationNegative.omitted_release_accepts_final_metadata_addition_overflow
