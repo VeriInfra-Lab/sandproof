@@ -1,0 +1,129 @@
+import SourceRetireEquality
+
+open Aeneas Aeneas.Std Result ControlFlow Error
+open SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol.SourceRetireTypes
+set_option autoImplicit false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+set_option linter.unusedVariables false
+
+namespace SandboxModel.Stage1Protocol.SourceRetireLibrary
+
+abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+/-- Exact unresolved library interfaces. No whole business function is a port.
+    Byte-key BTreeSet and six-parameter binding still require provider adoption. -/
+structure Ports (Tree : Type → Type → Type) where
+  insert : ∀ {T : Type} {A : Type} (corecloneCloneInst : core.clone.Clone A)
+      (corecmpOrdInst : core.cmp.Ord T),
+      Tree T A → T → Result (Bool ×
+        (Tree T A))
+  order : ∀ {T : Type} (A : Type) (corecmpOrdInst : core.cmp.Ord T),
+      alloc.vec.Vec T → alloc.vec.Vec T → Result Ordering
+  partialOrder : ∀ {T : Type} (A1 : Type) (A2 : Type) (corecmpPartialOrdInst :
+      core.cmp.PartialOrd T T),
+      alloc.vec.Vec T → alloc.vec.Vec T → Result (Option Ordering)
+  bindSix : ∀ {A : Type} {B : Type} {C : Type} {D : Type} {E : Type} {F : Type}
+      (typesto_sqlToSqlInst : rusqlite.types.to_sql.ToSql A) (typesto_sqlToSqlInst1
+      : rusqlite.types.to_sql.ToSql B) (typesto_sqlToSqlInst2 :
+      rusqlite.types.to_sql.ToSql C) (typesto_sqlToSqlInst3 :
+      rusqlite.types.to_sql.ToSql D) (typesto_sqlToSqlInst4 :
+      rusqlite.types.to_sql.ToSql E) (typesto_sqlToSqlInst5 :
+      rusqlite.types.to_sql.ToSql F),
+      (A × B × C × D × E × F) → rusqlite.statement.Statement → Result
+        ((core.result.Result Unit rusqlite.error.Error) ×
+        rusqlite.statement.Statement)
+  bindingDigest : Slice Std.U8 → Result (Array Std.U8 32#usize)
+  bindingJson : sandbox_controller_core.ids.SandboxId → Std.U64 →
+        capture.work.FullCaptureWorkRequest →
+        capture.source.SourceObservationRequirement → Option
+        (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) →
+        Option capture.launch.CaptureWorkerBinding → Option
+        sandproof_protocol.lifecycle.digest.ContentDigest → Result
+        (core.result.Result (alloc.vec.Vec Std.U8) serde_json.error.Error)
+  decode : Slice Std.U8 → Result (core.result.Result (Option
+        controller.lifecycle_inbox.source_work.SourceWorkRecord)
+        serde_json.error.Error)
+  recordDigest : Slice Std.U8 → Result (Array Std.U8 32#usize)
+  optionalJson : Option controller.lifecycle_inbox.source_work.SourceWorkRecord → Result
+        (core.result.Result (alloc.vec.Vec Std.U8) serde_json.error.Error)
+  recordJson : controller.lifecycle_inbox.source_work.SourceWorkRecord → Result
+        (core.result.Result (alloc.vec.Vec Std.U8) serde_json.error.Error)
+  releaseJson : controller.lifecycle_inbox.source_work.retirement.MaterialReleaseFacts →
+        Result (core.result.Result (alloc.vec.Vec Std.U8) serde_json.error.Error)
+  restoreJson : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent →
+        controller.internal_inbox.model.InternalLocalBinding → Std.U64 → Option
+        (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) →
+        Result (core.result.Result (alloc.vec.Vec Std.U8) serde_json.error.Error)
+  stateJson : controller.lifecycle_inbox.source_work.retirement.MaterialRetirementState →
+        Result (core.result.Result (alloc.vec.Vec Std.U8) serde_json.error.Error)
+
+-- Existing per-symbol library models, with the same full callback arguments.
+def stringClone (value : String) : Result String := .ok value
+
+def optionClone {T : Type} (dictionary : core.clone.Clone T) : Option T → Result (Option T)
+  | none => .ok none
+  | some value => do
+      let cloned ← dictionary.clone value
+      .ok (some cloned)
+
+def optionRef {T : Type} (value : Option T) : Result (Option T) := .ok value
+
+def optionMap {T U F : Type} (callback : core.ops.function.FnOnce F T U)
+    (value : Option T) (state : F) : Result (Option U) :=
+  match value with
+  | none => .ok none
+  | some entry => do
+      let mapped ← callback.call_once state entry
+      .ok (some mapped)
+
+def optionTranspose {T E : Type} (value : Option (core.result.Result T E)) :
+    Result (core.result.Result (Option T) E) :=
+  .ok (match value with
+    | none => .Ok none
+    | some (.Ok entry) => .Ok (some entry)
+    | some (.Err error) => .Err error)
+
+def vectorEmpty {T : Type} (_A : Type) (value : alloc.vec.Vec T) : Result Bool :=
+  .ok (decide (value.slice.val = []))
+
+def vectorSlice {T : Type} (_A : Type) (value : alloc.vec.Vec T) : Result (Slice T) :=
+  .ok value.slice
+
+def vectorSliceNe {T U : Type} (_A : Type) (dictionary : core.cmp.PartialEq T U)
+    (left : alloc.vec.Vec T) (right : Slice U) : Result Bool := do
+  let same ← core.slice.cmp.PartialEqSlice.eq dictionary left.slice right
+  .ok (!same)
+
+abbrev signed := SourceRecordBoundsView.toSigned
+abbrev get := @SandproofSourceRowSqlSelect.rusqlite.row.Row.get
+abbrev query := @SandproofSourceRowSqlSelect.rusqlite.Connection.query_row
+abbrev execute := @SandproofSourceRowSqlSelect.rusqlite.Connection.execute
+abbrev rowIndex := SandproofSourceRowSqlSelect.Usize.Insts.RusqliteRowRowIndex.idx
+abbrev fromInteger := SandproofSourceRowSqlSelect.I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+def fromBytes (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result (alloc.vec.Vec U8) rusqlite.types.from_sql.FromSqlError) :=
+  match value with
+  | .Blob bytes => .ok (.Ok ⟨bytes⟩)
+  | _ => .ok (.Err .invalidType)
+
+def integer (value : I64) :
+    Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error) :=
+  .ok (.Ok (.Owned (.Integer value)))
+
+def blob (value : Slice U8) :
+    Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error) :=
+  .ok (.Ok (.Borrowed (.Blob value)))
+
+def shared {T : Type} (dictionary : rusqlite.types.to_sql.ToSql T) (value : T) :=
+  dictionary.to_sql value
+
+/-- Fixed one-element array uses the original shared-blob bind implementation. -/
+def bindOne {T : Type} (dictionary : rusqlite.types.to_sql.ToSql T)
+    (value : Array T 1#usize) (statement : rusqlite.statement.Statement) :=
+  SandproofSourceRowSqlSelect.bindValues (value.val.map dictionary.to_sql) statement
+
+end SandboxModel.Stage1Protocol.SourceRetireLibrary

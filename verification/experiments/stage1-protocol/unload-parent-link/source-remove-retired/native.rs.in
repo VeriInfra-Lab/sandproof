@@ -1,0 +1,188 @@
+// Append inside the original tests/end_pipeline.rs module. These are finite
+// SQLite component checks, with the original controlled Host fixture.
+type SourceRetireSqlRow = (i64, Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>);
+
+fn source_retire_sql_rows(connection: &rusqlite::Connection) -> Vec<SourceRetireSqlRow> {
+    connection
+        .prepare("SELECT id,state_json,sha256,reserve_bytes,work_key FROM controller_source_work_records ORDER BY id")
+        .unwrap()
+        .query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?))
+        })
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap()
+}
+
+fn source_retire_expected_rows(
+    before: &[SourceRetireSqlRow],
+    target: &SourceWorkRecord,
+) -> Vec<SourceRetireSqlRow> {
+    use sha2::Digest as _;
+    let key = target.work.requirement.work_binding.as_bytes().to_vec();
+    assert_eq!(
+        before
+            .iter()
+            .filter(|row| row.4.as_ref() == Some(&key))
+            .count(),
+        1
+    );
+    before
+        .iter()
+        .map(|row| {
+            if row.4.as_ref() == Some(&key) {
+                (
+                    row.0,
+                    b"null".to_vec(),
+                    sha2::Sha256::digest(b"null").to_vec(),
+                    row.3,
+                    None,
+                )
+            } else {
+                row.clone()
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn source_retire_requires_transaction_even_for_empty_expected() {
+    let connection = rusqlite::Connection::open_in_memory().unwrap();
+    assert!(connection.is_autocommit());
+    assert!(matches!(
+        codec::remove_retired(&connection, &[]),
+        Err(JournalError::UnsupportedInput)
+    ));
+}
+
+#[test]
+fn source_retire_empty_transaction_does_not_load_missing_schema() {
+    let mut connection = rusqlite::Connection::open_in_memory().unwrap();
+    let transaction = connection.transaction().unwrap();
+    assert!(!transaction.is_autocommit());
+    codec::remove_retired(&transaction, &[]).unwrap();
+    assert_eq!(
+        transaction
+            .query_row("SELECT count(*) FROM sqlite_master", [], |row| row
+                .get::<_, i64>(0))
+            .unwrap(),
+        0
+    );
+    transaction.rollback().unwrap();
+}
+
+#[test]
+fn source_retire_clears_only_complete_original_slot_and_keeps_reservation() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _, _) = settled_terminal(&directory.path().join("retire.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let target = current.records.first().unwrap().clone();
+    assert!(retirement::is_settled(&target));
+    assert_eq!(retirement::material_charge(&target).unwrap(), 0);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let expected = source_retire_expected_rows(&before, &target);
+    let transaction = journal.journal.connection.transaction().unwrap();
+    codec::remove_retired(&transaction, std::slice::from_ref(&target)).unwrap();
+    assert_eq!(source_retire_sql_rows(&transaction), expected);
+    transaction.rollback().unwrap();
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_retire_same_key_with_changed_complete_record_is_rejected() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _, _) = settled_terminal(&directory.path().join("retire.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut changed = current.records.first().unwrap().clone();
+    changed.work.requirement.limits.max_configuration_bytes += 1;
+    assert_eq!(
+        changed.work.requirement.work_binding,
+        current.records[0].work.requirement.work_binding
+    );
+    assert_ne!(changed, current.records[0]);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let transaction = journal.journal.connection.transaction().unwrap();
+    assert!(matches!(
+        codec::remove_retired(&transaction, std::slice::from_ref(&changed)),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert_eq!(source_retire_sql_rows(&transaction), before);
+    transaction.rollback().unwrap();
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_retire_unsettled_material_keeps_complete_source_row() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = unloaded_resume_source(&directory.path().join("retire.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let target = current
+        .records
+        .iter()
+        .find(|record| record.capture.is_some())
+        .unwrap()
+        .clone();
+    assert!(!retirement::is_settled(&target));
+    assert!(retirement::material_charge(&target).unwrap() > 0);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let transaction = journal.journal.connection.transaction().unwrap();
+    assert!(matches!(
+        codec::remove_retired(&transaction, std::slice::from_ref(&target)),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert_eq!(source_retire_sql_rows(&transaction), before);
+    transaction.rollback().unwrap();
+}
+
+#[test]
+fn source_retire_zero_row_compare_and_set_is_rejected() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _, _) = settled_terminal(&directory.path().join("retire.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let target = current.records.first().unwrap().clone();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let transaction = journal.journal.connection.transaction().unwrap();
+    transaction
+        .execute_batch("CREATE TRIGGER source_retire_ignore_update BEFORE UPDATE ON controller_source_work_records BEGIN SELECT RAISE(IGNORE); END;")
+        .unwrap();
+    let answer = codec::remove_retired(&transaction, std::slice::from_ref(&target));
+    assert!(
+        matches!(answer, Err(JournalError::CorruptStore)),
+        "retired source clearing must reject a zero-row compare-and-set: {answer:?}"
+    );
+    assert_eq!(source_retire_sql_rows(&transaction), before);
+    transaction.rollback().unwrap();
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_retire_duplicate_preserves_first_update_until_explicit_rollback() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _, _) = settled_terminal(&directory.path().join("retire.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let target = current.records.first().unwrap().clone();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let expected = source_retire_expected_rows(&before, &target);
+    let transaction = journal.journal.connection.transaction().unwrap();
+    assert!(matches!(
+        codec::remove_retired(&transaction, &[target.clone(), target]),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert_eq!(source_retire_sql_rows(&transaction), expected);
+    transaction.rollback().unwrap();
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
