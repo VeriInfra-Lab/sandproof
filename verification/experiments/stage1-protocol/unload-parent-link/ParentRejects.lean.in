@@ -1,0 +1,58 @@
+import ParentErrors
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink.Errors
+open SandproofUnloadFirstObservation
+open SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+variable [Representations] [calls : ParentCalls]
+
+theorem mismatched_history_skips_question (reads : NativeRead host serde tx ns intent now input) (completed : ParentCalls.hasCompletedOriginalExecution reads.native reads.localValue = .ok true) (previous : sandbox_controller_core.model.OperationResult) (history : reads.base.view.historical_result = some previous) (rejected : ParentCalls.equalOperationResult previous (.Running reads.native.generation) = .ok false) :
+    NoQuestion host serde tx ns intent now input (JournalError.UnresolvedAction) := by
+  intro encode
+  simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, reads.unload, core.option.Option.as_ref,
+    reads.bootObservation, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, reads.activeObservation, core.cmp.impls.PartialEqShared.eq,
+    capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq, Bool.not_eq_true, Bool.decide_eq_false,
+    controller.lifecycle_inbox.model.Session.current_execution_origin,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone,
+    controller.lifecycle_inbox.model.LifecycleInboxConfig.context, reads.contextRead,
+    controller.lifecycle_inbox.readiness.snapshot.base_snapshot,
+    controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution, reduceCtorEq, imp_self,
+    implies_true, sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq,
+    controller.lifecycle_inbox.source_work.snapshot.live_native, controller.capture.original_source,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, controller.lifecycle_inbox.readiness.snapshot.startup_records,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, controller.admission.read_create_options,
+    core.result.Result.map_err,
+    controller.lifecycle_inbox.source_work.snapshot.current.closure.Insts.CoreOpsFunctionFnOnceTupleAdmissionErrorJournalError.call_once,
+    bind_tc_ok, controller.data_credentials.snapshot, bne_iff_ne, ne_eq, UScalar.neq_to_neq_val,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, ite_not,
+    core.convert.FromSame.from, bind_assoc, Bool.not_eq_eq_eq_not, Bool.not_true,
+    controller.lifecycle_inbox.source_work.full.continuation.ready_records, reads.bootMatch, Bool.true_eq_false,
+    ↓reduceIte, uncurry_apply_pair, reads.getSession, reads.stateRead, reads.isCurrent, reads.nonterminal,
+    Bool.false_eq_true, reads.localBinding, reads.getEntry, reads.originRead, reads.cloneOrigin, reads.baseRead,
+    reads.nativePresent, history, completed, rejected, ite_self, reads.noResolution, Option.isSome_none]
+
+
+theorem non_unload_skips_question (reads : Found host serde tx ns intent now input)
+    (entry : Entry) (current : reads.state.current = true)
+    (terminal : reads.state.terminal = false)
+    (getEntry : reads.session.entries.val[reads.e.val]? = some entry)
+    (notUnload : ∀ source capture, intent.request.operation ≠ .Unload source capture) :
+    NoQuestion host serde tx ns intent now input JournalError.Conflict := by
+  cases operation : intent.request.operation with
+  | Unload source capture => exact False.elim (notUnload source capture operation)
+  | Create _ _ | Resume _ _ _ _ | Renew _ _ _ | Destroy =>
+    intro encode
+    simp only [controller.lifecycle_inbox.source_work.snapshot.current,
+    controller.lifecycle_inbox.model.Inbox.find, reads.find, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_usize, alloc.vec.Vec.getElem?_Nat_eq,
+    controller.lifecycle_inbox.model.Inbox.state, core.option.Option.is_some, operation, ite_self, bind_tc_ok,
+    uncurry_apply_pair, reads.getSession, reads.stateRead, current, ↓reduceIte, terminal, Bool.false_eq_true, getEntry]
+
+end SandboxModel.Stage1Protocol.UnloadParentLink.Errors
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.mismatched_history_skips_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Errors.non_unload_skips_question
