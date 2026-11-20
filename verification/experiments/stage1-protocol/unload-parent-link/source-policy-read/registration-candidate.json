@@ -1,0 +1,128 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-policy-read",
+  "parent_prs": [
+    989
+  ],
+  "prior": {
+    "pr": 989,
+    "physical_files": 72,
+    "full_audits": 298
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourcePolicyRead",
+      "physical_files": 84,
+      "full_audits": 357,
+      "own_modules": [
+        "SourcePolicyReadSpec.lean",
+        "SourcePolicyRead.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.bind_success_value",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.decoded_expected",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.normal_expected",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.validated_has_bound",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.read_success_provenance",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.read_success_has_bound",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.invalid_operations_expected",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.invalid_retention_expected",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.actual_contract",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.actual_effects_root",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.actual_standard_root",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.actual_standard_read",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.standard_success_uses_validated_policy",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.original_count_from_standard_read",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.original_loader_uses_validated_policy",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.standard_format_error",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.original_format_error_precedes_aggregate",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.normal_decoded_read",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.normal_decoded_count",
+        "SandboxModel.Stage1Protocol.SourcePolicyRead.standard_success_uses_full_model"
+      ]
+    },
+    {
+      "variant": "skip-maintenance-validation",
+      "formal_root": "SourcePolicyReadNegative",
+      "physical_files": 85,
+      "full_audits": 354,
+      "own_modules": [
+        "SourcePolicyReadSpec.lean",
+        "SourcePolicyReadNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.bind_success_value",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.decoded_expected",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.normal_expected",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.validated_has_bound",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.read_success_provenance",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.read_success_has_bound",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.invalid_operations_expected",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadSpec.invalid_retention_expected",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadNegative.actual_decoded",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadNegative.normal_still_matches",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadNegative.actual_invalid_operations",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadNegative.rejects_same_complete_contract",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadNegative.actual_invalid_retention",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadNegative.non_operation_field_rejects_same_contract",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadNegative.policy_read_returns_unvalidated",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadNegative.original_count_underflows_after_wrong_read",
+        "SandboxModel.Stage1Protocol.SourcePolicyReadNegative.original_count_proceeds_after_invalid_retention"
+      ]
+    }
+  ],
+  "reinstantiated_existing_audits": 40,
+  "new_rust_capture": true,
+  "new_external_contracts": [],
+  "native_candidate": {
+    "name": "stage1-source-policy-read",
+    "variants": [
+      "original",
+      "skip-maintenance-validation"
+    ],
+    "tests": [
+      "source_policy_read_normal_complete_policy_reaches_original_count",
+      "source_policy_read_rejects_invalid_operation_bound_before_count",
+      "source_policy_read_preserves_non_operation_validation"
+    ],
+    "expected": {
+      "original": {
+        "passed": 3,
+        "failed": 0
+      },
+      "skip-maintenance-validation": {
+        "passed": 1,
+        "failed": 2
+      }
+    },
+    "preparation": "native.py",
+    "full_functional_required": true
+  },
+  "inherited_pending_library_symbols": [
+    "#985 four Row projection operations",
+    "#986 Range next/IntoIterator and borrow binding"
+  ],
+  "unconstrained_original_decode_callbacks": [
+    "MaintenanceConfig derived Deserialize",
+    "serde_json::from_slice at the original dictionary"
+  ],
+  "remaining_providers": {
+    "V5": [
+      "actual JSON byte-to-value instance relation",
+      "SQL snapshot/transaction/durability",
+      "source initialize writes and complete database budget"
+    ],
+    "V7": [
+      "independent authenticated/configuration provenance"
+    ],
+    "V6": [
+      "actual material/VM and physical facts"
+    ]
+  },
+  "public_registration_accepted": false,
+  "registration_mode": "isolated physical project per view; do not combine the historical SandproofStage1RequestRust namespace with another generated root"
+}

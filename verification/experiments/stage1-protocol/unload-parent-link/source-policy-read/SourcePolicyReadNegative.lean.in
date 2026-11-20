@@ -1,0 +1,74 @@
+import SourcePolicyReadWrongView
+
+open Aeneas Aeneas.Std
+open SandproofStage1RequestRust sandproof_controller_service
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourcePolicyReadNegative
+noncomputable section
+open SourcePolicyReadSpec
+
+abbrev run := @SourcePolicyReadWrongView.controller.checkpoint.config.read_using
+
+theorem actual_decoded (policy : SourceRecordBoundsView.Policy) :
+    run (decoded policy) () = .ok (.Ok (some policy), ()) := by
+  simp [run, SourcePolicyReadWrongView.controller.checkpoint.config.read_using, decoded,
+    core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem normal_still_matches :
+    run (decoded InboxLoadConfig.Values.normal) () =
+      InboxLoadConfig.readFullView (decoded InboxLoadConfig.Values.normal) () := by
+  rw [actual_decoded, normal_expected]
+
+theorem actual_invalid_operations :
+    run (decoded invalidOperations) () = .ok (.Ok (some invalidOperations), ()) := actual_decoded _
+
+theorem rejects_same_complete_contract : ¬ InboxLoadConfig.FullConfigReadContract (run (E := Unit)) := by
+  intro claimed
+  have contradicted := claimed (decoded invalidOperations) ()
+  rw [actual_decoded, invalid_operations_expected] at contradicted
+  simp at contradicted
+
+theorem actual_invalid_retention :
+    run (decoded invalidRetention) () = .ok (.Ok (some invalidRetention), ()) := actual_decoded _
+
+theorem non_operation_field_rejects_same_contract : ¬ InboxLoadConfig.FullConfigReadContract (run (E := Unit)) := by
+  intro claimed
+  have contradicted := claimed (decoded invalidRetention) ()
+  rw [actual_decoded, invalid_retention_expected] at contradicted
+  simp at contradicted
+
+def policyRead (policy : SourceRecordBoundsView.Policy) : SourceRecordBoundsView.PolicyRead := fun _ => do
+  let (reply, _) ← run (decoded policy) ()
+  .ok reply
+
+theorem policy_read_returns_unvalidated (db : SaveRows.Db) (policy : SourceRecordBoundsView.Policy) :
+    policyRead policy db = .ok (.Ok (some policy)) := by
+  simp only [policyRead, actual_decoded, bind_tc_ok]
+  rfl
+
+theorem original_count_underflows_after_wrong_read (db : SaveRows.Db) :
+    SourceRecordCountView.count (policyRead invalidOperations) db 1#u16 = .fail .integerOverflow := by
+  apply (SourceRecordCount.integer_failure_iff _ db 1#u16 invalidOperations
+    (policy_read_returns_unvalidated db invalidOperations)).mpr
+  exact .inl (by decide)
+
+theorem original_count_proceeds_after_invalid_retention (db : SaveRows.Db) :
+    SourceRecordCountView.count (policyRead invalidRetention) db 1#u16 = .ok (.Ok 1#u64) := by
+  apply (SourceRecordCount.success_iff _ db 1#u16 invalidRetention 1#u64
+    (policy_read_returns_unvalidated db invalidRetention)).mpr
+  exact ⟨by decide, by decide⟩
+
+end
+end SandboxModel.Stage1Protocol.SourcePolicyReadNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadNegative.actual_decoded
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadNegative.normal_still_matches
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadNegative.actual_invalid_operations
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadNegative.rejects_same_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadNegative.actual_invalid_retention
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadNegative.non_operation_field_rejects_same_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadNegative.policy_read_returns_unvalidated
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadNegative.original_count_underflows_after_wrong_read
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadNegative.original_count_proceeds_after_invalid_retention

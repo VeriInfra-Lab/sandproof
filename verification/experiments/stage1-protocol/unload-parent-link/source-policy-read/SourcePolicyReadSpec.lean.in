@@ -1,0 +1,140 @@
+import SourcePolicyNormalValues
+
+open Aeneas Aeneas.Std
+open SandproofStage1RequestRust sandproof_controller_service
+open sandproof_controller_service.controller.checkpoint.config
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourcePolicyReadSpec
+noncomputable section
+
+-- EXISTING BIND SUCCESS LEMMA
+
+
+def bytes : alloc.vec.Vec U8 := .from [] (by simp)
+
+def decoded (policy : SourceRecordBoundsView.Policy) : ReadConfigEffects Unit where
+  query_i64 := fun _ _ => .ok (.Ok journal.MAINTAINED_FORMAT_VERSION, ())
+  query_bytes := fun _ _ => .ok (.Ok bytes, ())
+  decode_maintenance := fun _ _ => .ok (.Ok policy, ())
+
+theorem decoded_expected (policy : SourceRecordBoundsView.Policy) :
+    InboxLoadConfig.readFullView (decoded policy) () = (do
+      let validated ← InboxLoadConfig.maintenanceResult policy
+      match validated with
+      | .Err error => .ok (.Err error, ())
+      | .Ok () => .ok (.Ok (some policy), ())) := by
+  simp [InboxLoadConfig.readFullView, decoded]
+  rfl
+
+theorem normal_expected :
+    InboxLoadConfig.readFullView (decoded InboxLoadConfig.Values.normal) () =
+      .ok (.Ok (some InboxLoadConfig.Values.normal), ()) := by
+  rw [decoded_expected, ← InboxLoadConfig.maintenance_full_refines, InboxLoadConfig.Values.normal_accepted]
+  simp
+
+theorem validated_has_bound (policy : SourceRecordBoundsView.Policy)
+    (accepted : MaintenanceConfig.validate policy = .ok (.Ok ())) :
+    SourceRecordCountSpec.BoundedPolicy policy := by
+  unfold SourceRecordCountSpec.BoundedPolicy
+  rw [InboxLoadConfig.maintenance_full_refines] at accepted
+  unfold InboxLoadConfig.maintenanceResult at accepted
+  split at accepted
+  · assumption
+  · simp at accepted
+
+theorem read_success_provenance {E : Type} (io : ReadConfigEffects E)
+    (before after : E) (policy : SourceRecordBoundsView.Policy)
+    (returned : read_using io before = .ok (.Ok (some policy), after)) :
+    ∃ afterFormat afterBytes bytes,
+      io.query_i64 before InboxLoadConfig.formatStatement = .ok (.Ok journal.MAINTAINED_FORMAT_VERSION, afterFormat) ∧
+      io.query_bytes afterFormat InboxLoadConfig.configStatement = .ok (.Ok bytes, afterBytes) ∧
+      io.decode_maintenance afterBytes (alloc.vec.Vec.deref bytes) = .ok (.Ok policy, after) ∧
+      MaintenanceConfig.validate policy = .ok (.Ok ()) := by
+  rw [InboxLoadConfig.read_refines] at returned
+  unfold InboxLoadConfig.readView at returned
+  obtain ⟨⟨queried, afterFormat⟩, queryReply, continued⟩ := bind_success_value _ _ _ returned
+  cases queried with
+  | Err failure => simp at continued
+  | Ok version =>
+    by_cases unsupported : version.val ≠ journal.MAINTAINED_FORMAT_VERSION.val
+    · simp [IScalar.eq_equiv, unsupported] at continued
+    · have supported : version = journal.MAINTAINED_FORMAT_VERSION :=
+        IScalar.eq_of_val_eq (Classical.not_not.mp unsupported)
+      subst version
+      simp at continued
+      obtain ⟨⟨queriedBytes, afterBytes⟩, bytesReply, decodedNext⟩ := bind_success_value _ _ _ continued
+      cases queriedBytes with
+      | Err failure => simp at decodedNext
+      | Ok bytes =>
+        obtain ⟨⟨decodedPolicy, afterDecode⟩, decodeReply, validatedNext⟩ := bind_success_value _ _ _ decodedNext
+        cases decodedPolicy with
+        | Err failure => simp at validatedNext
+        | Ok config =>
+          obtain ⟨validated, validationReply, finished⟩ := bind_success_value _ _ _ validatedNext
+          cases validated with
+          | Err failure => simp at finished
+          | Ok value =>
+            cases value
+            have together : config = policy ∧ afterDecode = after := by simpa using finished
+            rcases together with ⟨rfl, rfl⟩
+            exact ⟨afterFormat, afterBytes, bytes, queryReply, bytesReply, decodeReply, validationReply⟩
+
+theorem read_success_has_bound {E : Type} (io : ReadConfigEffects E)
+    (before after : E) (policy : SourceRecordBoundsView.Policy)
+    (returned : read_using io before = .ok (.Ok (some policy), after)) :
+    SourceRecordCountSpec.BoundedPolicy policy := by
+  obtain ⟨_, _, _, _, _, _, accepted⟩ := read_success_provenance io before after policy returned
+  exact validated_has_bound policy accepted
+
+abbrev DeserializeMaintenance := ∀ {D E : Type}, serde_core.de.Deserializer D E → D →
+  Result (core.result.Result SourceRecordBoundsView.Policy E)
+abbrev DecodeSlice := ∀ {T : Type}, serde_core.de.Deserialize T → Slice U8 →
+  Result (core.result.Result T SandproofSourceRowSqlSelect.serde_json.error.Error)
+
+def invalidOperations : SourceRecordBoundsView.Policy :=
+  { InboxLoadConfig.Values.normal with max_operations_per_sandbox := 1#u64 }
+
+def invalidRetention : SourceRecordBoundsView.Policy :=
+  { InboxLoadConfig.Values.normal with retention_ms := 0#u64 }
+
+theorem invalid_operations_expected :
+    InboxLoadConfig.readFullView (decoded invalidOperations) () = .ok (.Err .UnsupportedStore, ()) := by
+  rw [decoded_expected]
+  have rejected : InboxLoadConfig.maintenanceResult invalidOperations = .ok (.Err .UnsupportedStore) := by
+    unfold InboxLoadConfig.maintenanceResult
+    rw [if_neg (show ¬ (3 ≤ invalidOperations.max_operations_per_sandbox.val ∧
+      invalidOperations.max_operations_per_sandbox.val ≤ 128) from by decide)]
+  rw [rejected]
+  simp
+
+theorem invalid_retention_expected :
+    InboxLoadConfig.readFullView (decoded invalidRetention) () = .ok (.Err .UnsupportedStore, ()) := by
+  have member : (0#u64 : U64) ∈ InboxLoadMaintenance.fields invalidRetention := by
+    simp [InboxLoadMaintenance.fields, invalidRetention]
+  have invalid : ¬ ∀ value ∈ InboxLoadMaintenance.fields invalidRetention, InboxLoadCapacity.ScalarValid value := by
+    intro valid
+    exact (valid 0#u64 member).1 rfl
+  have operationBound : 3 ≤ invalidRetention.max_operations_per_sandbox.val ∧
+      invalidRetention.max_operations_per_sandbox.val ≤ 128 := by decide
+  rw [decoded_expected]
+  have rejected : InboxLoadConfig.maintenanceResult invalidRetention = .ok (.Err .UnsupportedStore) := by
+    unfold InboxLoadConfig.maintenanceResult
+    rw [if_pos operationBound, if_neg invalid]
+  rw [rejected]
+  simp
+
+end
+end SandboxModel.Stage1Protocol.SourcePolicyReadSpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadSpec.bind_success_value
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadSpec.decoded_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadSpec.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadSpec.validated_has_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadSpec.read_success_provenance
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadSpec.read_success_has_bound
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadSpec.invalid_operations_expected
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyReadSpec.invalid_retention_expected

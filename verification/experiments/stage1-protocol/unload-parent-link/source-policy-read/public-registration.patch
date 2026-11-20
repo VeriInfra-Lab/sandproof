@@ -1,0 +1,15 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,12 @@
++## V3 完整维护读取接入来源计数候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`，接续 #989。当前真实维护读取、标准适配、
++完整 Maintenance/Capacity 校验与原 load_records 使用同一生成类型和原字典。
++复用已有完整合同及证明体，重新抽取并检查；成功读取导出原完整数学模型接受及 3..128，
++消解来源计数与读取守卫的额外范围前提，保留首条查询错误先于计数/聚合。
++删去解码后验证的真实 Rust 版仍通过正常见证，却被 operation 与 retention 两个原合同反例拒绝。
++原 Serde 解码回调保持任意结果，不将其正确性列为假设；完整 JSON 实例和真实 SQL/事务、初始化、
++预算及系统结论仍开放。普通、原生、公共登记和完整 V3 验收仍待；现有库薄绑定未自动采纳。
++[输入、证明与边界](../verification/experiments/stage1-protocol/unload-parent-link/source-policy-read/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录

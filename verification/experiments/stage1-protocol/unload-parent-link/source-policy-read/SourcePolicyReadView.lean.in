@@ -1,0 +1,57 @@
+import SourceRecordCount
+
+open Aeneas Aeneas.Std Result ControlFlow
+open SandproofSourceRowSqlSelect hiding toStr
+set_option autoImplicit false
+set_option linter.unusedVariables false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+
+noncomputable section
+
+namespace SandproofStage1RequestRust
+
+abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+-- EXISTING OPTION MODEL
+
+abbrev core.fmt.Formatter := SandproofFoundationsRust.core.fmt.Formatter
+abbrev core.fmt.Error := SandproofFoundationsRust.core.fmt.Error
+abbrev core.fmt.Display := SandproofFoundationsRust.core.fmt.Display
+abbrev core.fmt.Debug := SandproofFoundationsRust.core.fmt.Debug
+abbrev core.error.Error := SandproofFoundationsRust.core.error.Error
+
+-- ACTUAL SUPPORT TYPES
+-- ACTUAL RANGE FUNCTIONS
+
+namespace sandproof_controller_service
+
+abbrev JournalError := SandboxModel.Stage1Protocol.SaveRows.Error
+abbrev controller.capacity.CapacityConfig := SandboxModel.Stage1Protocol.SourceRecordBoundsView.Capacity
+abbrev controller.checkpoint.config.MaintenanceConfig := SandboxModel.Stage1Protocol.SourceRecordBoundsView.Policy
+
+-- ACTUAL READ TYPES
+-- ACTUAL PURE FUNCTIONS
+
+section
+variable (deserialize : ∀ {D E : Type}, serde_core.de.Deserializer D E → D →
+  Result (core.result.Result controller.checkpoint.config.MaintenanceConfig E))
+variable (fromSlice : ∀ {T : Type}, serde_core.de.Deserialize T → Slice U8 →
+  Result (core.result.Result T serde_json.error.Error))
+
+local notation "controller.checkpoint.config.MaintenanceConfig.Insts.Serde_coreDeDeserialize.deserialize" => deserialize
+local notation "serde_json.de.from_slice" => fromSlice
+local notation "ArrayShared0P0.Insts.RusqliteParamsParams" =>
+  SandboxModel.Stage1Protocol.SourceRecordBoundsView.ArrayShared0P0.Insts.RusqliteParamsParams
+local notation "alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql" =>
+  SandboxModel.Stage1Protocol.SourceSqlCursorView.blobDictionary
+private abbrev EmptyArgument (_ : Type → Type) := Unit
+local notation "Dyn" => EmptyArgument
+
+-- ACTUAL IO FUNCTIONS
+
+end
+end sandproof_controller_service
+end SandproofStage1RequestRust
