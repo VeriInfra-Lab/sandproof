@@ -1,0 +1,33 @@
+import SourceInitRowView
+
+open Aeneas Aeneas.Std Result ControlFlow
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+set_option autoImplicit false
+set_option linter.style.whitespace false
+set_option linter.style.longLine false
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceInitRowWrongView
+noncomputable section
+
+abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+section
+variable (io : Ports)
+local notation "controller.lifecycle_inbox.source_work.codec.sql" =>
+  SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.sql
+local notation "JournalError.Insts.CoreConvertFromError" =>
+  SandproofSourceInitCapacity.JournalError.Insts.CoreConvertFromError
+local notation "TupleABCD.Insts.RusqliteParamsParams" => SandproofSourceInitCapacity.TupleABCD.Insts.RusqliteParamsParams io
+local notation "I64.Insts.RusqliteTypesTo_sqlToSql" => SandproofSourceInitCapacity.I64.Insts.RusqliteTypesTo_sqlToSql io
+local notation "SliceU8.Insts.RusqliteTypesTo_sqlToSql" => SandproofSourceInitCapacity.SliceU8.Insts.RusqliteTypesTo_sqlToSql io
+local notation "rusqlite.Connection.execute" => io.execute
+
+-- ACTUAL WRONG ROW
+
+end
+end
+end SandboxModel.Stage1Protocol.SourceInitRowWrongView

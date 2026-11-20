@@ -1,0 +1,26 @@
+import SourceInitCapacity
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitRowView
+noncomputable section
+
+abbrev convert := SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.sql
+abbrev insert := SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.insert_initial_source_row
+abbrev Arguments := I64 × Slice U8 × Slice U8 × I64
+
+def parameters (io : Ports) : rusqlite.params.Params Arguments :=
+  SandproofSourceInitCapacity.TupleABCD.Insts.RusqliteParamsParams io
+    (SandproofSourceInitCapacity.I64.Insts.RusqliteTypesTo_sqlToSql io)
+    (SandproofSourceRowSqlSelect.Shared0T.Insts.RusqliteTypesTo_sqlToSql
+      (SandproofSourceInitCapacity.SliceU8.Insts.RusqliteTypesTo_sqlToSql io))
+    (SandproofSourceRowSqlSelect.Shared0T.Insts.RusqliteTypesTo_sqlToSql
+      (SandproofSourceInitCapacity.SliceU8.Insts.RusqliteTypesTo_sqlToSql io))
+    (SandproofSourceInitCapacity.I64.Insts.RusqliteTypesTo_sqlToSql io)
+
+end
+end SandboxModel.Stage1Protocol.SourceInitRowView
