@@ -15,7 +15,10 @@
   及 `UnknownCannotAuthorizeAnotherCandidate(C, A)`。
   A 侧的 `existing_activation_exact` 对已选中、已有原标记的记录给出完整动作的
   相等判据，原记录选择和完整持久历史仍是显式条件。
-  [A 侧固定证明包](https://github.com/VeriInfra-Lab/sandproof/tree/38691108440df6012f211eb6d4ea4dc806413c2a/verification/experiments/restore-claim)
+  后继的 `selected_first_activation_write_exact` 和
+  `selected_activation_preserves_marked_row` 连接已选中行上的首次写入和原标记保留。
+  [A 侧原读取证明](https://github.com/VeriInfra-Lab/sandproof/tree/38691108440df6012f211eb6d4ea4dc806413c2a/verification/experiments/restore-claim) ·
+  [A 侧后继写入证明](https://github.com/VeriInfra-Lab/sandproof/blob/54e1714c0991648aa442002d9ce520e51bada189/verification/experiments/restore-claim/RowWrite.lean.in)
 - `restore_execution_context` 在应用锁内读取按逻辑 effect 的原 Resume operation
   定位的 work，重取原认证上下文，检查当前请求及 World 代数/操作。
   [许可读取](../../../controller-service/src/controller/lifecycle_inbox/source_work/restore.rs)
@@ -41,6 +44,34 @@
 [work 与许可类型](../../../controller-service/src/capture/restore.rs) ·
 [应用读取及显式继续](../../../controller-service/src/application/coordinator/lifecycle_restore.rs) ·
 [动作与回执的身份](../../../sandbox-protocol/src/lib.rs)
+
+### 原读事务提交拒绝的 SQLite 对照
+
+在 ning 的私有基线工作树用既有 source-work 夹具完成真实 SQLite 认领，调用原
+`lifecycle_restore_activation_permit` 取得完整 action 与 work digest。保持两项输入
+和 SQLite 连接一致，用固定 rusqlite 0.40.2 的 authorizer 仅拒绝该读事务的
+`COMMIT`。该版本把此操作映射到 `TransactionOperation::Unknown`，用例同时核对
+`Begin → Unknown → Rollback` 序列、`SQLITE_AUTH` 和回到 autocommit。解除注入后，
+同一原方法返回与第一次相等的许可。该用例实测读事务成功门及确定的读侧错误，
+写侧提交结果未知的语义仍由 A 提供。观察范围止于原方法的返回值。
+[原 SQLite 对照](permit-read-commit-test.rs.in)
+
+使用既有重任务锁、固定 Rust 1.97.0 及离线依赖，在新的私有基线工作树中仅登记
+测试模块。下列 `CASE` 和 `CARGO_TARGET_DIR` 均为独立绝对路径。
+
+```bash
+module=controller-service/src/controller/lifecycle_inbox/source_work/tests
+cp "$CASE/permit-read-commit-test.rs.in" "$module/permit_read_commit.rs"
+printf '\nmod permit_read_commit;\n' >>"$module.rs"
+cargo test --locked --offline --package sandproof-controller-service --lib \
+  --features rusqlite/hooks -- \
+  --exact controller::lifecycle_inbox::source_work::tests::permit_read_commit::original_restore_permit_read_does_not_return_on_sqlite_commit_error
+```
+
+本次新编译的测试二进制执行 1 项并通过。原始收据位于 ning
+`/var/lib/sp-manual-src/lc-p7-permit-commit.fqcDHCjo/evidence`，
+`sha256sums` 摘要为
+`8134d7783752444448f45abb6fe7732759d603725462adebbfa1f5d7edca612d`。
 
 ## 从正式 Host 入口到实际写入
 
@@ -186,7 +217,7 @@ restore_activation_sends_only_original
   [#832 原 KVM 报告](https://github.com/VeriInfra-Lab/sandproof/pull/832#issuecomment-6920410625)
 - ning 在固定生产输入实跑原生检查 24 项。Runtime 3 项、Node 19 项、SQLite 原许可
   继续与准备只读各 1 项均通过。Runtime 丢回复测试走受控回调。读侧读事务提交错误
-  目前只有源码控制流检查。未新增 KVM 执行。
+  另有上述 1 项原生对照。未新增 KVM 执行。
 - 固定 Charon `b104e24f`，Aeneas `505b6ca3`。分离后的 `api_stream/api_reply`
   和带完整激活的根均在 Charon 遇到 `rustix::path::Arg` 翻译诊断。SQLite 生产
   许可读根在 Charon 的转换后类型检查出现 Iterator trait clause 不匹配。
