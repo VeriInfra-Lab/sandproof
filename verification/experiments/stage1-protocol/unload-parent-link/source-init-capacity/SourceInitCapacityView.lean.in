@@ -1,0 +1,80 @@
+import SourcePolicyRead
+
+open Aeneas Aeneas.Std Result ControlFlow
+open SandproofSourceRowSqlSelect hiding toStr
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+set_option linter.unusedVariables false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+set_option maxRecDepth 2048
+set_option maxHeartbeats 1000000
+
+noncomputable section
+namespace SandproofSourceInitCapacity
+
+abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+abbrev JournalError := SaveRows.Error
+abbrev capture.source.SourceObservationConfig := SourceRecordBoundsView.Limits
+abbrev controller.capacity.CapacityConfig := SourceRecordBoundsView.Capacity
+abbrev controller.checkpoint.config.MaintenanceConfig := SourceRecordBoundsView.Policy
+abbrev core.ops.range.Bound := SandproofStage1RequestRust.core.ops.range.Bound
+abbrev core.ops.range.RangeBounds := SandproofStage1RequestRust.core.ops.range.RangeBounds
+abbrev core.ops.range.RangeInclusive.contains := @SandproofStage1RequestRust.core.ops.range.RangeInclusive.contains
+abbrev JournalErrorFromJson := SandproofStage1RequestRust.sandproof_controller_service.JournalErrorFromJson
+abbrev JournalError.Insts.CoreConvertFromError :=
+  SandproofStage1RequestRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromError
+
+-- ACTUAL VALUE TYPES
+
+-- ACTUAL PURE FUNCTIONS
+
+-- EXISTING VEC SLICE MODEL
+
+local notation "I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from" => SourceRecordBoundsView.toSigned
+
+/-- Explicit, unconstrained library ports. Prefix rejection theorems quantify
+    over all of them; no successful encoder, digest, SQL or iterator is assumed. -/
+structure Ports where
+  cloneNodeId : sandproof_protocol.NodeId → Result sandproof_protocol.NodeId
+  cloneDeploymentId : sandproof_protocol.DeploymentId → Result sandproof_protocol.DeploymentId
+  encode : controller.lifecycle_inbox.source_work.codec.Configuration →
+    Result (core.result.Result (alloc.vec.Vec U8) serde_json.error.Error)
+  digest : Slice U8 → Result (Array U8 32#usize)
+  next : core.ops.range.RangeInclusive U64 → Result (Option U64 × core.ops.range.RangeInclusive U64)
+  batch : rusqlite.Connection → Str → Result (core.result.Result Unit rusqlite.error.Error)
+  execute : ∀ {P : Type}, rusqlite.params.Params P → rusqlite.Connection → Str → P →
+    Result (core.result.Result Usize rusqlite.error.Error)
+  integer : I64 → Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error)
+  blob : Slice U8 → Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error)
+  bind3 : ∀ {A B C : Type}, rusqlite.types.to_sql.ToSql A → rusqlite.types.to_sql.ToSql B →
+    rusqlite.types.to_sql.ToSql C → (A × B × C) → rusqlite.statement.Statement →
+    Result (core.result.Result Unit rusqlite.error.Error × rusqlite.statement.Statement)
+  bind4 : ∀ {A B C D : Type}, rusqlite.types.to_sql.ToSql A → rusqlite.types.to_sql.ToSql B →
+    rusqlite.types.to_sql.ToSql C → rusqlite.types.to_sql.ToSql D → (A × B × C × D) → rusqlite.statement.Statement →
+    Result (core.result.Result Unit rusqlite.error.Error × rusqlite.statement.Statement)
+
+section
+variable (io : Ports) (policy : SourceRecordBoundsView.PolicyRead)
+variable (capacityRead : rusqlite.Connection → Result (core.result.Result (Option controller.capacity.CapacityConfig) JournalError))
+
+local notation "sandproof_protocol.NodeId.Insts.CoreCloneClone.clone" => io.cloneNodeId
+local notation "sandproof_protocol.DeploymentId.Insts.CoreCloneClone.clone" => io.cloneDeploymentId
+local notation "controller.lifecycle_inbox.source_work.codec.encode_initial_configuration" => io.encode
+local notation "controller.lifecycle_inbox.source_work.codec.initial_source_digest" => io.digest
+local notation "controller.lifecycle_inbox.source_work.codec.next_initial_source_id" => io.next
+local notation "rusqlite.Connection.execute_batch" => io.batch
+local notation "rusqlite.Connection.execute" => io.execute
+local notation "I64.Insts.RusqliteTypesTo_sqlToSql.to_sql" => io.integer
+local notation "SliceU8.Insts.RusqliteTypesTo_sqlToSql.to_sql" => io.blob
+local notation "TupleABC.Insts.RusqliteParamsParams.__bind_in" => io.bind3
+local notation "TupleABCD.Insts.RusqliteParamsParams.__bind_in" => io.bind4
+local notation "controller.checkpoint.config" => policy
+local notation "controller.capacity.config" => capacityRead
+
+-- ACTUAL EFFECT FUNCTIONS
+
+end
+end SandproofSourceInitCapacity

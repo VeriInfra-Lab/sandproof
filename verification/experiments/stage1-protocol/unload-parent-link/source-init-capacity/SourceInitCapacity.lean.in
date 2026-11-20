@@ -1,0 +1,125 @@
+import SourceInitCapacityParent
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity Limits Policy)
+set_option autoImplicit false
+
+open SandproofSourceInitCapacity
+namespace SandboxModel.Stage1Protocol.SourceInitCapacity
+open SourceInitCapacitySpec
+
+theorem actual_budget_contract (rows reserve : U64) :
+    calculate rows reserve = budgetResult rows reserve := by
+  unfold calculate SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initial_source_bytes
+  have header : (SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES + 48#u64 : Result U64) = .ok 8240#u64 := by
+    unfold SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES
+    change UScalar.tryMk .U64 8240 = .ok 8240#u64
+    exact (SourceReservationSpec.try_mk_success_iff _ _).mpr rfl
+  rw [header]
+  simp only [bind_tc_ok]
+  by_cases inner : reserve.val + 80 ≤ U64.max
+  · obtain ⟨stride, computed, value⟩ := WP.spec_imp_exists (U64.add_spec
+      (x := reserve) (y := 80#u64) (by exact inner))
+    rw [computed]
+    simp only [bind_tc_ok]
+    rw [prefix_multiplication, value]
+    simp [budgetResult, total, show ¬ U64.max < reserve.val + 80 from by omega]
+  · have large : U64.max < reserve.val + 80 := by omega
+    have failed : (reserve + 80#u64 : Result U64) = .fail .integerOverflow := by
+      change UScalar.tryMk .U64 (reserve.val + 80) = _
+      exact (SourceReservationSpec.try_mk_overflow_iff _).mpr large
+    rw [failed]
+    simp [budgetResult, large]
+
+theorem actual_guard_contract (rows reserve : U64) (cap : Capacity) :
+    check rows reserve cap = guardResult rows reserve cap := by
+  unfold check SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.ensure_source_capacity
+  rw [show SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initial_source_bytes rows reserve = budgetResult rows reserve from actual_budget_contract rows reserve]
+  by_cases fits : Fits rows reserve
+  · obtain ⟨amount, returned⟩ := (budget_returns_iff rows reserve).mpr fits
+    have safe := budget_success_makes_row_increment_safe rows reserve amount returned
+    obtain ⟨next, increment, nextValue⟩ := WP.spec_imp_exists (U64.add_spec
+      (x := rows) (y := 1#u64) safe)
+    simp [guardResult, returned, value_limit, increment, nextValue,
+      SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES]
+  · have overflow : budgetResult rows reserve = .fail .integerOverflow := by
+      apply (budget_overflow_iff rows reserve).mpr
+      unfold Fits at fits
+      omega
+    simp [guardResult, overflow]
+
+theorem actual_contract : SourceInitCapacitySpec.Contract calculate check :=
+  ⟨actual_budget_contract, actual_guard_contract⟩
+
+theorem actual_guard_accepts_iff (rows reserve : U64) (cap : Capacity) :
+    check rows reserve cap = .ok (.Ok ()) ↔
+      SourceInitCapacitySpec.Fits rows reserve ∧ SourceInitCapacitySpec.CapacityFits rows reserve cap := by
+  rw [actual_guard_contract]
+  exact SourceInitCapacitySpec.accepted_iff rows reserve cap
+
+theorem budget_agrees_with_real_preallocated_row_layout (rows future amount metadata : U64) (records : List U64)
+    (counted : rows.val = records.length) (header : metadata.val = 8192 + 48)
+    (reserved : ∀ record, record ∈ records → record.val = future.val + 80)
+    (computed : calculate rows future = .ok amount) :
+    amount.val = metadata.val + (records.map UScalar.val).sum := by
+  rw [actual_budget_contract] at computed
+  have value := ((SourceInitCapacitySpec.budget_success_iff rows future amount).mp computed).2
+  have layout := SourceRowLayoutSpec.preallocated_source_total metadata future records header reserved
+  rw [value, layout]
+  unfold SourceInitCapacitySpec.total
+  rw [counted]
+
+theorem actual_validated_read_and_limits_compute_safe_budget
+    (deserialize : SourcePolicyReadSpec.DeserializeMaintenance) (decode : SourcePolicyReadSpec.DecodeSlice)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) (policy : Policy)
+    (found : SourcePolicyRead.policyRead deserialize decode db = .ok (.Ok (some policy)))
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions) :
+    ∃ rows reserve amount,
+      count (SourcePolicyRead.policyRead deserialize decode) db inbox.max_sessions = .ok (.Ok rows) ∧
+      SourceReservationView.reservation limits 1#u64 = .ok reserve ∧
+      calculate rows reserve = .ok amount ∧
+      rows.val = inbox.max_sessions.val * (policy.max_operations_per_sandbox.val - 2) ∧
+      reserve.val = SourceReservationSpec.total limits 1#u64 ∧
+      amount.val = SourceInitCapacitySpec.total rows reserve ∧ amount.val ≤ 2820022870064 := by
+  obtain ⟨_, _, _, bounded⟩ := SourcePolicyRead.standard_success_uses_validated_policy deserialize decode db policy found
+  obtain ⟨rows, counted, rowsValue, _, rowsBound⟩ := SourceRecordCount.server_session_rows_bounded
+    (SourcePolicyRead.policyRead deserialize decode) db inbox.max_sessions policy found bounded sessions
+  obtain ⟨reserve, reserved, reserveValue⟩ := SourceReservationSpec.try_mk_has_normal_return _ (SourceReservationSpec.single_typed_fits limits)
+  have reserveReply : SourceReservationView.reservation limits 1#u64 = .ok reserve := by
+    rw [SourceReservation.actual_contract]
+    exact reserved
+  obtain ⟨fits, totalBound⟩ := SourceInitCapacitySpec.valid_inputs_have_bounded_total limits rows reserve valid rowsBound reserveValue
+  obtain ⟨amount, computed⟩ := (SourceInitCapacitySpec.budget_returns_iff rows reserve).mpr fits
+  have amountValue := ((SourceInitCapacitySpec.budget_success_iff rows reserve amount).mp computed).2
+  refine ⟨rows, reserve, amount, ?_, reserveReply, ?_, rowsValue, reserveValue, amountValue, ?_⟩
+  · rw [original_count_is_parent]
+    exact counted
+  · rw [actual_budget_contract]
+    exact computed
+  · rw [amountValue]
+    exact totalBound
+
+theorem normal_complete_budget_and_cap :
+    calculate 1#u64 222212#u64 = .ok 230532#u64 ∧
+      check 1#u64 222212#u64 InboxLoadConfig.Values.capacity = .ok (.Ok ()) := by
+  constructor
+  · rw [actual_budget_contract]
+    exact (SourceInitCapacitySpec.budget_success_iff _ _ _).mpr ⟨by rw [U64.max_eq]; decide, rfl⟩
+  · rw [actual_guard_contract]
+    exact (SourceInitCapacitySpec.accepted_iff _ _ _).mpr ⟨⟨by rw [U64.max_eq]; decide, by rw [U64.max_eq]; decide⟩, by unfold SourceInitCapacitySpec.CapacityFits; decide⟩
+
+end SandboxModel.Stage1Protocol.SourceInitCapacity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.actual_budget_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.actual_guard_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.actual_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.actual_guard_accepts_iff
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.budget_agrees_with_real_preallocated_row_layout
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.actual_validated_read_and_limits_compute_safe_budget
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacity.normal_complete_budget_and_cap

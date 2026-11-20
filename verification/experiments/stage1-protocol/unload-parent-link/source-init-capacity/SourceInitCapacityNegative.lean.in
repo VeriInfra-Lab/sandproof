@@ -1,0 +1,160 @@
+import SourceInitCapacityParent
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity Limits PolicyRead)
+open SandproofSourceInitCapacity
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitCapacityNegative
+open SourceInitCapacity SourceInitCapacitySpec
+
+theorem wrong_budget_is_missing_every_row_overhead (rows reserve : U64) :
+    calculate rows reserve = UScalar.tryMk .U64 (8240 + rows.val * reserve.val) := by
+  unfold calculate SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initial_source_bytes
+  have header : (SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES + 48#u64 : Result U64) = .ok 8240#u64 := by
+    unfold SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES
+    change UScalar.tryMk .U64 8240 = .ok 8240#u64
+    exact (SourceReservationSpec.try_mk_success_iff _ _).mpr rfl
+  have inner : (reserve + 0#u64 : Result U64) = .ok reserve := by
+    change UScalar.tryMk .U64 (reserve.val + 0) = .ok reserve
+    exact (SourceReservationSpec.try_mk_success_iff _ _).mpr (by simp)
+  rw [header]
+  simp only [bind_tc_ok]
+  rw [inner]
+  simp only [bind_tc_ok]
+  rw [prefix_multiplication]
+  rfl
+
+theorem wrong_normal_budget : calculate 1#u64 222212#u64 = .ok 230452#u64 := by
+  rw [wrong_budget_is_missing_every_row_overhead]
+  exact (SourceReservationSpec.try_mk_success_iff _ _).mpr rfl
+
+theorem expected_normal_budget : budgetResult 1#u64 222212#u64 = .ok 230532#u64 :=
+  (budget_success_iff _ _ _).mpr ⟨by rw [U64.max_eq]; decide, rfl⟩
+
+theorem expected_short_budget_rejection :
+    guardResult 1#u64 222212#u64 shortCapacity = .ok (.Err .MaintenanceCapacity) := by
+  rw [guardResult, expected_normal_budget]
+  simp [shortCapacity, InboxLoadConfig.Values.capacity]
+
+theorem wrong_short_budget_acceptance :
+    check 1#u64 222212#u64 shortCapacity = .ok (.Ok ()) := by
+  unfold check SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.ensure_source_capacity
+  rw [show SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initial_source_bytes 1#u64 222212#u64 = .ok 230452#u64 from wrong_normal_budget]
+  have two : (1#u64 + 1#u64 : Result U64) = .ok 2#u64 := by
+    change UScalar.tryMk .U64 2 = .ok 2#u64
+    exact (SourceReservationSpec.try_mk_success_iff _ _).mpr rfl
+  simp [value_limit, two, shortCapacity, InboxLoadConfig.Values.capacity,
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES]
+
+theorem wrong_still_accepts_normal_cap :
+    check 1#u64 222212#u64 InboxLoadConfig.Values.capacity = .ok (.Ok ()) := by
+  unfold check SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.ensure_source_capacity
+  rw [show SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.initial_source_bytes 1#u64 222212#u64 = .ok 230452#u64 from wrong_normal_budget]
+  have two : (1#u64 + 1#u64 : Result U64) = .ok 2#u64 := by
+    change UScalar.tryMk .U64 2 = .ok 2#u64
+    exact (SourceReservationSpec.try_mk_success_iff _ _).mpr rfl
+  simp [value_limit, two, InboxLoadConfig.Values.capacity,
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES]
+
+theorem rejects_the_same_complete_contract : ¬ Contract calculate check := by
+  intro correct
+  have rejection := correct.2 1#u64 222212#u64 shortCapacity
+  rw [wrong_short_budget_acceptance, expected_short_budget_rejection] at rejection
+  simp at rejection
+
+theorem zero_rows_do_not_repair_the_missing_inner_overflow :
+    calculate 0#u64 18446744073709551615#u64 = .ok 8240#u64 ∧
+      budgetResult 0#u64 18446744073709551615#u64 = .fail .integerOverflow := by
+  constructor
+  · rw [wrong_budget_is_missing_every_row_overhead]
+    exact (SourceReservationSpec.try_mk_success_iff _ _).mpr rfl
+  · apply (budget_overflow_iff _ _).mpr
+    left
+    rw [U64.max_eq]
+    decide
+
+def inbox : Inbox where
+  center := ⟨"deployment", "primary"⟩
+  node := ⟨"deployment", "node", 1#u64⟩
+  host_epoch := none
+  max_sessions := 1#u16
+  max_operations_per_session := 3#u16
+  max_options_bytes := 1024#u32
+  max_profile_bytes := 4096#u32
+  max_manifest_bytes := 16384#u32
+
+def failingEncoder : Ports where
+  cloneNodeId := fun value => .ok value
+  cloneDeploymentId := fun value => .ok value
+  encode := fun _ => .fail .panic
+  digest := fun _ => .fail .integerOverflow
+  next := fun _ => .fail .integerOverflow
+  batch := fun _ _ => .fail .integerOverflow
+  execute := fun {_} _ _ _ _ => .fail .integerOverflow
+  integer := fun _ => .fail .integerOverflow
+  blob := fun _ => .fail .integerOverflow
+  bind3 := fun {_ _ _} _ _ _ _ _ => .fail .integerOverflow
+  bind4 := fun {_ _ _ _} _ _ _ _ _ _ => .fail .integerOverflow
+
+def firstRead : PolicyRead := fun _ => do
+  let (reply, _) ← SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.read_using
+    (SourcePolicyReadSpec.decoded shortPolicy) ()
+  .ok reply
+
+def secondRead : CapacityRead := fun _ => do
+  let (reply, _) ← SourceInitCapacityReadView.controller.capacity.config_using
+    (SourcePolicyReadSpec.decoded shortPolicy) ()
+  .ok reply
+
+theorem short_reader_keeps_full_validation :
+    SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.read_using
+      (SourcePolicyReadSpec.decoded shortPolicy) () = .ok (.Ok (some shortPolicy), ()) := by
+  rw [InboxLoadConfig.read_full_refines, SourcePolicyReadSpec.decoded_expected,
+    ← InboxLoadConfig.maintenance_full_refines, short_complete_policy_is_accepted]
+  simp
+
+theorem first_read_is_same_complete_policy (db : SaveRows.Db) :
+    firstRead db = .ok (.Ok (some shortPolicy)) := by
+  simp [firstRead, short_reader_keeps_full_validation]
+
+theorem second_read_is_same_complete_policy_capacity (db : SaveRows.Db) :
+    secondRead db = .ok (.Ok (some shortCapacity)) := by
+  have returned := SourceInitCapacityReadView.second_read_extracts_its_own_full_capacity
+    (SourcePolicyReadSpec.decoded shortPolicy) () () shortPolicy shortCapacity short_reader_keeps_full_validation rfl
+  simp [secondRead, returned]
+
+theorem wrong_parent_reaches_encoder_in_the_rejected_budget (db : SaveRows.Db) :
+    run failingEncoder firstRead secondRead db SourceConfigSpec.sample inbox = .fail .panic := by
+  have counted : count firstRead db inbox.max_sessions = .ok (.Ok 1#u64) := by
+    change count firstRead db 1#u16 = _
+    rw [original_count_is_parent]
+    apply (SourceRecordCount.success_iff firstRead db 1#u16 shortPolicy 1#u64
+      (first_read_is_same_complete_policy db)).mpr
+    exact ⟨by decide, rfl⟩
+  have reserved : SourceReservationView.reservation SourceConfigSpec.sample 1#u64 = .ok 222212#u64 := by
+    rw [SourceReservation.actual_contract]
+    exact (SourceReservationSpec.try_mk_success_iff _ _).mpr rfl
+  rw [accepted_capacity_enters_exact_original_suffix failingEncoder firstRead secondRead db SourceConfigSpec.sample inbox
+    1#u64 222212#u64 shortCapacity SourceConfigSpec.sample_valid
+    (by unfold SourceConfigSpec.SessionsValid inbox; decide) counted reserved
+    (second_read_is_same_complete_policy_capacity db) wrong_short_budget_acceptance]
+  simp [SandproofSourceInitCapacity.afterAcceptedCapacity, failingEncoder,
+    SandproofSourceInitCapacity.sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone,
+    SandproofSourceInitCapacity.sandproof_protocol.internal.PositiveCounter.Insts.CoreCloneClone.clone]
+
+end SandboxModel.Stage1Protocol.SourceInitCapacityNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.wrong_budget_is_missing_every_row_overhead
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.wrong_normal_budget
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.expected_normal_budget
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.expected_short_budget_rejection
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.wrong_short_budget_acceptance
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.wrong_still_accepts_normal_cap
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.rejects_the_same_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.zero_rows_do_not_repair_the_missing_inner_overflow
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.short_reader_keeps_full_validation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.first_read_is_same_complete_policy
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.second_read_is_same_complete_policy_capacity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacityNegative.wrong_parent_reaches_encoder_in_the_rejected_budget

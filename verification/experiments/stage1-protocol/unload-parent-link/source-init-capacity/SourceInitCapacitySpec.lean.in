@@ -1,0 +1,170 @@
+import SourceInitCapacityView
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity Limits)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitCapacitySpec
+
+abbrev Reply := core.result.Result Unit SaveRows.Error
+abbrev Budget := U64 → U64 → Result U64
+abbrev Guard := U64 → U64 → Capacity → Result Reply
+
+def total (rows reserve : U64) : Nat := 8240 + rows.val * (reserve.val + 80)
+
+/-- Rust computes the inner addition even when rows is zero. -/
+def budgetResult (rows reserve : U64) : Result U64 :=
+  if U64.max < reserve.val + 80 then .fail .integerOverflow
+  else UScalar.tryMk .U64 (total rows reserve)
+
+def guardResult (rows reserve : U64) (cap : Capacity) : Result Reply := do
+  let amount ← budgetResult rows reserve
+  if reserve.val > cap.max_sql_value_bytes.val then .ok (.Err .MaintenanceCapacity)
+  else if reserve.val > 16777216 then .ok (.Err .MaintenanceCapacity)
+  else if 8192 > cap.max_sql_value_bytes.val then .ok (.Err .MaintenanceCapacity)
+  else if rows.val + 1 > cap.max_sql_rows.val then .ok (.Err .MaintenanceCapacity)
+  else if amount.val > cap.max_sql_bytes.val then .ok (.Err .MaintenanceCapacity)
+  else .ok (.Ok ())
+
+def Contract (calculate : Budget) (check : Guard) : Prop :=
+  (∀ rows reserve, calculate rows reserve = budgetResult rows reserve) ∧
+  (∀ rows reserve cap, check rows reserve cap = guardResult rows reserve cap)
+
+def Fits (rows reserve : U64) : Prop :=
+  reserve.val + 80 ≤ U64.max ∧ total rows reserve ≤ U64.max
+
+def CapacityFits (rows reserve : U64) (cap : Capacity) : Prop :=
+  reserve.val ≤ cap.max_sql_value_bytes.val ∧ reserve.val ≤ 16777216 ∧
+  8192 ≤ cap.max_sql_value_bytes.val ∧ rows.val + 1 ≤ cap.max_sql_rows.val ∧
+  total rows reserve ≤ cap.max_sql_bytes.val
+
+theorem prefix_multiplication (left right lead : U64) :
+    (do let product ← left * right; lead + product) =
+      UScalar.tryMk .U64 (lead.val + left.val * right.val) := by
+  calc
+    _ = (do let product ← left * right; product + lead) := by
+      apply congrArg (fun next => (left * right : Result U64) >>= next)
+      funext product
+      change UScalar.tryMk .U64 (lead.val + product.val) = UScalar.tryMk .U64 (product.val + lead.val)
+      rw [Nat.add_comm]
+    _ = _ := by
+      rw [SourceReservationSpec.multiplication_then_addition, Nat.add_comm]
+
+theorem budget_success_iff (rows reserve amount : U64) :
+    budgetResult rows reserve = .ok amount ↔
+      reserve.val + 80 ≤ U64.max ∧ amount.val = total rows reserve := by
+  unfold budgetResult
+  by_cases large : U64.max < reserve.val + 80
+  · simp [large, show ¬ reserve.val + 80 ≤ U64.max from by omega]
+  · rw [if_neg large, SourceReservationSpec.try_mk_success_iff]
+    simp only [show reserve.val + 80 ≤ U64.max from by omega, true_and]
+
+theorem budget_overflow_iff (rows reserve : U64) :
+    budgetResult rows reserve = .fail .integerOverflow ↔
+      U64.max < reserve.val + 80 ∨ U64.max < total rows reserve := by
+  unfold budgetResult
+  by_cases large : U64.max < reserve.val + 80
+  · simp [large]
+  · simp [large, SourceReservationSpec.try_mk_overflow_iff]
+
+theorem budget_returns_iff (rows reserve : U64) :
+    (∃ amount, budgetResult rows reserve = .ok amount) ↔ Fits rows reserve := by
+  constructor
+  · rintro ⟨amount, returned⟩
+    obtain ⟨inner, value⟩ := (budget_success_iff rows reserve amount).mp returned
+    exact ⟨inner, by rw [← value]; scalar_tac⟩
+  · rintro ⟨inner, room⟩
+    obtain ⟨amount, returned, value⟩ := SourceReservationSpec.try_mk_has_normal_return _ room
+    exact ⟨amount, (budget_success_iff rows reserve amount).mpr ⟨inner, value⟩⟩
+
+theorem budget_success_makes_row_increment_safe (rows reserve amount : U64)
+    (returned : budgetResult rows reserve = .ok amount) : rows.val + 1 ≤ U64.max := by
+  have value := ((budget_success_iff rows reserve amount).mp returned).2
+  have lower := Nat.mul_le_mul_left rows.val (show 1 ≤ reserve.val + 80 from by omega)
+  simp only [Nat.mul_one] at lower
+  have bound : amount.val ≤ U64.max := by scalar_tac
+  unfold total at value
+  omega
+
+theorem accepted_iff (rows reserve : U64) (cap : Capacity) :
+    guardResult rows reserve cap = .ok (.Ok ()) ↔ Fits rows reserve ∧ CapacityFits rows reserve cap := by
+  by_cases fits : Fits rows reserve
+  · obtain ⟨amount, returned⟩ := (budget_returns_iff rows reserve).mpr fits
+    have value := ((budget_success_iff rows reserve amount).mp returned).2
+    rw [guardResult, returned]
+    simp only [bind_tc_ok]
+    split_ifs <;> simp_all [CapacityFits]
+  · have overflow : budgetResult rows reserve = .fail .integerOverflow := by
+      apply (budget_overflow_iff rows reserve).mpr
+      unfold Fits at fits
+      omega
+    rw [guardResult, overflow]
+    simp [fits]
+
+theorem valid_inputs_have_bounded_total (limits : Limits) (rows reserve : U64)
+    (valid : SourceConfigSpec.Valid limits) (rowBound : rows.val ≤ 516096)
+    (value : reserve.val = SourceReservationSpec.total limits 1#u64) :
+    Fits rows reserve ∧ total rows reserve ≤ 2820022870064 := by
+  have reserveBound := SourceReservationSpec.valid_single_bounds limits valid
+  rw [← value] at reserveBound
+  have inner : reserve.val + 80 ≤ 5464144 := by omega
+  have product := Nat.mul_le_mul rowBound inner
+  constructor
+  · constructor
+    · rw [U64.max_eq]; omega
+    · unfold total
+      rw [U64.max_eq]
+      omega
+  · unfold total
+    omega
+
+end SandboxModel.Stage1Protocol.SourceInitCapacitySpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacitySpec.prefix_multiplication
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_success_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_overflow_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_returns_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_success_makes_row_increment_safe
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacitySpec.accepted_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacitySpec.valid_inputs_have_bounded_total
+
+namespace SandboxModel.Stage1Protocol.SourceInitCapacitySpec
+
+def shortCapacity : SourceRecordBoundsView.Capacity :=
+  {InboxLoadConfig.Values.capacity with max_sql_bytes := 230531#u64}
+
+def shortPolicy : SourceRecordBoundsView.Policy :=
+  {InboxLoadConfig.Values.normal with capacity := some shortCapacity}
+
+theorem short_capacity_fields_valid :
+    ∀ value ∈ InboxLoadCapacity.fields shortCapacity, InboxLoadCapacity.ScalarValid value := by
+  simp [InboxLoadCapacity.fields, InboxLoadCapacity.ScalarValid, shortCapacity, InboxLoadConfig.Values.capacity]
+  scalar_tac
+
+theorem short_capacity_keeps_all_other_checks :
+    InboxLoadCapacity.capacityView shortCapacity shortPolicy =
+      InboxLoadCapacity.capacityView InboxLoadConfig.Values.capacity InboxLoadConfig.Values.normal := by
+  unfold InboxLoadCapacity.capacityView
+  rw [if_neg (fun invalid => invalid short_capacity_fields_valid)]
+  rw [if_neg (show ¬ (¬ ∀ value ∈ InboxLoadCapacity.fields InboxLoadConfig.Values.capacity, InboxLoadCapacity.ScalarValid value) from
+    fun invalid => invalid InboxLoadConfig.Values.normal_capacity_fields)]
+  rfl
+
+theorem short_complete_policy_is_accepted :
+    SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.MaintenanceConfig.validate shortPolicy = .ok (.Ok ()) := by
+  rw [InboxLoadConfig.maintenance_full_refines]
+  unfold InboxLoadConfig.maintenanceResult
+  rw [if_pos (show 3 ≤ shortPolicy.max_operations_per_sandbox.val ∧ shortPolicy.max_operations_per_sandbox.val ≤ 128 from by decide)]
+  have fields : ∀ value ∈ InboxLoadMaintenance.fields shortPolicy, InboxLoadCapacity.ScalarValid value :=
+    InboxLoadConfig.Values.normal_maintenance_fields
+  rw [if_pos fields]
+  rw [if_neg (show ¬ shortPolicy.max_input_bytes.val > shortPolicy.max_tail_bytes.val from by decide)]
+  change InboxLoadCapacity.capacityView shortCapacity shortPolicy = .ok (.Ok ())
+  rw [short_capacity_keeps_all_other_checks]
+  exact InboxLoadConfig.Values.normal_capacity_accepted
+
+end SandboxModel.Stage1Protocol.SourceInitCapacitySpec
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacitySpec.short_capacity_fields_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacitySpec.short_capacity_keeps_all_other_checks
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitCapacitySpec.short_complete_policy_is_accepted

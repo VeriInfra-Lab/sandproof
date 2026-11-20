@@ -1,0 +1,195 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-init-capacity",
+  "parent_prs": [
+    990
+  ],
+  "prior": {
+    "pr": 990,
+    "physical_files": 84,
+    "full_audits": 357
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceInitCapacity",
+      "physical_files": 90,
+      "full_audits": 392,
+      "own_modules": [
+        "SourceInitCapacitySpec.lean",
+        "SourceInitCapacityRead.lean",
+        "SourceInitCapacityParent.lean",
+        "SourceInitCapacity.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.prefix_multiplication",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_success_iff",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_overflow_iff",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_returns_iff",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_success_makes_row_increment_safe",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.accepted_iff",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.valid_inputs_have_bounded_total",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.short_capacity_fields_valid",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.short_capacity_keeps_all_other_checks",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.short_complete_policy_is_accepted",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityReadView.capacity_read_refines",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityReadView.actual_standard_root",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityReadView.second_read_extracts_its_own_full_capacity",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityReadView.normal_second_read",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.value_limit",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.original_count_is_parent",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.original_limits_result",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.original_sessions_result",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.invalid_limits_precede_every_port",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.invalid_sessions_precede_reads",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.original_prefix_before_encoding_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.count_error_precedes_capacity_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.count_failure_precedes_capacity_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.capacity_error_precedes_encoding_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.missing_capacity_precedes_encoding_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.rejected_capacity_does_not_enter_post_capacity_calls",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.accepted_capacity_enters_exact_original_suffix",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.public_root_forwards_same_complete_input",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.actual_budget_contract",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.actual_guard_contract",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.actual_guard_accepts_iff",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.budget_agrees_with_real_preallocated_row_layout",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.actual_validated_read_and_limits_compute_safe_budget",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.normal_complete_budget_and_cap"
+      ]
+    },
+    {
+      "variant": "omit-row-overhead",
+      "formal_root": "SourceInitCapacityNegative",
+      "physical_files": 90,
+      "full_audits": 397,
+      "own_modules": [
+        "SourceInitCapacitySpec.lean",
+        "SourceInitCapacityRead.lean",
+        "SourceInitCapacityParent.lean",
+        "SourceInitCapacityNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.prefix_multiplication",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_success_iff",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_overflow_iff",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_returns_iff",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.budget_success_makes_row_increment_safe",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.accepted_iff",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.valid_inputs_have_bounded_total",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.short_capacity_fields_valid",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.short_capacity_keeps_all_other_checks",
+        "SandboxModel.Stage1Protocol.SourceInitCapacitySpec.short_complete_policy_is_accepted",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityReadView.capacity_read_refines",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityReadView.actual_standard_root",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityReadView.second_read_extracts_its_own_full_capacity",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityReadView.normal_second_read",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.value_limit",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.original_count_is_parent",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.original_limits_result",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.original_sessions_result",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.invalid_limits_precede_every_port",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.invalid_sessions_precede_reads",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.original_prefix_before_encoding_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.count_error_precedes_capacity_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.count_failure_precedes_capacity_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.capacity_error_precedes_encoding_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.missing_capacity_precedes_encoding_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.rejected_capacity_does_not_enter_post_capacity_calls",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.accepted_capacity_enters_exact_original_suffix",
+        "SandboxModel.Stage1Protocol.SourceInitCapacity.public_root_forwards_same_complete_input",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.wrong_budget_is_missing_every_row_overhead",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.wrong_normal_budget",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.expected_normal_budget",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.expected_short_budget_rejection",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.wrong_short_budget_acceptance",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.wrong_still_accepts_normal_cap",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.rejects_the_same_complete_contract",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.zero_rows_do_not_repair_the_missing_inner_overflow",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.short_reader_keeps_full_validation",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.first_read_is_same_complete_policy",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.second_read_is_same_complete_policy_capacity",
+        "SandboxModel.Stage1Protocol.SourceInitCapacityNegative.wrong_parent_reaches_encoder_in_the_rejected_budget"
+      ]
+    }
+  ],
+  "native_candidate": {
+    "name": "stage1-source-init-capacity",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "omit-row-overhead",
+      "adapted-omit-row-overhead"
+    ],
+    "tests": [
+      "source_init_capacity_normal_keeps_all_metadata_and_rows",
+      "source_init_capacity_accepts_exact_complete_source_budget",
+      "source_init_capacity_rejects_one_byte_short_before_any_source_ddl"
+    ],
+    "expected": {
+      "original": {
+        "passed": 3,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 3,
+        "failed": 0
+      },
+      "omit-row-overhead": {
+        "passed": 2,
+        "failed": 1
+      },
+      "adapted-omit-row-overhead": {
+        "passed": 2,
+        "failed": 1
+      }
+    },
+    "rejection": "source initialization must reject one-byte-short complete source reservation",
+    "restoration": "new original source/target after both mutants: compile and run all three",
+    "full_functional_required": true
+  },
+  "representation": {
+    "source_config": "same complete six fields and original valid/required_bytes",
+    "maintenance_capacity": "same complete generated types, validators, reader dictionaries and parent closure",
+    "inbox": "all eight actual generated fields; no authorization inferred",
+    "configuration": "all three actual metadata fields; original complete suffix retained",
+    "rows": "original SQL four/five columns; 48 metadata overhead and 80 including the future key"
+  },
+  "unconstrained_ports": [
+    "exact Configuration encoder",
+    "exact u64 RangeInclusive next delegate",
+    "exact 32-byte Digest delegate",
+    "NodeId and DeploymentId clone",
+    "rusqlite execute_batch and execute",
+    "actual tuple Params binding and scalar/blob encoding",
+    "original MaintenanceConfig Deserialize and serde_json::from_slice"
+  ],
+  "inherited_pending_library_symbols": [
+    "#985 four Row projection operations",
+    "#986 Range next/IntoIterator and borrow binding"
+  ],
+  "remaining_providers": {
+    "V0": [
+      "original-to-isolated tuple Params/iterator/borrow/digest-return binding; no new blanket contract"
+    ],
+    "V5": [
+      "actual JSON instance",
+      "actual ordered SQL snapshot/transaction/durability",
+      "remaining initialization suffix and complete database budget"
+    ],
+    "V7": [
+      "independent authenticated/configuration provenance"
+    ],
+    "V6": [
+      "actual material/VM and physical facts"
+    ]
+  },
+  "production_candidate_equivalence_complete": false,
+  "public_registration_accepted": false,
+  "registration_mode": "independent physical project per view; retain the full actual file/audit closure and original native execution identity; no partial root fallback"
+}
