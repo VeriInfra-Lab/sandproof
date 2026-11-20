@@ -75,6 +75,17 @@
 `selected_closed_pin_refuses_without_write` 核对 pin 关闭的拒绝。Clone 证明复用
 原 restore-work、inbox-record 和 Foundations 证明。
 
+独立 `ResumeScan` 视图从 `permits_resume_input` 成功取得 `Sources` 后开始，保留
+World 读取、原 `Iterator::any`、全部原回调及末尾的 capture 计划检查。正常返回 true
+时，`native_resume_permit_requires_unmarked_operation` 给出实际 `sources.records`
+成员和其中完整认领，要求认领的 native sandbox 和 operation 都等于请求且标记为空。
+`native_resume_permit_refuses_marked_operation` 反向使用该结论：若本次加载中所有同一
+native sandbox 和 operation 的认领都保留标记，正常布尔返回只能为 false。该前提仍需
+由真实来源行与操作映射关系提供。不同 native operation 的同捕获准入由前面的历史认领
+分支和来源唯一性承担。此视图复用 [A6 共享切片短路判断](../../../docs/formal/dependencies.md)
+的原有定义，已核内核证明每次实际回调保留遍历上下文。库符合性仍适用于本次的有限普通
+共享借用。三个外部错误类型只在返回类型中使用，沿用原 SQLite 错误载荷别名。
+
 正误视图均抽取选中行的原判断和标记赋值，用同一条 claim、同一 Resume/C、
 VM 2 与 VM 3 检验同一个 `PreservesMarkedRow`。错误视图只将已有标记的比较
 替换为 true，异候选得到错误的成功返回，但记录仍保留原标记。该反例的可达范围止于
@@ -105,7 +116,8 @@ SQLite 首次准入、原 VM 与原映射重开复用使用原
   单行更新、回滚和写锁证据。三处保留其原覆盖与证据身份。
 - 完整 `claim_activation` 的生成在来源 codec 的 `save` 中停止，固定 Aeneas
   拒绝嵌套循环中的提前返回。完整 `permits_resume_input` 的生成在
-  `load_records` 遍历行时的早退和错误传播停止。未选中记录或来源账本缺失时，
+  `load_records` 遍历行时的早退和错误传播停止。显式递归选项在同一预处理处分辨
+  出上述错误。未选中记录或来源账本缺失时，
   `claim_activation` 可返回 `Ok(true)`。从可达生产恢复动作证明选中原行、完整
   codec 读写、真实验证器及重开连接仍需接入。
 - `admit_lifecycle_resume` 的原薄转发根使用已登记的 rusqlite 错误表示时，
@@ -130,6 +142,8 @@ SQLite 首次准入、原 VM 与原映射重开复用使用原
 case_dir=verification/experiments/restore-claim
 bash "$case_dir/verify-decisions.sh" "$FORMAL_EVIDENCE" "$PROOF_LOCK" \
   "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
+bash "$case_dir/verify-decisions.sh" --resume-scan "$SCAN_EVIDENCE" "$PROOF_LOCK" \
+  "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
 ```
 
 普通入口为原 `scripts/check-function.sh`。激活读回组件由操作者在另一份干净
@@ -142,7 +156,7 @@ cargo test --locked --offline -p sandproof-controller-service --lib \
   restore_activation_commit_unknown_reads_back_original_claim -- --nocapture
 ```
 
-本包和现有 Stage1 公共模板目录同级，集成窗口统一登记。独立形式任务含正确与错误
-两个隔离 Lake 视图，每个按真实导入闭包
-与审计清单检查。普通任务应加入激活提交未知读回及两个已存在的 Resume 用例。公共
+本包和现有 Stage1 公共模板目录同级，集成窗口统一登记。选中行任务含正确与错误两个
+隔离 Lake 视图，加载后扫描另用独立视图，每个按真实导入闭包与审计清单检查。普通
+任务应加入激活提交未知读回及两个已存在的 Resume 用例。公共
 根、冻结、覆盖和标准批次入口在合并这些任务时登记。
