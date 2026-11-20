@@ -1,0 +1,43 @@
+import SourceInitMetadataView
+
+open Aeneas Aeneas.Std Result ControlFlow
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+set_option autoImplicit false
+set_option linter.style.whitespace false
+set_option linter.style.longLine false
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceInitMetadataWrongView
+noncomputable section
+
+abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+section
+variable (io : Ports)
+local notation "capture.source.SourceObservationConfig" => SourceRecordBoundsView.Limits
+local notation "JournalError" => SaveRows.Error
+local notation "JournalErrorFromJson" => SandproofSourceInitCapacity.JournalErrorFromJson
+local notation "JournalError.Insts.CoreConvertFromError" => SandproofSourceInitCapacity.JournalError.Insts.CoreConvertFromError
+local notation "sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone" => SandproofSourceInitCapacity.sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone io
+local notation "controller.lifecycle_inbox.source_work.codec.encode_initial_configuration" => io.encode
+local notation "controller.lifecycle_inbox.source_work.codec.initial_source_digest" => io.digest
+local notation "controller.lifecycle_inbox.source_work.codec.write_initial_source_rows" => SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows io
+local notation "controller.lifecycle_inbox.source_work.codec.sql" => SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.sql
+local notation "controller.lifecycle_inbox.source_work.codec.METADATA_BYTES" => SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES
+local notation "controller.lifecycle_inbox.source_work.codec.TABLE" => SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.TABLE
+local notation "controller.lifecycle_inbox.source_work.codec.RECORDS_TABLE" => SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.RECORDS_TABLE
+local notation "TupleABC.Insts.RusqliteParamsParams" => SandproofSourceInitCapacity.TupleABC.Insts.RusqliteParamsParams io
+local notation "I64.Insts.RusqliteTypesTo_sqlToSql" => SandproofSourceInitCapacity.I64.Insts.RusqliteTypesTo_sqlToSql io
+local notation "SliceU8.Insts.RusqliteTypesTo_sqlToSql" => SandproofSourceInitCapacity.SliceU8.Insts.RusqliteTypesTo_sqlToSql io
+local notation "alloc.vec.Vec.as_slice" => SandproofSourceInitCapacity.alloc.vec.Vec.as_slice
+local notation "rusqlite.Connection.execute_batch" => io.batch
+local notation "rusqlite.Connection.execute" => io.execute
+
+-- ACTUAL WRONG SUFFIX
+
+end
+end
+end SandboxModel.Stage1Protocol.SourceInitMetadataWrongView

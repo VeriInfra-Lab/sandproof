@@ -1,0 +1,376 @@
+import SourceInitMetadataSpec
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+open SandboxModel.Stage1Protocol
+open SourceInitMetadataView SourceInitMetadataSpec
+set_option autoImplicit false
+set_option maxRecDepth 2048
+
+
+namespace SandboxModel.Stage1Protocol.SourceInitMetadata
+noncomputable section
+
+theorem metadata_conversion :
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.sql
+      SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES = .ok (.Ok 8192#i64) := by
+  unfold SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES
+  change SourceRecordBoundsView.sqlConvert 8192#u64 = _
+  rw [SourceRecordBounds.convert_sql_uses_exact_signed_limit, if_pos (by scalar_tac)]
+  congr 2
+
+theorem length_cast (bytes : alloc.vec.Vec U8) :
+    (UScalar.cast .U64 (alloc.vec.Vec.len bytes)).val = bytes.val.length := by
+  simp [alloc.vec.Vec.len]
+
+theorem null_bytes_exact :
+    Array.to_slice (Array.make 4#usize [110#u8,117#u8,108#u8,108#u8]) = nullBytes := by rfl
+
+theorem actual_contract : Contract run := by
+  intro io db config inbox rows reserve
+  unfold run SandproofSourceInitCapacity.afterAcceptedCapacity expected
+  apply congrArg (fun next => cloneNode io inbox.node >>= next)
+  funext node
+  apply congrArg (fun next => io.encode {config,node,max_sessions := inbox.max_sessions} >>= next)
+  funext encoded
+  cases encoded with
+  | Err failure =>
+    simp [afterEncoding, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SandproofStage1RequestRust.sandproof_controller_service.JournalErrorFromJson.from_json]
+  | Ok bytes =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok, lift,
+      afterEncoding, SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES,
+      UScalar.lt_equiv, length_cast]
+    change (if 8192 < bytes.val.length then _ else _) = _
+    by_cases tooLong : 8192 < bytes.val.length
+    · simp [tooLong]
+    · simp only [tooLong, if_false]
+      apply congrArg (fun next => io.batch db SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.TABLE >>= next)
+      funext first
+      cases first with
+      | Err failure =>
+        simp [afterMetadataTable,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+          SandproofStage1RequestRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from]
+      | Ok success =>
+        cases success
+        simp only [afterMetadataTable, bind_tc_ok]
+        apply congrArg (fun next => io.batch db SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.RECORDS_TABLE >>= next)
+        funext second
+        cases second with
+        | Err failure =>
+          simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                SandproofStage1RequestRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from]
+        | Ok success =>
+          cases success
+          simp only [bind_tc_ok, SandproofSourceInitCapacity.alloc.vec.Vec.as_slice, afterTables]
+          apply congrArg (fun next => io.digest (alloc.vec.Vec.deref bytes) >>= next)
+          funext digest
+          have converted : SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.sql 8192#u64 = .ok (.Ok 8192#i64) := by
+            simpa only [SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES] using metadata_conversion
+          rw [converted]
+          simp only [bind_tc_ok]
+          change (io.execute (parameters io) db statement
+            (alloc.vec.Vec.deref bytes, Array.to_slice digest, 8192#i64) >>= _) = _
+          apply congrArg (fun next => io.execute (parameters io) db statement
+            (alloc.vec.Vec.deref bytes, Array.to_slice digest, 8192#i64) >>= next)
+          funext reply
+          cases reply with
+          | Err failure =>
+            simp [afterInsert,
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                      SandproofStage1RequestRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from]
+          | Ok affected =>
+            simp [afterInsert, null_bytes_exact]
+
+
+theorem node_clone_retains_all_three_fields (io : Ports)
+    (node : SandproofSourceInitCapacity.sandproof_protocol.internal.NodeIdentity)
+    (deployment : io.cloneDeploymentId node.deployment_id = .ok node.deployment_id)
+    (id : io.cloneNodeId node.node_id = .ok node.node_id) : cloneNode io node = .ok node := by
+  unfold cloneNode SandproofSourceInitCapacity.sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone
+  rw [deployment]
+  simp only [bind_tc_ok, id]
+  simp [SandproofSourceInitCapacity.sandproof_protocol.internal.PositiveCounter.Insts.CoreCloneClone.clone]
+
+theorem clone_failure_is_first (io : Ports) (db : SaveRows.Db) (config : Limits) (inbox : Inbox)
+    (rows reserve : U64) (failure : Error) (cloned : cloneNode io inbox.node = .fail failure) :
+    run io db config inbox rows reserve = .fail failure := by
+  rw [actual_contract]
+  simp [expected, cloned]
+
+theorem clone_nonreturn_is_preserved (io : Ports) (db : SaveRows.Db) (config : Limits) (inbox : Inbox)
+    (rows reserve : U64) (cloned : cloneNode io inbox.node = .div) :
+    run io db config inbox rows reserve = .div := by
+  rw [actual_contract]
+  simp [expected, cloned]
+
+theorem given_encoding (io : Ports) (db : SaveRows.Db) (config : Limits) (inbox : Inbox)
+    (rows reserve : U64) (node : SandproofSourceInitCapacity.sandproof_protocol.internal.NodeIdentity)
+    (reply : core.result.Result (alloc.vec.Vec U8) serde_json.error.Error)
+    (cloned : cloneNode io inbox.node = .ok node)
+    (encoded : io.encode {config,node,max_sessions := inbox.max_sessions} = .ok reply) :
+    run io db config inbox rows reserve = afterEncoding io db rows reserve reply := by
+  rw [actual_contract]
+  simp [expected, cloned, encoded]
+
+theorem encoder_error_precedes_all_sql (io : Ports) (db : SaveRows.Db) (config : Limits) (inbox : Inbox)
+    (rows reserve : U64) (node : SandproofSourceInitCapacity.sandproof_protocol.internal.NodeIdentity)
+    (failure : serde_json.error.Error) (cloned : cloneNode io inbox.node = .ok node)
+    (encoded : io.encode {config,node,max_sessions := inbox.max_sessions} = .ok (.Err failure)) :
+    run io db config inbox rows reserve = .ok (.Err (.Json failure)) := by
+  rw [given_encoding io db config inbox rows reserve node (.Err failure) cloned encoded]
+  rfl
+
+theorem encoder_failure_precedes_all_sql (io : Ports) (db : SaveRows.Db) (config : Limits) (inbox : Inbox)
+    (rows reserve : U64) (node : SandproofSourceInitCapacity.sandproof_protocol.internal.NodeIdentity)
+    (failure : Error) (cloned : cloneNode io inbox.node = .ok node)
+    (encoded : io.encode {config,node,max_sessions := inbox.max_sessions} = .fail failure) :
+    run io db config inbox rows reserve = .fail failure := by
+  rw [actual_contract]
+  simp [expected, cloned, encoded]
+
+theorem oversized_encoding_precedes_ddl (io : Ports) (db : SaveRows.Db) (config : Limits) (inbox : Inbox)
+    (rows reserve : U64) (node : SandproofSourceInitCapacity.sandproof_protocol.internal.NodeIdentity)
+    (bytes : alloc.vec.Vec U8) (cloned : cloneNode io inbox.node = .ok node)
+    (encoded : io.encode {config,node,max_sessions := inbox.max_sessions} = .ok (.Ok bytes))
+    (tooLong : 8192 < bytes.val.length) :
+    run io db config inbox rows reserve = .ok (.Err .MaintenanceCapacity) := by
+  rw [given_encoding io db config inbox rows reserve node (.Ok bytes) cloned encoded]
+  simp [afterEncoding, tooLong]
+
+theorem accepted_encoding_enters_first_ddl (io : Ports) (db : SaveRows.Db) (config : Limits) (inbox : Inbox)
+    (rows reserve : U64) (node : SandproofSourceInitCapacity.sandproof_protocol.internal.NodeIdentity)
+    (bytes : alloc.vec.Vec U8) (cloned : cloneNode io inbox.node = .ok node)
+    (encoded : io.encode {config,node,max_sessions := inbox.max_sessions} = .ok (.Ok bytes))
+    (bounded : bytes.val.length ≤ 8192) :
+    run io db config inbox rows reserve = (do
+      let reply ← io.batch db SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.TABLE
+      afterMetadataTable io db rows reserve bytes reply) := by
+  rw [given_encoding io db config inbox rows reserve node (.Ok bytes) cloned encoded]
+  simp only [afterEncoding, Nat.not_lt.mpr bounded, if_false]
+
+theorem first_ddl_error_is_preserved (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (bytes : alloc.vec.Vec U8) (failure : rusqlite.error.Error) :
+    afterMetadataTable io db rows reserve bytes (.Err failure) = .ok (.Err (.Sqlite failure)) := by rfl
+
+theorem second_ddl_error_precedes_digest (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (bytes : alloc.vec.Vec U8) (failure : rusqlite.error.Error)
+    (failed : io.batch db SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.RECORDS_TABLE = .ok (.Err failure)) :
+    afterMetadataTable io db rows reserve bytes (.Ok ()) = .ok (.Err (.Sqlite failure)) := by
+  simp [afterMetadataTable, failed]
+
+theorem both_ddl_success_enters_digest (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (bytes : alloc.vec.Vec U8)
+    (ready : io.batch db SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.RECORDS_TABLE = .ok (.Ok ())) :
+    afterMetadataTable io db rows reserve bytes (.Ok ()) = afterTables io db rows reserve bytes := by
+  simp [afterMetadataTable, ready]
+
+theorem metadata_digest_failure_precedes_insert (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (bytes : alloc.vec.Vec U8) (failure : Error)
+    (failed : io.digest (alloc.vec.Vec.deref bytes) = .fail failure) :
+    afterTables io db rows reserve bytes = .fail failure := by
+  simp [afterTables, failed]
+
+theorem metadata_digest_supplies_complete_arguments (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (bytes : alloc.vec.Vec U8) (digest : Array U8 32#usize)
+    (hashed : io.digest (alloc.vec.Vec.deref bytes) = .ok digest) :
+    afterTables io db rows reserve bytes = (do
+      let reply ← io.execute (parameters io) db statement
+        (alloc.vec.Vec.deref bytes,Array.to_slice digest,8192#i64)
+      afterInsert io db rows reserve reply) := by
+  simp only [afterTables, hashed, bind_tc_ok]
+
+theorem metadata_sql_error_precedes_null_digest (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (failure : rusqlite.error.Error) :
+    afterInsert io db rows reserve (.Err failure) = .ok (.Err (.Sqlite failure)) := by rfl
+
+theorem accepted_count_keeps_original_null_digest_and_loop (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (affected : Usize) :
+    afterInsert io db rows reserve (.Ok affected) = (do
+      let digest ← io.digest nullBytes
+      rowLoop io db rows reserve nullBytes (Array.to_slice digest)) := by rfl
+
+theorem null_digest_failure_precedes_loop (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (affected : Usize) (failure : Error) (failed : io.digest nullBytes = .fail failure) :
+    afterInsert io db rows reserve (.Ok affected) = .fail failure := by
+  simp [afterInsert, failed]
+
+theorem complete_null_digest_enters_same_loop (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (affected : Usize) (digest : Array U8 32#usize) (hashed : io.digest nullBytes = .ok digest) :
+    afterInsert io db rows reserve (.Ok affected) =
+      rowLoop io db rows reserve nullBytes (Array.to_slice digest) := by
+  simp [afterInsert, hashed]
+
+
+theorem parameters_route_complete_three_values (io : Ports) (bytes digest : Slice U8) (reserve : I64)
+    (stmt : rusqlite.statement.Statement) :
+    (parameters io).__bind_in (bytes,digest,reserve) stmt =
+      io.bind3
+        (SandproofSourceRowSqlSelect.Shared0T.Insts.RusqliteTypesTo_sqlToSql
+          (SandproofSourceInitCapacity.SliceU8.Insts.RusqliteTypesTo_sqlToSql io))
+        (SandproofSourceRowSqlSelect.Shared0T.Insts.RusqliteTypesTo_sqlToSql
+          (SandproofSourceInitCapacity.SliceU8.Insts.RusqliteTypesTo_sqlToSql io))
+        (SandproofSourceInitCapacity.I64.Insts.RusqliteTypesTo_sqlToSql io)
+        (bytes,digest,reserve) stmt := by rfl
+
+/-- Composition with the existing actual parent; all earlier count/read/capacity
+    conditions retain their original providers and independent-read scope. -/
+theorem accepted_parent_uses_full_metadata_contract
+    (io : Ports) (read : SourceRecordBoundsView.PolicyRead) (capacityRead : SourceInitCapacity.CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) (rows reserve : U64) (cap : SourceRecordBoundsView.Capacity)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (counted : SourceInitCapacity.count read db inbox.max_sessions = .ok (.Ok rows))
+    (reserved : SourceReservationView.reservation limits 1#u64 = .ok reserve)
+    (found : capacityRead db = .ok (.Ok (some cap)))
+    (accepted : SourceInitCapacity.check rows reserve cap = .ok (.Ok ())) :
+    SourceInitCapacity.run io read capacityRead db limits inbox = expected io db limits inbox rows reserve := by
+  rw [SourceInitCapacity.accepted_capacity_enters_exact_original_suffix io read capacityRead db limits inbox rows reserve cap
+    valid sessions counted reserved found accepted]
+  exact actual_contract io db limits inbox rows reserve
+
+theorem public_parent_uses_full_metadata_contract
+    (io : Ports) (read : SourceRecordBoundsView.PolicyRead) (capacityRead : SourceInitCapacity.CapacityRead)
+    (db : SaveRows.Db) (limits : Limits) (inbox : Inbox) (rows reserve : U64) (cap : SourceRecordBoundsView.Capacity)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (counted : SourceInitCapacity.count read db inbox.max_sessions = .ok (.Ok rows))
+    (reserved : SourceReservationView.reservation limits 1#u64 = .ok reserve)
+    (found : capacityRead db = .ok (.Ok (some cap)))
+    (accepted : SourceInitCapacity.check rows reserve cap = .ok (.Ok ())) :
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.initialize io read capacityRead db limits inbox =
+      expected io db limits inbox rows reserve := by
+  rw [SourceInitCapacity.public_root_forwards_same_complete_input]
+  exact accepted_parent_uses_full_metadata_contract io read capacityRead db limits inbox rows reserve cap
+    valid sessions counted reserved found accepted
+
+
+theorem witness_encoding_length : witnessBytes.val.length = 242 := by
+  simp [witnessBytes, witnessText, SandproofSourceRowSqlSelect.toStr, Aeneas.Std.toStr,
+    Aeneas.Std.ByteArray.length_toList, String.size_toByteArray]
+  decide
+
+theorem witness_node_clone (node : SandproofSourceInitCapacity.sandproof_protocol.internal.NodeIdentity) :
+    cloneNode witnessPorts node = .ok node := by
+  apply node_clone_retains_all_three_fields <;> rfl
+
+theorem witness_row_success (db : SaveRows.Db) (payload digest : Slice U8) :
+    SourceInitRowView.insert witnessPorts db 1#u64 payload digest 222212#u64 = .ok (.Ok ()) := by
+  apply SourceInitRow.sql_success_ignores_affected_count witnessPorts db 1#u64 payload digest 222212#u64 1#usize
+    (by scalar_tac) (by scalar_tac)
+  simp [witnessPorts, witnessExecute, SourceInitRowView.parameters,
+    SandproofSourceInitCapacity.TupleABCD.Insts.RusqliteParamsParams]
+
+
+theorem witness_loop_success (db : SaveRows.Db) :
+    rowLoop witnessPorts db 1#u64 222212#u64 nullBytes (Array.to_slice witnessNullDigest) = .ok (.Ok ()) := by
+  have firstNext : witnessPorts.next ⟨1#u64,1#u64,false⟩ = .ok (some 1#u64,⟨1#u64,1#u64,true⟩) := by
+    simp [witnessPorts]
+  have lastNext : witnessPorts.next ⟨1#u64,1#u64,true⟩ = .ok (none,⟨1#u64,1#u64,true⟩) := by
+    simp [witnessPorts]
+  have firstBody : SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop.body
+      witnessPorts db 222212#u64 nullBytes (Array.to_slice witnessNullDigest) ⟨1#u64,1#u64,false⟩ =
+      .ok (.cont ⟨1#u64,1#u64,true⟩) := by
+    unfold SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop.body
+    rw [firstNext]
+    simp only [bind_tc_ok]
+    change (do
+      let r ← SourceInitRowView.insert witnessPorts db 1#u64 nullBytes (Array.to_slice witnessNullDigest) 222212#u64
+      match r with
+      | .Ok _ => .ok (ControlFlow.cont (⟨1#u64,1#u64,true⟩ : Aeneas.Std.core.ops.range.RangeInclusive U64))
+      | .Err _ => .ok (ControlFlow.done r)) = _
+    rw [witness_row_success]
+    simp
+  have lastBody : SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop.body
+      witnessPorts db 222212#u64 nullBytes (Array.to_slice witnessNullDigest) ⟨1#u64,1#u64,true⟩ =
+      .ok (.done (.Ok ())) := by
+    unfold SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop.body
+    rw [lastNext]
+    simp
+  unfold rowLoop SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop
+  simp only [core.ops.range.RangeInclusive.new, bind_tc_ok]
+  rw [loop, firstBody]
+  simp only [bind_ok]
+  rw [loop, lastBody]
+  simp
+
+
+theorem witness_metadata_digest : witnessPorts.digest (alloc.vec.Vec.deref witnessBytes) = .ok witnessDigest := by
+  change (Result.ok (if (alloc.vec.Vec.deref witnessBytes).val.length = 4 then witnessNullDigest else witnessDigest) : Result (Array U8 32#usize)) = _
+  have same : (alloc.vec.Vec.deref witnessBytes).val.length = witnessBytes.val.length := by simp [alloc.vec.Vec.deref]
+  rw [same, witness_encoding_length]
+  simp
+
+theorem witness_null_digest : witnessPorts.digest nullBytes = .ok witnessNullDigest := by
+  change (Result.ok (if nullBytes.val.length = 4 then witnessNullDigest else witnessDigest) : Result (Array U8 32#usize)) = _
+  have length : nullBytes.val.length = 4 := by simp [nullBytes,SourceRowChargeSpec.samplePayload]
+  rw [length]
+  simp
+
+theorem witness_metadata_sql (db : SaveRows.Db) :
+    witnessPorts.execute (parameters witnessPorts) db statement
+      (alloc.vec.Vec.deref witnessBytes,Array.to_slice witnessDigest,8192#i64) = .ok (.Ok 1#usize) := by
+  simp [witnessPorts,witnessExecute,parameters,witnessThree,
+    SandproofSourceInitCapacity.TupleABC.Insts.RusqliteParamsParams,
+    SandproofSourceInitCapacity.I64.Insts.RusqliteTypesTo_sqlToSql]
+
+theorem witness_expected_success (db : SaveRows.Db) :
+    expected witnessPorts db SourceConfigSpec.sample witnessInbox 1#u64 222212#u64 = .ok (.Ok ()) := by
+  have encoder (value : Configuration) : witnessPorts.encode value = .ok (.Ok witnessBytes) := by rfl
+  have ddl (sql : Str) : witnessPorts.batch db sql = .ok (.Ok ()) := by rfl
+  simp only [expected,witness_node_clone,bind_tc_ok,encoder,afterEncoding,witness_encoding_length]
+  simp only [show ¬8192 < 242 by decide,if_false,ddl,bind_tc_ok,afterMetadataTable,afterTables,
+    witness_metadata_digest,witness_metadata_sql,afterInsert,witness_null_digest]
+  exact witness_loop_success db
+
+theorem normal_complete_suffix (db : SaveRows.Db) :
+    run witnessPorts db SourceConfigSpec.sample witnessInbox 1#u64 222212#u64 = .ok (.Ok ()) := by
+  rw [actual_contract]
+  exact witness_expected_success db
+
+theorem normal_inputs_are_accepted_domain :
+    SourceConfigSpec.Valid SourceConfigSpec.sample ∧ SourceConfigSpec.SessionsValid witnessInbox.max_sessions := by
+  exact ⟨SourceConfigSpec.sample_valid,by unfold SourceConfigSpec.SessionsValid witnessInbox; decide⟩
+
+end
+end SandboxModel.Stage1Protocol.SourceInitMetadata
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_conversion
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.length_cast
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.null_bytes_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.actual_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.node_clone_retains_all_three_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.clone_failure_is_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.clone_nonreturn_is_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.given_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.encoder_error_precedes_all_sql
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.encoder_failure_precedes_all_sql
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.oversized_encoding_precedes_ddl
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.accepted_encoding_enters_first_ddl
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.first_ddl_error_is_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.second_ddl_error_precedes_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.both_ddl_success_enters_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_digest_failure_precedes_insert
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_digest_supplies_complete_arguments
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_sql_error_precedes_null_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.accepted_count_keeps_original_null_digest_and_loop
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.null_digest_failure_precedes_loop
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.complete_null_digest_enters_same_loop
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.parameters_route_complete_three_values
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.accepted_parent_uses_full_metadata_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.public_parent_uses_full_metadata_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.witness_encoding_length
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.witness_node_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.witness_row_success
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.witness_loop_success
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.witness_metadata_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.witness_null_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.witness_metadata_sql
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.witness_expected_success
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.normal_complete_suffix
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadata.normal_inputs_are_accepted_domain

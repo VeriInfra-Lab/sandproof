@@ -1,0 +1,69 @@
+import SourceInitMetadata
+import SourceInitMetadataWrongView
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+open SandboxModel.Stage1Protocol
+open SourceInitMetadataView SourceInitMetadataSpec SourceInitMetadata
+set_option autoImplicit false
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceInitMetadataNegative
+noncomputable section
+abbrev wrong := SourceInitMetadataWrongView.afterAcceptedCapacity
+
+theorem short_reservation :
+    (SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES - 1#u64 : Result U64) = .ok 8191#u64 := by
+  unfold SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES
+  change UScalar.sub 8192#u64 1#u64 = _
+  simp [UScalar.sub]
+  rfl
+
+theorem short_conversion :
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.sql 8191#u64 = .ok (.Ok 8191#i64) := by
+  change SourceRecordBoundsView.sqlConvert 8191#u64 = _
+  rw [SourceRecordBounds.convert_sql_uses_exact_signed_limit,if_pos (by scalar_tac)]
+  congr 2
+
+theorem short_parameter_reaches_rejection (db : SaveRows.Db) :
+    witnessPorts.execute (parameters witnessPorts) db statement
+      (alloc.vec.Vec.deref witnessBytes,Array.to_slice witnessDigest,8191#i64) = .fail .panic := by
+  simp [witnessPorts,witnessExecute,parameters,witnessThree,
+    SandproofSourceInitCapacity.TupleABC.Insts.RusqliteParamsParams,
+    SandproofSourceInitCapacity.I64.Insts.RusqliteTypesTo_sqlToSql]
+
+theorem actual_wrong_normal_suffix (db : SaveRows.Db) :
+    wrong witnessPorts db SourceConfigSpec.sample witnessInbox 1#u64 222212#u64 = .fail .panic := by
+  unfold wrong SourceInitMetadataWrongView.afterAcceptedCapacity
+  change (cloneNode witnessPorts witnessInbox.node >>= _) = _
+  rw [witness_node_clone]
+  have encoded (value : Configuration) : witnessPorts.encode value = .ok (.Ok witnessBytes) := by rfl
+  have ddl (sql : Str) : witnessPorts.batch db sql = .ok (.Ok ()) := by rfl
+  simp only [bind_tc_ok,encoded,core.result.Result.Insts.CoreOpsTry.branch,lift,
+    UScalar.lt_equiv,SourceInitMetadata.length_cast]
+  have small : ¬ (SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES).val < witnessBytes.val.length := by
+    rw [witness_encoding_length]
+    unfold SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.METADATA_BYTES
+    decide
+  simp only [small,if_false,ddl,bind_tc_ok,SandproofSourceInitCapacity.alloc.vec.Vec.as_slice,
+    witness_metadata_digest,short_reservation,short_conversion]
+  change (witnessPorts.execute (parameters witnessPorts) db statement
+    (alloc.vec.Vec.deref witnessBytes,Array.to_slice witnessDigest,8191#i64) >>= _) = _
+  rw [short_parameter_reaches_rejection]
+  simp
+
+theorem rejects_same_complete_contract : ¬ Contract wrong := by
+  intro correct
+  have rejected := correct witnessPorts (SourceRecordBoundsContract.sampleConnection 0#i64)
+    SourceConfigSpec.sample witnessInbox 1#u64 222212#u64
+  rw [actual_wrong_normal_suffix,witness_expected_success] at rejected
+  simp at rejected
+
+end
+end SandboxModel.Stage1Protocol.SourceInitMetadataNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadataNegative.short_reservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadataNegative.short_conversion
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadataNegative.short_parameter_reaches_rejection
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadataNegative.actual_wrong_normal_suffix
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitMetadataNegative.rejects_same_complete_contract

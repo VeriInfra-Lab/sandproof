@@ -1,0 +1,15 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,12 @@
++## V3 来源元数据续体候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`，接续 #993。隔离候选的完整续体
++保持完整 Configuration、克隆、编码/8192 大小门、两个 DDL、完整元数据三参数/id=1/8192、
++null 摘要及原循环入口。首错、失败/非返回与已发生效果保持；Err 不表示回滚，Ok 不表示耐久。
++原容量父调用及公开转发直接组合；原单行证明复用，一行正常循环见证不替代一般循环性质。
++真实 Rust 仅少写一字节元数据预留，经实际编译抽取后被同一完整合同拒绝，真实 SQLite 完整
++列断言及恢复对照仍交 ning。正确捕获沿原身份复用，公共登记/原生/完整普通/整套验收仍待。
++生产到隔离候选的一般等价、库薄绑定、实际 JSON/摘要/SQL 事务及一般循环、耐久初始化和
++系统组合仍开放。[原件、正反证据及提供方](../verification/experiments/stage1-protocol/unload-parent-link/source-init-metadata/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录
