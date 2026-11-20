@@ -1,0 +1,23 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -20,6 +20,20 @@
+ 等待取消、执行持额到真实退出、FIFO 与满队列拒绝属于待连接的异步适配义务；
+ 原非等待准入的证明不能背书这段修改。组件测试和实机结果以 PR 精确提交记录为准，
+ 不声称已完成 Rust→Lean 抽取或形式化证明。
++
++## V3 卸载 JSON 调用的源码准入候选（未采用）
++
++[独立准入包](../verification/experiments/stage1-protocol/unload-json-calls/README.md)
++固定 integration `b60078c288a86a99219a4cd67bf2797dc36997ab` 的生产输入。
++两个 `snapshot::encode_source_*` 与原 `host_contract::serialize_create_options` 的完整
++参数、实际类型/派生字典和返回接线按原工具捕获核对；SourceAnchor 保留全部12字段，
++CreateOptions 保留实际4字段与原条件派生体。原生完整值断言、真实字段替换版和恢复版
++由本包独立入口交 ning 复验；它不签发共享原生封口。
++
++本项新增 Lean 定理为零。原固定 Aeneas 的 Serde 相互递归 trait 导出失败保留，
++源码准入不等于库精化或实际包装的机器证明。原 ParentCalls 的 JSON/哈希条件仍保留；
++实际完整表示关系、嵌套字典、A6/B4 采用、公共入口登记和正式验收须由主控落实。
++真实 JSON/TLS、事务提交/未知恢复、认证来源及完整 V3 均未由本项完成。
+ 
+ ## V3 卸载观察读取原 Create 选项
+ 

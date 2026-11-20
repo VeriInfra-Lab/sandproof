@@ -1,0 +1,26 @@
+{
+  "schema": 1,
+  "status": "candidate-not-adopted",
+  "issue": 635,
+  "base": "b60078c288a86a99219a4cd67bf2797dc36997ab",
+  "entry": "verification/experiments/stage1-protocol/unload-json-calls/admit.py",
+  "native_entry": "verification/experiments/stage1-protocol/unload-json-calls/native.py",
+  "variants": [
+    "correct",
+    "origin-request",
+    "options-empty"
+  ],
+  "regression_env": "SANDPROOF_UNLOAD_JSON_LLBC",
+  "new_lean_theorems": 0,
+  "new_lean_audits": 0,
+  "existing_parent_conditions_unchanged": true,
+  "public_stage1_registered": false,
+  "shared_native_registered": false,
+  "required_owner_work": [
+    "Review original complete LLBC and nested field dictionary providers before A6/B4 adoption.",
+    "Run all three fresh admissions and all eleven admission regressions; do not count a capture/compiler failure as a rejected property.",
+    "Run the same four-source native entry on ning and retain real complete-value assertion failures.",
+    "Only after review register these exact entries in the original Stage1/source-admission and shared native suite; reuse same content, do not run the old roots as evidence for these files.",
+    "Keep original Aeneas recursive-trait failure and all unresolved ParentCalls/JSON/SHA/transaction conditions."
+  ]
+}
