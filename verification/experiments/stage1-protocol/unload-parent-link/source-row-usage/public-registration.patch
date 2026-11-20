@@ -1,0 +1,13 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,10 @@
++
++## V3 完整来源列计费与表分派候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。原计费循环对任意请求列数保留
++完整列值、SQL 首错、单列上限及 checked 总和。完整表名分派接回 #985 的原透明
++计费，正常空行由实际列计费取得 current=52 后得到 222292。少计一字节的真实 Rust
++版使用同一完整合同拒绝。新 Range 薄绑定仍待审查；普通/原生及公共整套尚待验收。
++本片不证明 sql_usage 的完整父循环、同事务/整库预算、初始化或实际材料/系统结论。
++[输入、反例与复验](../verification/experiments/stage1-protocol/unload-parent-link/source-row-usage/README.md)。
+ ## V3 首次卸载使用同一条原执行记录

@@ -1,0 +1,87 @@
+import SourceRowUsageSpec
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowUsage
+open SourceRowChargeView SourceRowUsageView SourceRowUsageSpec
+open SourceRecordBoundsView (Capacity)
+
+theorem every_value_counts_its_complete_bytes (value : Value) :
+    valueSize value = .ok (fullSize value) := by
+  cases value <;> rfl
+
+open SourceRowChargeSpec
+
+theorem complete_column (row : Row) (index : Usize) :
+    columnSize row index = fullColumn row index := by
+  unfold columnSize SourceRowUsageView.controller.capacity.source_row_column_size fullColumn
+  change (do let reply ← refAt row index; _) = _
+  congr 1
+  funext reply
+  cases reply with
+  | Err failure =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SourceLoadView.fromSql]
+  | Ok value =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      SourceRowUsage.every_value_counts_its_complete_bytes]
+
+theorem complete_count : Contract count := by
+  intro row columns cap
+  unfold count SourceRowUsageView.controller.capacity.row_bytes
+  change countUsing readRow row columns cap = _
+  rw [count_using_accounts_for_all_columns]
+  have same : readRow.read_size row = fullColumn row := by
+    funext index
+    exact complete_column row index
+  rw [same]
+
+theorem sample_full_count : count sampleRow 5#usize sampleCapacity = .ok (.Ok 52#u64) := by
+  rw [complete_count]
+  exact sample_spec_exact
+
+
+theorem complete_count_is_full_sum (row : Row) (columns : Usize) (cap : Capacity)
+    (amount : U64) (domain : columns.val ≤ row.statement.columns.val)
+    (measured : count row columns cap = .ok (.Ok amount)) :
+    amount.val = expectedTotal
+      (fun index => fullSize (SandproofSourceRowSqlSelect.asValueRef (row.column (indexOf index)))) 0 columns.val := by
+  rw [complete_count] at measured
+  have samples : ∀ offset, offset < columns.val →
+      fullColumn row (indexOf (0 + offset)) = .ok (.Ok
+        (fullSize (SandproofSourceRowSqlSelect.asValueRef (row.column (indexOf (0 + offset)))))) := by
+    intro offset bound
+    apply full_column_present
+    have bounded : offset ≤ Usize.max := by have := columns.hBounds; scalar_tac
+    simp only [Nat.zero_add, index_value offset bounded]
+    omega
+  have total := account_success_is_full_sum
+    (fun index => fullSize (SandproofSourceRowSqlSelect.asValueRef (row.column (indexOf index))))
+    (fullColumn row) cap 0 columns.val 0#u64 amount samples measured
+  simpa using total
+
+theorem exact_source_after_original_count (current : U64)
+    (measured : count SourceRowChargeSpec.sampleRow 5#usize SourceRowChargeSpec.sampleCapacity = .ok (.Ok current)) :
+    dispatch recordsName SourceRowChargeSpec.sampleRow current SourceRowChargeSpec.sampleCapacity =
+      .ok (.Ok 222292#u64) := by
+  rw [sample_full_count] at measured
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at measured
+  subst current
+  rw [(source_names _ _ _).2]
+  exact SourceRowCharge.normal_empty_row_reserves_all_future_key_bytes
+
+end SandboxModel.Stage1Protocol.SourceRowUsage
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsage.every_value_counts_its_complete_bytes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsage.complete_column
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsage.complete_count
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsage.sample_full_count
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsage.complete_count_is_full_sum
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsage.exact_source_after_original_count
