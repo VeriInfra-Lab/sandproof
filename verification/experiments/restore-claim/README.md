@@ -68,11 +68,18 @@
 核对允许继续到原 capture 计划检查的条件。三处结果组合于
 `recorded_claim_readback`，以读回同一原 claim 及相应类型条件为前提。
 
-正确和错误视图从同一实际 Rust 分支移到私有命名根。正确视图可通过无标记分支，
-同一全文和原动作可接受。反例把已有标记的比较替换为 true。在两个视图共有的
-生成结构上固定同一 claim、同一 Resume/C，给出 VM 2 与 VM 3，使用同一
-`KeepsRecordedActivation` 判定。它检验选中行的动作比较。Core Dispatch/Worker
-是否会让第二个动作到达此分支，以及 B 的许可、实际发送和物理启动，是独立义务。
+在来源已经选中后，`selected_first_activation_write_exact` 核对原标记赋值进入
+`codec::save` 时的完整记录。持有 pin 的未标记行第一次接受 `ActivateVm`，
+只把 activation 写成完整原动作。已有标记时，`selected_activation_preserves_marked_row`
+核对动作比较后原记录不变，且控制流在 `codec::save` 前返回。
+`selected_closed_pin_refuses_without_write` 核对 pin 关闭的拒绝。Clone 证明复用
+原 restore-work、inbox-record 和 Foundations 证明。
+
+正误视图均抽取选中行的原判断和标记赋值，用同一条 claim、同一 Resume/C、
+VM 2 与 VM 3 检验同一个 `PreservesMarkedRow`。错误视图只将已有标记的比较
+替换为 true，异候选得到错误的成功返回，但记录仍保留原标记。该反例的可达范围止于
+选中行调用。Core Dispatch/Worker 的前置条件，以及 B 的许可、发送和物理启动，
+仍分别验证。
 
 SQLite 首次准入、原 VM 与原映射重开复用使用原
 `resume_sql_claim_reserves_one_successor_withdraws_old_credential_and_reopens_unchanged`。
@@ -98,8 +105,9 @@ SQLite 首次准入、原 VM 与原映射重开复用使用原
   单行更新、回滚和写锁证据。三处保留其原覆盖与证据身份。
 - 完整 `claim_activation` 的生成在来源 codec 的 `save` 中停止，固定 Aeneas
   拒绝嵌套循环中的提前返回。完整 `permits_resume_input` 的生成在
-  `load_records` 遍历行时的早退和错误传播停止。薄根保留实际表达式，其之外的
-  行选择、完整函数的分支组合、其余 codec 写入、真实验证器和重开读写仍需接入。
+  `load_records` 遍历行时的早退和错误传播停止。未选中记录或来源账本缺失时，
+  `claim_activation` 可返回 `Ok(true)`。从可达生产恢复动作证明选中原行、完整
+  codec 读写、真实验证器及重开连接仍需接入。
 - `admit_lifecycle_resume` 的原薄转发根使用已登记的 rusqlite 错误表示时，
   Charon 在 `controller-service/src/journal.rs:96` 匹配该外部错误枚举处失败。
   `admit-root.rs.in` 保留该探针入口，外部错误分支和完整父方法的抽取尚待接通。
@@ -109,7 +117,7 @@ SQLite 首次准入、原 VM 与原映射重开复用使用原
 - 其它授予资格路径包括 Inbox 当前请求/版本裁定、Core Resume/ReserveStartup、
   Core 与 journal 的效果派发、重开后的未知激活继续、通用宿主动作为离开数据库后调用、
   失败卸载原实例的 continue 路径，以及后继捕获和退休后的历史窗口。
-  本包只给出所列比较分支，不能替代这些路径的独立核对。
+  这些入口及其历史组合仍待核对。
 
 ## 在 ning 复验
 

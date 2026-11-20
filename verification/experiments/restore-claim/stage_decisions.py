@@ -1,4 +1,4 @@
-"""Move the two selected-record guards into named private extraction roots."""
+"""Move selected-record decisions into named private extraction roots."""
 import argparse
 from hashlib import sha256
 from pathlib import Path
@@ -11,6 +11,14 @@ ACTIVATION = '''    if let Some(original) = &claim.activation {
         return Ok(original == action);
     }
 '''
+ACTIVATION_BEFORE_COMPARISON = '''    if !claim.material_use {
+        return Ok(false);
+    }
+    if !matches!(action.command.command(), core::Command::ActivateVm { .. }) {
+        return Ok(true);
+    }
+'''
+ACTIVATION_WRITE = '    claim.activation = Some(action.clone());\n'
 CLAIM = '''        if let Some(original) = &sources.records[index].restore {
             return if original.intent == *intent {
                 Ok(inbox.state(s, e))
@@ -46,7 +54,7 @@ def stage(project, wrong):
     if wrong:
         activation = replace_once(activation, 'return Some(original == action);',
                                   'let _ = (original, action);\n        return Some(true);')
-    source = replace_once(source, ACTIVATION, '''    if let Some(decision) = proof_existing_activation(claim, action) {
+    source = replace_once(source, ACTIVATION_BEFORE_COMPARISON + ACTIVATION + ACTIVATION_WRITE, '''    if let Some(decision) = proof_claim_activation_row(claim, action) {
         return Ok(decision);
     }
 ''')
@@ -66,6 +74,17 @@ fn proof_existing_activation(
     action: &WorkAction<core::EffectId>,
 ) -> Option<bool> {
 ''' + activation + '''    None
+}
+
+// Some forwards the original early return. None reaches codec::save.
+fn proof_claim_activation_row(
+    claim: &mut RestoreClaim,
+    action: &WorkAction<core::EffectId>,
+) -> Option<bool> {
+''' + ACTIVATION_BEFORE_COMPARISON.replace('return Ok(', 'return Some(') + '''    if let Some(decision) = proof_existing_activation(claim, action) {
+        return Some(decision);
+    }
+''' + ACTIVATION_WRITE + '''    None
 }
 
 fn proof_existing_restore(

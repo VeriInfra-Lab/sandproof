@@ -14,14 +14,22 @@ EXTERNALS = {
     'core.option.Option.Insts.CoreCmpPartialEqOption.eq',
     'alloc.string.String.Insts.CoreCmpPartialEqString.eq',
 }
+CLONE_EXTERNALS = {
+    'core.option.Option.Insts.CoreCloneClone.clone',
+    'alloc.string.String.Insts.CoreCloneClone.clone',
+}
+
+
+def fixed_source(project, path, expected_sha256):
+    source = (project / path).read_bytes()
+    if sha256(source).hexdigest() != expected_sha256:
+        raise ValueError(f'the checked proof provider changed: {path}')
+    return source.decode()
 
 
 def replay_equality(project):
     """Reuse the existing equality proofs under this generation's namespace."""
-    source = (project / PROVIDER).read_bytes()
-    if sha256(source).hexdigest() != PROVIDER_SHA256:
-        raise ValueError('the checked replay proof provider changed')
-    original = source.decode()
+    original = fixed_source(project, PROVIDER, PROVIDER_SHA256)
     start = 'open Aeneas Aeneas.Std SandproofStage1RequestRust'
     end = 'theorem replay_complete'
     _, _, proofs = original.partition(start)
@@ -36,6 +44,28 @@ def replay_equality(project):
             + 'end SandboxModel.Stage1Protocol.RestoreClaim.ReusedReplayEquality\n')
 
 
+def action_cloning(project):
+    """Reuse the action-only Clone theorems in the actual generated namespace."""
+    root = Path('verification/experiments/stage1-protocol')
+    protocol = fixed_source(
+        project, root / 'inbox-record/InboxRecordCloning.lean.in',
+        '0026a0ee554a7e7eaba1786de874debb3d03a164832d83f1c56d13809b04f7af')
+    restore = fixed_source(
+        project, root / 'restore-work/RestoreWorkCloning.lean.in',
+        '9480131fcc1d2bcc86bcf9482c5a4059a3dd481cc9e44c6799f981de5efd659d')
+    leaves = ''.join(
+        '@[simp] theorem ' + name + protocol.split('@[simp] theorem ' + name, 1)[1]
+        .split('@[simp] theorem ', 1)[0]
+        for name in ('SandboxId_clone', 'ResourceId_clone', 'TenantId_clone'))
+    action = '@[simp] theorem vec_clone_exact' + restore.split(
+        '@[simp] theorem vec_clone_exact', 1)[1].split(
+        '@[simp] theorem sandproof_protocol_lifecycle_manifest_CaptureBinding_clone_exact', 1)[0]
+    return ('import SandproofRestoreClaim.Funs\nimport SandboxModel.Foundations.Cloning\n\n'
+            'open Aeneas Aeneas.Std SandproofRestoreClaimRust\n'
+            'namespace SandboxModel.Stage1Protocol.RestoreClaim.ReusedActionCloning\n\n'
+            + leaves + action + 'end SandboxModel.Stage1Protocol.RestoreClaim.ReusedActionCloning\n')
+
+
 def stage(project, generated, wrong):
     scratch_module = project / 'verification' / 'aeneas' / 'restore-claim-private'
     library = scratch_module / LIBRARY
@@ -48,17 +78,17 @@ def stage(project, generated, wrong):
     if template.is_file():
         actual = {line.split()[1] for line in template.read_text().splitlines()
                   if line.startswith('axiom ')}
-    if actual != (set() if wrong else EXTERNALS):
+    if actual != (CLONE_EXTERNALS if wrong else CLONE_EXTERNALS | EXTERNALS):
         raise ValueError(f'unexpected external functions: {actual}')
-    if not wrong:
-        shutil.copyfile(HERE / 'External.lean.in', library / 'FunsExternal.lean')
+    shutil.copyfile(HERE / 'External.lean.in', library / 'FunsExternal.lean')
 
     folder = project / MODULE
     folder.mkdir(parents=True)
-    for name in ('Contract', 'Witness', *(['Wrong'] if wrong else ['Correct', 'Prefix', 'Readback'])):
+    for name in ('Contract', 'Witness', *(['Wrong'] if wrong else ['Correct', 'Prefix', 'RowWrite', 'Readback'])):
         shutil.copyfile(HERE / (name + '.lean.in'), folder / (name + '.lean'))
     if not wrong:
         (folder / 'ReusedReplayEquality.lean').write_text(replay_equality(project))
+        (folder / 'ReusedActionCloning.lean').write_text(action_cloning(project))
 
     lakefile = project / 'lakefile.toml'
     with lakefile.open('a') as output:

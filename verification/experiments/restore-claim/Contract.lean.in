@@ -27,4 +27,15 @@ def KeepsRecordedActivation (decideAction : RestoreClaim → Action → Result (
     decideAction claim proposed = .ok (some true) →
     proposed = original
 
+/-- Some is the original early return before codec::save; none reaches that
+call with the mutable row returned by the extracted function. -/
+def PreservesMarkedRow
+    (step : RestoreClaim → Action → Result (Option Bool × RestoreClaim)) : Prop :=
+  ∀ (claim : RestoreClaim) (original proposed : Action),
+    claim.material_use = true →
+    claim.activation = some original →
+    IsActivation original →
+    IsActivation proposed →
+    step claim proposed = .ok (some (by classical exact decide (original = proposed)), claim)
+
 end SandboxModel.Stage1Protocol.RestoreClaim

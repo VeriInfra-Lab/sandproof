@@ -1,5 +1,6 @@
 import SandboxModel.Lifecycle.Protocol.RestoreClaim.Correct
 import SandboxModel.Lifecycle.Protocol.RestoreClaim.Prefix
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.RowWrite
 import SandboxModel.Lifecycle.Protocol.RestoreClaim.Witness
 
 open Aeneas Aeneas.Std SandproofRestoreClaimRust
@@ -27,6 +28,16 @@ theorem recorded_claim_readback (claim : RestoreClaim) (row : SandboxRecord)
 theorem unmarked_reaches_first_write :
     proof_existing_activation {marked with activation := none} original = .ok none := rfl
 
+theorem first_activation_writes_original_candidate :
+    proof_claim_activation_row {marked with activation := none} original = .ok (none, marked) :=
+  selected_first_activation_write_exact _ _ rfl rfl original_is_activation
+
+theorem marked_row_refuses_other_candidate_without_write :
+    proof_claim_activation_row marked other = .ok (some false, marked) := by
+  have result := selected_activation_preserves_marked_row marked original other rfl rfl
+    original_is_activation other_is_activation
+  simpa [Ne.symm different_candidate] using result
+
 theorem replays_same_complete_request :
     proof_existing_restore (some marked) marked.intent = .ok (some true) :=
   same_intent_replays marked
@@ -45,6 +56,8 @@ end SandboxModel.Stage1Protocol.RestoreClaim
 
 #audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.recorded_claim_readback
 #audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.unmarked_reaches_first_write
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.first_activation_writes_original_candidate
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.marked_row_refuses_other_candidate_without_write
 #audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.replays_same_complete_request
 #audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.accepts_original_candidate
 #audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.refuses_other_candidate

@@ -13,7 +13,21 @@ theorem wrong_violates_recorded_activation :
   exact different_candidate (sound marked original other rfl rfl
     original_is_activation other_is_activation accepts_other_candidate)
 
+theorem wrong_row_accepts_other_candidate :
+    proof_claim_activation_row marked other = .ok (some true, marked) := by
+  simp [proof_claim_activation_row, sandbox_controller_core.model.EffectId.command,
+    marked, other, proposed, proof_existing_activation]
+
+theorem wrong_violates_marked_row :
+    ¬ PreservesMarkedRow proof_claim_activation_row := by
+  intro preserves
+  have result := preserves marked original other rfl rfl original_is_activation other_is_activation
+  rw [wrong_row_accepts_other_candidate] at result
+  simp [Ne.symm different_candidate] at result
+
 end SandboxModel.Stage1Protocol.RestoreClaim
 
 #audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.accepts_other_candidate
 #audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.wrong_violates_recorded_activation
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.wrong_row_accepts_other_candidate
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.wrong_violates_marked_row

@@ -14,4 +14,16 @@ def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
   | some left, some right => dictionary.eq left right
   | _, _ => .ok false
 
+-- A6 normal-value Clone operations also used by the original restore-work proof.
+@[simp] def alloc.string.String.Insts.CoreCloneClone.clone (value : String) :
+    Result String := .ok value
+
+def core.option.Option.Insts.CoreCloneClone.clone {T : Type}
+    (dictionary : core.clone.Clone T) (value : Option T) : Result (Option T) :=
+  match value with
+  | none => .ok none
+  | some item => do
+      let copied ← dictionary.clone item
+      .ok (some copied)
+
 end SandproofRestoreClaimRust

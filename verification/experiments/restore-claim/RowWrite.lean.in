@@ -1,0 +1,35 @@
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.Correct
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.ReusedActionCloning
+
+open Aeneas Aeneas.Std SandproofRestoreClaimRust
+open SandproofRestoreClaimRust.controller.lifecycle_inbox.source_work.restore
+open SandproofRestoreClaimRust.sandbox_controller_core.model
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+theorem selected_first_activation_write_exact (claim : RestoreClaim) (action : Action)
+    (pinned : claim.material_use = true) (unmarked : claim.activation = none)
+    (activation : IsActivation action) :
+    proof_claim_activation_row claim action = .ok (none, { claim with activation := some action }) := by
+  obtain ⟨sandbox, epoch, generation, vm, hcommand⟩ := activation
+  simp [proof_claim_activation_row, pinned, EffectId.command, hcommand,
+    absent_activation_continues claim action unmarked]
+
+theorem selected_activation_preserves_marked_row :
+    PreservesMarkedRow proof_claim_activation_row := by
+  intro claim original proposed pinned saved originalActivation proposedActivation
+  have comparison := existing_activation_value claim original proposed saved
+    originalActivation proposedActivation
+  obtain ⟨sandbox, epoch, generation, vm, hcommand⟩ := proposedActivation
+  simp [proof_claim_activation_row, pinned, EffectId.command, hcommand, comparison]
+
+theorem selected_closed_pin_refuses_without_write (claim : RestoreClaim) (action : Action)
+    (closed : claim.material_use = false) :
+    proof_claim_activation_row claim action = .ok (some false, claim) := by
+  simp [proof_claim_activation_row, closed]
+
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.selected_first_activation_write_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.selected_activation_preserves_marked_row
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.selected_closed_pin_refuses_without_write

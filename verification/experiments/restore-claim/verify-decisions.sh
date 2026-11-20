@@ -42,7 +42,7 @@ for view in correct wrong; do
   mkdir -p -- "$project"
   git -C "$repo" archive "$head" | tar -xf - -C "$project"
   args=()
-  roots=(--start-from "$entry"::proof_existing_activation)
+  roots=(--start-from "$entry"::proof_claim_activation_row)
   target=Readback
   if [[ "$view" == correct ]]; then
     roots+=(--start-from "$entry"::proof_existing_restore --start-from "$entry"::proof_resume_prefix)
