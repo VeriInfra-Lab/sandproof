@@ -13,6 +13,8 @@ _require_assertions()
 import copy
 import time
 
+from tools.template_build_guest import equal
+
 PREFIX = '/sandproof/lifecycle'
 
 
@@ -86,7 +88,7 @@ def check_fresh_acceptance(original, fresh, window):
         raise ValueError('same owner/sequence in the new window must have one fresh session')
 
 
-def exercise(client, runtime):
+def exercise(client, runtime, *, register_successor):
     if runtime.gc_complete is not True:
         raise ValueError('original product settlement must precede window retirement checks')
     retirement = wait_retired_window(client)
@@ -104,6 +106,7 @@ def exercise(client, runtime):
     # the new window with the SAME original owner/sequence and parameters.
     fresh = type(client)(client.base_url, client.owner_key, client.foreign_key,
                          client.deployment, client.deadline, owner=client.owner)
+    register_successor(fresh)
     runtime.gc_complete = False
     runtime.physical_complete = False
     client.step('e2-fresh-window-create', 202)
@@ -117,11 +120,11 @@ def exercise(client, runtime):
     client.step('e2-fresh-window-full-replay', 202)
     replay = fresh.read_json('POST', PREFIX + '/create', key=fresh.owner_key,
                              body=copy.deepcopy(fresh.create_request), status=202)
-    if replay != accepted or fresh.query() != running:
+    if not equal(replay, accepted) or not equal(fresh.query(), running):
         raise ValueError('new-window replay changed its original acceptance or current result')
     same_candidate = runtime.confirm_running(fresh.session, physical, client.deadline)
     rejected_with_successor = rejected_original_requests(client)
-    if fresh.query() != running:
+    if not equal(fresh.query(), running):
         raise ValueError('retired request changed the successor session')
     successor_after_rejection = runtime.confirm_running(fresh.session, physical, client.deadline)
     client.step('e2-fresh-window-product-cleanup')

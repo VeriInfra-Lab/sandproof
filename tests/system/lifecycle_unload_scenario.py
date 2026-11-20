@@ -219,6 +219,27 @@ def failure_details(error, client, phase):
                        for frame in traceback.extract_tb(error.__traceback__, limit=16)])
 
 
+def record_known_sessions(report, client, control, window_successors):
+    report['known_sessions'] = [
+        dict(owner=value.owner, session=value.session, acceptance=value.current_acceptance)
+        for value in (client, control, *window_successors)
+        if value is not None and value.session is not None
+    ]
+    if report['complete'] or not window_successors:
+        return
+    successor = window_successors[0]
+    if not successor.timings:
+        return
+    attempt = successor.timings[-1]
+    operation = attempt['operation']
+    request = successor.create_request if operation == 'create' else successor.destroy_request
+    report['expired_window_successor_write_attempt'] = dict(
+        operation=operation,
+        key=dict(successor.key(request['sequence']), window=request['window']),
+        acceptance=copy.deepcopy(attempt.get('acceptance')),
+    )
+
+
 class PublicUnloadScenario:
     """One known owner/window and two saved complete requests, not a client SDK."""
     def __init__(self, base_url, owner_key, foreign_key, deployment, deadline, *, owner='1'):
@@ -866,6 +887,7 @@ def exercise(args):
                   scenario=args.scenario,
                   complete=False, phase='configuration', scope='normal lifecycle and physical materials; not complete E1-E16 or formal proof')
     client = control = None
+    window_successors = []
     capture_probe = data_probe = cow_probe = retirement_probe = receipt_probe = None
     expiry_probe = command_probe = None
     terminal_destroy_done = False
@@ -1039,7 +1061,7 @@ def exercise(args):
                     def observe_original_peer():
                         if expiry_prepare:
                             client.assert_data_closed();client.assert_previous_tokens_closed()
-                        assert control.query() == control_running, 'other owner lost its original Running observation'
+                        assert equal(control.query(), control_running), 'other owner lost its original Running observation'
                         return dict(session=control.session, original_public_running_query_completed=True,
                                     scope='one existing peer query while original loaded process is stopped')
                     if expiry_prepare:
@@ -1064,7 +1086,7 @@ def exercise(args):
                         client.operation_evidence_completed()
                         report['terminal_resume_replays'].append(client.assert_terminal_resume_replay(
                             original_resume_request, accepted, phase='cleaned'))
-                    assert control.query() == control_running
+                    assert equal(control.query(), control_running)
                     report['slot_reuse']['occupant_after_prepare_destroy'] = runtime.confirm_running(
                         control.session, control_physical, deadline)
                     control.destroy(control_running); control.wait_cleaned()
@@ -1128,15 +1150,15 @@ def exercise(args):
                     client.step('original-lost-resume-replay',202)
                     replay=client.read_json('POST',client.path()+'/resume',key=client.owner_key,
                         body=client.resume_request,status=202)
-                    assert replay==accepted, 'original Resume replay created another acceptance'
-                    assert client.query()==lost, 'original Resume replay revived lost state'
+                    assert equal(replay, accepted), 'original Resume replay created another acceptance'
+                    assert equal(client.query(), lost), 'original Resume replay revived lost state'
                     report['phase']='lost-state-same-manager-config-reopen'
                     report['lost_manager_restart']=runtime.restart_managers(deadline)
-                    assert client.query()==lost, 'manager restart changed original StateLost result'
+                    assert equal(client.query(), lost), 'manager restart changed original StateLost result'
                     report['lost_candidate_after_restart']=runtime.lost_candidate_evidence(gate_receipt,accepted,deadline)
                     client.assert_data_closed()
                     client.assert_previous_tokens_closed()
-                    assert control.query()==control_running
+                    assert equal(control.query(), control_running)
                     report['slot_reuse']['occupant_after_loss']=runtime.confirm_running(
                         control.session,control_physical,deadline)
                     assert report['activation_gate_recovery']['candidate_position']!=control_physical['context']['position']
@@ -1199,7 +1221,7 @@ def exercise(args):
                 client.assert_data_closed();client.assert_previous_tokens_closed()
                 report['expired_cleaned'] = wait_expired_cleaned(client,deadline)
                 report['final_resources'] = runtime.destroy_evidence(client.session,deadline)
-                assert control.query() == control_running
+                assert equal(control.query(), control_running)
                 report['slot_reuse']['occupant_after_expiry'] = runtime.confirm_running(control.session,control_physical,deadline)
                 control.destroy(control_running);control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup'] = runtime.destroy_evidence(control.session,deadline)
@@ -1257,7 +1279,7 @@ def exercise(args):
                     continued_acceptance,continued,stage,deadline)
                 report['phase']='public-continued-state-lost'
                 lost=client.wait_phase(continued_acceptance,waiting={'running'},complete='state_lost')
-                assert lost['unload_outcome']==continued['unload_outcome'], 'loss rewrote historical continued result'
+                assert equal(lost['unload_outcome'], continued['unload_outcome']), 'loss rewrote historical continued result'
                 client.assert_data_closed();client.assert_previous_tokens_closed();client.assert_owner_isolation()
                 report['continued_lost']=runtime.continued_lost_evidence(continued_acceptance,lost,stage,deadline)
                 client.assert_original_replay(lost)
@@ -1267,7 +1289,7 @@ def exercise(args):
                 report['continued_lost_after_restart']=runtime.continued_lost_evidence(
                     continued_acceptance,lost,stage,deadline)
                 client.assert_data_closed();client.assert_previous_tokens_closed()
-                assert control.query()==control_running
+                assert equal(control.query(), control_running)
                 report['slot_reuse']['occupant_after_loss']=runtime.confirm_running(control.session,control_physical,deadline)
                 control.destroy(control_running);control.wait_cleaned()
                 report['slot_reuse']['occupant_cleanup']=runtime.destroy_evidence(control.session,deadline)
@@ -1447,7 +1469,8 @@ def exercise(args):
         if expired_window_replay:
             from lifecycle_window_replay import exercise as exercise_expired_window
             report['phase'] = 'expired-window-replay'
-            report['expired_window_replay'] = exercise_expired_window(client, runtime)
+            report['expired_window_replay'] = exercise_expired_window(
+                client, runtime, register_successor=window_successors.append)
 
         report['acceptance_cases']={
             'E1':'normal RAM/disk/process continuity and actual slot reuse observed',
@@ -1600,11 +1623,7 @@ def exercise(args):
     finally:
         if client is not None:
             report['known_session'] = client.session
-        # Preserve both exact public identities on failure; an uncertain
-        # request is never replaced by a new key or a broad cleanup action.
-        report['known_sessions']=[dict(owner=value.owner,session=value.session,
-            acceptance=value.current_acceptance) for value in (client,control)
-            if value is not None and value.session is not None]
+        record_known_sessions(report, client, control, window_successors)
         report['operation_timings']=[sample for value in (client,control) if value is not None
             for sample in value.timing_report()]
         report['operation_timing_summary']={}
