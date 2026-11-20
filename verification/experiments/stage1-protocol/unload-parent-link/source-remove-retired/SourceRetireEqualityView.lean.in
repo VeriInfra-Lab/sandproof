@@ -1,0 +1,14 @@
+import SourceRetireTypes
+
+open Aeneas Aeneas.Std Result ControlFlow Error
+open SandproofSourceRetentionProviders
+set_option autoImplicit false
+set_option linter.unusedVariables false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+
+namespace SandboxModel.Stage1Protocol.SourceRetireActual
+
+-- ACTUAL COMPLETE RECORD COMPARISONS
+
+end SandboxModel.Stage1Protocol.SourceRetireActual

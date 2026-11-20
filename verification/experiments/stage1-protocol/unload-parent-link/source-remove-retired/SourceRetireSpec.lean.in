@@ -1,0 +1,338 @@
+import SourceRetireView
+
+open Aeneas Aeneas.Std Result ControlFlow
+open SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol
+open SourceRetireTypes SourceRetireActual
+set_option autoImplicit false
+set_option maxRecDepth 2048
+set_option maxHeartbeats 1000000
+
+namespace SandboxModel.Stage1Protocol.SourceRetireSpec
+noncomputable section
+local instance corePropDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+abbrev Record := controller.lifecycle_inbox.source_work.SourceWorkRecord
+abbrev Current := SourceRetireTypes.controller.lifecycle_inbox.source_work.codec.Sources
+abbrev Journal := SourceRetireTypes.JournalError
+abbrev Bytes := alloc.vec.Vec U8
+abbrev Reply := core.result.Result Unit Journal
+abbrev SqlError := SourceRetireTypes.rusqlite.error.Error
+abbrev JsonError := SourceRetireTypes.serde_json.error.Error
+abbrev Db := SourceRetireTypes.rusqlite.Connection
+abbrev Key := sandproof_protocol.lifecycle.digest.ContentDigest
+abbrev KeyBytes (record : Record) : Bytes := ⟨record.work.requirement.work_binding.to_slice⟩
+
+variable {Tree : Type → Type → Type} (io : SourceRetireLibrary.Ports Tree)
+
+abbrev raw := @controller.lifecycle_inbox.source_work.codec.clear_retired_source_record Tree io
+abbrev checked := @controller.lifecycle_inbox.source_work.codec.checked_retired_record Tree io
+abbrev charged := @controller.lifecycle_inbox.source_work.retirement.material_charge Tree io
+abbrev order := alloc.vec.Vec.Insts.CoreCmpOrd io Global core.cmp.OrdU8
+abbrev keyState := Tree Bytes Global
+
+/-- Standard shared short-circuit scan, using the already proved complete record comparator. -/
+theorem contains_complete (records : List Record) (record : Record) :
+    List.anyM (controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCmpPartialEqSourceWorkRecord.eq record) records =
+      .ok (decide (record ∈ records)) := by
+  induction records with
+  | nil => rfl
+  | cons head tail ih =>
+    by_cases same : record = head
+    · simp [List.anyM, SourceRetireEquality.complete_record_eq, same, pure]
+    · simp [List.anyM, SourceRetireEquality.complete_record_eq, same, ih]
+
+theorem copied_complete_key (record : Record) :
+    alloc.slice.Slice.to_vec core.clone.CloneU8 record.work.requirement.work_binding.to_slice =
+      .ok (KeyBytes record) := by
+  obtain ⟨value,returned,same⟩ := WP.spec_imp_exists (alloc.slice.Slice.to_vec_spec core.clone.CloneU8
+    record.work.requirement.work_binding.to_slice (by intro x member; rfl))
+  have whole : value = KeyBytes record := by
+    cases value
+    cases same
+    rfl
+  simpa only [whole] using returned
+
+theorem duplicate_key_is_first (db : Db) (current : Current) (keys after : keyState (Tree := Tree))
+    (record : Record)
+    (repeated : io.insert core.core.clone.CloneGlobal (order io) keys (KeyBytes record) = .ok (false,after)) :
+    raw io db current keys record = .ok (.Err .UnresolvedAction,after) := by
+  unfold raw controller.lifecycle_inbox.source_work.codec.clear_retired_source_record
+  simp only [sandproof_protocol.lifecycle.digest.ContentDigest.as_bytes, lift, bind_tc_ok,
+    copied_complete_key, repeated]
+  rfl
+
+
+/-- Preserves both Rust error constructors and language failure/nonreturn. -/
+def tryJournal {A B E : Type} (convert : E → Journal)
+    (reply : Result (core.result.Result A E))
+    (next : A → Result (core.result.Result B Journal)) : Result (core.result.Result B Journal) := do
+  let reply ← reply
+  match reply with
+  | .Err failure => .ok (.Err (convert failure))
+  | .Ok value => next value
+
+abbrev selectStatement : Str := SourceRetireActual.toStr
+  "SELECT id,state_json,sha256,reserve_bytes FROM controller_source_work_records WHERE work_key=?1"
+abbrev updateStatement : Str := SourceRetireActual.toStr
+  "UPDATE controller_source_work_records SET state_json=?1,sha256=?2,work_key=NULL WHERE id=?3 AND state_json=?4 AND sha256=?5 AND work_key=?6"
+abbrev nullBytes : Slice U8 := (Array.make 4#usize [110#u8,117#u8,108#u8,108#u8]).to_slice
+
+def query (db : Db) (record : Record) :=
+  SourceRetireLibrary.query
+    (ArrayT1.Insts.RusqliteParamsParams (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql))
+    controller.lifecycle_inbox.source_work.codec.clear_retired_source_record.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultTupleI64VecU8VecU8I64Error
+    db selectStatement (Array.make 1#usize [record.work.requirement.work_binding.to_slice]) ()
+
+def update (db : Db) (record : Record) (id : I64) (bytes sha : Bytes) (nullSha : Array U8 32#usize) :=
+  SourceRetireLibrary.execute
+    (TupleABCDEF.Insts.RusqliteParamsParams io
+      (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql)
+      (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql)
+      I64.Insts.RusqliteTypesTo_sqlToSql
+      (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql)
+      (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql)
+      (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql))
+    db updateStatement (nullBytes,nullSha.to_slice,id,bytes.slice,sha.slice,record.work.requirement.work_binding.to_slice)
+
+def clear (db : Db) (record : Record) (id : I64) (bytes sha : Bytes) : Result Reply := do
+  let nullSha ← io.recordDigest nullBytes
+  tryJournal SourceRetireTypes.JournalError.Sqlite (update io db record id bytes sha nullSha) fun count =>
+    if count = 1#usize then .ok (.Ok ()) else .ok (.Err .CorruptStore)
+
+def canonical (db : Db) (current : Current) (record : Record) (id : I64) (bytes sha : Bytes)
+    (reserve : I64) : Result Reply :=
+  tryJournal SourceRetireTypes.JournalError.Json (io.recordJson record) fun canonicalBytes => do
+    if bytes ≠ canonicalBytes then .ok (.Err .CorruptStore)
+    else
+      let required ← capture.source.SourceObservationConfig.required_bytes current.config 1#u64
+      tryJournal (fun e => e) (controller.lifecycle_inbox.source_work.codec.sql required) fun expected =>
+        if reserve ≠ expected then .ok (.Err .CorruptStore)
+        else clear io db record id bytes sha
+
+def readRow (db : Db) (current : Current) (record : Record) : Result Reply :=
+  tryJournal SourceRetireTypes.JournalError.Sqlite (query db record) fun (id,bytes,sha,reserve) =>
+    tryJournal (fun e => e) (checked io bytes.slice sha.slice) fun stored =>
+      if id < 1#i64 then .ok (.Err .CorruptStore)
+      else if stored ≠ some record then .ok (.Err .CorruptStore)
+      else canonical io db current record id bytes sha reserve
+
+def afterEligibility (db : Db) (current : Current) (record : Record) : Result Reply :=
+  tryJournal id (charged io record) fun charge =>
+    if charge ≠ 0#u64 then .ok (.Err .UnresolvedAction)
+    else readRow io db current record
+
+def settled (record : Record) : Bool := match record.retirement with
+  | some (.Settled _ _) => true
+  | _ => false
+
+def rowSpec (db : Db) (current : Current) (keys : keyState (Tree := Tree)) (record : Record) :
+    Result (Reply × keyState (Tree := Tree)) := do
+  let (fresh,after) ← io.insert core.core.clone.CloneGlobal (order io) keys (KeyBytes record)
+  if !fresh then .ok (.Err .UnresolvedAction,after)
+  else if record ∉ current.records.slice.val then .ok (.Err .UnresolvedAction,after)
+  else if record.capture.isSome && !settled record then .ok (.Err .UnresolvedAction,after)
+  else if record.capture.isNone && record.retirement.isSome then .ok (.Err .UnresolvedAction,after)
+  else do
+    let reply ← afterEligibility io db current record
+    .ok (reply,after)
+
+
+theorem scan_uses_complete_record (current : Current) (record : Record) :
+    core.slice.Slice.contains
+      controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCmpPartialEqSourceWorkRecord
+      current.records.deref record = .ok (decide (record ∈ current.records.slice.val)) :=
+  by
+    simpa only [core.slice.Slice.contains, alloc.vec.Vec.deref, alloc.vec.Vec.val, Slice.from_val,
+      controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCmpPartialEqSourceWorkRecord] using
+      contains_complete current.records.slice.val record
+
+theorem current_complete_record_is_first (db : Db) (current : Current)
+    (keys after : keyState (Tree := Tree)) (record : Record)
+    (fresh : io.insert core.core.clone.CloneGlobal (order io) keys (KeyBytes record) = .ok (true,after))
+    (absent : record ∉ current.records.slice.val) :
+    raw io db current keys record = .ok (.Err .UnresolvedAction,after) := by
+  unfold raw controller.lifecycle_inbox.source_work.codec.clear_retired_source_record
+  simp only [sandproof_protocol.lifecycle.digest.ContentDigest.as_bytes, lift, bind_tc_ok,
+    copied_complete_key, fresh]
+  simp only [scan_uses_complete_record, absent, decide_false, bind_tc_ok]
+  rfl
+
+
+theorem actual_settled (record : Record) :
+    controller.lifecycle_inbox.source_work.retirement.is_settled record = .ok (settled record) := by
+  cases ret : record.retirement with
+  | none => simp [ret,settled,controller.lifecycle_inbox.source_work.retirement.is_settled]
+  | some state => cases state <;> simp [ret,settled,controller.lifecycle_inbox.source_work.retirement.is_settled]
+
+theorem capture_none (record : Record) :
+    core.option.Option.is_none record.capture = !record.capture.isSome := by
+  cases record.capture <;> rfl
+
+theorem vector_deref {T : Type} (value : alloc.vec.Vec T) : value.deref = value.slice := by
+  apply Slice.ext
+  simp [alloc.vec.Vec.deref,alloc.vec.Vec.val]
+
+theorem stored_ne (stored : Option Record) (record : Record) :
+    core.cmp.PartialEq.ne.trait_default
+      (core.option.Option.Insts.CoreCmpPartialEqOption
+        (core.cmp.PartialEqShared controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCmpPartialEqSourceWorkRecord))
+      stored (some record) = .ok (decide (stored ≠ some record)) := by
+  cases stored <;> simp [core.cmp.PartialEq.ne.trait_default,core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+    SourceRetireEquality.complete_record_eq]
+
+theorem bytes_ne (xs ys : List U8) (sameLength : xs.length = ys.length) :
+    List.anyM (fun (p : U8 × U8) => (.ok (decide (p.1 ≠ p.2)) : Result Bool))
+      (List.zip xs ys) = .ok (decide (xs ≠ ys)) := by
+  induction xs generalizing ys with
+  | nil => cases ys <;> simp_all [pure]
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp at sameLength
+    | cons y ys =>
+      have tailLength : xs.length = ys.length := by simpa using sameLength
+      simp only [List.zip_cons_cons,List.anyM,bind_tc_ok]
+      by_cases same : x = y
+      · simp only [show decide (x ≠ y) = false by simp [same]]
+        rw [ih ys tailLength]
+        simp [same]
+      · simp only [show decide (x ≠ y) = true by simp [same]]
+        simp [same,pure]
+
+theorem vector_ne (left right : Bytes) :
+    alloc.vec.partial_eq.PartialEqVec.ne core.cmp.PartialEqU8 left right =
+      .ok (decide (left ≠ right)) := by
+  by_cases sameLength : left.length = right.length
+  · rw [alloc.vec.partial_eq.PartialEqVec.ne,if_pos sameLength]
+    rw [bytes_ne left.val right.val sameLength]
+    congr 1
+    exact decide_eq_decide.mpr (not_congr (alloc.vec.Vec.eq_iff left right).symm)
+  · have different : left ≠ right := by intro same; subst right; exact sameLength rfl
+    simp [alloc.vec.partial_eq.PartialEqVec.ne,sameLength,different]
+
+theorem root_contract (db : Db) (current : Current) (keys : keyState (Tree := Tree)) (record : Record) :
+    raw io db current keys record = rowSpec io db current keys record := by
+  unfold raw controller.lifecycle_inbox.source_work.codec.clear_retired_source_record rowSpec
+  simp only [sandproof_protocol.lifecycle.digest.ContentDigest.as_bytes, lift, bind_tc_ok, copied_complete_key]
+  cases step : io.insert core.core.clone.CloneGlobal (order io) keys (KeyBytes record) using Result.cases with
+  | vis effect continuation =>
+    cases effect
+    simp only [bind_tc_vis]
+    congr 1
+    funext impossible
+    exact PEmpty.elim impossible
+  | div => simp
+  | ret pair =>
+    rcases pair with ⟨fresh,after⟩
+    cases fresh with
+    | false => simp
+    | true =>
+      simp only [bind_tc_ok]
+      rw [scan_uses_complete_record]
+      by_cases present : record ∈ current.records.slice.val
+      · simp only [present,decide_true]
+        simp only [actual_settled,core.option.Option.is_some,capture_none]
+        have complement : record.capture.isNone = !record.capture.isSome := by cases record.capture <;> rfl
+        rw [complement]
+        by_cases captured : record.capture.isSome = true <;>
+          by_cases retired : record.retirement.isSome = true <;>
+          by_cases settledValue : settled record = true <;>
+          simp [captured,retired,settledValue]
+        all_goals
+          simp only [afterEligibility,charged,tryJournal,bind_assoc_eq]
+          congr 1
+          funext reply
+          cases reply <;> simp [core.result.Result.Insts.CoreOpsTry.branch,
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        all_goals
+          rename_i charge
+          by_cases zero : charge.val = 0
+          · simp only [zero,↓reduceIte]
+            simp only [readRow,query,tryJournal,bind_assoc_eq]
+            congr 1
+            funext queryReply
+            cases queryReply <;> simp [JournalError.Insts.CoreConvertFromError.from]
+            all_goals
+              rename_i tuple
+              rcases tuple with ⟨id,bytes,sha,reserve⟩
+              simp only [vector_deref,checked]
+              apply congrArg (fun next => checked io bytes.slice sha.slice >>= next)
+              funext storedReply
+              cases storedReply <;> simp
+              all_goals
+                rename_i stored
+                simp only [SourceRetireLibrary.optionRef,bind_tc_ok,stored_ne]
+                by_cases invalid : id.val < 1
+                · simp [invalid]
+                · simp only [invalid,↓reduceIte]
+                  by_cases same : stored = some record
+                  · simp only [same,ne_eq,not_true_eq_false,decide_false,Bool.false_eq_true,↓reduceIte]
+                    simp only [canonical,tryJournal,bind_assoc_eq]
+                    apply congrArg (fun next => io.recordJson record >>= next)
+                    funext encodedReply
+                    cases encodedReply <;> simp [JournalErrorFromJson.from_json]
+                    all_goals
+                      rename_i canonicalBytes
+                      simp only [vector_ne,bind_tc_ok]
+                      by_cases canonicalEq : bytes = canonicalBytes
+                      · simp only [canonicalEq,ne_self_iff_false,decide_false,
+                          Bool.false_eq_true,↓reduceIte]
+                        simp only [bind_assoc_eq]
+                        congr 1
+                        funext required
+                        congr 1
+                        funext signedReply
+                        cases signedReply <;> simp
+                        all_goals
+                          rename_i expectedReserve
+                          by_cases matched : reserve.val = expectedReserve.val
+                          · simp only [matched,↓reduceIte]
+                            simp only [clear,update,tryJournal,SourceRetireLibrary.vectorSlice,bind_tc_ok,bind_assoc_eq]
+                            congr 1
+                            funext nullSha
+                            congr 1
+                            funext updateReply
+                            cases updateReply <;> simp
+                            all_goals
+                              rename_i count
+                              by_cases one : count = 1#usize
+                              · subst count; simp
+                              · have different : count.val ≠ 1 := by
+                                  intro equal
+                                  apply one
+                                  scalar_tac
+                                simp [one,different]
+
+                          · simp [matched]
+                      · simp [canonicalEq]
+                  · simp [same]
+          · simp [zero]
+      · simp [present]
+
+
+/-- The same complete ordered per-record contract for correct and wrong Rust views.
+    It does not assert a physical retirement, active parent transaction, commit,
+    or concrete JSON schema correspondence. -/
+def Contract (candidate : Db → Current → keyState (Tree := Tree) → Record →
+    Result (Reply × keyState (Tree := Tree))) : Prop :=
+  ∀ db current keys record, candidate db current keys record = rowSpec io db current keys record
+
+theorem actual_contract : Contract io (raw io) := root_contract io
+
+end
+end SandboxModel.Stage1Protocol.SourceRetireSpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.contains_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.copied_complete_key
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.duplicate_key_is_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.scan_uses_complete_record
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.current_complete_record_is_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.actual_settled
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.capture_none
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.vector_deref
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.stored_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.bytes_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.vector_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.root_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireSpec.actual_contract

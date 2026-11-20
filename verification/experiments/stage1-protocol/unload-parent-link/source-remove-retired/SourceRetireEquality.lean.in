@@ -1,0 +1,306 @@
+import SourceRetireEqualityView
+
+open Aeneas Aeneas.Std
+open SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol
+open SourceWorkMatch SourceWorkMatch.Scalars SourceWorkMatch.SourceData
+open SandboxModel.Stage1Protocol.SourceRetireActual
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRetireEquality
+noncomputable section
+local instance corePropDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+-- These instantiate existing field/container proofs over the same actual types.
+theorem result_digest_eq (a b : sandbox_controller_core.ids.ResultDigest) :
+    sandbox_controller_core.ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest.eq a b = .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [sandbox_controller_core.ids.ResultDigest.Insts.CoreCmpPartialEqResultDigest.eq]
+
+theorem work_action_eq {C : Type} (dictionary : core.cmp.PartialEq C C)
+    (lawful : ∀ a b, dictionary.eq a b = .ok (decide (a=b)))
+    (a b : sandproof_protocol.WorkAction C) :
+    sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction.eq dictionary a b =
+      .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction.eq,
+    sandproof_protocol.WorkAction.mk.injEq, SourceData.action_eq, lawful, RequestEquality.ok_and]
+
+theorem capture_binding_eq (a b : sandproof_protocol.lifecycle.manifest.CaptureBinding) :
+    sandproof_protocol.lifecycle.manifest.CaptureBinding.Insts.CoreCmpPartialEqCaptureBinding.eq a b =
+      .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [sandproof_protocol.lifecycle.manifest.CaptureBinding.Insts.CoreCmpPartialEqCaptureBinding.eq,
+    sandproof_protocol.lifecycle.manifest.CaptureBinding.mk.injEq, RequestEquality.binding_eq,
+    sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq,
+    sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq,
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq, RequestEquality.ok_and]
+
+theorem drive_eq (a b : sandproof_protocol.lifecycle.manifest.WritableDrive) :
+    sandproof_protocol.lifecycle.manifest.WritableDrive.Insts.CoreCmpPartialEqWritableDrive.eq a b =
+      .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [sandproof_protocol.lifecycle.manifest.WritableDrive.Insts.CoreCmpPartialEqWritableDrive.eq,
+    sandproof_protocol.lifecycle.manifest.WritableDrive.mk.injEq, wire_resource_id_eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, RequestEquality.ok_and]
+
+theorem drives_eq (a b : alloc.vec.Vec sandproof_protocol.lifecycle.manifest.WritableDrive) :
+    alloc.vec.partial_eq.PartialEqVec.eq
+      sandproof_protocol.lifecycle.manifest.WritableDrive.Insts.CoreCmpPartialEqWritableDrive a b =
+      .ok (decide (a=b)) :=
+  Containers.vec_eq_of _ drive_eq a b
+
+theorem compatibility_eq (a b : sandproof_protocol.lifecycle.manifest.VmCompatibility) :
+    sandproof_protocol.lifecycle.manifest.VmCompatibility.Insts.CoreCmpPartialEqVmCompatibility.eq a b =
+      .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [sandproof_protocol.lifecycle.manifest.VmCompatibility.Insts.CoreCmpPartialEqVmCompatibility.eq,
+    sandproof_protocol.lifecycle.manifest.VmCompatibility.mk.injEq, wire_content_digest_eq,
+    drives_eq, RequestEquality.ok_and]
+
+theorem worker_eq (a b : capture.launch.CaptureWorkerBinding) :
+    capture.launch.CaptureWorkerBinding.Insts.CoreCmpPartialEqCaptureWorkerBinding.eq a b =
+      .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [capture.launch.CaptureWorkerBinding.Insts.CoreCmpPartialEqCaptureWorkerBinding.eq,
+    capture.launch.CaptureWorkerBinding.mk.injEq, SourceData.process_eq,
+    wire_content_digest_eq, RequestEquality.ok_and]
+
+theorem raw_observation_eq (a b : capture.source.RawSourceObservation) :
+    capture.source.RawSourceObservation.Insts.CoreCmpPartialEqRawSourceObservation.eq a b =
+      .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [capture.source.RawSourceObservation.Insts.CoreCmpPartialEqRawSourceObservation.eq,
+    capture.source.RawSourceObservation.mk.injEq, wire_content_digest_eq,
+    SourceData.resource_eq, SourceData.process_eq, RequestEquality.vec_eq,
+    RequestEquality.array_eq, RequestEquality.ok_and,
+    Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
+
+theorem effect_action_eq (a b : sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) :
+    sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction.eq
+      sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId a b = .ok (decide (a=b)) :=
+  work_action_eq _ SourceWorkMatch.CoreEffects.effect_eq a b
+
+theorem option_action_eq (a b : Option (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId)) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      (sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction
+        sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId) a b = .ok (decide (a=b)) :=
+  Containers.option_eq_of _ effect_action_eq a b
+
+theorem option_worker_eq (a b : Option capture.launch.CaptureWorkerBinding) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      capture.launch.CaptureWorkerBinding.Insts.CoreCmpPartialEqCaptureWorkerBinding a b = .ok (decide (a=b)) :=
+  Containers.option_eq_of _ worker_eq a b
+
+theorem stop_coverage_eq (a b : sandbox_controller_core.model.StopCoverage) :
+    sandbox_controller_core.model.StopCoverage.Insts.CoreCmpPartialEqStopCoverage.eq a b = .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [sandbox_controller_core.model.StopCoverage.Insts.CoreCmpPartialEqStopCoverage.eq,
+    sandbox_controller_core.model.StopCoverage.mk.injEq, SourcePreservation.key_eq,
+    result_digest_eq, RequestEquality.ok_and]
+
+theorem terminated_eq (a b : capture.terminated.TerminatedCaptureObservation) :
+    capture.terminated.TerminatedCaptureObservation.Insts.CoreCmpPartialEqTerminatedCaptureObservation.eq a b =
+      .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [capture.terminated.TerminatedCaptureObservation.Insts.CoreCmpPartialEqTerminatedCaptureObservation.eq,
+    capture.terminated.TerminatedCaptureObservation.StoppedAndDrained.injEq,
+    wire_content_digest_eq, effect_action_eq, SourceData.process_eq, option_worker_eq,
+    SourcePreservation.host_context_eq, lift, RequestEquality.ok_and,
+    Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
+
+theorem pause_request_eq (a b : capture.work.PauseWorkRequest) :
+    capture.work.PauseWorkRequest.Insts.CoreCmpPartialEqPauseWorkRequest.eq a b = .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [capture.work.PauseWorkRequest.Insts.CoreCmpPartialEqPauseWorkRequest.eq,
+    capture.work.PauseWorkRequest.mk.injEq, capture_binding_eq, wire_content_digest_eq,
+    RequestEquality.node_eq, SourceData.resource_eq, SourceData.process_eq, RequestEquality.ok_and]
+
+theorem full_request_eq (a b : capture.work.FullCaptureWorkRequest) :
+    capture.work.FullCaptureWorkRequest.Insts.CoreCmpPartialEqFullCaptureWorkRequest.eq a b = .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [capture.work.FullCaptureWorkRequest.Insts.CoreCmpPartialEqFullCaptureWorkRequest.eq,
+    capture.work.FullCaptureWorkRequest.mk.injEq, pause_request_eq, compatibility_eq,
+    RequestEquality.ok_and, Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
+
+theorem end_outcome_eq (a b : capture.CaptureRequestEndOutcome) :
+    capture.CaptureRequestEndOutcome.Insts.CoreCmpPartialEqCaptureRequestEndOutcome.eq a b = .ok (decide (a=b)) := by
+  cases a <;> cases b <;>
+    simp [capture.CaptureRequestEndOutcome.Insts.CoreCmpPartialEqCaptureRequestEndOutcome.eq,
+      read_discriminant, capture.CaptureRequestEndOutcome.read_discriminant, lift]
+
+theorem end_observation_eq (a b : capture.CaptureRequestEndObservation) :
+    capture.CaptureRequestEndObservation.Insts.CoreCmpPartialEqCaptureRequestEndObservation.eq a b = .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [capture.CaptureRequestEndObservation.Insts.CoreCmpPartialEqCaptureRequestEndObservation.eq,
+    capture.CaptureRequestEndObservation.mk.injEq, effect_action_eq, wire_content_digest_eq,
+    worker_eq, SourceData.process_eq, end_outcome_eq, RequestEquality.ok_and]
+
+theorem release_facts_eq (a b : controller.lifecycle_inbox.source_work.retirement.MaterialReleaseFacts) :
+    controller.lifecycle_inbox.source_work.retirement.MaterialReleaseFacts.Insts.CoreCmpPartialEqMaterialReleaseFacts.eq a b = .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [controller.lifecycle_inbox.source_work.retirement.MaterialReleaseFacts.Insts.CoreCmpPartialEqMaterialReleaseFacts.eq,
+    controller.lifecycle_inbox.source_work.retirement.MaterialReleaseFacts.mk.injEq,
+    SourcePreservation.option_witness_eq, RequestEquality.ok_and]
+
+theorem restore_claim_eq (a b : controller.lifecycle_inbox.source_work.restore.RestoreClaim) :
+    controller.lifecycle_inbox.source_work.restore.RestoreClaim.Insts.CoreCmpPartialEqRestoreClaim.eq a b = .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [controller.lifecycle_inbox.source_work.restore.RestoreClaim.Insts.CoreCmpPartialEqRestoreClaim.eq,
+    controller.lifecycle_inbox.source_work.restore.RestoreClaim.mk.injEq, RequestEquality.accepted_eq,
+    SourceData.local_eq, option_action_eq, RequestEquality.ok_and, Bool.and_left_comm]
+
+theorem boxed_action_eq (a b : sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) :
+    (core.cmp.PartialEqBox (sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction
+      sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId)).eq a b = .ok (decide (a=b)) := by
+  simpa [core.cmp.PartialEqBox, alloc.boxed.PartialEqBox.eq,
+    sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction] using effect_action_eq a b
+
+theorem option_boxed_action_eq (a b : Option (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId)) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      (core.cmp.PartialEqBox (sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction
+        sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId)) a b = .ok (decide (a=b)) :=
+  Containers.option_eq_of _ boxed_action_eq a b
+
+theorem prior_end_eq (a b : controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd) :
+    controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd.eq a b = .ok (decide (a=b)) := by
+  cases a <;> cases b <;>
+    simp [controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd.eq,
+      read_discriminant, controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.read_discriminant,
+      wire_content_digest_eq, option_boxed_action_eq, end_observation_eq, RequestEquality.ok_and]
+
+theorem option_prior_end_eq (a b : Option controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd a b = .ok (decide (a=b)) :=
+  Containers.option_eq_of _ prior_end_eq a b
+
+theorem capture_end_eq (a b : controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord) :
+    controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord.eq a b = .ok (decide (a=b)) := by
+  cases a <;> cases b <;>
+    simp [controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord.eq,
+      read_discriminant, controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.read_discriminant,
+      wire_content_digest_eq, option_boxed_action_eq, end_observation_eq, stop_coverage_eq, terminated_eq,
+      option_prior_end_eq, RequestEquality.ok_and]
+
+theorem option_digest_eq (a b : Option sandproof_protocol.lifecycle.digest.ContentDigest) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest a b = .ok (decide (a=b)) :=
+  ContainerInstances.option_eq _ wire_content_digest_eq a b
+
+theorem option_u64_eq (a b : Option U64) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq core.cmp.PartialEqU64 a b = .ok (decide (a=b)) := by
+  cases a <;> cases b <;> simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq]
+
+theorem option_capture_end_eq (a b : Option controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord a b = .ok (decide (a=b)) :=
+  Containers.option_eq_of _ capture_end_eq a b
+
+theorem capture_work_eq (a b : controller.lifecycle_inbox.source_work.full.CaptureWork) :
+    controller.lifecycle_inbox.source_work.full.CaptureWork.Insts.CoreCmpPartialEqCaptureWork.eq a b = .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [controller.lifecycle_inbox.source_work.full.CaptureWork.Insts.CoreCmpPartialEqCaptureWork.eq,
+    controller.lifecycle_inbox.source_work.full.CaptureWork.mk.injEq, core_operation_id_eq,
+    full_request_eq, option_action_eq, option_worker_eq, option_digest_eq, option_u64_eq,
+    option_capture_end_eq, RequestEquality.ok_and,
+    Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
+
+theorem option_observation_eq (a b : Option capture.source.RawSourceObservation) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      capture.source.RawSourceObservation.Insts.CoreCmpPartialEqRawSourceObservation a b = .ok (decide (a=b)) :=
+  Containers.option_eq_of _ raw_observation_eq a b
+
+theorem option_capture_eq (a b : Option controller.lifecycle_inbox.source_work.full.CaptureWork) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      controller.lifecycle_inbox.source_work.full.CaptureWork.Insts.CoreCmpPartialEqCaptureWork a b = .ok (decide (a=b)) :=
+  Containers.option_eq_of _ capture_work_eq a b
+
+theorem option_restore_eq (a b : Option controller.lifecycle_inbox.source_work.restore.RestoreClaim) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      controller.lifecycle_inbox.source_work.restore.RestoreClaim.Insts.CoreCmpPartialEqRestoreClaim a b = .ok (decide (a=b)) :=
+  Containers.option_eq_of _ restore_claim_eq a b
+
+theorem complete_record_eq (a b : controller.lifecycle_inbox.source_work.SourceWorkRecord) :
+    controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCmpPartialEqSourceWorkRecord.eq a b = .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCmpPartialEqSourceWorkRecord.eq,
+    controller.lifecycle_inbox.source_work.SourceWorkRecord.mk.injEq, SourceWorkMatch.work_eq,
+    option_observation_eq, option_capture_eq, option_restore_eq, SourcePreservation.option_state_eq,
+    release_facts_eq, RequestEquality.ok_and]
+
+
+theorem complete_record_accepts_iff (a b : controller.lifecycle_inbox.source_work.SourceWorkRecord) :
+    controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCmpPartialEqSourceWorkRecord.eq a b = .ok true ↔ a=b := by
+  rw [complete_record_eq]
+  simp
+
+theorem complete_record_rejects_iff (a b : controller.lifecycle_inbox.source_work.SourceWorkRecord) :
+    controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCmpPartialEqSourceWorkRecord.eq a b = .ok false ↔ a≠b := by
+  rw [complete_record_eq]
+  simp
+
+theorem complete_record_total (a b : controller.lifecycle_inbox.source_work.SourceWorkRecord) :
+    ∃ accepted, controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCmpPartialEqSourceWorkRecord.eq a b = .ok accepted :=
+  ⟨decide (a=b),complete_record_eq a b⟩
+
+
+theorem complete_record_same_value (record : controller.lifecycle_inbox.source_work.SourceWorkRecord) :
+    controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCmpPartialEqSourceWorkRecord.eq record record = .ok true :=
+  (complete_record_accepts_iff record record).mpr rfl
+
+theorem same_key_other_configuration_limit_is_rejected
+    (record : controller.lifecycle_inbox.source_work.SourceWorkRecord) (limit : U32)
+    (different : limit ≠ record.work.requirement.limits.max_configuration_bytes) :
+    let changed := {record with work := {record.work with requirement := {record.work.requirement with
+      limits := {record.work.requirement.limits with max_configuration_bytes := limit}}}}
+    changed.work.requirement.work_binding = record.work.requirement.work_binding ∧
+      controller.lifecycle_inbox.source_work.SourceWorkRecord.Insts.CoreCmpPartialEqSourceWorkRecord.eq record changed = .ok false := by
+  dsimp only
+  constructor
+  · rfl
+  · apply (complete_record_rejects_iff _ _).mpr
+    intro same
+    have field := congrArg (fun r : controller.lifecycle_inbox.source_work.SourceWorkRecord =>
+      r.work.requirement.limits.max_configuration_bytes) same
+    exact different field.symm
+
+end
+end SandboxModel.Stage1Protocol.SourceRetireEquality
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.result_digest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.work_action_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.capture_binding_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.drive_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.drives_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.compatibility_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.worker_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.raw_observation_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.effect_action_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.option_action_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.option_worker_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.stop_coverage_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.terminated_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.pause_request_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.full_request_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.end_outcome_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.end_observation_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.release_facts_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.restore_claim_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.boxed_action_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.option_boxed_action_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.prior_end_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.option_prior_end_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.capture_end_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.option_digest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.option_u64_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.option_capture_end_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.capture_work_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.option_observation_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.option_capture_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.option_restore_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_rejects_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_total
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_same_value
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireEquality.same_key_other_configuration_limit_is_rejected

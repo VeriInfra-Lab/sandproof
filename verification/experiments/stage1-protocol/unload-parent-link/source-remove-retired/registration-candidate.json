@@ -1,0 +1,269 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-remove-retired",
+  "parent_prs": [
+    996,
+    945
+  ],
+  "prior": [
+    {
+      "root": "SourceInitReads",
+      "physical_files": 99,
+      "audits": 483
+    },
+    {
+      "root": "RetentionProviders",
+      "physical_files": 26,
+      "audits": 127
+    }
+  ],
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceRetireCases",
+      "physical_files": 130,
+      "full_audits": 675,
+      "own_modules": [
+        "SourceRetireTypes.lean",
+        "SourceRetireEqualityView.lean",
+        "SourceRetireEquality.lean",
+        "SourceRetireLibrary.lean",
+        "SourceRetireView.lean",
+        "SourceRetireSpec.lean",
+        "SourceRetireCases.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.result_digest_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.work_action_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.capture_binding_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.drive_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.drives_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.compatibility_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.worker_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.raw_observation_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.effect_action_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_action_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_worker_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.stop_coverage_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.terminated_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.pause_request_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.full_request_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.end_outcome_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.end_observation_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.release_facts_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.restore_claim_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.boxed_action_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_boxed_action_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.prior_end_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_prior_end_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.capture_end_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_digest_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_u64_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_capture_end_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.capture_work_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_observation_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_capture_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_restore_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_accepts_iff",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_rejects_iff",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_total",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_same_value",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.same_key_other_configuration_limit_is_rejected",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.contains_complete",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.copied_complete_key",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.duplicate_key_is_first",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.scan_uses_complete_record",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.current_complete_record_is_first",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.actual_settled",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.capture_none",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.vector_deref",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.stored_ne",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.bytes_ne",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.vector_ne",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.root_contract",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.reservation_reuses_existing",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.legal_reservation",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.empty_material",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.original_four_columns",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.slice_eq_self",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.slice_ne_self",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.vector_slice_ne_self",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.checked_full_record",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.different_statements",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.original_six_values",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.signed_reservation",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.expected_complete_count",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.actual_complete_count",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.normal_one_row",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.zero_rows_rejected"
+      ]
+    },
+    {
+      "variant": "allow-zero-update",
+      "formal_root": "SourceRetireNegative",
+      "physical_files": 132,
+      "full_audits": 679,
+      "own_modules": [
+        "SourceRetireTypes.lean",
+        "SourceRetireEqualityView.lean",
+        "SourceRetireEquality.lean",
+        "SourceRetireLibrary.lean",
+        "SourceRetireView.lean",
+        "SourceRetireSpec.lean",
+        "SourceRetireCases.lean",
+        "SourceRetireWrongView.lean",
+        "SourceRetireNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.result_digest_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.work_action_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.capture_binding_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.drive_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.drives_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.compatibility_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.worker_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.raw_observation_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.effect_action_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_action_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_worker_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.stop_coverage_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.terminated_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.pause_request_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.full_request_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.end_outcome_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.end_observation_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.release_facts_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.restore_claim_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.boxed_action_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_boxed_action_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.prior_end_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_prior_end_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.capture_end_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_digest_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_u64_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_capture_end_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.capture_work_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_observation_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_capture_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.option_restore_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_eq",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_accepts_iff",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_rejects_iff",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_total",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.complete_record_same_value",
+        "SandboxModel.Stage1Protocol.SourceRetireEquality.same_key_other_configuration_limit_is_rejected",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.contains_complete",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.copied_complete_key",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.duplicate_key_is_first",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.scan_uses_complete_record",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.current_complete_record_is_first",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.actual_settled",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.capture_none",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.vector_deref",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.stored_ne",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.bytes_ne",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.vector_ne",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.root_contract",
+        "SandboxModel.Stage1Protocol.SourceRetireSpec.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.reservation_reuses_existing",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.legal_reservation",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.empty_material",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.original_four_columns",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.slice_eq_self",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.slice_ne_self",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.vector_slice_ne_self",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.checked_full_record",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.different_statements",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.original_six_values",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.signed_reservation",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.expected_complete_count",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.actual_complete_count",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.normal_one_row",
+        "SandboxModel.Stage1Protocol.SourceRetireCases.zero_rows_rejected",
+        "SandboxModel.Stage1Protocol.SourceRetireNegative.wrong_complete_count",
+        "SandboxModel.Stage1Protocol.SourceRetireNegative.wrong_normal_one_row",
+        "SandboxModel.Stage1Protocol.SourceRetireNegative.wrong_accepts_zero_rows",
+        "SandboxModel.Stage1Protocol.SourceRetireNegative.rejects_same_complete_contract"
+      ]
+    }
+  ],
+  "formal_development_entry": "check.py",
+  "public_registration_accepted": false,
+  "production_candidate_equivalence_complete": false,
+  "capture_policy": "compile/extract actual correct and allow-zero-update; validate full archive/staged inputs/logs/LLBC/generated mapping; all other bodies identical",
+  "native_candidate": {
+    "name": "stage1-source-remove-retired",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "allow-zero-update",
+      "adapted-allow-zero-update"
+    ],
+    "tests": [
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_requires_transaction_even_for_empty_expected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_empty_transaction_does_not_load_missing_schema",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_clears_only_complete_original_slot_and_keeps_reservation",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_same_key_with_changed_complete_record_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_unsettled_material_keeps_complete_source_row",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_zero_row_compare_and_set_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_duplicate_preserves_first_update_until_explicit_rollback"
+    ],
+    "expected": {
+      "original": {
+        "passed": 7,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 7,
+        "failed": 0
+      },
+      "allow-zero-update": {
+        "passed": 6,
+        "failed": 1
+      },
+      "adapted-allow-zero-update": {
+        "passed": 6,
+        "failed": 1
+      }
+    },
+    "rejection": "retired source clearing must reject a zero-row compare-and-set",
+    "restoration": "new original source/target after both mutants: compile and run all seven exact tests",
+    "full_functional_required": true
+  },
+  "representation": {
+    "record": "same actual complete six-field SourceWorkRecord and nested fields; full comparison, never key-only equality",
+    "row": "actual SELECT four-column callback and exact six UPDATE effective values; original statement/object and first errors",
+    "normal_counterexample": "same Ready per-symbol provider points and complete Contract; arbitrary full record with no capture/retirement/release, exact original columns, count 1 control and count 0 counterexample; no fabricated JSON or decoded business helper assumption",
+    "state": "insertion after-state retained; Err does not imply rollback or absence of earlier parent row updates",
+    "physical_boundary": "per-record isolated view; original nested-borrow parent, physical transaction/state/commit and permission remain open"
+  },
+  "remaining_providers": {
+    "candidate_only": true,
+    "source": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+    "V0": [
+      "Global BTreeSet<Vec<u8>>::insert and actual Ord<Vec<u8>> for complete copied 32-byte keys; current string-key contract must not be widened silently",
+      "Shared Slice::contains with the original full SourceWorkRecord comparator; preserve short circuit and language-level failure/nonreturn",
+      "Six tuple Params and original dynamic macro have equal effective bound values only under exact prepared statement/count and fixed ToSql conditions; retain count/bind order",
+      "Exact four-column FromSql including Vec<u8> blob-to-value, one-array Params and effective Owned/Borrowed ToSql inputs; no generic SQL/schema adoption from a development definition"
+    ],
+    "V3": [
+      "Concrete full-record optional decoding/encoding schema and retirement binding/closure tuple JSON wiring remain owned obligations; nine exact typed library adapters do not prove whole Serde"
+    ],
+    "V5": [
+      "Original active transaction and OLD World supplied expected records, actual rows/aggregate/state mapping, physical effects and uncertain commit; an Err does not imply rollback"
+    ],
+    "remaining_parent": "Original remove_retired loop still blocked by fixed backend nested borrows; per-record equality is not parent-loop or physical retirement permission"
+  },
+  "public_remaining": [
+    "adopt native and formal candidate registrations with controller-owned full scope",
+    "ning four native views + independent correct restoration + current complete functional entry",
+    "current public proof_native_suite / verify-stage1-protocol / verify-controller coordinated acceptance",
+    "whole production-to-isolated general equivalence and all named library/schema/transaction/physical obligations"
+  ]
+}

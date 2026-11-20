@@ -1,0 +1,236 @@
+import SourceRetireSpec
+
+open Aeneas Aeneas.Std Result
+open SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol
+open SourceRetireTypes SourceRetireActual SourceRetireSpec
+set_option autoImplicit false
+set_option maxRecDepth 2048
+set_option maxHeartbeats 1000000
+
+namespace SandboxModel.Stage1Protocol.SourceRetireCases
+noncomputable section
+
+abbrev SqlValue := SandproofSourceRowSqlSelect.SqlValue
+abbrev Statement := SourceRetireTypes.rusqlite.statement.Statement
+abbrev Params := SourceRetireTypes.rusqlite.params.Params
+abbrev Values := Slice U8 × Slice U8 × I64 × Slice U8 × Slice U8 × Slice U8
+
+def fullCurrent (record : Record) : Current :=
+  ⟨SourceWorkMatch.Values.limits, SourceWorkMatch.Values.node, 1#u16,
+    alloc.vec.Vec.from [record] (by scalar_tac)⟩
+
+def values (record : Record) (payload : Bytes) (sha emptySha : Array U8 32#usize) : Values :=
+  (nullBytes,emptySha.to_slice,1#i64,payload.slice,sha.to_slice,record.work.requirement.work_binding.to_slice)
+
+def arguments (record : Record) (payload : Bytes) (sha emptySha : Array U8 32#usize) : List SqlValue :=
+  [.blob ⟨nullBytes⟩,.blob ⟨emptySha.to_slice⟩,.integer 1#i64,.blob payload,
+    .blob ⟨sha.to_slice⟩,.blob (KeyBytes record)]
+
+def six {Tree : Type → Type → Type} (io : SourceRetireLibrary.Ports Tree) : Params Values :=
+  TupleABCDEF.Insts.RusqliteParamsParams io
+    (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql)
+    (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql)
+    I64.Insts.RusqliteTypesTo_sqlToSql
+    (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql)
+    (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql)
+    (Shared0T.Insts.RusqliteTypesTo_sqlToSql SliceU8.Insts.RusqliteTypesTo_sqlToSql)
+
+/-- A single whole-call SQL reply provider. It checks the full query binding,
+    retains the issued row/statement, and checks all six effective UPDATE values.
+    It is not a physical transaction or a reusable SQLite snapshot. -/
+def database (count : Usize) (record : Record) (payload : Bytes) (sha emptySha : Array U8 32#usize) : Db where
+  canonical := {
+    identity := 1
+    prepare := fun sql =>
+      if sql = selectStatement then .ok (.Ok 1)
+      else if sql = updateStatement then .ok (.Ok 6)
+      else .ok (.Err ⟨2⟩)
+    countError := fun _ _ => ⟨3⟩
+    run := fun sql inputs =>
+      if sql = updateStatement ∧ inputs = arguments record payload sha emptySha then .ok (.Ok count)
+      else .ok (.Err ⟨4⟩) }
+  statementObject := fun _ => 5
+  columns := fun _ => 4#usize
+  invalidIndex := fun _ _ => ⟨6⟩
+  firstRow := fun sql statement =>
+    if sql = selectStatement ∧ statement.canonical.arguments = [.blob (KeyBytes record)] then
+      .ok (.Ok {
+        object := 7
+        statement := statement
+        column := fun index =>
+          if index.val = 0 then .Integer 1#i64
+          else if index.val = 1 then .Blob payload.slice
+          else if index.val = 2 then .Blob sha.to_slice
+          else .Integer 258048#i64
+        conversionError := fun _ _ _ => ⟨8⟩ })
+    else .ok (.Err ⟨⟨9⟩,false⟩)
+
+/-- Precise provider points for any complete record and its genuine encoding.
+    No JSON bytes, hash computation, authorization or commit are fabricated here.
+    Concrete JSON/schema conformance and library adoption remain separate. -/
+structure Ready {Tree : Type → Type → Type} (io : SourceRetireLibrary.Ports Tree)
+    (record : Record) (payload : Bytes) (sha emptySha : Array U8 32#usize)
+    (before after : keyState (Tree := Tree)) : Prop where
+  fresh : io.insert core.core.clone.CloneGlobal (order io) before (KeyBytes record) = .ok (true,after)
+  noCapture : record.capture = none
+  noRetirement : record.retirement = none
+  noRelease : record.material_release = ⟨none,none⟩
+  decoded : io.decode payload.slice = .ok (.Ok (some record))
+  digested : io.recordDigest payload.slice = .ok sha
+  canonicalOptional : io.optionalJson (some record) = .ok (.Ok payload)
+  canonicalRecord : io.recordJson record = .ok (.Ok payload)
+  emptyDigest : io.recordDigest nullBytes = .ok emptySha
+  bound : ∀ statement : Statement, statement.canonical.expectedParameters = 6 →
+    (six io).__bind_in (values record payload sha emptySha) statement =
+      .ok (.Ok (),SandproofSourceRowSqlSelect.withArguments statement
+        (statement.canonical.arguments ++ arguments record payload sha emptySha))
+
+variable {Tree : Type → Type → Type} (io : SourceRetireLibrary.Ports Tree)
+variable (record : Record) (payload : Bytes) (sha emptySha : Array U8 32#usize)
+variable (before after : keyState (Tree := Tree))
+variable (ready : Ready io record payload sha emptySha before after)
+
+def reservationLimits (limits : capture.source.SourceObservationConfig) : SourceRecordBoundsView.Limits :=
+  ⟨limits.max_work_bytes,limits.max_configuration_bytes,limits.max_executable_bytes,
+    limits.max_kernel_bytes,limits.max_disk_bytes,limits.max_material_bytes⟩
+
+theorem reservation_reuses_existing (limits : capture.source.SourceObservationConfig) (count : U64) :
+    capture.source.SourceObservationConfig.required_bytes limits count =
+      SourceReservationView.reservation (reservationLimits limits) count := by
+  rfl
+
+theorem legal_reservation :
+    capture.source.SourceObservationConfig.required_bytes SourceWorkMatch.Values.limits 1#u64 = .ok 258048#u64 := by
+  rw [reservation_reuses_existing]
+  apply (SourceReservation.actual_success_iff _ _ _).mpr
+  simp [SourceReservationSpec.total,SourceReservationSpec.perRecord,reservationLimits,SourceWorkMatch.Values.limits]
+
+include ready
+
+theorem empty_material : charged io record = .ok (.Ok 0#u64) := by
+  simp [charged,controller.lifecycle_inbox.source_work.retirement.material_charge,
+    ready.noCapture,ready.noRetirement,ready.noRelease,
+    controller.lifecycle_inbox.source_work.retirement.MaterialReleaseFacts.empty,
+    controller.lifecycle_inbox.source_work.retirement.MaterialReleaseFacts.Insts.CoreCmpPartialEqMaterialReleaseFacts.eq,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq]
+
+
+omit ready in
+ theorem original_four_columns (count : Usize) :
+    SourceRetireSpec.query (database count record payload sha emptySha) record =
+      .ok (.Ok (1#i64,payload,(⟨sha.to_slice⟩ : Bytes),258048#i64)) := by
+  simp [SourceRetireSpec.query,SourceRetireLibrary.query,SandproofSourceRowSqlSelect.rusqlite.Connection.query_row,database,
+    SandproofSourceRowSqlSelect.issued,SandproofSourceRowSqlSelect.withArguments,
+    ArrayT1.Insts.RusqliteParamsParams,SourceRetireLibrary.bindOne,
+    Shared0T.Insts.RusqliteTypesTo_sqlToSql,SliceU8.Insts.RusqliteTypesTo_sqlToSql,
+    SourceRetireLibrary.shared,SourceRetireLibrary.blob,SandproofSourceRowSqlSelect.bindValues,
+    SandproofSourceRowSqlSelect.appendValue,Array.make_val,KeyBytes,
+    controller.lifecycle_inbox.source_work.codec.clear_retired_source_record.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultTupleI64VecU8VecU8I64Error.call_once,
+    SourceRetireLibrary.get,SandproofSourceRowSqlSelect.rusqlite.row.Row.get,
+    Usize.Insts.RusqliteRowRowIndex,Usize.Insts.RusqliteRowSealedSealed,SourceRetireLibrary.rowIndex,
+    SandproofSourceRowSqlSelect.Usize.Insts.RusqliteRowRowIndex.idx,
+    I64.Insts.RusqliteTypesFrom_sqlFromSql,alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql,
+    SourceRetireLibrary.fromInteger,SourceRetireLibrary.fromBytes,
+    SandproofSourceRowSqlSelect.I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result,
+    SandproofSourceRowSqlSelect.asValueRef,core.result.Result.Insts.CoreOpsTry.branch]
+
+
+omit ready in
+ theorem slice_eq_self (value : Slice U8) :
+    core.slice.cmp.PartialEqSlice.eq core.cmp.PartialEqU8 value value = .ok true := by
+  have scalarEq : ∀ a b : U8, (a.val = b.val) ↔ a = b := by intro a b; scalar_tac
+  simp [core.slice.cmp.PartialEqSlice.eq,scalarEq,
+    SourceWorkMatch.RequestEquality.bytes_eq value.val value.val rfl]
+
+omit ready in
+ theorem slice_ne_self (value : Slice U8) :
+    core.cmp.impls.PartialEqShared.ne (Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8)
+      value value = .ok false := by
+  simp [core.cmp.impls.PartialEqShared.ne,Slice.Insts.CoreCmpPartialEqSlice,
+    core.cmp.PartialEq.ne.default,slice_eq_self]
+
+omit ready in
+ theorem vector_slice_ne_self (value : Bytes) :
+    SourceRetireLibrary.vectorSliceNe Global core.cmp.PartialEqU8 value value.slice = .ok false := by
+  simp [SourceRetireLibrary.vectorSliceNe,slice_eq_self]
+
+theorem checked_full_record : checked io payload.slice sha.to_slice = .ok (.Ok (some record)) := by
+  simp [checked,controller.lifecycle_inbox.source_work.codec.checked_retired_record,
+    ready.decoded,ready.digested,ready.canonicalOptional,core.result.Result.map_err,
+    core.result.Result.Insts.CoreOpsTry.branch,lift,Slice.Insts.CoreCmpPartialEqSlice,
+    core.cmp.PartialEq.ne.default,slice_eq_self,vector_slice_ne_self]
+
+omit ready in
+ theorem different_statements : updateStatement ≠ selectStatement := by
+  have separated : updateStatement.length ≠ selectStatement.length := by
+    simp only [updateStatement,selectStatement,SourceRetireActual.toStr,SandproofSourceRowSqlSelect.toStr,
+      Aeneas.Std.toStr,Slice.length,Slice.from_val,List.length_map,ByteArray.length_toList]
+    decide
+  intro same
+  exact separated (congrArg (fun value : Str => value.length) same)
+
+theorem original_six_values (count : Usize) :
+    SourceRetireSpec.update io (database count record payload sha emptySha) record 1#i64 payload
+      (⟨sha.to_slice⟩ : Bytes) emptySha = .ok (.Ok count) := by
+  change SourceRetireLibrary.execute (six io) (database count record payload sha emptySha)
+    updateStatement (values record payload sha emptySha) = _
+  simp only [SourceRetireLibrary.execute,SandproofSourceRowSqlSelect.rusqlite.Connection.execute,
+    database,different_statements,↓reduceIte,bind_tc_ok]
+  rw [ready.bound _ rfl]
+  simp [SandproofSourceRowSqlSelect.withArguments,SandproofSourceRowSqlSelect.issued]
+
+
+omit ready in
+ theorem signed_reservation : controller.lifecycle_inbox.source_work.codec.sql 258048#u64 =
+    .ok (.Ok 258048#i64) := by
+  simp [controller.lifecycle_inbox.source_work.codec.sql,SourceRetireLibrary.signed,
+    SourceRecordBoundsView.toSigned,core.result.Result.map_err,I64.max_eq]
+  apply IScalar.eq_of_val_eq
+  simp [UScalar.hcast_val_eq]
+
+theorem expected_complete_count (count : Usize) :
+    rowSpec io (database count record payload sha emptySha) (fullCurrent record) before record =
+      .ok ((if count = 1#usize then .Ok () else .Err .CorruptStore),after) := by
+  simp [rowSpec,ready.fresh,fullCurrent,alloc.vec.Vec.from,ready.noCapture,ready.noRetirement,
+    afterEligibility,empty_material io record payload sha emptySha before after ready,
+    readRow,original_four_columns,checked_full_record io record payload sha emptySha before after ready,
+    canonical,ready.canonicalRecord,legal_reservation,signed_reservation,
+    clear,ready.emptyDigest,original_six_values io record payload sha emptySha before after ready,
+    tryJournal]
+  by_cases one : count = 1#usize <;> simp [one]
+
+theorem actual_complete_count (count : Usize) :
+    raw io (database count record payload sha emptySha) (fullCurrent record) before record =
+      .ok ((if count = 1#usize then .Ok () else .Err .CorruptStore),after) := by
+  rw [root_contract]
+  exact expected_complete_count io record payload sha emptySha before after ready count
+
+theorem normal_one_row :
+    raw io (database 1#usize record payload sha emptySha) (fullCurrent record) before record =
+      .ok (.Ok (),after) := by
+  simpa using actual_complete_count io record payload sha emptySha before after ready 1#usize
+
+theorem zero_rows_rejected :
+    raw io (database 0#usize record payload sha emptySha) (fullCurrent record) before record =
+      .ok (.Err .CorruptStore,after) := by
+  simpa using actual_complete_count io record payload sha emptySha before after ready 0#usize
+
+end
+end SandboxModel.Stage1Protocol.SourceRetireCases
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.reservation_reuses_existing
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.legal_reservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.empty_material
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.original_four_columns
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.slice_eq_self
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.slice_ne_self
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.vector_slice_ne_self
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.checked_full_record
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.different_statements
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.original_six_values
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.signed_reservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.expected_complete_count
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.actual_complete_count
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.normal_one_row
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetireCases.zero_rows_rejected

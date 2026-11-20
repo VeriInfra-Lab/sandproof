@@ -1,0 +1,30 @@
+import RetentionProviders
+import SourceInitReads
+
+open Aeneas Aeneas.Std Result ControlFlow
+open SandproofSourceRetentionProviders
+set_option autoImplicit false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+
+namespace SandboxModel.Stage1Protocol.SourceRetireTypes
+
+abbrev core.io.error.Error := SandproofSourceRowSqlSelect.core.io.error.Error
+abbrev serde_json.error.Error := SandproofSourceRowSqlSelect.serde_json.error.Error
+abbrev rusqlite.error.Error := SandproofSourceRowSqlSelect.rusqlite.error.Error
+abbrev rusqlite.Connection := SandproofSourceRowSqlSelect.rusqlite.Connection
+abbrev rusqlite.statement.Statement := SandproofSourceRowSqlSelect.rusqlite.statement.Statement
+abbrev rusqlite.row.Row := SandproofSourceRowSqlSelect.rusqlite.row.Row
+abbrev rusqlite.params.Params := SandproofSourceRowSqlSelect.rusqlite.params.Params
+abbrev rusqlite.params.sealed.Sealed := SandproofSourceRowSqlSelect.rusqlite.params.sealed.Sealed
+abbrev rusqlite.row.RowIndex := SandproofSourceRowSqlSelect.rusqlite.row.RowIndex
+abbrev rusqlite.row.sealed.Sealed := SandproofSourceRowSqlSelect.rusqlite.row.sealed.Sealed
+abbrev rusqlite.types.from_sql.FromSql := SandproofSourceRowSqlSelect.rusqlite.types.from_sql.FromSql
+abbrev rusqlite.types.from_sql.FromSqlError := SandproofSourceRowSqlSelect.rusqlite.types.from_sql.FromSqlError
+abbrev rusqlite.types.to_sql.ToSql := SandproofSourceRowSqlSelect.rusqlite.types.to_sql.ToSql
+abbrev rusqlite.types.to_sql.ToSqlOutput := SandproofSourceRowSqlSelect.rusqlite.types.to_sql.ToSqlOutput
+abbrev rusqlite.types.value_ref.ValueRef := SandproofSourceRowSqlSelect.rusqlite.types.value_ref.ValueRef
+
+-- ACTUAL ADDITIONAL TYPES
+
+end SandboxModel.Stage1Protocol.SourceRetireTypes

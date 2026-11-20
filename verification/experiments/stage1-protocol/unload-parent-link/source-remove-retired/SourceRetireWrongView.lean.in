@@ -1,0 +1,66 @@
+import SourceRetireSpec
+import Aeneas.Std.SliceIter
+
+open Aeneas Aeneas.Std Result ControlFlow Error
+open SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol.SourceRetireTypes
+open SandboxModel.Stage1Protocol.SourceRetireActual
+set_option autoImplicit false
+set_option linter.unusedVariables false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceRetireWrong
+noncomputable section
+abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+local notation "ArrayT1.Insts.RusqliteParamsParams.__bind_in" => SourceRetireLibrary.bindOne
+local notation "I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from" => SourceRetireLibrary.signed
+local notation "I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result" => SourceRetireLibrary.fromInteger
+local notation "alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result" => SourceRetireLibrary.fromBytes
+local notation "I64.Insts.RusqliteTypesTo_sqlToSql.to_sql" => SourceRetireLibrary.integer
+local notation "Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql" => SourceRetireLibrary.shared
+local notation "SliceU8.Insts.RusqliteTypesTo_sqlToSql.to_sql" => SourceRetireLibrary.blob
+local notation "Usize.Insts.RusqliteRowRowIndex.idx" => SourceRetireLibrary.rowIndex
+local notation "alloc.string.String.Insts.CoreCloneClone.clone" => SourceRetireLibrary.stringClone
+local notation "alloc.vec.Vec.Insts.CoreCmpPartialEqShared0Slice.ne" => SourceRetireLibrary.vectorSliceNe
+local notation "alloc.vec.Vec.as_slice" => SourceRetireLibrary.vectorSlice
+local notation "alloc.vec.Vec.is_empty" => SourceRetireLibrary.vectorEmpty
+local notation "core.option.Option.Insts.CoreCloneClone.clone" => SourceRetireLibrary.optionClone
+local notation "core.option.Option.as_ref" => SourceRetireLibrary.optionRef
+local notation "core.option.Option.map" => SourceRetireLibrary.optionMap
+local notation "core.option.OptionResult.transpose" => SourceRetireLibrary.optionTranspose
+local notation "rusqlite.Connection.execute" => SourceRetireLibrary.execute
+local notation "rusqlite.Connection.query_row" => SourceRetireLibrary.query
+local notation "rusqlite.row.Row.get" => SourceRetireLibrary.get
+local notation "controller.lifecycle_inbox.sha256.digest" => SandproofSourceRowSqlSelect.controller.lifecycle_inbox.sha256.digest
+section
+variable {Tree : Type → Type → Type} (io : SourceRetireLibrary.Ports Tree)
+local notation "alloc.collections.btree.set.BTreeSet" => Tree
+local notation "alloc.collections.btree.set.BTreeSet.insert" => io.insert
+local notation "alloc.vec.Vec.Insts.CoreCmpOrd.cmp" => io.order
+local notation "alloc.vec.Vec.Insts.CoreCmpPartialOrdVec.partial_cmp" => io.partialOrder
+local notation "TupleABCDEF.Insts.RusqliteParamsParams.__bind_in" => io.bindSix
+local notation "capture.retirement.digest_retirement_binding" => io.bindingDigest
+local notation "capture.retirement.encode_retirement_binding" => io.bindingJson
+local notation "controller.lifecycle_inbox.source_work.codec.decode_retired_record" => io.decode
+local notation "controller.lifecycle_inbox.source_work.codec.digest_retired_record" => io.recordDigest
+local notation "controller.lifecycle_inbox.source_work.codec.encode_retired_optional_record" => io.optionalJson
+local notation "controller.lifecycle_inbox.source_work.codec.encode_retired_record" => io.recordJson
+local notation "controller.lifecycle_inbox.source_work.retirement.closure.encode_retirement_release" => io.releaseJson
+local notation "controller.lifecycle_inbox.source_work.retirement.closure.encode_retirement_restore" => io.restoreJson
+local notation "controller.lifecycle_inbox.source_work.retirement.encode_retirement_state" => io.stateJson
+
+local notation "alloc.vec.Vec.Insts.CoreCmpOrd" => SourceRetireActual.alloc.vec.Vec.Insts.CoreCmpOrd io
+local notation "TupleABCDEF.Insts.RusqliteParamsParams" => SourceRetireActual.TupleABCDEF.Insts.RusqliteParamsParams io
+local notation "controller.lifecycle_inbox.source_work.codec.checked_retired_record" => SourceRetireActual.controller.lifecycle_inbox.source_work.codec.checked_retired_record io
+local notation "controller.lifecycle_inbox.source_work.retirement.material_charge" => SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge io
+
+-- ACTUAL WRONG CLEAR ROOT
+
+end
+end
+end SandboxModel.Stage1Protocol.SourceRetireWrong
