@@ -1,0 +1,30 @@
+import SourceRecordCountSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (PolicyRead)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRecordCountZero
+open SourceRecordCountSpec SourceRecordCountView
+
+theorem actual_zero_skips_every_policy (read : PolicyRead) (db : SaveRows.Db) :
+    count read db 0#u16 = .ok (.Ok 0#u64) := by
+  simp [count, controller.lifecycle_inbox.source_work.codec.reserved_records]
+
+theorem actual_zero_loses_original_error (db : SaveRows.Db) :
+    count (fun _ => .ok (.Err .UnsupportedStore)) db 0#u16 = .ok (.Ok 0#u64) :=
+  actual_zero_skips_every_policy _ db
+
+theorem rejects_same_complete_contract : ¬Contract count := by
+  intro contract
+  let db := SourceRecordBoundsContract.sampleConnection 4#i64
+  have claimed := contract (fun _ => .ok (.Err .UnsupportedStore)) db 0#u16
+  rw [actual_zero_loses_original_error] at claimed
+  simp only [bind_tc_ok, afterPolicy] at claimed
+  simp at claimed
+
+end SandboxModel.Stage1Protocol.SourceRecordCountZero
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCountZero.actual_zero_skips_every_policy
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCountZero.actual_zero_loses_original_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCountZero.rejects_same_complete_contract

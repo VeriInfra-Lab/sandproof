@@ -1,0 +1,36 @@
+import SourceRecordCountSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (PolicyRead)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRecordCountOnePosition
+open SourceRecordCountSpec SourceRecordCountView SourceRecordBoundsContract
+
+theorem actual_two_for_one_session (db : SaveRows.Db) :
+    count samplePolicy db 1#u16 = .ok (.Ok 2#u64) := by
+  have sessions : core.convert.num.FromU64U16.from 1#u16 = 1#u64 := by decide
+  simp [count, controller.lifecycle_inbox.source_work.codec.reserved_records,
+    controller.lifecycle_inbox.source_work.codec.records_per_session, samplePolicy,
+    core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch, sessions,
+    subtract_exact 3#u64 1#u64 2#u64 (by decide) (by decide),
+    multiply_exact 1#u64 2#u64 2#u64 (by decide), lift]
+
+theorem normal_sample_has_original_value (db : SaveRows.Db) :
+    (do let reply ← samplePolicy db; afterPolicy reply 1#u16) = .ok (.Ok 1#u64) := by
+  simp only [samplePolicy, bind_tc_ok, afterPolicy]
+  change wrappedTotal 1 = .ok (.Ok 1#u64)
+  exact (wrapped_success_iff 1 1#u64).mpr rfl
+
+theorem rejects_same_complete_contract : ¬Contract count := by
+  intro contract
+  let db := sampleConnection 4#i64
+  have claimed := (contract samplePolicy db 1#u16).trans (normal_sample_has_original_value db)
+  rw [actual_two_for_one_session] at claimed
+  simp at claimed
+
+end SandboxModel.Stage1Protocol.SourceRecordCountOnePosition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCountOnePosition.actual_two_for_one_session
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCountOnePosition.normal_sample_has_original_value
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCountOnePosition.rejects_same_complete_contract

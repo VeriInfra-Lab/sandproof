@@ -1,0 +1,99 @@
+import SourceRecordCountView
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Policy PolicyRead Config Capacity)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRecordCountSpec
+
+abbrev Reply := core.result.Result U64 SaveRows.Error
+abbrev PolicyReply := core.result.Result (Option Policy) SaveRows.Error
+abbrev Counter := PolicyRead → SaveRows.Db → U16 → Result Reply
+
+def afterPolicy (reply : PolicyReply) (sessions : U16) : Result Reply :=
+  match reply with
+  | .Err failure => .ok (.Err failure)
+  | .Ok none => .ok (.Err .CorruptStore)
+  | .Ok (some policy) =>
+    if policy.max_operations_per_sandbox.val < 2 then .fail .integerOverflow
+    else do
+      let count ← UScalar.tryMk .U64 (sessions.val * (policy.max_operations_per_sandbox.val - 2))
+      .ok (.Ok count)
+
+def Contract (counter : Counter) : Prop :=
+  ∀ read db sessions, counter read db sessions = (do let reply ← read db; afterPolicy reply sessions)
+
+def BoundedPolicy (policy : Policy) : Prop :=
+  3 ≤ policy.max_operations_per_sandbox.val ∧ policy.max_operations_per_sandbox.val ≤ 128
+
+theorem two_position_subtraction (operations : U64) :
+    (operations - 2#u64 : Result U64) =
+      if operations.val < 2 then .fail .integerOverflow else UScalar.tryMk .U64 (operations.val - 2) := by
+  have width : (2#u64 : U64).val = 2 := by rfl
+  by_cases tooSmall : operations.val < 2
+  · change UScalar.sub operations 2#u64 = _
+    simp only [UScalar.sub, width, if_pos tooSmall]
+  · obtain ⟨per, returned, value⟩ := WP.spec_imp_exists (U64.sub_spec
+      (x := operations) (y := 2#u64) (by change 2 ≤ operations.val; omega))
+    rw [returned, if_neg tooSmall]
+    exact ((SourceReservationSpec.try_mk_success_iff _ _).mpr value.1).symm
+
+theorem subtraction_has_normal_return (operations : U64) (enough : 2 ≤ operations.val) :
+    ∃ per, (operations - 2#u64 : Result U64) = .ok per ∧ per.val = operations.val - 2 := by
+  obtain ⟨per, returned, value⟩ := WP.spec_imp_exists (U64.sub_spec (x := operations) (y := 2#u64) enough)
+  exact ⟨per, returned, value.1⟩
+
+theorem multiply_returns_full_natural_value (sessions : U16) (per : U64) :
+    (core.convert.num.FromU64U16.from sessions * per : Result U64) =
+      UScalar.tryMk .U64 (sessions.val * per.val) := by
+  change UScalar.tryMk .U64 ((core.convert.num.FromU64U16.from sessions).val * per.val) = _
+  rw [core.convert.num.FromU64U16.from_val_eq]
+
+def wrappedTotal (value : Nat) : Result Reply := do
+  let count ← UScalar.tryMk .U64 value
+  .ok (.Ok count)
+
+theorem wrapped_success_iff (value : Nat) (amount : U64) :
+    wrappedTotal value = .ok (.Ok amount) ↔ amount.val = value := by
+  have inspected := UScalar.tryMkOpt_eq .U64 value
+  cases observed : UScalar.tryMkOpt .U64 value with
+  | some computed =>
+    rw [observed] at inspected
+    simp only [wrappedTotal, UScalar.tryMk, observed, Result.ofOption, bind_tc_ok,
+      Result.ok.injEq, core.result.Result.Ok.injEq]
+    constructor
+    · rintro rfl
+      exact inspected.1
+    · intro expected
+      exact UScalar.eq_of_val_eq (inspected.1.trans expected.symm)
+  | none =>
+    rw [observed] at inspected
+    have differs : amount.val ≠ value := by
+      intro same
+      rw [← same] at inspected
+      exact inspected amount.hBounds
+    simp [wrappedTotal, UScalar.tryMk, observed, Result.ofOption, differs]
+
+theorem wrapped_overflow_iff (value : Nat) :
+    wrappedTotal value = .fail .integerOverflow ↔ U64.max < value := by
+  have inspected := UScalar.tryMkOpt_eq .U64 value
+  cases observed : UScalar.tryMkOpt .U64 value with
+  | some computed =>
+    rw [observed] at inspected
+    have fits : value ≤ U64.max := by rw [← inspected.1]; scalar_tac
+    simp [wrappedTotal, UScalar.tryMk, observed, Result.ofOption, not_lt.mpr fits]
+  | none =>
+    rw [observed] at inspected
+    have large : U64.max < value := by
+      simp only [UScalar.inBounds, UScalarTy.numBits] at inspected
+      rw [U64.max_eq]
+      omega
+    simp [wrappedTotal, UScalar.tryMk, observed, Result.ofOption, large]
+
+end SandboxModel.Stage1Protocol.SourceRecordCountSpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCountSpec.two_position_subtraction
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCountSpec.subtraction_has_normal_return
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCountSpec.multiply_returns_full_natural_value
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCountSpec.wrapped_success_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCountSpec.wrapped_overflow_iff

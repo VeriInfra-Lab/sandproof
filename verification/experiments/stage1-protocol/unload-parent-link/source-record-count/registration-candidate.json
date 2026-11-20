@@ -1,0 +1,139 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-record-count",
+  "parent_prs": [
+    988
+  ],
+  "prior": {
+    "pr": 988,
+    "physical_files": 69,
+    "full_audits": 275
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceRecordCount",
+      "physical_files": 72,
+      "full_audits": 298,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.two_position_subtraction",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.subtraction_has_normal_return",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.multiply_returns_full_natural_value",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.wrapped_success_iff",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.wrapped_overflow_iff",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.original_is_actual",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.given_policy",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.success_iff",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.integer_failure_iff",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.read_error_is_first",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.read_failure_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.missing_policy_is_rejected",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.zero_sessions_return_zero_after_policy",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.zero_sessions_do_not_skip_underflow",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.bounded_policy_returns_exact_count",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.server_session_rows_bounded",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.original_guard_computes_both_numbers",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.original_policy_error_precedes_aggregate",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.original_missing_policy_precedes_aggregate",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.original_aggregate_error_after_both_numbers",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.normal_one_session",
+        "SandboxModel.Stage1Protocol.SourceRecordCount.normal_pair_fits_sql"
+      ],
+      "own_modules": [
+        "SourceRecordCountView.lean",
+        "SourceRecordCountSpec.lean",
+        "SourceRecordCount.lean"
+      ]
+    },
+    {
+      "variant": "keep-one-position",
+      "formal_root": "SourceRecordCountOnePosition",
+      "physical_files": 72,
+      "full_audits": 283,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.two_position_subtraction",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.subtraction_has_normal_return",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.multiply_returns_full_natural_value",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.wrapped_success_iff",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.wrapped_overflow_iff",
+        "SandboxModel.Stage1Protocol.SourceRecordCountOnePosition.actual_two_for_one_session",
+        "SandboxModel.Stage1Protocol.SourceRecordCountOnePosition.normal_sample_has_original_value",
+        "SandboxModel.Stage1Protocol.SourceRecordCountOnePosition.rejects_same_complete_contract"
+      ],
+      "own_modules": [
+        "SourceRecordCountView.lean",
+        "SourceRecordCountSpec.lean",
+        "SourceRecordCountOnePosition.lean"
+      ]
+    },
+    {
+      "variant": "zero-skips-policy",
+      "formal_root": "SourceRecordCountZero",
+      "physical_files": 72,
+      "full_audits": 283,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.two_position_subtraction",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.subtraction_has_normal_return",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.multiply_returns_full_natural_value",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.wrapped_success_iff",
+        "SandboxModel.Stage1Protocol.SourceRecordCountSpec.wrapped_overflow_iff",
+        "SandboxModel.Stage1Protocol.SourceRecordCountZero.actual_zero_skips_every_policy",
+        "SandboxModel.Stage1Protocol.SourceRecordCountZero.actual_zero_loses_original_error",
+        "SandboxModel.Stage1Protocol.SourceRecordCountZero.rejects_same_complete_contract"
+      ],
+      "own_modules": [
+        "SourceRecordCountView.lean",
+        "SourceRecordCountSpec.lean",
+        "SourceRecordCountZero.lean"
+      ]
+    }
+  ],
+  "new_rust_capture": true,
+  "new_external_contracts": [],
+  "native_candidate": {
+    "name": "stage1-source-record-count",
+    "variants": [
+      "original",
+      "keep-one-position",
+      "zero-skips-policy"
+    ],
+    "tests": [
+      "source_record_count_retains_two_lifecycle_positions",
+      "source_record_count_scales_the_complete_session_value",
+      "source_record_count_zero_does_not_skip_the_original_policy_error"
+    ],
+    "expected": {
+      "original": {
+        "passed": 3,
+        "failed": 0
+      },
+      "keep-one-position": {
+        "passed": 1,
+        "failed": 2
+      },
+      "zero-skips-policy": {
+        "passed": 2,
+        "failed": 1
+      }
+    },
+    "preparation": "native.py",
+    "full_functional_required": true
+  },
+  "inherited_pending_library_symbols": [
+    "#985 four Row projection operations",
+    "#986 Range next/IntoIterator and borrow binding"
+  ],
+  "remaining_providers": {
+    "V5": [
+      "actual policy read/validate provenance and 3..128 field bound",
+      "physical aggregate/schema/transaction relation",
+      "full initialize source_bytes u64 arithmetic and writes",
+      "whole sql_usage and database budget"
+    ]
+  },
+  "public_registration_accepted": false
+}
