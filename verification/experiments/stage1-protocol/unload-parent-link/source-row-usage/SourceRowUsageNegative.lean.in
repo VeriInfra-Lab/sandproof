@@ -1,0 +1,106 @@
+import SourceRowUsageSpec
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowUsageNegative
+open SourceRowChargeView SourceRowUsageView SourceRowUsageSpec SourceRowChargeSpec
+
+theorem truncated_payload_size : valueSize (.Blob samplePayload) = .ok 3#u64 := by
+  unfold valueSize SourceRowUsageView.controller.capacity.source_row_value_size
+  simp only [lift, bind_tc_ok]
+  apply congrArg Result.ok
+  apply UScalar.eq_of_val_eq
+  simp [core.num.Usize.saturating_sub, UScalar.saturating_sub, Slice.len,
+    samplePayload]
+  change (BitVec.ofNat System.Platform.numBits 3).toNat = 3
+  rcases System.Platform.numBits_eq with bits | bits <;> rw [bits] <;> rfl
+
+
+theorem truncated_digest_size : valueSize (.Blob sampleDigest) = .ok 31#u64 := by
+  unfold valueSize SourceRowUsageView.controller.capacity.source_row_value_size
+  simp only [lift, bind_tc_ok]
+  apply congrArg Result.ok
+  apply UScalar.eq_of_val_eq
+  simp [core.num.Usize.saturating_sub, UScalar.saturating_sub, Slice.len,
+    sampleDigest]
+  change (BitVec.ofNat System.Platform.numBits 31).toNat = 31
+  rcases System.Platform.numBits_eq with bits | bits <;> rw [bits] <;> rfl
+
+
+private theorem column_success (row : Row) (index : Usize) (value : Value) (size : U64)
+    (got : refAt row index = .ok (.Ok value)) (sized : valueSize value = .ok size) :
+    columnSize row index = .ok (.Ok size) := by
+  unfold columnSize SourceRowUsageView.controller.capacity.source_row_column_size
+  change (do let reply ← refAt row index; _) = _
+  rw [got]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch]
+  change (do let size ← valueSize value; _) = _
+  rw [sized]
+  simp
+
+theorem truncated_normal_count : count sampleRow 5#usize sampleCapacity = .ok (.Ok 50#u64) := by
+  unfold count SourceRowUsageView.controller.capacity.row_bytes
+  change countUsing readRow sampleRow 5#usize sampleCapacity = _
+  rw [count_using_accounts_for_all_columns]
+  change account (columnSize sampleRow) sampleCapacity 5 0 0#u64 = _
+  have index0 : indexOf 0 = 0#usize := index_self 0#usize
+  have index1 : indexOf 1 = 1#usize := index_self 1#usize
+  have index2 : indexOf 2 = 2#usize := index_self 2#usize
+  have index3 : indexOf 3 = 3#usize := index_self 3#usize
+  have index4 : indexOf 4 = 4#usize := index_self 4#usize
+  have get0 : refAt sampleRow 0#usize = .ok (.Ok (.Integer 1#i64)) := by reduce_row_columns
+  have get2 : refAt sampleRow 2#usize = .ok (.Ok (.Blob sampleDigest)) := by reduce_row_columns
+  have get3 : refAt sampleRow 3#usize = .ok (.Ok (.Integer 222212#i64)) := by reduce_row_columns
+  have col0 := column_success sampleRow 0#usize (.Integer 1#i64) 8#u64 get0 (by rfl)
+  have col1 := column_success sampleRow 1#usize (.Blob samplePayload) 3#u64 sample_payload truncated_payload_size
+  have col2 := column_success sampleRow 2#usize (.Blob sampleDigest) 31#u64 get2 truncated_digest_size
+  have col3 := column_success sampleRow 3#usize (.Integer 222212#i64) 8#u64 get3 (by rfl)
+  have col4 := column_success sampleRow 4#usize .Null 0#u64 sample_key (by rfl)
+  have sum0 : U64.checked_add 0#u64 8#u64 = some 8#u64 := by rfl
+  have sum1 : U64.checked_add 8#u64 3#u64 = some 11#u64 := by rfl
+  have sum2 : U64.checked_add 11#u64 31#u64 = some 42#u64 := by rfl
+  have sum3 : U64.checked_add 42#u64 8#u64 = some 50#u64 := by rfl
+  have sum4 : U64.checked_add 50#u64 0#u64 = some 50#u64 := by rfl
+  simp [account, index0, index1, index2, index3, index4, col0, col1, col2, col3, col4,
+    sum0, sum1, sum2, sum3, sum4, sampleCapacity, SourceRecordBoundsContract.sampleCapacity]
+
+theorem truncated_count_breaks_same_contract : ¬SourceRowUsageSpec.Contract count := by
+  intro contract
+  have wanted : count sampleRow 5#usize sampleCapacity = .ok (.Ok 52#u64) :=
+    (contract sampleRow 5#usize sampleCapacity).trans sample_spec_exact
+  have same := truncated_normal_count.symm.trans wanted
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at same
+  exact (by decide : (50#u64 : U64) ≠ 52#u64) same
+
+theorem truncated_source_charge : dispatch recordsName sampleRow 50#u64 sampleCapacity =
+    .ok (.Ok 222290#u64) := by
+  rw [(source_names _ _ _).2]
+  have normalBase : base sampleRow 50#u64 sampleCapacity = .ok (.Ok 222258#u64) := by
+    rw [sample_base]
+    rfl
+  rw [SourceRowCharge.original_future_key_contract sampleRow 50#u64 sampleCapacity
+    222258#u64 normalBase (by rfl) sample_key]
+  rfl
+
+theorem truncated_source_after_original_count (current : U64)
+    (measured : count sampleRow 5#usize sampleCapacity = .ok (.Ok current)) :
+    dispatch recordsName sampleRow current sampleCapacity = .ok (.Ok 222290#u64) := by
+  rw [truncated_normal_count] at measured
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at measured
+  subst current
+  exact truncated_source_charge
+
+end SandboxModel.Stage1Protocol.SourceRowUsageNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_payload_size
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_digest_size
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_normal_count
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_count_breaks_same_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_source_charge
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_source_after_original_count

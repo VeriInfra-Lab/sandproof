@@ -1,0 +1,86 @@
+#[cfg(test)]
+mod source_row_usage_contract {
+    use super::*;
+    use crate::controller::tests_support::lifecycle_application as v3;
+
+    const EMPTY: &str = "SELECT 1,x'6e756c6c',x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b',222212,NULL";
+
+    fn usage(
+        sql: &str,
+        columns: Option<usize>,
+        table: Option<&str>,
+        limit: u64,
+    ) -> Result<u64, JournalError> {
+        let connection = Connection::open_in_memory().unwrap();
+        let mut cap = v3::maintenance().capacity.unwrap();
+        cap.max_sql_value_bytes = limit;
+        connection
+            .query_row(sql, [], |row| {
+                let columns = columns.unwrap_or_else(|| row.as_ref().column_count());
+                Ok(
+                    row_bytes(row, columns, &cap).and_then(|current| match table {
+                        Some(table) => charged_inbox_bytes(table, row, current, &cap),
+                        None => Ok(current),
+                    }),
+                )
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn source_row_usage_counts_full_original_columns() {
+        assert_eq!(
+            usage(EMPTY, None, None, 222_212).unwrap(),
+            52,
+            "original row byte count must include every BLOB byte"
+        );
+        let sql = "SELECT NULL,1,1.5,'é',x'00ff'";
+        for (columns, expected) in [0, 0, 8, 16, 18, 20].into_iter().enumerate() {
+            assert_eq!(usage(sql, Some(columns), None, 8).unwrap(), expected);
+        }
+        assert_eq!(usage("SELECT '',x'',NULL", None, None, 0).unwrap(), 0);
+    }
+
+    #[test]
+    fn source_row_usage_dispatches_original_source_and_other_tables() {
+        assert_eq!(
+            usage(EMPTY, None, Some("controller_source_work_records"), 222_212).unwrap(),
+            222_292,
+            "source charge must use the actual complete row bytes"
+        );
+        let metadata = "SELECT 1,x'6e756c6c',x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b',8192";
+        assert_eq!(
+            usage(metadata, None, Some("controller_source_work"), 222_212).unwrap(),
+            8240
+        );
+        for table in ["controller_internal_inbox", "controller_lifecycle_inbox"] {
+            assert_eq!(usage(metadata, None, Some(table), 222_212).unwrap(), 8240);
+        }
+        for table in [
+            "other",
+            "controller_source_work_records_backup",
+            "controller_source_work_records ",
+            "Controller_source_work_records",
+        ] {
+            assert_eq!(usage(EMPTY, None, Some(table), 222_212).unwrap(), 52);
+        }
+    }
+
+    #[test]
+    fn source_row_usage_preserves_per_value_limit_before_later_index_error() {
+        let outcome = usage(EMPTY, Some(6), None, 31);
+        assert!(
+            matches!(outcome, Err(JournalError::MaintenanceCapacity)),
+            "complete per-value bytes must reject before the later missing column: {outcome:?}"
+        );
+        assert!(matches!(
+            usage(EMPTY, Some(6), None, 222_212),
+            Err(JournalError::Sqlite(rusqlite::Error::InvalidColumnIndex(5)))
+        ));
+        assert!(matches!(
+            usage("SELECT 'é'", None, None, 1),
+            Err(JournalError::MaintenanceCapacity)
+        ));
+        assert_eq!(usage("SELECT 'é'", None, None, 2).unwrap(), 2);
+    }
+}

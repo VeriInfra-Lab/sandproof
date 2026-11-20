@@ -1,0 +1,331 @@
+import SourceRowUsageView
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowUsageSpec
+open SourceRowChargeView SourceRowUsageView
+
+def fullSize : Value → U64
+  | .Null => 0#u64
+  | .Integer _ | .Real _ => 8#u64
+  | .Text bytes | .Blob bytes => UScalar.cast .U64 (Slice.len bytes)
+
+def fullColumn (row : Row) (index : Usize) : Result (Reply U64) := do
+  let answer ← refAt row index
+  match answer with
+  | .Err failure => .ok (.Err (.Sqlite failure))
+  | .Ok value => .ok (.Ok (fullSize value))
+
+def indexOf (index : Nat) : Usize :=
+  if bounded : index ≤ Usize.max then UScalar.ofNatCore index (by scalar_tac) else 0#usize
+
+/-- Finite specification of ordered column contributions. The list length is
+    exactly the requested column count, independently of the Row's column count.
+    Read failures precede the per-value limit, which precedes sum overflow. -/
+def account (read : Usize → Result (Reply U64)) (cap : Capacity) :
+    Nat → Nat → U64 → Result (Reply U64)
+  | 0, _, bytes => .ok (.Ok bytes)
+  | remaining + 1, first, bytes => do
+    let answer ← read (indexOf first)
+    match answer with
+    | .Err failure => .ok (.Err failure)
+    | .Ok size =>
+      if cap.max_sql_value_bytes.val < size.val then .ok (.Err .MaintenanceCapacity)
+      else match U64.checked_add bytes size with
+      | none => .ok (.Err .MaintenanceCapacity)
+      | some next => account read cap remaining (first + 1) next
+
+abbrev Counter := Row → Usize → Capacity → Result (Reply U64)
+
+def Contract (counter : Counter) : Prop :=
+  ∀ (row : Row) (columns : Usize) (cap : Capacity),
+    counter row columns cap = account (fullColumn row) cap columns.val 0 0#u64
+
+theorem full_text_and_blob_size (bytes : Slice U8) :
+    (fullSize (.Text bytes)).val = bytes.val.length ∧
+      (fullSize (.Blob bytes)).val = bytes.val.length := by
+  simp [fullSize, Slice.len]
+
+theorem account_empty (read : Usize → Result (Reply U64)) (cap : Capacity)
+    (first : Nat) (bytes : U64) : account read cap 0 first bytes = .ok (.Ok bytes) := rfl
+
+theorem account_read_error_is_first (read : Usize → Result (Reply U64)) (cap : Capacity)
+    (remaining first : Nat) (bytes : U64) (failure : SourceRowChargeView.Error)
+    (reply : read (indexOf first) = .ok (.Err failure)) :
+    account read cap (remaining + 1) first bytes = .ok (.Err failure) := by
+  simp [account, reply]
+
+theorem account_value_limit_precedes_later_reads (read : Usize → Result (Reply U64))
+    (cap : Capacity) (remaining first : Nat) (bytes size : U64)
+    (reply : read (indexOf first) = .ok (.Ok size))
+    (large : cap.max_sql_value_bytes.val < size.val) :
+    account read cap (remaining + 1) first bytes = .ok (.Err .MaintenanceCapacity) := by
+  simp [account, reply, large]
+
+theorem account_overflow_precedes_later_reads (read : Usize → Result (Reply U64))
+    (cap : Capacity) (remaining first : Nat) (bytes size : U64)
+    (reply : read (indexOf first) = .ok (.Ok size))
+    (within : size.val ≤ cap.max_sql_value_bytes.val)
+    (overflow : U64.checked_add bytes size = none) :
+    account read cap (remaining + 1) first bytes = .ok (.Err .MaintenanceCapacity) := by
+  simp [account, reply, not_lt.mpr within, overflow]
+
+private theorem fromSpec {T : Type} (input : Result T) (p : T → Prop)
+    (proof : WP.spec input p) : ∃ value, input = .ok value ∧ p value := by
+  cases proof with
+  | ret proof => exact ⟨_, rfl, proof⟩
+
+theorem next_some (indices : IndexRange) (within : indices.start.val < indices.end.val) :
+    ∃ next, rangeNext indices = .ok (some indices.start, next) ∧
+      next.start.val = indices.start.val + 1 ∧ next.end = indices.end := by
+  obtain ⟨⟨answer, next⟩, ran, facts⟩ := fromSpec (rangeNext indices) _
+    (core.iter.range.IteratorRange.next_Usize_some_spec indices within)
+  rcases facts with ⟨rfl, start, finish⟩
+  exact ⟨next, ran, start, finish⟩
+
+theorem next_none (indices : IndexRange) (finished : indices.end.val ≤ indices.start.val) :
+    rangeNext indices = .ok (none, indices) := by
+  obtain ⟨⟨answer, next⟩, ran, facts⟩ := fromSpec (rangeNext indices) _
+    (core.iter.range.IteratorRange.next_Usize_none_spec indices finished)
+  rcases facts with ⟨rfl, rfl⟩
+  exact ran
+
+theorem index_self (index : Usize) : indexOf index.val = index := by
+  have bounded : index.val ≤ Usize.max := by scalar_tac
+  apply UScalar.eq_of_val_eq
+  simp [indexOf, bounded, UScalar.ofNatCore_val_eq]
+
+theorem add_exact (left right : U64) :
+    add left right = .ok (match U64.checked_add left right with
+      | none => .Err .MaintenanceCapacity
+      | some total => .Ok total) := by
+  unfold add SourceRowUsageView.controller.capacity.add
+  cases U64.checked_add left right <;> simp [lift, core.option.Option.ok_or]
+
+private theorem unroll {T : Type} (reader : Reader T) (indices : IndexRange)
+    (row : T) (cap : Capacity) (bytes : U64) :
+    countLoop reader indices row cap bytes =
+      Std.bind (countStep reader row cap indices bytes) (fun step => match step with
+        | .done outcome => .ok outcome
+        | .cont pair => countLoop reader pair.1 row cap pair.2) := by
+  unfold countLoop SourceRowUsageView.controller.capacity.row_bytes_using_loop
+  conv_lhs => rw [loop]
+  congr 1
+  funext step
+  cases step with
+  | cont pair => cases pair; rfl
+  | done outcome => rfl
+
+theorem loop_accounts_for_all_columns {T : Type} (reader : Reader T) (indices : IndexRange)
+    (row : T) (cap : Capacity) (bytes : U64) :
+    countLoop reader indices row cap bytes =
+      account (reader.read_size row) cap (indices.end.val - indices.start.val) indices.start.val bytes := by
+  generalize distance : indices.end.val - indices.start.val = remaining
+  induction remaining generalizing indices bytes with
+  | zero =>
+    have finished : indices.end.val ≤ indices.start.val := by omega
+    have ran := next_none indices finished
+    rw [unroll]
+    simp [countStep, SourceRowUsageView.controller.capacity.row_bytes_using_loop.body, ran, account]
+  | succ remaining ih =>
+    have within : indices.start.val < indices.end.val := by omega
+    obtain ⟨next, ran, start, finish⟩ := next_some indices within
+    have tailDistance : next.end.val - next.start.val = remaining := by rw [start, finish]; omega
+    rw [unroll]
+    simp only [countStep, SourceRowUsageView.controller.capacity.row_bytes_using_loop.body,
+      ran, bind_tc_ok, account, index_self]
+    change ((do let answer ← reader.read_size row indices.start; _) >>= _) = _
+    rw [bind_assoc]
+    congr 1
+    funext answer
+    cases answer with
+    | Err failure =>
+      simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok size =>
+      by_cases large : cap.max_sql_value_bytes.val < size.val
+      · simp [large, core.result.Result.Insts.CoreOpsTry.branch]
+      · simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+        have notLarge : ¬size > cap.max_sql_value_bytes := by simpa using large
+        rw [if_neg notLarge]
+        change ((do let result ← add bytes size; _) >>= _) = _
+        rw [add_exact]
+        cases checked : U64.checked_add bytes size with
+        | none =>
+          simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | some total =>
+          simp only [bind_tc_ok]
+          simpa only [large, if_false, start] using ih next total tailDistance
+
+
+theorem count_using_accounts_for_all_columns {T : Type} (reader : Reader T)
+    (row : T) (columns : Usize) (cap : Capacity) :
+    countUsing reader row columns cap = account (reader.read_size row) cap columns.val 0 0#u64 := by
+  change countLoop reader { start := 0#usize, «end» := columns } row cap 0#u64 = _
+  rw [loop_accounts_for_all_columns]
+  rfl
+
+theorem internal_same : internalCharge = base := by rfl
+
+def internalName : Str := SandproofSourceRowSqlSelect.toStr "controller_internal_inbox"
+def lifecycleName : Str := SandproofSourceRowSqlSelect.toStr "controller_lifecycle_inbox"
+def metadataName : Str := SandproofSourceRowSqlSelect.toStr "controller_source_work"
+def recordsName : Str := SandproofSourceRowSqlSelect.toStr "controller_source_work_records"
+
+theorem dispatch_exact (table : Str) (row : Row) (bytes : U64) (cap : Capacity) :
+    dispatch table row bytes cap =
+      if table = internalName ∨ table = lifecycleName then base row bytes cap
+      else if table = metadataName ∨ table = recordsName then charge row bytes cap
+      else .ok (.Ok bytes) := by
+  simp only [dispatch, SourceRowUsageView.controller.capacity.charged_inbox_bytes,
+    strEqual, bind_tc_ok, decide_eq_true_eq, internal_same,
+    internalName, lifecycleName, metadataName, recordsName]
+  split_ifs <;> simp_all
+
+
+open SourceRowChargeSpec
+
+theorem sample_spec_exact :
+    account (fullColumn sampleRow) sampleCapacity 5 0 0#u64 = .ok (.Ok 52#u64) := by
+  have index0 : indexOf 0 = 0#usize := index_self 0#usize
+  have index1 : indexOf 1 = 1#usize := index_self 1#usize
+  have index2 : indexOf 2 = 2#usize := index_self 2#usize
+  have index3 : indexOf 3 = 3#usize := index_self 3#usize
+  have index4 : indexOf 4 = 4#usize := index_self 4#usize
+  have get0 : refAt sampleRow 0#usize = .ok (.Ok (.Integer 1#i64)) := by reduce_row_columns
+  have get2 : refAt sampleRow 2#usize = .ok (.Ok (.Blob sampleDigest)) := by reduce_row_columns
+  have get3 : refAt sampleRow 3#usize = .ok (.Ok (.Integer 222212#i64)) := by reduce_row_columns
+  have payload : fullSize (.Blob samplePayload) = 4#u64 := by
+    apply UScalar.eq_of_val_eq
+    rw [(full_text_and_blob_size samplePayload).2]
+    rfl
+  have digest : fullSize (.Blob sampleDigest) = 32#u64 := by
+    apply UScalar.eq_of_val_eq
+    rw [(full_text_and_blob_size sampleDigest).2]
+    rfl
+  have sum0 : U64.checked_add 0#u64 8#u64 = some 8#u64 := by rfl
+  have sum1 : U64.checked_add 8#u64 4#u64 = some 12#u64 := by rfl
+  have sum2 : U64.checked_add 12#u64 32#u64 = some 44#u64 := by rfl
+  have sum3 : U64.checked_add 44#u64 8#u64 = some 52#u64 := by rfl
+  have sum4 : U64.checked_add 52#u64 0#u64 = some 52#u64 := by rfl
+  simp [account, index0, index1, index2, index3, index4, fullColumn,
+    get0, sample_payload, get2, get3, sample_key, payload, digest,
+    show fullSize (.Integer 1#i64) = 8#u64 from rfl,
+    show fullSize (.Integer 222212#i64) = 8#u64 from rfl,
+    show fullSize .Null = 0#u64 from rfl,
+    sum0, sum1, sum2, sum3, sum4, sampleCapacity, SourceRecordBoundsContract.sampleCapacity]
+
+def expectedTotal (sizes : Nat → U64) (first remaining : Nat) : Nat :=
+  ((List.range' first remaining).map (fun index => (sizes index).val)).sum
+
+theorem account_success_is_full_sum (sizes : Nat → U64)
+    (read : Usize → Result (Reply U64)) (cap : Capacity)
+    (first remaining : Nat) (bytes amount : U64)
+    (samples : ∀ offset, offset < remaining →
+      read (indexOf (first + offset)) = .ok (.Ok (sizes (first + offset))))
+    (ran : account read cap remaining first bytes = .ok (.Ok amount)) :
+    amount.val = bytes.val + expectedTotal sizes first remaining := by
+  induction remaining generalizing first bytes with
+  | zero =>
+    simp only [account, Result.ok.injEq, core.result.Result.Ok.injEq] at ran
+    subst amount
+    simp [expectedTotal]
+  | succ remaining ih =>
+    have firstReply := samples 0 (by omega)
+    simp only [Nat.add_zero] at firstReply
+    simp only [account, firstReply, bind_tc_ok] at ran
+    by_cases large : cap.max_sql_value_bytes.val < (sizes first).val
+    · simp [large] at ran
+    · simp only [if_neg large] at ran
+      have arithmetic := U64.checked_add_bv_spec bytes (sizes first)
+      cases checked : U64.checked_add bytes (sizes first) with
+      | none => simp [checked] at ran
+      | some total =>
+        simp only [checked] at ran arithmetic
+        have later : ∀ offset, offset < remaining →
+            read (indexOf (first + 1 + offset)) = .ok (.Ok (sizes (first + 1 + offset))) := by
+          intro offset bound
+          simpa only [Nat.add_assoc, Nat.add_comm 1 offset] using samples (offset + 1) (by omega)
+        have carried := ih (first + 1) total later ran
+        simp only [expectedTotal, List.range'_succ, List.map_cons, List.sum_cons] at *
+        omega
+
+theorem index_value (index : Nat) (bounded : index ≤ Usize.max) :
+    (indexOf index).val = index := by
+  simp [indexOf, bounded, UScalar.ofNatCore_val_eq]
+
+theorem full_column_present (row : Row) (index : Usize)
+    (within : index.val < row.statement.columns.val) :
+    fullColumn row index = .ok (.Ok (fullSize (SandproofSourceRowSqlSelect.asValueRef (row.column index)))) := by
+  simp [fullColumn, refAt, getRef,
+    SandproofSourceRowSqlSelect.Usize.Insts.RusqliteRowRowIndex.idx, within]
+
+theorem full_column_missing (row : Row) (index : Usize)
+    (outside : row.statement.columns.val ≤ index.val) :
+    fullColumn row index = .ok (.Err (.Sqlite ⟨row.statement.invalidIndex index, false⟩)) := by
+  simp [fullColumn, refAt, getRef,
+    SandproofSourceRowSqlSelect.Usize.Insts.RusqliteRowRowIndex.idx, not_lt.mpr outside]
+
+theorem source_names (row : Row) (bytes : U64) (cap : Capacity) :
+    dispatch metadataName row bytes cap = charge row bytes cap ∧
+      dispatch recordsName row bytes cap = charge row bytes cap := by
+  have mi : metadataName ≠ internalName := by
+    intro same
+    have lengths := congrArg (fun text : Str => text.val.length) same
+    simp [metadataName, internalName, Aeneas.Std.toStr, ByteArray.length_toList] at lengths
+    exact (by decide : "controller_source_work".utf8ByteSize ≠ "controller_internal_inbox".utf8ByteSize) lengths
+  have ml : metadataName ≠ lifecycleName := by
+    intro same
+    have lengths := congrArg (fun text : Str => text.val.length) same
+    simp [metadataName, lifecycleName, Aeneas.Std.toStr, ByteArray.length_toList] at lengths
+    exact (by decide : "controller_source_work".utf8ByteSize ≠ "controller_lifecycle_inbox".utf8ByteSize) lengths
+  have ri : recordsName ≠ internalName := by
+    intro same
+    have lengths := congrArg (fun text : Str => text.val.length) same
+    simp [recordsName, internalName, Aeneas.Std.toStr, ByteArray.length_toList] at lengths
+    exact (by decide : "controller_source_work_records".utf8ByteSize ≠ "controller_internal_inbox".utf8ByteSize) lengths
+  have rl : recordsName ≠ lifecycleName := by
+    intro same
+    have lengths := congrArg (fun text : Str => text.val.length) same
+    simp [recordsName, lifecycleName, Aeneas.Std.toStr, ByteArray.length_toList] at lengths
+    exact (by decide : "controller_source_work_records".utf8ByteSize ≠ "controller_lifecycle_inbox".utf8ByteSize) lengths
+  constructor <;> rw [dispatch_exact] <;> simp [mi, ml, ri, rl]
+
+
+end SandboxModel.Stage1Protocol.SourceRowUsageSpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.full_text_and_blob_size
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_empty
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_read_error_is_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_value_limit_precedes_later_reads
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_overflow_precedes_later_reads
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.next_some
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.next_none
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.index_self
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.add_exact
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.loop_accounts_for_all_columns
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.count_using_accounts_for_all_columns
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.internal_same
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.dispatch_exact
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.sample_spec_exact
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_success_is_full_sum
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.index_value
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.full_column_present
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.full_column_missing
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowUsageSpec.source_names

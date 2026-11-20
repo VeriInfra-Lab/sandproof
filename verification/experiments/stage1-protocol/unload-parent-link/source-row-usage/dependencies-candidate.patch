@@ -1,0 +1,19 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -335 +335,16 @@
++### A6 来源行原 Range next 薄绑定候选（待主控审查）
++
++[完整列计费候选](../../verification/experiments/stage1-protocol/unload-parent-link/source-row-usage/README.md)
++的隔离副本将原 `for index in 0..columns` 显式展开为同一个 Range 的逐次 next。
++`source_row_next` 的完整 Rust 体只有 `indices.next()`；它没有列读取、计费、
++容量判断或业务回调。有限值模型直接使用固定 Aeneas 的 `IteratorRange.next StepUsize`：
++start 小于 end 时返回原 start 并使 start 增一，保持 end；否则返回 None 并保持范围。
++正常 Range 的 IntoIterator 是同一迭代器的身份转换。usize 边界与原有限顺序保持，
++不改工具或补写新 Step 字段，也不把原 row_bytes 循环设为 opaque。
++
++原 for 与显式 next 的机械连接、同一个不可变 Row/Statement/缓冲的有效借用由 B4/A4/V5
++审查；它不是该 Std 实现的机器精化。完整 str 比较复用 A1/A6 全文字节合同，
++Row::get_ref 等四个具体符号继续依赖 #985 的未采纳候选，不扩大为整个 SQLite。
++本条仍是候选；采用和正式原生证据须独立登记，局部 Lean 通过不自动批准新绑定。
++
+ ### SQLite：当前 Inbox 保存两 BLOB 参数（实际接线与验收单列）

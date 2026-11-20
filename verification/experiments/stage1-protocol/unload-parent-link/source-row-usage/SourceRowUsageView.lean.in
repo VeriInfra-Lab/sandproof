@@ -1,0 +1,66 @@
+import SourceRowCharge
+import Aeneas.Std.RangeIter
+
+open Aeneas Aeneas.Std Result ControlFlow
+open SandproofSourceRowSqlSelect hiding toStr
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity)
+set_option autoImplicit false
+set_option maxRecDepth 2048
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+
+namespace SandboxModel.Stage1Protocol.SourceRowUsageView
+open SourceRowChargeView
+
+private abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+abbrev IndexRange := core.ops.range.Range Usize
+
+/-- The existing A6 unsigned Range model; the Rust adapter only calls next. -/
+def rangeNext (indices : IndexRange) : Result (Option Usize × IndexRange) :=
+  core.iter.range.IteratorRange.next core.iter.range.StepUsize indices
+
+/-- The registered A6 complete finite string equality, at this use site. -/
+def strEqual (left right : Str) : Result Bool := .ok (decide (left = right))
+
+local notation "controller.capacity.CapacityConfig" => Capacity
+local notation "JournalError.Insts.CoreConvertFromError" => SourceLoadView.fromSql
+local notation "U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from" => SourceRecordBoundsView.toUnsigned
+local notation "rusqlite.row.Row.get_ref" => SourceRowChargeView.getRef
+local notation "rusqlite.types.value_ref.ValueRef.as_blob" => SourceRowChargeView.asBlob
+local notation "core.option.Option.and_then" => SourceRowChargeView.optionAndThen
+local notation "controller.lifecycle_inbox.codec.charged_bytes" => SourceRowChargeView.base
+local notation "controller.lifecycle_inbox.source_work.codec.charged_bytes" => SourceRowChargeView.charge
+local notation "controller.capacity.source_row_next" => rangeNext
+local notation "Str.Insts.CoreCmpPartialEqStr.eq" => strEqual
+
+-- ACTUAL READER TYPE
+-- ACTUAL INTERNAL CLOSURE TYPES
+-- ACTUAL INTERNAL CALLBACKS
+-- ACTUAL INTERNAL CHARGE
+-- ACTUAL ADD
+-- ACTUAL DISPATCH
+-- ACTUAL LOOP BODY
+-- ACTUAL LOOP
+-- ACTUAL GENERIC COUNT
+-- ACTUAL VALUE SIZE
+-- ACTUAL COLUMN SIZE
+-- ACTUAL ROW READER
+-- ACTUAL ROW DICTIONARY
+-- ACTUAL COUNT
+
+abbrev valueSize := controller.capacity.source_row_value_size
+abbrev columnSize := controller.capacity.source_row_column_size
+abbrev dispatch := controller.capacity.charged_inbox_bytes
+abbrev count := controller.capacity.row_bytes
+abbrev add := controller.capacity.add
+abbrev Reader := controller.capacity.SourceRowSizeRead
+abbrev readRow := rusqlite.row.Row.Insts.Sandproof_controller_serviceControllerCapacitySourceRowSizeRead
+abbrev countUsing {R : Type} := @controller.capacity.row_bytes_using R
+abbrev countLoop {R : Type} := @controller.capacity.row_bytes_using_loop R
+abbrev countStep {R : Type} := @controller.capacity.row_bytes_using_loop.body R
+abbrev internalCharge := controller.internal_inbox.codec.charged_bytes
+
+end SandboxModel.Stage1Protocol.SourceRowUsageView

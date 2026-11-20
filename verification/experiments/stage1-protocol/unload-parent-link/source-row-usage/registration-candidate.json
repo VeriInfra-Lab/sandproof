@@ -1,0 +1,132 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-row-usage",
+  "parent_prs": [
+    985
+  ],
+  "prior": {
+    "pr": 985,
+    "formal_root": "SourceRowCharge",
+    "physical_files": 55,
+    "full_audits": 172
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceRowUsage",
+      "physical_files": 58,
+      "full_audits": 197,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.full_text_and_blob_size",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_empty",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_read_error_is_first",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_value_limit_precedes_later_reads",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_overflow_precedes_later_reads",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.next_some",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.next_none",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.index_self",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.add_exact",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.loop_accounts_for_all_columns",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.count_using_accounts_for_all_columns",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.internal_same",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.dispatch_exact",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.sample_spec_exact",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_success_is_full_sum",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.index_value",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.full_column_present",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.full_column_missing",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.source_names",
+        "SandboxModel.Stage1Protocol.SourceRowUsage.every_value_counts_its_complete_bytes",
+        "SandboxModel.Stage1Protocol.SourceRowUsage.complete_column",
+        "SandboxModel.Stage1Protocol.SourceRowUsage.complete_count",
+        "SandboxModel.Stage1Protocol.SourceRowUsage.sample_full_count",
+        "SandboxModel.Stage1Protocol.SourceRowUsage.complete_count_is_full_sum",
+        "SandboxModel.Stage1Protocol.SourceRowUsage.exact_source_after_original_count"
+      ],
+      "own_modules": [
+        "SourceRowUsageView.lean",
+        "SourceRowUsageSpec.lean",
+        "SourceRowUsage.lean"
+      ]
+    },
+    {
+      "variant": "drop-terminator-byte",
+      "formal_root": "SourceRowUsageNegative",
+      "physical_files": 58,
+      "full_audits": 197,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.full_text_and_blob_size",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_empty",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_read_error_is_first",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_value_limit_precedes_later_reads",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_overflow_precedes_later_reads",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.next_some",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.next_none",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.index_self",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.add_exact",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.loop_accounts_for_all_columns",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.count_using_accounts_for_all_columns",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.internal_same",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.dispatch_exact",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.sample_spec_exact",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.account_success_is_full_sum",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.index_value",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.full_column_present",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.full_column_missing",
+        "SandboxModel.Stage1Protocol.SourceRowUsageSpec.source_names",
+        "SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_payload_size",
+        "SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_digest_size",
+        "SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_normal_count",
+        "SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_count_breaks_same_contract",
+        "SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_source_charge",
+        "SandboxModel.Stage1Protocol.SourceRowUsageNegative.truncated_source_after_original_count"
+      ],
+      "own_modules": [
+        "SourceRowUsageView.lean",
+        "SourceRowUsageSpec.lean",
+        "SourceRowUsageNegative.lean"
+      ]
+    }
+  ],
+  "native_candidate": {
+    "name": "stage1-source-row-usage",
+    "variants": [
+      "original",
+      "drop-terminator-byte"
+    ],
+    "tests": [
+      "source_row_usage_counts_full_original_columns",
+      "source_row_usage_dispatches_original_source_and_other_tables",
+      "source_row_usage_preserves_per_value_limit_before_later_index_error"
+    ],
+    "expected_original_passed": 3,
+    "expected_mutant_failed": 3,
+    "preparation": "native.py",
+    "full_functional_required": true
+  },
+  "pending_library_symbols": [
+    "source_row_next: same std::ops::Range<usize>::next",
+    "original for-range IntoIterator identity"
+  ],
+  "inherited_pending_library_symbols": [
+    "Row::get_ref<usize>",
+    "Row::as_ref",
+    "Statement::column_count",
+    "ValueRef::as_blob"
+  ],
+  "remaining_providers": {
+    "V5": [
+      "actual sql_usage query/table/column provenance",
+      "same transaction",
+      "whole database budget"
+    ],
+    "B4_A4": [
+      "transparent factoring and for-to-next binding review",
+      "effective original Row/Statement/buffer borrows"
+    ]
+  },
+  "public_registration_accepted": false
+}
