@@ -1,8 +1,9 @@
 # LC-P7 恢复激活的发送目标
 
 固定生产输入为 integration `1b15872a07568f9f34aad514a64673ac328c7ee8`，
-源码树 `42b4f7fda5df6c10c9310f78b9edec6bbb98048a`。本批是 B 侧的
-源码核对与抽取预检。真实发送目标的证明仍缺一条宿主身份关系。
+源码树 `42b4f7fda5df6c10c9310f78b9edec6bbb98048a`。本包交付原许可载体
+的字段保持定理，并记录 B 侧从 SQLite 许可读取到实际写入的源码核对。
+真实发送目标的证明仍缺一条宿主身份关系。
 
 ## 持久记录如何成为可用许可
 
@@ -12,6 +13,9 @@
   写入的原子性、唯一性和未知提交之后的选择归 A。附件所需前提为
   `OriginalClaimCommitted(C, A, action)`、`CompleteBinding(C, A, action, work)`
   及 `UnknownCannotAuthorizeAnotherCandidate(C, A)`。
+  A 侧的 `existing_activation_exact` 对已选中、已有原标记的记录给出完整动作的
+  相等判据，原记录选择和完整持久历史仍是显式条件。
+  [A 侧固定证明包](https://github.com/VeriInfra-Lab/sandproof/tree/38691108440df6012f211eb6d4ea4dc806413c2a/verification/experiments/restore-claim)
 - `restore_execution_context` 在应用锁内读取按逻辑 effect 的原 Resume operation
   定位的 work，重取原认证上下文，检查当前请求及 World 代数/操作。
   [许可读取](../../../controller-service/src/controller/lifecycle_inbox/source_work/restore.rs)
@@ -48,6 +52,10 @@
 | 同一候选已经 Running | 有许可的继续可完成 guest 重授权；Runtime 的 Running 分支只再次观察，跳过 Resumed 请求。Paused 可再次发向同一候选；性质按动作计，不限制请求总数。 |
 | 其它入口 | Prepare 的 `PUT /snapshot/load` 固定 `resume_vm=false`。ConfigureNetwork、ApplyFilePolicy 和退出观察没有 Resumed 请求。通用 Prepare 拒绝 snapshot source，通用 Activate 的 guest 初始化要求已运行。原 Unload 失败后的 `continue_original_vm` 有自己的 Resumed 发送点、原 VM 和许可，属于另一条协议。 |
 
+首次入口查无恢复 work 时可走通用分派。通用 Activate 的凭据及模板写入属于 P9。
+专用 Paused 分支配置 MMDS 时，`PUT /mmds` 和 `PATCH /vm` 各自建立连接。
+P9 的对端身份关系需要从较早的凭据写入开始保持。
+
 [首次执行与观察路由](../../../controller-service/src/application/coordinator/lifecycle_unload.rs) ·
 [Host 适配](../../../sandbox-node/src/adapter.rs) ·
 [Node 恢复](../../../sandbox-node/src/linux/restore.rs) ·
@@ -83,6 +91,47 @@ Node 正式配置提供原位置 gate，Runtime 通用配置也允许无 slot。
 [原 claim 与记录发布](../../../sandbox-runtime/src/linux.rs) ·
 [锁取得](../../../sandbox-runtime/src/helper_gate.rs) ·
 [退休路径](../../../sandbox-runtime/src/retirement.rs)
+
+## 已证明的许可载体
+
+`SandboxModel.Stage1Protocol.RestoreActivationTarget.permit_carrier_round_trip
+(action : WorkAction<EffectId>) (digest : ContentDigest)` 断言原构造函数和两个原访问器的
+顺序求值得到 `.ok (action, digest)`。三个原方法和三个薄根均生成透明定义。
+定理的边界是许可值。读取哪一行、何时返回许可、怎样构造请求和哪个 VMM 收到写入，
+分别由外层调用关系承担。
+[Lean 定理](PermitCarrier.lean.in) · [Rust 薄根](carrier-root.rs.in)
+
+在 ning 使用既有锁和固定工具。在独立的 `RUST_VIEW` 检出上述生产提交，保留
+工作树唯一差异为以下薄根和模块声明。将 `OUT`、`CARGO_TARGET_DIR` 设为新的私有绝对
+路径，并按工作流配置原离线 Cargo 缓存。
+
+```bash
+cp "$CASE/carrier-root.rs.in" "$RUST_VIEW/controller-service/src/proof_restore_activation_carrier.rs"
+printf '\n#[cfg(feature = "durable")]\npub mod proof_restore_activation_carrier;\n' \
+  >>"$RUST_VIEW/controller-service/src/lib.rs"
+cd "$RUST_VIEW"
+sysroot=$("$CHARON" toolchain-path)
+export RUSTFLAGS="--remap-path-prefix=$PWD=. --remap-path-prefix=$sysroot=<extraction-sysroot> --remap-path-prefix=$CARGO_HOME=<cargo-cache>"
+"$CHARON" cargo --preset=aeneas --error-on-warnings --sysroot default \
+  --targets x86_64-unknown-linux-gnu \
+  --include sandproof_controller_service --include sandproof_protocol --include sandbox_controller_core \
+  --start-from crate::proof_restore_activation_carrier::construct_permit \
+  --start-from crate::proof_restore_activation_carrier::permit_action \
+  --start-from crate::proof_restore_activation_carrier::permit_work_binding \
+  --dest-file "$OUT/carrier.llbc" -- --manifest-path controller-service/Cargo.toml --lib --locked --offline
+unset RUSTFLAGS
+"$AENEAS" -backend lean -abort-on-error -warnings-as-errors -split-files -emit-json \
+  -namespace SandproofRestoreActivationCarrierRust -subdir SandproofRestoreActivationCarrier \
+  -dest "$OUT/generated" "$OUT/carrier.llbc"
+```
+
+在独立 Lean 视图复制原 `lean-toolchain`、`lake-manifest.json`、
+`SandboxModel/ProofAuditCommand.lean` 和 Lean 服务脚本，复用已核对的原依赖缓存。
+将 [私有 Lake 配置](carrier-lakefile.toml.in) 与定理模板分别复制为
+`lakefile.toml` 和 `PermitCarrier.lean`，并放入原样生成的
+`SandproofRestoreActivationCarrier`。运行 `lake build PermitCarrier` 后，
+用同一 Lean 服务核对实际文件诊断和公理审计。保留实际展开的三个原方法，
+并从 `translation.json` 拒绝空结果或 opaque 定义。
 
 ## 拟验收性质与依赖
 
@@ -124,6 +173,10 @@ restore_activation_sends_only_original
   [#637](https://github.com/VeriInfra-Lab/sandproof/issues/637) ·
   [#638](https://github.com/VeriInfra-Lab/sandproof/issues/638) ·
   [#838](https://github.com/VeriInfra-Lab/sandproof/pull/838)
+- #766 的 `FullWorkContract` 对应从已解码的原来源记录组装完整 work。
+  固定基线下其 20 项业务输入及六份生成文件摘要一致。两份验收提供方文件已有变化，
+  保留原收据身份，不迁签本次结果。
+  [原 work 证明包](../stage1-protocol/restore-work/README.md)
 - #907 的回执缺失窗口以原 pidfd、已核对 socket 的 GET 与无激活 marker 观察
   原 Paused。#908 延伸相关场景。已有 #832 的独立 KVM 报告在其原候选观察原 VM
   激活后且 SQL 回执未入库的状态。三者均保留原执行身份。故障场景涉及的物理状态
@@ -139,7 +192,8 @@ restore_activation_sends_only_original
   许可读根在 Charon 的转换后类型检查出现 Iterator trait clause 不匹配。
   `activate_same_loaded_candidate` 的 LLBC 成功生成，但原 Aeneas 在
   `snapshot_restore.rs:48–50` 拒绝其错误构造参数。隔离该构造的可见性后仍报错。
-  无可导入 Lean 生成体，尚无正误版形式证书或完整验收。
-- 本草稿仅提交最小源码断点及可复核收据摘要，公共登记无需修改。身份连续性提供方
+  发送根和许可读根缺可导入的 Lean 生成体，尚无实际发送同性质的正误版证书。
+- 许可载体已在 ning 通过内核、Lean 服务和三项标准依赖审计。公共登记保持独立。
+  身份连续性提供方
   和透明抽取就绪后，公共集成需要登记此包的原生用例、正式入口、实际文件、审计及
   精确输入，并按覆盖记录规范登记结论。当前没有 LC-P7 的发送目标定理。
