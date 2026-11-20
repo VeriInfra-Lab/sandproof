@@ -1,0 +1,137 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-init-reads",
+  "parent_prs": [
+    995
+  ],
+  "prior": {
+    "root": "SourceInitLoopParent",
+    "physical_files": 98,
+    "audits": 468
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceInitReads",
+      "physical_files": 99,
+      "full_audits": 483,
+      "own_modules": [
+        "SourceInitReads.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceInitReads.existing_complete_reader",
+        "SandboxModel.Stage1Protocol.SourceInitReads.read_error_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitReads.read_failure_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitReads.read_nonreturn_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitReads.never_returns_missing_capacity",
+        "SandboxModel.Stage1Protocol.SourceInitReads.successful_capacity_has_own_validated_policy",
+        "SandboxModel.Stage1Protocol.SourceInitReads.successful_capacity_iff",
+        "SandboxModel.Stage1Protocol.SourceInitReads.standard_never_returns_missing_capacity",
+        "SandboxModel.Stage1Protocol.SourceInitReads.standard_success_has_own_policy",
+        "SandboxModel.Stage1Protocol.SourceInitReads.standard_format_error",
+        "SandboxModel.Stage1Protocol.SourceInitReads.first_read_error_precedes_capacity_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitReads.second_effect_read_error_preserves_first_count",
+        "SandboxModel.Stage1Protocol.SourceInitReads.sequential_first_read_is_legal",
+        "SandboxModel.Stage1Protocol.SourceInitReads.sequential_second_observation",
+        "SandboxModel.Stage1Protocol.SourceInitReads.sequential_initializer_keeps_second_error"
+      ]
+    },
+    {
+      "variant": "drop-current-capacity",
+      "formal_root": "SourceInitReadsNegative",
+      "physical_files": 101,
+      "full_audits": 487,
+      "own_modules": [
+        "SourceInitReads.lean",
+        "SourceInitReadsWrongView.lean",
+        "SourceInitReadsNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceInitReads.existing_complete_reader",
+        "SandboxModel.Stage1Protocol.SourceInitReads.read_error_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitReads.read_failure_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitReads.read_nonreturn_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitReads.never_returns_missing_capacity",
+        "SandboxModel.Stage1Protocol.SourceInitReads.successful_capacity_has_own_validated_policy",
+        "SandboxModel.Stage1Protocol.SourceInitReads.successful_capacity_iff",
+        "SandboxModel.Stage1Protocol.SourceInitReads.standard_never_returns_missing_capacity",
+        "SandboxModel.Stage1Protocol.SourceInitReads.standard_success_has_own_policy",
+        "SandboxModel.Stage1Protocol.SourceInitReads.standard_format_error",
+        "SandboxModel.Stage1Protocol.SourceInitReads.first_read_error_precedes_capacity_and_writes",
+        "SandboxModel.Stage1Protocol.SourceInitReads.second_effect_read_error_preserves_first_count",
+        "SandboxModel.Stage1Protocol.SourceInitReads.sequential_first_read_is_legal",
+        "SandboxModel.Stage1Protocol.SourceInitReads.sequential_second_observation",
+        "SandboxModel.Stage1Protocol.SourceInitReads.sequential_initializer_keeps_second_error",
+        "SandboxModel.Stage1Protocol.SourceInitReadsNegative.expected_complete_normal_capacity",
+        "SandboxModel.Stage1Protocol.SourceInitReadsNegative.wrong_discards_complete_normal_capacity",
+        "SandboxModel.Stage1Protocol.SourceInitReadsNegative.wrong_keeps_first_read_error",
+        "SandboxModel.Stage1Protocol.SourceInitReadsNegative.rejects_same_complete_contract"
+      ]
+    }
+  ],
+  "capture_policy": "revalidate and reuse #993 original capture; compile/extract real drop-current-capacity, all three staging files required",
+  "native_candidate": {
+    "name": "stage1-source-init-reads",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "drop-current-capacity",
+      "adapted-drop-current-capacity"
+    ],
+    "tests": [
+      "controller::capacity::source_init_reads_contract::source_init_reads_preserves_complete_current_capacity",
+      "controller::capacity::source_init_reads_contract::source_init_reads_keeps_format_error_before_missing_row",
+      "controller::capacity::source_init_reads_contract::source_init_reads_retains_complete_maintenance_validation",
+      "controller::capacity::source_init_reads_contract::source_init_reads_second_query_error_retains_first_policy"
+    ],
+    "expected": {
+      "original": {
+        "passed": 4,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 4,
+        "failed": 0
+      },
+      "drop-current-capacity": {
+        "passed": 3,
+        "failed": 1
+      },
+      "adapted-drop-current-capacity": {
+        "passed": 3,
+        "failed": 1
+      }
+    },
+    "rejection": "source capacity read must preserve the complete current validated capacity",
+    "restoration": "new original source/target after both mutants: compile and run all four exact tests",
+    "full_functional_required": true
+  },
+  "representation": {
+    "capacity": "same complete current capacity from its own validated policy and after-state; actual raw/standard roots never return Ok(None)",
+    "errors": "read errors, failure and nonreturn retained before later fields/initializer calls",
+    "sequence": "existing generic ReadConfigEffects state chain before/middle/after, one db-selected effect family; legal normal/error witness",
+    "physical_boundary": "generic effect-state projections are conditional bridges; physical StandardConfigRead/SQLite state, snapshots/transactions/durability remain V5"
+  },
+  "remaining_providers": {
+    "V0": [
+      "existing library/thin-binding adoption and whole production-to-isolated general equivalence"
+    ],
+    "V5": [
+      "actual SQL/JSON/digest instances and physical connection/database effect-state mapping",
+      "same transaction/snapshot/durability and database budget"
+    ],
+    "V7": [
+      "independent authentication/configuration provenance"
+    ],
+    "V6": [
+      "actual material/VM/physical facts"
+    ]
+  },
+  "production_candidate_equivalence_complete": false,
+  "public_registration_accepted": false,
+  "registration_mode": "independent complete projects; all inherited/common/counterexample files and audits retained; no partial-root fallback"
+}

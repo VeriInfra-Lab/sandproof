@@ -1,0 +1,23 @@
+import SourceInitReads
+
+open Aeneas Aeneas.Std Result ControlFlow
+open SandproofSourceRowSqlSelect
+open SandproofStage1RequestRust
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+set_option linter.style.whitespace false
+set_option linter.style.longLine false
+
+namespace SandboxModel.Stage1Protocol.SourceInitReadsWrongView
+noncomputable section
+local notation "JournalError" => SaveRows.Error
+local notation "controller.capacity.CapacityConfig" => SourceRecordBoundsView.Capacity
+local notation "controller.checkpoint.config.ReadConfigEffects" =>
+  SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.ReadConfigEffects
+local notation "controller.checkpoint.config_using" =>
+  SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config_using
+
+-- ACTUAL WRONG CAPACITY READ
+
+end
+end SandboxModel.Stage1Protocol.SourceInitReadsWrongView

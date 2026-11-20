@@ -1,0 +1,51 @@
+import SourceInitReads
+import SourceInitReadsWrongView
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofStage1RequestRust sandproof_controller_service
+open sandproof_controller_service.controller.checkpoint.config
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitReadsNegative
+noncomputable section
+
+abbrev wrong {E : Type} (io : ReadConfigEffects E) (before : E) :=
+  SourceInitReadsWrongView.controller.capacity.config_using io before
+
+theorem expected_complete_normal_capacity :
+    SourceInitCapacityReadView.capacityReadView (SourcePolicyReadSpec.decoded InboxLoadConfig.Values.normal) () =
+      .ok (.Ok (some InboxLoadConfig.Values.capacity),()) := by
+  rw [←SourceInitCapacityReadView.capacity_read_refines]
+  exact SourceInitCapacityReadView.normal_second_read
+
+theorem wrong_discards_complete_normal_capacity :
+    wrong (SourcePolicyReadSpec.decoded InboxLoadConfig.Values.normal) () = .ok (.Ok none,()) := by
+  unfold wrong SourceInitReadsWrongView.controller.capacity.config_using
+    SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config_using
+  rw [SourcePolicyRead.normal_decoded_read]
+  simp [core.result.Result.Insts.CoreOpsTry.branch,core.option.Option.ok_or,InboxLoadConfig.Values.normal]
+
+theorem wrong_keeps_first_read_error {E : Type} (io : ReadConfigEffects E) (before after : E)
+    (failure : SaveRows.Error) (failed : read_using io before = .ok (.Err failure,after)) :
+    wrong io before = .ok (.Err failure,after) := by
+  unfold wrong SourceInitReadsWrongView.controller.capacity.config_using
+    SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config_using
+  rw [failed]
+  simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem rejects_same_complete_contract : ¬ SourceInitReads.Contract wrong := by
+  intro contract
+  have normal := contract (SourcePolicyReadSpec.decoded InboxLoadConfig.Values.normal) ()
+  change wrong (SourcePolicyReadSpec.decoded InboxLoadConfig.Values.normal) () = _ at normal
+  rw [wrong_discards_complete_normal_capacity,expected_complete_normal_capacity] at normal
+  simp at normal
+
+end
+end SandboxModel.Stage1Protocol.SourceInitReadsNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReadsNegative.expected_complete_normal_capacity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReadsNegative.wrong_discards_complete_normal_capacity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReadsNegative.wrong_keeps_first_read_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReadsNegative.rejects_same_complete_contract
