@@ -86,6 +86,25 @@ native sandbox 和 operation 的认领都保留标记，正常布尔返回只能
 的原有定义，已核内核证明每次实际回调保留遍历上下文。库符合性仍适用于本次的有限普通
 共享借用。三个外部错误类型只在返回类型中使用，沿用原 SQLite 错误载荷别名。
 
+独立 `SourceCollect` 视图从 `load_records` 的原 `query_map` 游标开始。私有源码副本
+移出原行处理、`checked` 对该行类型的实例及原 `for` 循环，保留生产调用中的 SQL、
+三列顺序和各项检查。实际 Serde 与两个摘要接点通过只转发原参数和结果的字典接线。
+`actual_checked_source_bytes` 给出原解码、校验值和规范字节检查的双向成功条件。
+`actual_populated_source_row` 同时核对完整 SQL `work_key` 与原 anchor 摘要，并返回
+同一个完整解码值。`actual_source_collect_preserves_rows` 从原 `next` 返回序列、原逐行
+返回和 Vec 容量条件证明加载向量保留全部非空记录、顺序与重数。
+`original_read_row_is_in_loaded_sources` 进一步保留原 mark、完整 `RestoreClaim`
+及其所在记录。`actual_source_collect_first_error` 核对遇到原错误立即返回。
+
+这里的原查询和游标状态由 A4/V5 提供。两个摘要结果与完整原值的 Serde 接线是显式
+条件，`required_option` 的原 `Option::deserialize` 和缺失／显式 null 区别仍归原
+派生绑定。比较仅调用现有 A6 普通切片字节模型及固定 `Vec::as_slice` 绑定。
+原 `load_records` 的查询准备、列绑定、边界汇总、`load` 元数据及调用事务尚未一起
+抽取。私有抽取副本的命名标注只区分两种 `From` 实现，错误转换正文原样保留。
+原游标和重新准入联合抽取时，固定后端的通用 `Iterator` 字典缺少 `any` 字段。
+两个视图独立保留原 Rust 决定。把该次实际游标加载的向量传给筛选，以及所有匹配
+native sandbox/operation 的行究竟是否为原认领，仍由原调用关系接通。
+
 正误视图均抽取选中行的原判断和标记赋值，用同一条 claim、同一 Resume/C、
 VM 2 与 VM 3 检验同一个 `PreservesMarkedRow`。错误视图只将已有标记的比较
 替换为 true，异候选得到错误的成功返回，但记录仍保留原标记。该反例的可达范围止于
@@ -144,6 +163,8 @@ bash "$case_dir/verify-decisions.sh" "$FORMAL_EVIDENCE" "$PROOF_LOCK" \
   "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
 bash "$case_dir/verify-decisions.sh" --resume-scan "$SCAN_EVIDENCE" "$PROOF_LOCK" \
   "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
+bash "$case_dir/verify-decisions.sh" --source-read "$READ_EVIDENCE" "$PROOF_LOCK" \
+  "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
 ```
 
 普通入口为原 `scripts/check-function.sh`。激活读回组件由操作者在另一份干净
@@ -157,6 +178,7 @@ cargo test --locked --offline -p sandproof-controller-service --lib \
 ```
 
 本包和现有 Stage1 公共模板目录同级，集成窗口统一登记。选中行任务含正确与错误两个
-隔离 Lake 视图，加载后扫描另用独立视图，每个按真实导入闭包与审计清单检查。普通
+隔离 Lake 视图，加载后扫描和原游标读回各用独立视图。每个都按真实导入闭包与审计
+清单检查。普通
 任务应加入激活提交未知读回及两个已存在的 Resume 用例。公共
 根、冻结、覆盖和标准批次入口在合并这些任务时登记。

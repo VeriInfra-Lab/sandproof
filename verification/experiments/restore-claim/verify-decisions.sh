@@ -1,15 +1,14 @@
 #!/usr/bin/env bash
-# Formal entry for the selected restore decisions and loaded-source scan.
+# Formal entry for the selected restore decisions, scan, and source-row readback.
 set -euo pipefail
 umask 077
 
 views=(correct wrong)
-if [[ "${1:-}" == --resume-scan ]]; then
-  views=(resume-scan)
-  shift
-fi
+case "${1:-}" in
+  --resume-scan|--source-read) views=("${1#--}"); shift ;;
+esac
 if [[ $# != 5 ]]; then
-  echo 'usage: verify-decisions.sh [--resume-scan] NEW_OUTPUT LOCK TOOL_BIN LAKE_PACKAGES LEAN_MCP_ENV' >&2
+  echo 'usage: verify-decisions.sh [--resume-scan|--source-read] NEW_OUTPUT LOCK TOOL_BIN LAKE_PACKAGES LEAN_MCP_ENV' >&2
   exit 2
 fi
 here="$(cd -- "$(dirname -- "$0")" && pwd)"
@@ -40,6 +39,7 @@ export CARGO_NET_OFFLINE=true CARGO_BUILD_JOBS=4 LEAN_NUM_THREADS=4 LEAN_STACK_S
 export PYTHONDONTWRITEBYTECODE=1 TERM=dumb LC_ALL=C
 unset RUSTFLAGS CARGO_ENCODED_RUSTFLAGS
 entry=crate::controller::lifecycle_inbox::source_work::restore
+codec=crate::controller::lifecycle_inbox::source_work::codec
 
 extractions=()
 results=()
@@ -50,7 +50,9 @@ for view in "${views[@]}"; do
   git -C "$repo" archive "$head" | tar -xf - -C "$project"
   args=()
   opacity=()
+  staged_source=("$project/controller-service/src/controller/lifecycle_inbox/source_work/restore.rs")
   namespace=SandproofRestoreClaim
+  materializer=
   roots=(--start-from "$entry"::proof_claim_activation_row)
   case "$view" in
     correct)
@@ -66,15 +68,24 @@ for view in "${views[@]}"; do
       opacity=(--opaque rusqlite::error::Error --opaque serde_json::error::Error)
       namespace=SandproofRestoreResumeScan
       target=ResumeScan
+      materializer=stage_resume_scan.py
+      ;;
+    source-read)
+      roots=(--start-from "$codec"::proof_collect_source_records)
+      opacity=(--opaque rusqlite::error::Error --opaque serde_json::error::Error)
+      namespace=SandproofRestoreSourceRead
+      target=SourceCollect
+      materializer=stage_source_read.py
+      staged_source=("$project/controller-service/src/controller/lifecycle_inbox/source_work/codec.rs"
+                     "$project/controller-service/src/lib.rs")
       ;;
   esac
-  if [[ "$view" == resume-scan ]]; then
-    bash "$repo/scripts/python-entry.sh" "$here/stage_resume_scan.py" "$project"
+  if [[ -n "$materializer" ]]; then
+    bash "$repo/scripts/python-entry.sh" "$here/$materializer" "$project"
   else
     bash "$repo/scripts/python-entry.sh" "$here/stage_decisions.py" "$project" "${args[@]}"
   fi
-  file=controller-service/src/controller/lifecycle_inbox/source_work/restore.rs
-  sha256sum "$project/$file" > "$data/selected-source.sha256"
+  sha256sum "${staged_source[@]}" > "$data/selected-source.sha256"
   cd "$project"
   export CARGO_TARGET_DIR="$output/extract-target"
   "$tool_bin/charon" cargo --preset=aeneas --error-on-warnings --sysroot default \
@@ -88,8 +99,8 @@ for view in "${views[@]}"; do
   mkdir .tools .lake artifacts
   ln -s -- "$packages" .lake/packages
   ln -s -- "$mcp_env" .tools/lean-mcp
-  if [[ "$view" == resume-scan ]]; then
-    bash "$repo/scripts/python-entry.sh" "$here/stage_resume_scan.py" "$project" --generated "$data/generated"
+  if [[ -n "$materializer" ]]; then
+    bash "$repo/scripts/python-entry.sh" "$here/$materializer" "$project" --generated "$data/generated"
   else
     bash "$repo/scripts/python-entry.sh" "$here/stage_lean.py" "$project" "$data/generated" "${args[@]}"
   fi

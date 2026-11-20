@@ -1,0 +1,22 @@
+import SandproofRestoreSourceRead.Types
+
+open Aeneas Aeneas.Std
+namespace SandproofRestoreSourceReadRust
+
+def alloc.vec.Vec.as_slice {T : Type} (_A : Type) (value : alloc.vec.Vec T) : Result (Slice T) :=
+  .ok (Aeneas.Std.alloc.vec.Vec.deref value)
+
+def Slice.Insts.CoreCmpPartialEqArray.eq {T U : Type} {N : Usize}
+    (cmp : core.cmp.PartialEq T U) (left : Slice T) (right : Array U N) : Result Bool :=
+  core.slice.cmp.PartialEqSlice.eq cmp left right.to_slice
+
+def Slice.Insts.CoreCmpPartialEqArray.ne {T U : Type} {N : Usize}
+    (cmp : core.cmp.PartialEq T U) (left : Slice T) (right : Array U N) : Result Bool := do
+  let equal ← Slice.Insts.CoreCmpPartialEqArray.eq cmp left right
+  .ok (!equal)
+
+def alloc.vec.Vec.Insts.CoreCmpPartialEqShared0Slice.ne {T U : Type} (_A : Type)
+    (cmp : core.cmp.PartialEq T U) (left : alloc.vec.Vec T) (right : Slice U) : Result Bool :=
+  core.slice.cmp.PartialEqSlice.ne cmp (Aeneas.Std.alloc.vec.Vec.deref left) right
+
+end SandproofRestoreSourceReadRust

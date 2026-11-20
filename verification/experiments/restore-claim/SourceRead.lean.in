@@ -1,0 +1,171 @@
+import SandproofRestoreSourceRead.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofRestoreSourceReadRust
+open SandproofRestoreSourceReadRust.controller.lifecycle_inbox.source_work
+open SandproofRestoreSourceReadRust.sandproof_protocol.lifecycle.digest
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+abbrev RowBytes := alloc.vec.Vec U8
+
+private theorem normal_bind (first : Result A) (step : A → Result B) (output : B)
+    (reply : (do let value ← first; step value) = .ok output) :
+    ∃ value, first = .ok value ∧ step value = .ok output := by
+  cases first with
+  | ret value => exact ⟨value, rfl, by simpa only [bind_tc_ok] using reply⟩
+  | div => simp at reply
+  | vis effect resume => simp at reply
+
+private theorem slice_eq (left right : Slice U8) :
+    core.slice.cmp.PartialEqSlice.eq core.cmp.PartialEqU8 left right =
+      .ok (decide (left = right)) := by
+  obtain ⟨value, returned, exactValue⟩ := WP.spec_imp_exists
+    (core.slice.cmp.PartialEqSlice.eq_homo_spec core.cmp.PartialEqU8 left right
+      (by intro x y; simp [WP.spec_ok]))
+  have precise : value = decide (left = right) := by cases value <;> simp_all
+  simpa only [precise] using returned
+
+private theorem slice_ne (left right : Slice U8) :
+    core.slice.cmp.PartialEqSlice.ne core.cmp.PartialEqU8 left right =
+      .ok (decide (left ≠ right)) := by
+  obtain ⟨value, returned, exactValue⟩ := WP.spec_imp_exists
+    (core.slice.cmp.PartialEqSlice.ne_homo_spec core.cmp.PartialEqU8 left right
+      (by intro x y; simp [WP.spec_ok]))
+  have precise : value = decide (left ≠ right) := by cases value <;> simp_all
+  simpa only [precise] using returned
+
+private theorem sha_ne (left right : Slice U8) :
+    core.cmp.impls.PartialEqShared.ne (Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8) left right =
+      .ok (decide (left ≠ right)) := by
+  simp [core.cmp.impls.PartialEqShared.ne, core.cmp.PartialEq.ne.default, slice_eq]
+
+private theorem encoded_ne (left : RowBytes) (right : Slice U8) :
+    alloc.vec.Vec.Insts.CoreCmpPartialEqShared0Slice.ne Global core.cmp.PartialEqU8 left right =
+      .ok (decide (alloc.vec.Vec.deref left ≠ right)) :=
+  slice_ne _ _
+
+private theorem key_eq (left : RowBytes) (right : ContentDigest) :
+    Slice.Insts.CoreCmpPartialEqArray.eq core.cmp.PartialEqU8 (alloc.vec.Vec.deref left) right =
+      .ok (decide (alloc.vec.Vec.deref left = right.to_slice)) :=
+  slice_eq _ _
+
+private theorem anchor_eq (left right : ContentDigest) :
+    ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq left right =
+      .ok (decide (left.to_slice = right.to_slice)) := by
+  calc
+    _ = core.slice.cmp.PartialEqSlice.eq core.cmp.PartialEqU8 left.to_slice right.to_slice := by
+      simp [ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq, core.array.equality.PartialEqArray.eq,
+        core.slice.cmp.PartialEqSlice.eq]
+    _ = _ := slice_eq _ _
+
+/-- Facts about the actual callbacks and all bytes checked by the original `checked`. -/
+def CheckedSourceBytes (ports : codec.SourceRowJson J D) (bytes sha : Slice U8)
+    (value : Option SourceWorkRecord) : Prop :=
+  ports.decode_record bytes = .ok (.Ok value) ∧
+  (∃ digest, ports.row_digest bytes = .ok digest ∧ ports.digest_slice digest = .ok sha) ∧
+  ∃ encoded, ports.encode_record value = .ok (.Ok encoded) ∧ alloc.vec.Vec.deref encoded = bytes
+
+theorem actual_checked_source_bytes (ports : codec.SourceRowJson J D) (bytes sha : Slice U8)
+    (value : Option SourceWorkRecord) :
+    codec.proof_checked_source_record ports bytes sha = .ok (.Ok value) ↔
+      CheckedSourceBytes ports bytes sha value := by
+  unfold codec.proof_checked_source_record CheckedSourceBytes
+  constructor
+  · intro reply
+    obtain ⟨decoded, decodedAt, continued⟩ := normal_bind _ _ _ reply
+    cases decoded with
+    | Err error =>
+      simp [core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+        codec.proof_checked_source_record.closure.Insts.CoreOpsFunctionFnOnceTupleErrorJournalError.call_once,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at continued
+    | Ok record =>
+      simp only [core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok] at continued
+      obtain ⟨digest, hashed, continued⟩ := normal_bind _ _ _ continued
+      obtain ⟨digestBytes, sliced, continued⟩ := normal_bind _ _ _ continued
+      rw [sha_ne] at continued
+      by_cases sameDigest : digestBytes = sha
+      · simp only [sameDigest, ne_eq, not_true_eq_false, decide_false, bind_tc_ok,
+          Bool.false_eq_true, ↓reduceIte] at continued
+        obtain ⟨encoded, encodedAt, continued⟩ := normal_bind _ _ _ continued
+        cases encoded with
+        | Err error =>
+          simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+            JournalError.Insts.CoreConvertFromError.from] at continued
+        | Ok encoded =>
+          by_cases canonical : alloc.vec.Vec.deref encoded = bytes
+          · have same : record = value := by
+              simpa [core.result.Result.Insts.CoreOpsTry.branch, encoded_ne, canonical] using continued
+            subst record
+            exact ⟨decodedAt, ⟨digest, hashed, sameDigest ▸ sliced⟩, ⟨encoded, encodedAt, canonical⟩⟩
+          · simp [encoded_ne, canonical] at continued
+      · simp [sameDigest] at continued
+  · rintro ⟨decoded, ⟨digest, hashed, sliced⟩, ⟨encoded, rendered, canonical⟩⟩
+    simp [decoded, core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+      hashed, sliced, core.cmp.PartialEq.ne.default, slice_eq, rendered, encoded_ne, canonical]
+
+/-- The populated original row must preserve all bytes, the whole decoded
+record, the complete database work key, and the original anchor check. -/
+def PopulatedSourceBytes (ports : codec.SourceRowJson J D) (bytes sha key : RowBytes)
+    (record : SourceWorkRecord) : Prop :=
+  CheckedSourceBytes ports (alloc.vec.Vec.deref bytes) (alloc.vec.Vec.deref sha) (some record) ∧
+  alloc.vec.Vec.deref key = record.work.requirement.work_binding.to_slice ∧
+  ∃ encoded digest, ports.encode_anchor record.work.anchor = .ok (.Ok encoded) ∧
+    ports.anchor_digest (alloc.vec.Vec.deref encoded) = .ok digest ∧
+    record.work.requirement.work_binding.to_slice = digest.to_slice
+
+theorem actual_populated_source_row (ports : codec.SourceRowJson J D) (bytes sha key : RowBytes)
+    (record : SourceWorkRecord) :
+    codec.proof_decode_source_record ports (.Ok (bytes, sha, some key)) = .ok (.Ok (some record)) ↔
+      PopulatedSourceBytes ports bytes sha key record := by
+  unfold PopulatedSourceBytes
+  constructor
+  · intro reply
+    unfold codec.proof_decode_source_record at reply
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok] at reply
+    obtain ⟨checked, checkedAt, continued⟩ := normal_bind _ _ _ reply
+    cases checked with
+    | Err error =>
+      simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at continued
+    | Ok value =>
+      cases value with
+      | none => simp at continued
+      | some loaded =>
+        simp only [alloc.vec.Vec.as_slice, ContentDigest.as_bytes, bind_tc_ok, key_eq] at continued
+        by_cases sameKey : alloc.vec.Vec.deref key = loaded.work.requirement.work_binding.to_slice
+        · simp only [sameKey, decide_true, ↓reduceIte] at continued
+          obtain ⟨anchorBytes, encoded, continued⟩ := normal_bind _ _ _ continued
+          cases anchorBytes with
+          | Err error =>
+            simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+              JournalError.Insts.CoreConvertFromError.from] at continued
+          | Ok canonical =>
+            simp only [bind_tc_ok] at continued
+            obtain ⟨digest, hashed, continued⟩ := normal_bind _ _ _ continued
+            by_cases sameDigest : loaded.work.requirement.work_binding.to_slice = digest.to_slice
+            · have same : loaded = record := by simpa [anchor_eq, sameDigest] using continued
+              subst loaded
+              exact ⟨(actual_checked_source_bytes _ _ _ _).mp checkedAt, sameKey,
+                ⟨canonical, digest, encoded, hashed, sameDigest⟩⟩
+            · simp [anchor_eq, sameDigest] at continued
+        · simp [sameKey] at continued
+  · rintro ⟨checked, sameKey, ⟨encoded, digest, anchor, hashed, sameDigest⟩⟩
+    have checkedAt := (actual_checked_source_bytes _ _ _ _).mpr checked
+    simp [codec.proof_decode_source_record, core.result.Result.Insts.CoreOpsTry.branch,
+      checkedAt, alloc.vec.Vec.as_slice,
+      ContentDigest.as_bytes, key_eq, sameKey, anchor, hashed, anchor_eq, sameDigest]
+
+theorem original_decoded_claim_is_read_back (ports : codec.SourceRowJson J D)
+    (bytes sha key : RowBytes) (original loaded : SourceWorkRecord)
+    (originalBytes : ports.decode_record (alloc.vec.Vec.deref bytes) = .ok (.Ok (some original)))
+    (loadedRow : codec.proof_decode_source_record ports (.Ok (bytes, sha, some key)) = .ok (.Ok (some loaded))) :
+    loaded = original := by
+  have decoded := ((actual_populated_source_row ports bytes sha key loaded).mp loadedRow).1.1
+  rw [originalBytes] at decoded
+  simpa using decoded.symm
+
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.actual_checked_source_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.actual_populated_source_row
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.original_decoded_claim_is_read_back
