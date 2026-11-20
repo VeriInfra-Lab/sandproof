@@ -364,40 +364,54 @@ def checked_file(path,limit,*,mode=None):
     return dict(bytes=before.st_size,sha256=list(digest),device=before.st_dev,inode=before.st_ino)
 
 
-def original_json(path,limit):
-    checked=checked_file(path,limit)
-    raw=Path(path).read_bytes()
-    if len(raw)!=checked['bytes'] or list(hashlib.sha256(raw).digest())!=checked['sha256']:
-        raise ValueError('original JSON changed after file observation')
-    return json.loads(raw,object_pairs_hook=unique_keys)
-
-
 GATE_NAMES=frozenset(('config.json','observation.json','ready-stage.json','ready.json',
     'command-stage.json','command.json'))
 GATE_FINAL_NAMES=frozenset(('config.json','observation.json','ready.json','command.json'))
 GATE_STAGE_NAMES=GATE_NAMES-GATE_FINAL_NAMES
 
 
-def gate_json(path,limit,*,directory_fd=None):
-    """One protected FD: never reopen the observation containing a secret."""
+def _read_private_json(path, limit, *, mode=None, directory_fd=None):
+    """Read bounded bytes and identity through one root-private descriptor."""
     path=Path(path)
     identity=lambda m:(m.st_dev,m.st_ino,m.st_size,m.st_mtime_ns,m.st_ctime_ns,m.st_mode,m.st_uid,m.st_nlink)
     name=str(path) if directory_fd is None else path.name
     metadata=lambda:os.stat(name,dir_fd=directory_fd,follow_symlinks=False)
     before=metadata()
     if (not stat.S_ISREG(before.st_mode) or before.st_uid!=0 or before.st_nlink!=1
-            or stat.S_IMODE(before.st_mode)!=0o600 or not 0<before.st_size<=limit):
-        raise ValueError('bounded root0600 original gate file required')
+            or before.st_mode&0o077 or not 0<before.st_size<=limit
+            or (mode is not None and stat.S_IMODE(before.st_mode)!=mode)):
+        raise ValueError('original bounded private JSON file required')
     fd=os.open(name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,dir_fd=directory_fd)
     with os.fdopen(fd,'rb') as stream:
         if identity(os.fstat(stream.fileno()))!=identity(before):
-            raise ValueError('gate file changed before protected read')
+            raise ValueError('JSON file changed before protected read')
         raw=stream.read(limit+1)
         if (len(raw)!=before.st_size or len(raw)>limit
                 or identity(os.fstat(stream.fileno()))!=identity(before)
                 or identity(metadata())!=identity(before)):
-            raise ValueError('gate file changed during protected read')
-    return json.loads(raw,object_pairs_hook=unique_keys),hashlib.sha256(raw).hexdigest(),identity(before)
+            raise ValueError('JSON file changed during protected read')
+    return raw, identity(before)
+
+
+def original_json(path, limit, *, expected_sha256=None):
+    raw, _ = _read_private_json(path, limit)
+    if expected_sha256 is not None and hashlib.sha256(raw).hexdigest() != expected_sha256:
+        raise ValueError('original JSON differs from independently approved fingerprint')
+    return json.loads(raw, object_pairs_hook=unique_keys)
+
+
+def _measured_original_json(path, limit):
+    raw, identity = _read_private_json(path, limit, mode=0o400)
+    device, inode, size = identity[:3]
+    measurement = dict(bytes=size, sha256=list(hashlib.sha256(raw).digest()),
+                       device=device, inode=inode)
+    return json.loads(raw, object_pairs_hook=unique_keys), measurement
+
+
+def gate_json(path, limit, *, directory_fd=None):
+    """Use the original gate directory and exact root0600 mode."""
+    raw, identity = _read_private_json(path, limit, mode=0o600, directory_fd=directory_fd)
+    return json.loads(raw, object_pairs_hook=unique_keys), hashlib.sha256(raw).hexdigest(), identity
 
 
 def validate_gate_ready(value,digest):
@@ -830,8 +844,7 @@ class UnloadRuntime:
             raise ValueError('invalid original directory key')
         witness=store/('completed-'+key)
         manifest_file=bundle/'manifest.json'
-        measured=checked_file(manifest_file,262144,mode=0o400)
-        manifest=original_json(manifest_file,262144)
+        manifest, measured = _measured_original_json(manifest_file, 262144)
         if measured['sha256']!=captured['completed'] or manifest['binding']!=full['pause']['binding'] or manifest['compatibility']!=full['compatibility']:
             raise ValueError('original manifest binding mismatch')
         expected=('state.bin','memory.bin','disk-0.img')
@@ -846,7 +859,7 @@ class UnloadRuntime:
             if measurement['bytes']!=entry['length'] or measurement['sha256']!=entry['digest']:
                 raise ValueError('original material bytes differ from adopted manifest')
             files.append(dict(name=name,**measurement));total+=measurement['bytes']
-        completion=original_json(witness,16384)
+        completion, completed_file = _measured_original_json(witness, 16384)
         if (completion['version']!=1 or completion['action']!=captured['action']
                 or completion['job_digest']!=captured['worker']['job_digest']
                 or completion['worker']!=captured['worker']['process']
@@ -855,7 +868,7 @@ class UnloadRuntime:
             raise ValueError('physical completion original action/source/worker mismatch')
         if completion['manifest_digest']!=captured['completed'] or completion['material_bytes']!=total or total!=captured['material_bytes']:
             raise ValueError('original durable completion differs from adopted bytes')
-        return dict(materials=files,manifest=measured,completion=checked_file(witness,16384,mode=0o400),
+        return dict(materials=files,manifest=measured,completion=completed_file,
             material_paths=[str(bundle),str(witness)])
 
     def _continued_physical(self,audit,local,lifetime,conn,prior):
@@ -1691,14 +1704,9 @@ def prepare(args):
     fixture=json_file(private_path(args.fixture),limit=1024**2)
     captures=json_file(private_path(args.capture_settings),limit=65536)
     receipt_file=private_path(args.quota_receipt)
-    observed=checked_file(receipt_file,65536)
-    if bytes(observed['sha256']).hex()!=args.quota_receipt_sha256:
-        raise ValueError('quota receipt differs from independently approved fingerprint')
-    quota=original_json(receipt_file,65536)
+    quota=original_json(receipt_file,65536,expected_sha256=args.quota_receipt_sha256)
     deployment_file=private_path(args.deployment_receipt)
-    deployment=original_json(deployment_file,65536)
-    if bytes(checked_file(deployment_file,65536)['sha256']).hex()!=args.deployment_receipt_sha256:
-        raise ValueError('static deployment differs from independently approved fingerprint')
+    deployment=original_json(deployment_file,65536,expected_sha256=args.deployment_receipt_sha256)
     from lifecycle_unload_quota import validate_run_receipt
     from tools.capture_acceptance import validate_settings
     captures=validate_settings(captures,1)
