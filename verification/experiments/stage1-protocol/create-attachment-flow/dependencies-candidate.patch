@@ -1,0 +1,8 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -348,0 +349,5 @@
++
++V3 Create 完整同步父函数的 [独立入口](../../verification/experiments/stage1-protocol/create-attachment-flow/README.md)复用上述逐符号 String／Vec／Option／整数／字典合同和原 FullLoad／FullSave／FullGraphic 规格。真实 `attach_create_using` 保留六个类型与编码／效果字典及三个运行时参数；完整 CreateAttachment、PathBuf 三层字节载体和环境变量完整键值表示不删除字段。当前一般对应仅要求既有 FullGraphicContract 和同次 load 的 DecodedStringsRepresentable；save 的配置表示条件由成功 load 和完整安装框架推出，不假设整个 Inbox 后态合法或 save 成功。
++
++标准实例另须连接 `RefCell::borrow`／`Ref::deref` 的正常共享借用、同一个完整 World clone、三个原位置的 live transaction／connection、保留 namespace 与原 u64 十进制数的固定 sandbox ID、原 SQL 的 i64／str 两参数，以及逐次真实 JSON／SHA／SQL 结果和错误。现有逐委托源码审查不等于这些实例的一般对应；不使用整个 codec、Serde、HTTP handler 或事务正确作为前提。寿命 UPDATE 保持原行为：任意成功行数均继续，包括零；收件 save 的一行要求另行保留。普通返回、panic／不返回、分配失败、提交未知与恢复分别陈述。本登记候选不新增标准库实现证明或业务公理；未落实的窄接口分别交 V0／V5，认证来源、当前意图与耐久发送及材料／VM 事实仍分别由 V7、V1／V2、V6 提供。
++

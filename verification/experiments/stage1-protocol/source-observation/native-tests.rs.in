@@ -1,0 +1,264 @@
+// Direct values are identical to Lean Values; they are decoded data, not physical evidence.
+fn proof_source_observation_values() -> (RawSourceObservation, SourceObservationRequirement) {
+    let digest = ContentDigest::from_sha256([0; 32]);
+    let requirement = SourceObservationRequirement {
+        work_binding: digest,
+        node: sandproof_protocol::internal::NodeIdentity {
+            deployment_id: "deployment".try_into().unwrap(),
+            node_id: "node".try_into().unwrap(),
+            node_generation: 1.try_into().unwrap(),
+        },
+        host_bootstrap: HostEpochRegistration {
+            version: 1,
+            boot_id: "boot".into(),
+            policy: digest,
+        },
+        resource: sandproof_protocol::ResourceRef {
+            kind: sandproof_protocol::ResourceKind::Vm,
+            id: "vm".try_into().unwrap(),
+        },
+        source: SourceProcessIdentity {
+            pid: 1234,
+            start_time_ticks: 5678,
+            boot_id: "boot".into(),
+        },
+        limits: SourceObservationConfig {
+            max_work_bytes: 32_768,
+            max_configuration_bytes: 4,
+            max_executable_bytes: 1_048_576,
+            max_kernel_bytes: 1_048_576,
+            max_disk_bytes: 1_048_576,
+            max_material_bytes: 68_719_476_736,
+        },
+    };
+    let value = RawSourceObservation {
+        work_binding: digest,
+        resource: requirement.resource.clone(),
+        source: requirement.source.clone(),
+        configuration: b"{}".to_vec(),
+        executable_sha256: [0; 32],
+        kernel_sha256: [0; 32],
+        kernel_bytes: 100,
+        disk_bytes: 4096,
+    };
+    (value, requirement)
+}
+
+#[test]
+fn proof_source_observation_normal() {
+    let (value, requirement) = proof_source_observation_values();
+    assert!(requirement.limits.valid());
+    assert!(crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_binding() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.work_binding = ContentDigest::from_sha256([1; 32]);
+    assert!(!crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_resource_kind() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.resource.kind = sandproof_protocol::ResourceKind::Snapshot;
+    assert!(!crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_resource_id() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.resource.id = "other-vm".try_into().unwrap();
+    assert!(!crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_source_start() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.source.start_time_ticks = 5679;
+    assert!(!crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_source_boot() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.source.boot_id = "other-boot".into();
+    assert!(!crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_empty() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.configuration.clear();
+    assert!(!crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_large() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.configuration = vec![0; 5];
+    assert!(!crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_kernel_zero() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.kernel_bytes = 0;
+    assert!(!crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_kernel_large() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.kernel_bytes = requirement.limits.max_kernel_bytes + 1;
+    assert!(!crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_disk_zero() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.disk_bytes = 0;
+    assert!(!crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_disk_large() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.disk_bytes = requirement.limits.max_disk_bytes + 1;
+    assert!(!crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_unchecked_hashes() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.executable_sha256 = [1; 32];
+    value.kernel_sha256 = [1; 32];
+    assert!(crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+#[test]
+fn proof_source_observation_boundary() {
+    let (mut value, requirement) = proof_source_observation_values();
+    value.configuration = vec![0; 4];
+    value.kernel_bytes = requirement.limits.max_kernel_bytes;
+    value.disk_bytes = requirement.limits.max_disk_bytes;
+    assert!(crate::proof_source_observation_matches(
+        &value,
+        &requirement
+    ));
+}
+
+fn proof_source_observation_journal(
+    path: &Path,
+) -> (ControllerJournal, SourceWorkRecord, RawSourceObservation) {
+    let (mut journal, _) = ready(path);
+    let record = prepare(&mut journal);
+    let value = observation(record.work.requirement());
+    (journal, record, value)
+}
+
+#[test]
+fn proof_source_observation_caller_binding() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, record, mut value) = proof_source_observation_journal(&dir.path().join("db"));
+    value.work_binding = ContentDigest::from_sha256([99; 32]);
+    let result = journal.save_source_observation::<Evidence>(
+        &record.work,
+        &v3::context(),
+        value,
+        10,
+        &mut NeverCrash,
+    );
+    let class = match &result {
+        Ok(_) => "Ok",
+        Err(JournalError::InvalidHostEvidence) => "InvalidHostEvidence",
+        Err(_) => "OtherError",
+    };
+    eprintln!("proof_source_observation_caller_result={class}");
+    assert!(matches!(result, Err(JournalError::InvalidHostEvidence)));
+}
+
+#[test]
+fn proof_source_observation_caller_source() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, record, mut value) = proof_source_observation_journal(&dir.path().join("db"));
+    value.source.start_time_ticks += 1;
+    let result = journal.save_source_observation::<Evidence>(
+        &record.work,
+        &v3::context(),
+        value,
+        10,
+        &mut NeverCrash,
+    );
+    let class = match &result {
+        Ok(_) => "Ok",
+        Err(JournalError::InvalidHostEvidence) => "InvalidHostEvidence",
+        Err(_) => "OtherError",
+    };
+    eprintln!("proof_source_observation_caller_result={class}");
+    assert!(matches!(result, Err(JournalError::InvalidHostEvidence)));
+}
+
+#[test]
+fn proof_source_observation_caller_large() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, record, mut value) = proof_source_observation_journal(&dir.path().join("db"));
+    value.configuration =
+        vec![
+            0;
+            usize::try_from(record.work.requirement().limits.max_configuration_bytes).unwrap() + 1
+        ];
+    let result = journal.save_source_observation::<Evidence>(
+        &record.work,
+        &v3::context(),
+        value,
+        10,
+        &mut NeverCrash,
+    );
+    let class = match &result {
+        Ok(_) => "Ok",
+        Err(JournalError::InvalidHostEvidence) => "InvalidHostEvidence",
+        Err(_) => "OtherError",
+    };
+    eprintln!("proof_source_observation_caller_result={class}");
+    assert!(matches!(result, Err(JournalError::InvalidHostEvidence)));
+}

@@ -1,0 +1,21 @@
+import SandboxModel.Lifecycle.Protocol.InboxOriginProofs
+import SandboxModel.Lifecycle.Protocol.InboxOriginValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.OriginSelection
+noncomputable section
+
+theorem normal_returns :
+    Session.current_execution_origin Values.resumeCase = .ok (some Values.resumed) ∧
+    Session.current_execution_origin Values.fieldsCase = .ok (some Values.changedFields) ∧
+    Session.current_execution_origin Values.trailingCase = .ok (some Values.created) ∧
+    Session.current_execution_origin Values.noOriginCase = .ok none ∧
+    Session.current_execution_origin Values.emptyCase = .ok none := by
+  have proved (session : Session) := candidate_full_contract session
+  simpa only [proved, Result.ok.injEq] using Values.expected_outcomes
+
+end
+end SandboxModel.Stage1Protocol.OriginSelection
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.normal_returns

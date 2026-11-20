@@ -1,0 +1,34 @@
+import SandboxModel.Lifecycle.Protocol.InboxSaveRun
+import SandboxModel.Lifecycle.Protocol.InboxSaveValues
+import SandboxModel.Lifecycle.Protocol.InboxSaveValidationWitnesses
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+namespace SandboxModel.Stage1Protocol.InboxSave.Values
+noncomputable section
+
+theorem wrong_budget_saved (data : alloc.vec.Vec U8) (trace : Trace) :
+    runSave saved terminal renewal unload (effects data (.Ok 1#usize))
+      InboxValidation.Values.normal trace =
+      .ok (.Ok (), trace ++ completeTrace InboxValidation.Values.normal data) := by
+  unfold runSave save_using
+  rw [actual_normal_validation]
+  simp [effects, core.result.Result.Insts.CoreOpsTry.branch, lift,
+    alloc.vec.Vec.deref, Array.to_slice, completeTrace, statement, List.append_assoc]
+
+theorem wrong_budget_contract_rejected : ¬FullSaveContract (runSave (E := Trace)) := by
+  intro contract
+  have contradiction := contract saved terminal renewal unload
+    (effects (sizedBytes 286721 (by decide)) (.Ok 1#usize))
+    InboxValidation.Values.normal [] InboxValidation.Values.fixture_representable
+  rw [wrong_budget_saved, budget_model_rejected] at contradiction
+  simp only [Result.ok.injEq, Prod.mk.injEq] at contradiction
+  cases contradiction.1
+
+end
+end SandboxModel.Stage1Protocol.InboxSave.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.wrong_budget_saved
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSave.Values.wrong_budget_contract_rejected

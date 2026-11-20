@@ -1,0 +1,79 @@
+import SandboxModel.Lifecycle.Protocol.ShapeAssembly
+import SandboxModel.Lifecycle.Protocol.ShapeLane
+import SandboxModel.Lifecycle.Protocol.ShapePrior
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+namespace SandboxModel.Stage1Protocol.SessionShape
+noncomputable section
+open scoped Classical
+
+theorem validate_shape_spec {R E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (inbox : Inbox) (index : Usize) (session : Session) :
+    Inbox.validate_session_shape_using saved terminal inbox index session =
+      validateView saved terminal inbox index session := by
+  unfold Inbox.validate_session_shape_using validateView
+  rw [SavedRetirement.validate_saved_spec]
+  apply congrArg (fun continuation => Bind.bind (SavedRetirement.validateView saved session) continuation)
+  funext receipt
+  cases receipt with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok value =>
+    cases value
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok,
+      alloc.vec.Vec.is_empty, SandproofFoundationsRust.alloc.vec.Vec.is_empty,
+      first_window_spec, prior_spec, option_some_spec, option_none_spec,
+      first_entry_spec, first_refusal_option, refusal_entries_spec,
+      SavedRetirement.last_saved_spec, last_terminal_option,
+      terminal_status_ne, terminal_self_spec, lift, decide_eq_true_eq,
+      UScalar.lt_equiv, alloc.vec.Vec.len_val, core.convert.num.FromUsizeU16.from_val_eq]
+    erw [before_prior_guard inbox session]
+    by_cases before : BeforePrior inbox session
+    · simp only [before, ↓reduceIte]
+      by_cases bounded : index.val ≤ inbox.sessions.val.length
+      · simp only [bounded, ↓reduceIte, bind_tc_ok, decide_eq_true_eq]
+        by_cases prior : ∃ old ∈ inbox.sessions.val.take index.val, PriorConflict old session
+        · simp only [prior, ↓reduceIte]
+          rfl
+        · simp only [prior, ↓reduceIte]
+          erw [refusal_guard session]
+          by_cases refusal : session.refusal = none ∨ RefusalFields session
+          · simp only [refusal, ↓reduceIte]
+            refine Eq.trans ?_ (confirmed_guard terminal session)
+            cases confirmed : session.confirmed_terminal with
+            | none => rfl
+            | some value =>
+              by_cases isTerminal : session.terminal = true <;>
+                by_cases status : value.status = .Cleaned <;>
+                by_cases matching : Terminal.Matches value value.request <;>
+                by_cases last : ∃ entry, session.entries.val.getLast? = some entry ∧ entry.intent = value.request <;>
+                simp only [ne_eq, isTerminal, status, matching, last, eq_self, Bool.false_eq_true, not_false_eq_true, not_true_eq_false,
+                  ↓reduceIte, corrupt, SavedRetirement.corrupt]
+              unfold encodedTerminal
+              apply congrArg (fun continuation => Bind.bind (terminal.encode value) continuation)
+              funext encoded
+              cases encoded with
+              | Err error =>
+                simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                  JournalError.Insts.CoreConvertFromError.from, encodedResult]
+              | Ok bytes =>
+                simp only [bind_tc_ok, encodedResult, corrupt, SavedRetirement.corrupt]
+                simp only [← not_le, ite_not]
+                rfl
+          · simp only [refusal, ↓reduceIte]
+      · simp only [bounded, ↓reduceIte, bind_tc_fail]
+    · simp only [before, ↓reduceIte]
+
+
+theorem full_shape_contract : FullShapeContract (Inbox.validate_session_shape_using (R := Unit) (E := Unit)) :=
+  validate_shape_spec
+
+end
+end SandboxModel.Stage1Protocol.SessionShape
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.validate_shape_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.full_shape_contract

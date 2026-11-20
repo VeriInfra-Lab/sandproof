@@ -5,6 +5,7 @@ use std::{error::Error, fs, os::unix::fs::MetadataExt, path::Path};
 pub struct DiskSpace {
     pub device: u64,
     pub available_bytes: u64,
+    pub usable_bytes: u64,
     pub available_inodes: u64,
     pub fragment_bytes: u64,
 }
@@ -16,7 +17,16 @@ pub fn disk_space(path: &Path) -> Result<DiskSpace, Box<dyn Error>> {
     if value.f_frsize == 0 {
         return Err("invalid filesystem fragment size".into());
     }
+    let excluded = value
+        .f_bfree
+        .checked_sub(value.f_bavail)
+        .ok_or("invalid filesystem free space")?;
     Ok(DiskSpace {
+        usable_bytes: value
+            .f_blocks
+            .checked_sub(excluded)
+            .and_then(|blocks| blocks.checked_mul(value.f_frsize))
+            .ok_or("filesystem usable size overflow")?,
         device: fs::metadata(path)?.dev(),
         available_bytes: value
             .f_bavail

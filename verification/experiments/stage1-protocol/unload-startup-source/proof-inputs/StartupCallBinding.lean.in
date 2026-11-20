@@ -1,0 +1,80 @@
+import ActualStartupParentRead
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+
+variable [Representations] [SandproofUnloadStartupJoint.Representations]
+variable [SandproofUnloadStartupJoint.Operations]
+
+/-- Both generated views represent the same six Rust error payload types. -/
+structure StartupErrorCarriers where
+  io : SandproofUnloadStartupJoint.core.io.error.Error = core.io.error.Error
+  sqlite : SandproofUnloadStartupJoint.rusqlite.error.Error = rusqlite.error.Error
+  json : SandproofUnloadStartupJoint.serde_json.error.Error = serde_json.error.Error
+  contract : SandproofUnloadStartupJoint.sandproof_protocol.ContractError = sandproof_protocol.ContractError
+  crash : SandproofUnloadStartupJoint.CrashPoint = CrashPoint
+  reject : SandproofUnloadStartupJoint.sandbox_controller_core.controller.ControllerReject =
+    sandbox_controller_core.controller.ControllerReject
+
+def StartupErrorCarriers.toParent (errors : StartupErrorCarriers) :
+    SandproofUnloadStartupJoint.JournalError → JournalError
+  | .Io err => .Io (cast errors.io err)
+  | .Sqlite err => .Sqlite (cast errors.sqlite err)
+  | .CommitUncertain err => .CommitUncertain (cast errors.sqlite err)
+  | .Json err => .Json (cast errors.json err)
+  | .Contract err => .Contract (cast errors.contract err)
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .InjectedCrash err => .InjectedCrash (cast errors.crash err)
+  | .ControllerRejected err => .ControllerRejected (cast errors.reject err)
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+/-- Rebind the extracted external field for Rust function ID 40 only. The
+two dictionary maps must come from the boundary providers for the same E. -/
+@[reducible] def bindStartupCall (parent : ParentCalls)
+    (carriers : StartupCarriers) (errors : StartupErrorCarriers)
+    (hostView : {E : Type} → host_contract.HostEvidence E →
+      SandproofUnloadStartupJoint.host_contract.HostEvidence E)
+    (serdeView : {E : Type} → serde_core.de.DeserializeOwned E →
+      SandproofUnloadStartupJoint.serde_core.de.DeserializeOwned E) : ParentCalls :=
+  { parent with
+    readOriginalStartupRecords := fun host serde tx ns world localValue => do
+      let reply ← SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records
+        (hostView host) (serdeView serde) (cast carriers.tx tx) ns (cast carriers.world world)
+        (carriers.localView localValue)
+      match reply with
+      | .Ok (actions, receipts) => .ok (.Ok (transportStartupActions carriers actions, receipts))
+      | .Err error => .ok (.Err (errors.toParent error)) }
+
+theorem bound_startup_call_linked (parent : ParentCalls)
+    (carriers : StartupCarriers) (errors : StartupErrorCarriers)
+    (hostView : {E : Type} → host_contract.HostEvidence E →
+      SandproofUnloadStartupJoint.host_contract.HostEvidence E)
+    (serdeView : {E : Type} → serde_core.de.DeserializeOwned E →
+      SandproofUnloadStartupJoint.serde_core.de.DeserializeOwned E) :
+    letI : ParentCalls := bindStartupCall parent carriers errors hostView serdeView
+    ∀ {E : Type} (host : host_contract.HostEvidence E) (serde : serde_core.de.DeserializeOwned E)
+      (tx : rusqlite.transaction.Transaction) (ns : Str)
+      (world : sandbox_controller_core.model.World) (localValue : Local),
+      ParentStartupLinked host serde (hostView host) (serdeView serde) tx ns world localValue
+        carriers errors.toParent := by
+  intros
+  rfl
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.bound_startup_call_linked

@@ -1,0 +1,159 @@
+fn proof_source_origin_case(case: u8) -> Result<(), JournalError> {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&dir.path().join("db"));
+    let record = prepare(&mut journal);
+    let world = journal.world().unwrap();
+    let mut inbox = super::super::codec::load(&journal.journal.connection)
+        .unwrap()
+        .unwrap();
+    let mut anchor = record.work.anchor;
+    let (mut selected, _) = inbox.find(&anchor.request).unwrap().unwrap();
+    let (origin_session, origin_entry) = inbox.find(&anchor.execution_origin).unwrap().unwrap();
+    assert_eq!(origin_session, selected);
+    assert!(matches!(
+        anchor.execution_origin.request.operation,
+        LifecycleOperation::Create { .. }
+    ));
+    match case {
+        0 => {}
+        1 => {
+            let repeated = inbox.sessions[selected].clone();
+            selected = inbox.sessions.len();
+            inbox.sessions.push(repeated);
+        }
+        2 => inbox.sessions[origin_session].entries[origin_entry].local_operation = None,
+        3 => {
+            anchor.local.operation = core::OperationId(999_999);
+            inbox.sessions[origin_session].entries[origin_entry].local_operation =
+                Some(anchor.local.operation);
+        }
+        4 => {
+            anchor.execution_origin.request.operation = LifecycleOperation::Destroy {};
+            inbox.sessions[origin_session].entries[origin_entry].intent =
+                anchor.execution_origin.clone();
+        }
+        5 => {
+            anchor.execution_origin.request.binding.expected = ExpectedSession::Version(1);
+            anchor.execution_origin.request.operation = LifecycleOperation::Resume {
+                source_incarnation: IncarnationId::try_from(1).unwrap(),
+                capture: CaptureId::try_from(1).unwrap(),
+                target_incarnation: IncarnationId::try_from(101).unwrap(),
+                manifest_digest: anchor.options_sha256,
+            };
+            inbox.sessions[origin_session].entries[origin_entry].intent =
+                anchor.execution_origin.clone();
+        }
+        6 => anchor.native.generation = anchor.native.generation.checked_add(1).unwrap(),
+        7 => anchor.native.epoch = anchor.native.epoch.checked_add(1).unwrap(),
+        8 => anchor.native.current_vm = Some(core::VmId(999_999)),
+        9 => {
+            anchor.continued_from = Some(core::capture::OriginalContinueIdentity {
+                key: core::OperationKey {
+                    sandbox: anchor.local.sandbox,
+                    operation: core::OperationId(999_999),
+                },
+                epoch: anchor.native.epoch,
+                generation: anchor.native.generation,
+                vm: anchor.native.current_vm.unwrap(),
+            });
+        }
+        10 => {
+            anchor.execution_origin.accepted_version = anchor
+                .execution_origin
+                .accepted_version
+                .checked_add(1)
+                .unwrap();
+        }
+        _ => unreachable!(),
+    }
+    super::snapshot::proof_source_origin_validate(&world, &inbox, &anchor, selected)
+}
+
+#[test]
+fn proof_source_origin_contract_normal() {
+    assert_eq!(
+        proof_source_origin_case(0).map_err(|error| matches!(error, JournalError::CorruptStore)),
+        Ok(())
+    );
+}
+#[test]
+fn proof_source_origin_contract_full() {
+    for case in 1..=10 {
+        assert_eq!(
+            proof_source_origin_case(case)
+                .map_err(|error| matches!(error, JournalError::CorruptStore)),
+            Err(true),
+            "source-origin field case {case}"
+        );
+    }
+}
+#[test]
+fn proof_source_origin_contract_session() {
+    assert_eq!(
+        proof_source_origin_case(1).map_err(|e| matches!(e, JournalError::CorruptStore)),
+        Err(true)
+    );
+}
+#[test]
+fn proof_source_origin_contract_local_operation() {
+    assert_eq!(
+        proof_source_origin_case(2).map_err(|e| matches!(e, JournalError::CorruptStore)),
+        Err(true)
+    );
+}
+#[test]
+fn proof_source_origin_contract_missing_plan() {
+    assert_eq!(
+        proof_source_origin_case(3).map_err(|e| matches!(e, JournalError::CorruptStore)),
+        Err(true)
+    );
+}
+#[test]
+fn proof_source_origin_contract_unsupported_kind() {
+    assert_eq!(
+        proof_source_origin_case(4).map_err(|e| matches!(e, JournalError::CorruptStore)),
+        Err(true)
+    );
+}
+#[test]
+fn proof_source_origin_contract_wrong_origin_kind() {
+    assert_eq!(
+        proof_source_origin_case(5).map_err(|e| matches!(e, JournalError::CorruptStore)),
+        Err(true)
+    );
+}
+#[test]
+fn proof_source_origin_contract_generation() {
+    assert_eq!(
+        proof_source_origin_case(6).map_err(|e| matches!(e, JournalError::CorruptStore)),
+        Err(true)
+    );
+}
+#[test]
+fn proof_source_origin_contract_epoch() {
+    assert_eq!(
+        proof_source_origin_case(7).map_err(|e| matches!(e, JournalError::CorruptStore)),
+        Err(true)
+    );
+}
+#[test]
+fn proof_source_origin_contract_vm() {
+    assert_eq!(
+        proof_source_origin_case(8).map_err(|e| matches!(e, JournalError::CorruptStore)),
+        Err(true)
+    );
+}
+#[test]
+fn proof_source_origin_contract_continued() {
+    assert_eq!(
+        proof_source_origin_case(9).map_err(|e| matches!(e, JournalError::CorruptStore)),
+        Err(true)
+    );
+}
+#[test]
+fn proof_source_origin_contract_envelope_version() {
+    assert_eq!(
+        proof_source_origin_case(10).map_err(|e| matches!(e, JournalError::CorruptStore)),
+        Err(true)
+    );
+}

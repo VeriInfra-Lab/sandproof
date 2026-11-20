@@ -1,0 +1,56 @@
+name = "sandbox-model"
+version = "0.1.0"
+defaultTargets = ["SourceOptionsEncodedLink"]
+
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
+
+[[lean_lib]]
+name = "SandboxModel"
+
+[[lean_lib]]
+name = "SandproofCreateOptionsEncoded"
+
+[[lean_lib]]
+name = "SandproofDigestArray32"
+
+[[lean_lib]]
+name = "SandproofFoundations"
+
+[[lean_lib]]
+name = "SandproofLoadBlob"
+
+[[lean_lib]]
+name = "SandproofSqlite"
+
+[[lean_lib]]
+name = "SandproofSqliteSession"
+
+[[lean_lib]]
+name = "SandproofSqliteStatements"
+
+[[lean_lib]]
+name = "SandproofStage1Graphic"
+
+[[lean_lib]]
+name = "SandproofStage1Request"
+
+[[lean_lib]]
+name = "SandproofStandardRecord"
+
+[[lean_lib]]
+name = "SandproofTxFinish"
+
+[[lean_lib]]
+name = "SandproofUnloadOptionsRead"
+
+[[lean_lib]]
+name = "SourceOptionsEncodedActual"
+
+[[lean_lib]]
+name = "SourceOptionsEncodedLink"
+
+[[lean_lib]]
+name = "SourceOptionsRead"

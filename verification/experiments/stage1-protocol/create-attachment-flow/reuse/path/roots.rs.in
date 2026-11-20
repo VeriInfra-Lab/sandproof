@@ -1,0 +1,10 @@
+//! Value-only forwarding to the original Unix path projections and constructors.
+use std::{ffi::OsString, os::unix::ffi::OsStringExt, path::PathBuf};
+
+pub fn path_bytes(path: PathBuf) -> Vec<u8> {
+    path.into_os_string().into_vec()
+}
+
+pub fn path_from_bytes(bytes: Vec<u8>) -> PathBuf {
+    PathBuf::from(OsString::from_vec(bytes))
+}

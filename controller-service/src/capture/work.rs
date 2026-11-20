@@ -50,6 +50,7 @@ pub struct FullCaptureWorkRequest {
     pub memory_bytes: u64,
     pub disk_bytes: u64,
     pub api_timeout_ms: u64,
+    pub worker_timeout_ms: u64,
 }
 impl FullCaptureWorkRequest {
     /// Bind the complete saved input, without attesting its physical truth.
@@ -74,5 +75,7 @@ impl FullCaptureWorkRequest {
             && self.disk_bytes > 0
             && i64::try_from(self.disk_bytes).is_ok()
             && (1000..=300_000).contains(&self.api_timeout_ms)
+            && self.worker_timeout_ms >= self.api_timeout_ms
+            && self.worker_timeout_ms <= 300_000
     }
 }

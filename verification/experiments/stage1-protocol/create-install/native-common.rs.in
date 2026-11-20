@@ -1,0 +1,108 @@
+use super::super::*;
+use crate::NeverCrash;
+use sandproof_protocol::lifecycle::AcceptedLifecycleIntent;
+
+fn loaded() -> (model::Inbox, AcceptedLifecycleIntent) {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("selection.db");
+    let mut journal = super::initialize(&path);
+    let intent = super::create("owner", "session");
+    assert!(intent.validate(&super::context()).is_ok());
+    journal
+        .record_lifecycle_intent(&intent, &super::context(), &mut NeverCrash)
+        .unwrap();
+    let inbox = codec::load(&journal.journal.connection).unwrap().unwrap();
+    (inbox, intent)
+}
+
+fn binding() -> crate::InternalLocalBinding {
+    crate::InternalLocalBinding {
+        sandbox: core::SandboxId(10),
+        owner: core::TenantId(20),
+        operation: core::OperationId(30),
+    }
+}
+
+#[test]
+fn proof_install_missing_owner_complete() {
+    let (mut inbox, intent) = loaded();
+    let (s, e, _) = create_attachment_selection(&inbox, &intent).unwrap();
+    assert!(inbox.owners.is_empty());
+    let mut expected = inbox.clone();
+    expected.owner_high_water = 20;
+    expected.owners = vec![Owner {
+        external: "owner".try_into().unwrap(),
+        local: core::TenantId(20),
+    }];
+    expected.sessions[s].local = Some(binding());
+    expected.sessions[s].entries[e].local_operation = Some(core::OperationId(30));
+    create_attachment_install(&mut inbox, s, e, binding());
+    assert_eq!(inbox, expected);
+}
+
+#[test]
+fn proof_install_existing_owner_complete() {
+    let (mut inbox, intent) = loaded();
+    inbox.owner_high_water = 99;
+    inbox.owners = vec![
+        Owner {
+            external: "other".try_into().unwrap(),
+            local: core::TenantId(9),
+        },
+        Owner {
+            external: "owner".try_into().unwrap(),
+            local: core::TenantId(20),
+        },
+    ];
+    let (s, e, _) = create_attachment_selection(&inbox, &intent).unwrap();
+    let mut expected = inbox.clone();
+    expected.sessions[s].local = Some(binding());
+    expected.sessions[s].entries[e].local_operation = Some(core::OperationId(30));
+    create_attachment_install(&mut inbox, s, e, binding());
+    assert_eq!(inbox, expected);
+}
+
+#[test]
+fn proof_install_other_session_complete() {
+    let (mut inbox, intent) = loaded();
+    let mut earlier = inbox.sessions[0].clone();
+    earlier.id = "other".try_into().unwrap();
+    earlier.owner = "other".try_into().unwrap();
+    earlier.retention.slot = 2;
+    earlier.entries[0].intent.retention.slot = 2;
+    earlier.entries[0].intent.request.binding.session = earlier.id.clone();
+    earlier.entries[0].intent.request.binding.key.owner = earlier.owner.clone();
+    inbox.sessions.insert(0, earlier);
+    let (s, e, _) = create_attachment_selection(&inbox, &intent).unwrap();
+    assert_eq!((s, e), (1, 0));
+    let mut expected = inbox.clone();
+    expected.owner_high_water = 20;
+    expected.owners = vec![Owner {
+        external: "owner".try_into().unwrap(),
+        local: core::TenantId(20),
+    }];
+    expected.sessions[s].local = Some(binding());
+    expected.sessions[s].entries[e].local_operation = Some(core::OperationId(30));
+    create_attachment_install(&mut inbox, s, e, binding());
+    assert_eq!(inbox, expected);
+}
+
+#[test]
+fn proof_install_other_entry_complete() {
+    let (mut inbox, intent) = loaded();
+    let mut earlier = inbox.sessions[0].entries[0].clone();
+    earlier.intent.request.binding.key.sequence = 2.try_into().unwrap();
+    inbox.sessions[0].entries.insert(0, earlier);
+    let (s, e, _) = create_attachment_selection(&inbox, &intent).unwrap();
+    assert_eq!((s, e), (0, 1));
+    let mut expected = inbox.clone();
+    expected.owner_high_water = 20;
+    expected.owners = vec![Owner {
+        external: "owner".try_into().unwrap(),
+        local: core::TenantId(20),
+    }];
+    expected.sessions[s].local = Some(binding());
+    expected.sessions[s].entries[e].local_operation = Some(core::OperationId(30));
+    create_attachment_install(&mut inbox, s, e, binding());
+    assert_eq!(inbox, expected);
+}

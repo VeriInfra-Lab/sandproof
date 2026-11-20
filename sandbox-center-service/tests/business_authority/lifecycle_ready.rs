@@ -16,8 +16,11 @@ use std::{
         atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
+
+#[path = "lifecycle_unloaded.rs"]
+mod unloaded;
 
 struct Time(AtomicU64);
 impl Clock for Time {
@@ -29,6 +32,7 @@ struct Block {
     session: SessionId,
     entered: mpsc::Sender<()>,
     continue_work: mpsc::Receiver<()>,
+    create_reply_budget: Option<mpsc::Sender<(AcceptedLifecycleIntent, Instant, Duration)>>,
 }
 struct Release(Option<mpsc::Sender<()>>);
 impl Release {
@@ -48,20 +52,42 @@ type RecordedSignal = Arc<Mutex<Option<(SessionId, mpsc::Sender<()>)>>>;
 struct Host {
     clock: Arc<Time>,
     ready: Arc<AtomicBool>,
+    pending_once: Arc<AtomicBool>,
+    observation_error_once: Arc<Mutex<Option<PortError>>>,
+    observation_budgets: Arc<Mutex<Vec<Duration>>>,
+    observed_at_override: Arc<Mutex<Option<u64>>>,
     observations: Arc<AtomicUsize>,
     recordings: Arc<AtomicUsize>,
     blocked: Arc<Mutex<Option<Block>>>,
     notify_recorded: RecordedSignal,
+    current_request_after_block: Arc<Mutex<Option<AcceptedLifecycleIntent>>>,
+    unloaded: Arc<Mutex<Option<sandproof_protocol::lifecycle::UnloadObservation>>>,
+    resumed: Arc<Mutex<Option<sandproof_protocol::lifecycle::ResumeObservation>>>,
+    create_superseded: Arc<AtomicBool>,
+    create_requests: Arc<Mutex<Vec<AcceptedLifecycleIntent>>>,
+    resume_requests: Arc<Mutex<Vec<AcceptedLifecycleIntent>>>,
+    apply_renewals: Arc<AtomicBool>,
 }
 impl Host {
     fn new(clock: Arc<Time>) -> Self {
         Self {
             clock,
             ready: Arc::new(AtomicBool::new(true)),
+            pending_once: Arc::new(AtomicBool::new(false)),
+            observation_error_once: Arc::new(Mutex::new(None)),
+            observation_budgets: Arc::new(Mutex::new(Vec::new())),
+            observed_at_override: Arc::new(Mutex::new(None)),
             observations: Arc::new(AtomicUsize::new(0)),
             recordings: Arc::new(AtomicUsize::new(0)),
             blocked: Arc::new(Mutex::new(None)),
             notify_recorded: Arc::new(Mutex::new(None)),
+            current_request_after_block: Arc::new(Mutex::new(None)),
+            unloaded: Arc::new(Mutex::new(None)),
+            resumed: Arc::new(Mutex::new(None)),
+            create_superseded: Arc::new(AtomicBool::new(false)),
+            create_requests: Arc::new(Mutex::new(Vec::new())),
+            resume_requests: Arc::new(Mutex::new(Vec::new())),
+            apply_renewals: Arc::new(AtomicBool::new(false)),
         }
     }
     fn block_next(&self, session: SessionId) -> (mpsc::Receiver<()>, Release) {
@@ -71,6 +97,7 @@ impl Host {
             session,
             entered,
             continue_work: wait,
+            create_reply_budget: None,
         });
         (observed, Release(Some(continue_work)))
     }
@@ -78,14 +105,22 @@ impl Host {
         let LifecycleOperation::Create { create, .. } = &intent.request.operation else {
             panic!("only the original Create is observed")
         };
-        let readiness = if self.ready.load(Ordering::SeqCst) {
+        let readiness = if self.create_superseded.load(Ordering::SeqCst) {
+            CurrentCreateReadiness::NotCurrent
+        } else if !self.pending_once.swap(false, Ordering::SeqCst)
+            && self.ready.load(Ordering::SeqCst)
+        {
             CurrentCreateReadiness::Observed {
                 facts: CurrentReadyFacts {
                     started_at_ms: 100,
                     end_at_ms: 100 + create.timeout_ms,
                     max_end_at_ms: 100 + create.max_lifetime_ms,
                     startup_deadline_ms: create.startup_deadline_ms,
-                    observed_at_ms: self.clock.0.load(Ordering::SeqCst),
+                    observed_at_ms: self
+                        .observed_at_override
+                        .lock()
+                        .unwrap()
+                        .unwrap_or_else(|| self.clock.0.load(Ordering::SeqCst)),
                 },
             }
         } else {
@@ -93,20 +128,115 @@ impl Host {
         };
         CreateObservation {
             request: intent.clone(),
-            current_request: intent.clone(),
+            current_request: self
+                .unloaded
+                .lock()
+                .unwrap()
+                .as_ref()
+                .filter(|observation| observation.outcome.continued().is_some())
+                .map_or_else(|| intent.clone(), |observation| observation.request.clone()),
             historical_create_succeeded: true,
             readiness,
         }
     }
+
+    fn apply_controlled_renewal(&self, intent: &AcceptedLifecycleIntent) -> Result<(), PortError> {
+        if !self.apply_renewals.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        let LifecycleOperation::Renew {
+            incarnation,
+            end_at_ms,
+            extend_only,
+        } = intent.request.operation
+        else {
+            return Ok(());
+        };
+        let mut stored = self.resumed.lock().unwrap();
+        let mut view = stored.clone().ok_or(PortError::Busy)?;
+        let LifecycleOperation::Resume {
+            target_incarnation, ..
+        } = view.request.request.operation
+        else {
+            return Err(PortError::Busy);
+        };
+        if incarnation != target_incarnation
+            || intent.center != view.request.center
+            || intent.retention != view.request.retention
+            || intent.request.binding.session != view.request.request.binding.session
+            || intent.request.binding.node != view.request.request.binding.node
+            || intent.request.binding.key.owner != view.request.request.binding.key.owner
+            || (view.current_request != *intent
+                && intent.request.binding.expected
+                    != sandproof_protocol::lifecycle::ExpectedSession::Version(
+                        view.current_request.accepted_version,
+                    ))
+        {
+            return Err(PortError::Busy);
+        }
+        let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } =
+            &mut view.readiness
+        else {
+            return Err(PortError::Busy);
+        };
+        let end = u64::try_from(end_at_ms).map_err(|_| PortError::Busy)?;
+        facts.end_at_ms = if extend_only {
+            facts.end_at_ms.max(end)
+        } else {
+            end
+        };
+        facts.observed_at_ms = self.clock.0.load(Ordering::SeqCst);
+        view.current_request = intent.clone();
+        if !view.matches_request(&view.request) {
+            return Err(PortError::Busy);
+        }
+        *stored = Some(view);
+        Ok(())
+    }
 }
 impl HostPort for Host {
-    fn observe_lifecycle_create(
+    fn confirm_lifecycle_renewal(
+        &self,
+        result: &sandproof_protocol::lifecycle::RenewalConfirmation,
+        _: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::ConfirmedRenewal, PortError> {
+        if !self.apply_renewals.load(Ordering::SeqCst) {
+            return Err(PortError::OutcomeUnknown);
+        }
+        let stored = self.resumed.lock().unwrap();
+        let view = stored.as_ref().ok_or(PortError::Busy)?;
+        let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } =
+            &view.readiness
+        else {
+            return Err(PortError::Busy);
+        };
+        if view.current_request != result.request
+            || !result.is_sdk_renewal()
+            || u64::try_from(result.effective_end_at_ms).ok() != Some(facts.end_at_ms)
+        {
+            return Err(PortError::Busy);
+        }
+        Ok(sandproof_protocol::lifecycle::ConfirmedRenewal {
+            result: result.clone(),
+        })
+    }
+    fn observe_lifecycle_resume(
         &self,
         intent: &AcceptedLifecycleIntent,
-        _: Duration,
-    ) -> Result<CreateObservation, PortError> {
+        budget: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, PortError> {
+        self.resume_requests.lock().unwrap().push(intent.clone());
+        self.observation_budgets.lock().unwrap().push(budget);
+        if let Some(error) = self.observation_error_once.lock().unwrap().take() {
+            return Err(error);
+        }
         self.observations.fetch_add(1, Ordering::SeqCst);
-        let value = self.observed(intent);
+        let value = self
+            .resumed
+            .lock()
+            .unwrap()
+            .clone()
+            .ok_or(PortError::Busy)?;
         let blocked = {
             let mut slot = self.blocked.lock().unwrap();
             if slot
@@ -127,11 +257,68 @@ impl HostPort for Host {
         }
         Ok(value)
     }
+
+    fn observe_lifecycle_unload(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        _: Duration,
+    ) -> Result<sandproof_protocol::lifecycle::UnloadObservation, PortError> {
+        Ok(self.unloaded.lock().unwrap().clone().unwrap_or(
+            sandproof_protocol::lifecycle::UnloadObservation {
+                request: intent.clone(),
+                outcome: sandproof_protocol::lifecycle::UnloadOutcome::Pending,
+            },
+        ))
+    }
+
+    fn observe_lifecycle_create(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+        budget: Duration,
+    ) -> Result<CreateObservation, PortError> {
+        self.create_requests.lock().unwrap().push(intent.clone());
+        self.observation_budgets.lock().unwrap().push(budget);
+        if let Some(error) = self.observation_error_once.lock().unwrap().take() {
+            return Err(error);
+        }
+        self.observations.fetch_add(1, Ordering::SeqCst);
+        let mut value = self.observed(intent);
+        let blocked = {
+            let mut slot = self.blocked.lock().unwrap();
+            if slot
+                .as_ref()
+                .is_some_and(|b| b.session == intent.request.binding.session)
+            {
+                slot.take()
+            } else {
+                None
+            }
+        };
+        if let Some(blocked) = blocked {
+            if let Some(notice) = &blocked.create_reply_budget {
+                // This is later than the caller's time_left sample, so this
+                // instant plus budget is a conservative expiry upper bound.
+                notice
+                    .send((intent.clone(), Instant::now(), budget))
+                    .unwrap();
+            }
+            blocked.entered.send(()).unwrap();
+            blocked
+                .continue_work
+                .recv_timeout(Duration::from_secs(5))
+                .unwrap();
+            if let Some(current) = self.current_request_after_block.lock().unwrap().take() {
+                value.current_request = current;
+            }
+        }
+        Ok(value)
+    }
     fn record_lifecycle(
         &self,
         intent: &AcceptedLifecycleIntent,
         _: Duration,
     ) -> Result<RecordedLifecycleIntent, PortError> {
+        self.apply_controlled_renewal(intent)?;
         self.recordings.fetch_add(1, Ordering::SeqCst);
         let mut notify = self.notify_recorded.lock().unwrap();
         if notify
@@ -148,37 +335,46 @@ impl HostPort for Host {
         })
     }
 }
-type Application = CenterApplication<
+type Application<H = Host> = CenterApplication<
     SharedBusinessAuthority,
-    Host,
+    H,
     BusinessTemplates<templates::Candidates, templates::Evidence>,
 >;
+const REPLY_TIMEOUT: Duration = Duration::from_millis(200);
 fn application(authority: &SharedBusinessAuthority) -> (Arc<Application>, Host, Arc<Time>) {
     let clock = Arc::new(Time(AtomicU64::new(100)));
     let host = Host::new(Arc::clone(&clock));
+    let app = application_with_host(authority, host.clone(), Arc::clone(&clock));
+    (app, host, clock)
+}
+fn application_with_host<H: HostPort>(
+    authority: &SharedBusinessAuthority,
+    host: H,
+    clock: Arc<Time>,
+) -> Arc<Application<H>> {
     let app = CenterApplication::new(
         authority.clone(),
-        host.clone(),
+        host,
         templates::template_provider(authority),
         CenterConfig {
             domain: "sandbox.test".into(),
             max_timeout_secs: 300,
             max_lifetime_secs: 300,
             startup_timeout_secs: 1,
-            reply_timeout: Duration::from_millis(200),
+            reply_timeout: REPLY_TIMEOUT,
             poll_interval: Duration::from_millis(1),
             public_ipv4_enabled: false,
         },
         &[7; 32],
     )
     .unwrap()
-    .with_clock(clock.clone())
+    .with_clock(clock)
     .with_lifecycle_observation_policy(NodeObservationPolicy {
         health_window_ms: 1000,
         max_clock_skew_ms: 0,
     })
     .unwrap();
-    (Arc::new(app), host, clock)
+    Arc::new(app)
 }
 fn await_observation(entered: &mpsc::Receiver<()>) {
     entered.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -346,6 +542,120 @@ fn blocked_original_dispatch_allows_other_pending_record_and_current_query() {
     assert_eq!(scan.join().unwrap(), Ok(2));
     assert!(app.snapshot().unwrap().pending_lifecycle().is_empty());
     assert_eq!(app.snapshot().unwrap().sandboxes().len(), 2);
+}
+
+fn wait_for_original_peer_worker(
+    app: &Application,
+    before: &sandproof_center_core::CenterState,
+    first: &SessionId,
+    second: &SessionId,
+) {
+    let owner = "8".try_into().unwrap();
+    let original = before.lifecycle_session(&owner, first).unwrap();
+    let intent = original.operations()[0].intent().clone();
+    // The original worker must commit the peer BEFORE a public query can help.
+    // This waits on a durable predicate, not an arbitrary sleep or replay.
+    let setup_limit = Instant::now() + Duration::from_secs(5);
+    loop {
+        let state = app.snapshot().unwrap();
+        assert_eq!(state.lifecycle_session(&owner, first), Some(original));
+        if state.lifecycle_session(&owner, second).unwrap().phase() == SessionPhase::Running {
+            assert_eq!(state.pending_lifecycle(), vec![intent.clone()]);
+            break;
+        }
+        assert!(
+            Instant::now() < setup_limit,
+            "peer worker did not publish its original result"
+        );
+        std::thread::park_timeout(Duration::from_millis(1));
+    }
+}
+
+#[test]
+fn dispatch_reply_deadline_keeps_original_pending_while_peer_completes() {
+    let fixture = Engine::new();
+    let proxy = reply_loss::ReplyLoss::new(fixture.address);
+    let authority = lifecycle_public::setup(&fixture, &proxy);
+    let (app, host, _) = application(&authority);
+    let first = app
+        .create_lifecycle("8", &lifecycle_public::request())
+        .unwrap();
+    let mut request = lifecycle_public::request();
+    request.sequence = 2.try_into().unwrap();
+    let second = app.create_lifecycle("8", &request).unwrap();
+    let before = app.snapshot().unwrap();
+    let owner = "8".try_into().unwrap();
+    let original = before.lifecycle_session(&owner, &first.session).unwrap();
+    let intent = original.operations()[0].intent().clone();
+    let peer_intent = before
+        .lifecycle_session(&owner, &second.session)
+        .unwrap()
+        .operations()[0]
+        .intent()
+        .clone();
+    let (entered, release) = host.block_next(first.session.clone());
+    let (notice, budget) = mpsc::channel();
+    host.blocked
+        .lock()
+        .unwrap()
+        .as_mut()
+        .unwrap()
+        .create_reply_budget = Some(notice);
+    let run = Arc::clone(&app);
+    let scan = std::thread::spawn(move || run.reconcile_once());
+    await_observation(&entered);
+    let (blocked_intent, sampled_at, remaining_budget) =
+        budget.recv_timeout(Duration::from_secs(5)).unwrap();
+    assert_eq!(blocked_intent, intent);
+    assert!(!remaining_budget.is_zero() && remaining_budget <= Duration::from_millis(200));
+    wait_for_original_peer_worker(&app, &before, &first.session, &second.session);
+    assert_eq!(
+        app.query_lifecycle("8", &second.session).unwrap().phase,
+        PublicSessionPhase::Running
+    );
+    assert_eq!(host.recordings.load(Ordering::SeqCst), 2);
+    let expired_by = sampled_at.checked_add(remaining_budget).unwrap();
+    while Instant::now() < expired_by {
+        std::thread::park_timeout(expired_by.saturating_duration_since(Instant::now()));
+    }
+    assert!(Instant::now() >= expired_by);
+    release.complete();
+    // A controlled Ready returned AFTER the original caller deadline cannot
+    // publish Running. The same accepted work stays available for observation.
+    assert_eq!(scan.join().unwrap(), Ok(1));
+    let pending = app.snapshot().unwrap();
+    assert_eq!(
+        pending.lifecycle_session(&owner, &first.session),
+        Some(original)
+    );
+    assert_eq!(pending.pending_lifecycle(), vec![intent.clone()]);
+    assert_eq!(pending.identity_frontiers(), before.identity_frontiers());
+    assert_eq!(host.recordings.load(Ordering::SeqCst), 2);
+    assert_eq!(app.reconcile_once(), Ok(1));
+    let settled = app.snapshot().unwrap();
+    assert!(settled.pending_lifecycle().is_empty());
+    assert_eq!(settled.identity_frontiers(), before.identity_frontiers());
+    assert_eq!(settled.sandboxes().len(), 2);
+    for session in [&first.session, &second.session] {
+        assert_eq!(
+            settled.lifecycle_session(&owner, session).unwrap().phase(),
+            SessionPhase::Running
+        );
+    }
+    assert_eq!(host.recordings.load(Ordering::SeqCst), 3);
+    let observed = host.create_requests.lock().unwrap();
+    assert_eq!(
+        observed
+            .iter()
+            .filter(|request| **request == intent)
+            .count(),
+        2
+    );
+    assert!(
+        observed
+            .iter()
+            .all(|request| *request == intent || *request == peer_intent)
+    );
 }
 
 #[test]

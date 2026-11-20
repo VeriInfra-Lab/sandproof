@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.SavedLibrary
+import SandboxModel.Lifecycle.Protocol.SavedValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandbox_controller_core.ids
+namespace SandboxModel.Stage1Protocol.SavedRetirement.WrongSize
+noncomputable section
+open scoped Classical
+
+theorem wrong_accepts : run (Values.encoding 8193 (by decide)) Values.normal = .ok (.Ok ()) := by
+  simp only [run, validate_saved_using, last_saved_spec, local_option_ne, operation_option_ne,
+    destroy_spec, digest_ne, status_ne, bind_tc_ok]
+  simp [Values.normal, Values.entries, Values.entry, Values.receipt,
+    Values.binding, Values.destroyIntent, Values.encoding, Values.bytes_length,
+    core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    OperationId.Insts.CoreCmpPartialEqOperationId.eq]
+
+theorem violates_full_contract : ¬FullSavedContract run := by
+  intro contract
+  have mismatch := contract (Values.encoding 8193 (by decide)) Values.normal
+  rw [wrong_accepts, Values.model_size_boundary.2] at mismatch
+  simp [corrupt] at mismatch
+
+end
+end SandboxModel.Stage1Protocol.SavedRetirement.WrongSize
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.WrongSize.wrong_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.WrongSize.violates_full_contract

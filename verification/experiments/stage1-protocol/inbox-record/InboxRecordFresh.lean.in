@@ -1,0 +1,101 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordWindowComparison
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxRecord
+
+/-- All original fresh-record guards and the entire state update, for arbitrary
+represented inboxes and decoded intents. This is not a durable transaction. -/
+theorem record_fresh_contract : FullFreshContract Inbox.record_fresh := by
+  intro inbox intent
+  unfold Inbox.record_fresh
+  rw [recently_retired_identity_spec]
+  by_cases retired : inbox.lanes.val.any (retiredMatch intent) = true
+  · simp [retired, freshDecision, FreshPost]
+  · simp only [bind_tc_ok, retired, Bool.false_eq_true, ↓reduceIte]
+    by_cases zero : intent.retention.slot = 0#u16
+    · simp [zero, retired, freshDecision, FreshPost]
+    · simp only [zero, ↓reduceIte]
+      by_cases range : inbox.config.max_sessions < intent.retention.slot
+      · simp [range, zero, retired, freshDecision, FreshPost]
+      · simp only [range, ↓reduceIte]
+        obtain ⟨selected, selected_eq, position⟩ := WP.spec_imp_exists
+          (retention_lane_index_spec inbox intent.retention.slot)
+        rw [selected_eq]
+        cases selected with
+        | none =>
+          have missing : firstIndex (fun lane => decide (lane.slot = intent.retention.slot)) inbox.lanes.val 0 = none :=
+            by simpa using position.symm
+          simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+            freshDecision, FreshPost, retired, zero, range, missing]
+        | some index =>
+          have found : firstIndex (fun lane => decide (lane.slot = intent.retention.slot)) inbox.lanes.val 0 = some index.val :=
+            by simpa using position.symm
+          have inside : index.val < inbox.lanes.val.length := by
+            simpa using (firstIndex_bounds _ _ _ _ found).2
+          obtain ⟨lane, indexed, same⟩ := WP.spec_imp_exists
+            (alloc.vec.Vec.index_usize_spec inbox.lanes index inside)
+          have at_lane : inbox.lanes.val[index.val]? = some lane := by
+            simp [List.getElem?_eq_getElem inside, same]
+          simp only [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+            bind_tc_ok, alloc.vec.Vec.index_slice_index, indexed, retention_window_ne, decide_eq_true_eq]
+          by_cases window : lane.current_window ≠ some intent.retention.window
+          · simp [window, freshDecision, FreshPost, retired, zero, range, found, at_lane]
+          · simp only [window, ↓reduceIte, lift, bind_tc_ok]
+            simp only [UScalar.le_equiv, alloc.vec.Vec.len_val, core.convert.num.FromUsizeU16.from_val_eq]
+            by_cases capacity : inbox.config.max_sessions.val ≤ inbox.sessions.val.length
+            · simp [capacity, freshDecision, FreshPost, retired, zero, range, found, at_lane, window]
+            · simp only [capacity, ↓reduceIte]
+              rw [retention_slot_used_spec]
+              by_cases occupied : inbox.sessions.val.any
+                  (fun session => decide (session.retention.slot = intent.retention.slot)) = true
+              · simp [occupied, freshDecision, FreshPost, retired, zero, range, found, at_lane, window, capacity]
+              · simp only [bind_tc_ok, occupied, Bool.false_eq_true, ↓reduceIte]
+                have room : inbox.sessions.val.length < inbox.config.max_sessions.val := by omega
+                cases operation : intent.request.operation with
+                | Create create target =>
+                  simp only [U32.cast_Usize_val_eq]
+                  by_cases options : create.options.val.length ≤ inbox.config.max_options_bytes.val
+                  · simp only [options, ↓reduceIte, SessionId_clone, TenantId_clone,
+                      AcceptedLifecycleIntent_clone, bind_tc_ok]
+                    have singleton_push := fresh_entries_push intent
+                    dsimp [pendingEntry] at singleton_push
+                    rw [singleton_push]
+                    obtain ⟨sessions, index, pushed, subtracted, indexval, contents⟩ :=
+                      fresh_push_outcome inbox intent false (some target) room
+                    dsimp [freshSession] at pushed
+                    simp only [bind_tc_ok, pushed, subtracted]
+                    apply WP.spec.ret
+                    simp only [FreshPost, freshDecision, retired, zero, range, found, at_lane,
+                      window, capacity, occupied, operation, options, ↓reduceIte]
+                    exact ⟨index, indexval, rfl, True.intro, contents⟩
+                  · simp [options, freshDecision, FreshPost, retired, zero, range, found, at_lane,
+                      window, capacity, occupied, operation]
+                | Destroy =>
+                  simp only [SessionId_clone, TenantId_clone, AcceptedLifecycleIntent_clone, bind_tc_ok]
+                  have singleton_push := fresh_entries_push intent
+                  dsimp [pendingEntry] at singleton_push
+                  rw [singleton_push]
+                  obtain ⟨sessions, index, pushed, subtracted, indexval, contents⟩ :=
+                    fresh_push_outcome inbox intent true none room
+                  dsimp [freshSession] at pushed
+                  simp only [bind_tc_ok, pushed, subtracted]
+                  apply WP.spec.ret
+                  simp only [FreshPost, freshDecision, retired, zero, range, found, at_lane,
+                    window, capacity, occupied, operation, ↓reduceIte]
+                  exact ⟨index, indexval, rfl, True.intro, contents⟩
+                | Unload source capture =>
+                  simp [freshDecision, FreshPost, retired, zero, range, found, at_lane,
+                    window, capacity, occupied, operation]
+                | Resume source capture target digest =>
+                  simp [freshDecision, FreshPost, retired, zero, range, found, at_lane,
+                    window, capacity, occupied, operation]
+                | Renew incarnation endAt extendOnly =>
+                  simp [freshDecision, FreshPost, retired, zero, range, found, at_lane,
+                    window, capacity, occupied, operation]
+
+end SandboxModel.Stage1Protocol.InboxRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.record_fresh_contract

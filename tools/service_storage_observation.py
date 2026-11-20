@@ -5,9 +5,11 @@ existing filesystem provision, Redis health and external storage conditions
 remain required. No content, credentials or private paths enter the report.
 """
 import copy
+from contextlib import contextmanager
 import os
 from pathlib import Path
 import stat
+import sys
 import threading
 import time
 
@@ -26,6 +28,59 @@ REJECTION_REASONS = {
     'service inventory exceeds original logical byte budget': 'bytes_exceeded',
     'original service inventory root replaced': 'root_replaced',
 }
+
+
+@contextmanager
+def observe_volume_storage(directory, *, commit):
+    """Sample used filesystem blocks during one run on its original volume."""
+    from tools.system_acceptance import write_once
+
+    interval = 0.1
+    stop = threading.Event()
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    samples = failures = 0
+    peak = None
+
+    def sample():
+        nonlocal samples, failures, peak
+        try:
+            space = os.fstatvfs(fd)
+            used = (space.f_blocks - space.f_bfree) * space.f_frsize
+        except OSError:
+            failures += 1
+            return None
+        samples += 1
+        peak = used if peak is None else max(peak, used)
+        return used
+
+    def poll():
+        while not stop.wait(interval):
+            sample()
+
+    try:
+        before = sample()
+        sampler = threading.Thread(target=poll, name='volume-storage-observer', daemon=True)
+        sampler.start()
+        try:
+            yield
+        finally:
+            run_error = sys.exception()
+            stop.set()
+            sampler.join()
+            after = sample()
+            try:
+                write_once(directory / 'volume-storage.json', dict(
+                    schema_version=1, candidate=commit, observation='sampled_whole_filesystem',
+                    scope='includes other writers on the same volume; excludes the backing image allocation',
+                    sample_interval_ms=100, samples=samples, failed_samples=failures,
+                    baseline_used_bytes=before, sampled_peak_used_bytes=peak, final_used_bytes=after,
+                    sampled_peak_increase_bytes=None if before is None else peak-before))
+            except OSError as error:
+                if run_error is None:
+                    raise
+                run_error.add_note(f'volume storage observation could not be written: {type(error).__name__}')
+    finally:
+        os.close(fd)
 
 
 def require_storage_declaration(value):

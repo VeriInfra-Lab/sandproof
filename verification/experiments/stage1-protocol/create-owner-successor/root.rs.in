@@ -1,0 +1,9 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(super) fn proof_create_owner_successor(
+    inbox: &Inbox,
+    world: &core::World,
+    sandbox: core::SandboxId,
+) -> Result<core::TenantId, JournalError> {
+    create_owner_successor(inbox, world, sandbox)
+}

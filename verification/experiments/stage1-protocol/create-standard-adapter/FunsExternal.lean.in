@@ -1,0 +1,39 @@
+import SandproofStandardCreate.Types
+open Aeneas Aeneas.Std
+namespace SandproofStandardCreateRust
+
+-- Exact existing kernel-bound literal wrapper; the default Aeneas literal
+-- tactic uses native_decide, which the unchanged dependency auditor rejects.
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
+def NormalWorldBorrow (count : Int) : Prop := 0 ≤ count ∧ count < 2^63 - 1
+
+instance (count : Int) : Decidable (NormalWorldBorrow count) :=
+  inferInstanceAs (Decidable (0 ≤ count ∧ count < 2^63 - 1))
+
+@[rust_fun "core::cell::{core::cell::RefCell<@T>}::borrow"]
+def core.cell.RefCell.borrow {T : Type} (cell : core.cell.RefCell T) :
+    Result (core.cell.Ref T) :=
+  if NormalWorldBorrow cell.beforeBorrowCount then
+    .ok ⟨cell.object, cell.value, cell.beforeBorrowCount + 1⟩
+  else .fail .panic
+
+@[rust_fun "core::cell::{core::ops::deref::Deref<core::cell::Ref<'0, @T>, @T>}::deref"]
+def core.cell.Ref.Insts.CoreOpsDerefDeref.deref {T : Type} (guard : core.cell.Ref T) :
+    Result T := .ok guard.value
+
+@[simp, rust_fun "alloc::string::{core::clone::Clone<alloc::string::String>}::clone"]
+def alloc.string.String.Insts.CoreCloneClone.clone (value : String) : Result String := .ok value
+
+@[rust_fun "core::option::{core::clone::Clone<core::option::Option<@T>>}::clone"]
+def core.option.Option.Insts.CoreCloneClone.clone {T : Type} (dictionary : core.clone.Clone T)
+    (value : Option T) : Result (Option T) :=
+  match value with
+  | none => .ok none
+  | some item => do
+      let copied ← dictionary.clone item
+      .ok (some copied)
+
+end SandproofStandardCreateRust

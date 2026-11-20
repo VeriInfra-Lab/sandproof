@@ -1,0 +1,73 @@
+import SandproofParentCommit.CurrentViews
+import SandproofParentCommit.ErrorTransport
+import SandproofParentRead.FunsExternal
+
+open Aeneas Aeneas.Std
+namespace SandproofParentCommitRust
+
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofParentReadRust.toStr text bounded
+
+-- Exact instances of the already checked getter's four mechanical bindings.
+abbrev core.cell.RefCell.borrow := @SandproofParentReadRust.core.cell.RefCell.borrow
+abbrev core.cell.Ref.Insts.CoreOpsDerefDeref.deref :=
+  @SandproofParentReadRust.core.cell.Ref.Insts.CoreOpsDerefDeref.deref
+abbrev core.option.Option.as_ref := @SandproofParentReadRust.core.option.Option.as_ref
+abbrev sandbox_controller_core.model.World.Insts.CoreCloneClone.clone :=
+  SandproofParentReadRust.sandbox_controller_core.model.World.Insts.CoreCloneClone.clone
+
+def core.result.Result.is_err {T E : Type} (reply : core.result.Result T E) : Result Bool :=
+  match reply with
+  | .Ok _ => .ok false
+  | .Err _ => .ok true
+
+def rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref
+    (raw : rusqlite.transaction.Transaction) : Result rusqlite.Connection := .ok raw.conn
+
+-- Whole consuming library calls, never single SQL statements or DB frames.
+def rusqlite.transaction.Transaction.commit (raw : rusqlite.transaction.Transaction) :
+    Result (core.result.Result Unit rusqlite.error.Error) := raw.conn.commitReply
+def rusqlite.transaction.Transaction.rollback (raw : rusqlite.transaction.Transaction) :
+    Result (core.result.Result Unit rusqlite.error.Error) := raw.conn.base.rollbackReply
+
+-- The same two B2 transfer boundaries, now preserving the current ordinary
+-- beforeBorrowCount. The exact normal borrow_mut check is zero, not >= zero.
+-- The issued mutable guard is released normally before returning this view.
+def controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.set_committed
+    (cells : controller.transaction.TransactionCells) (value : Option World) :
+    Result controller.transaction.TransactionCells :=
+  if cells.committed.beforeBorrowCount = 0 then
+    .ok { cells with committed := { cells.committed with value := value } }
+  else .fail .panic
+
+def controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.take_candidate
+    (cells : controller.transaction.TransactionCells) :
+    Result (Option World × controller.transaction.TransactionCells) :=
+  if cells.candidate.beforeBorrowCount = 0 then
+    .ok (cells.candidate.value, { cells with candidate := { cells.candidate with value := none } })
+  else .fail .panic
+
+-- Conditional INTERNAL module interfaces, not library guarantees or validated
+-- V5 implementations. Every complete argument remains in the observation key.
+def controller.checkpoint.validate_candidate (connection : rusqlite.Connection) (world : World) :
+    Result (core.result.Result Unit JournalError) :=
+  ErrorTransport.fromRequestResult (connection.v5.candidate connection.base world)
+
+def controller.lifecycle_inbox.codec.validate (connection : rusqlite.Connection) (world : World) :
+    Result (core.result.Result Unit JournalError) :=
+  ErrorTransport.fromRequestResult (connection.v5.inbox connection.base world)
+
+def controller.capacity.validate (connection : rusqlite.Connection) (world : World) :
+    Result (core.result.Result Unit JournalError) :=
+  ErrorTransport.fromRequestResult (connection.v5.capacity connection.base world)
+
+-- Actual validate_transaction starts config(tx), whose receiver coercion first
+-- follows the original raw-slot Deref. CurrentViews.liveRaw is that exact prefix
+-- (proved equal to the actual Deref after Funs), including its real None panic.
+def controller.checkpoint.validate_transaction (owner : controller.transaction.WorldTransaction) :
+    Result (core.result.Result Unit JournalError) := do
+  let raw ← CurrentViews.liveRaw owner
+  ErrorTransport.fromRequestResult (raw.conn.v5.transaction (CurrentViews.ownerToSource owner))
+
+end SandproofParentCommitRust

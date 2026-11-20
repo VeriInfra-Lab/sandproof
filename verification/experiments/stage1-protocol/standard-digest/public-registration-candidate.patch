@@ -1,0 +1,88 @@
+--- a/verification/experiments/stage1-protocol/registered.py
++++ b/verification/experiments/stage1-protocol/registered.py
+@@ -325,12 +325,13 @@
+       if name != 'inbox-record-total'),
+     *CREATE_NATIVE_DRIVERS,
+     ('stage1-standard-blob', str(HERE/'standard-blob/native.py'), False),
++    ('stage1-standard-digest', str(HERE/'standard-digest/native.py'), False),
+ )
+ CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
+ NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
+     'stage1-protocol-'+name for name in CRATE_CASES)
+-AUDIT_TEMPLATE_COUNT = 438
+-AUDIT_DECLARATION_COUNT = 1800
++AUDIT_TEMPLATE_COUNT = 448
++AUDIT_DECLARATION_COUNT = 1845
+ 
+ 
+ def native_labels(profile='full'):
+@@ -341,6 +342,14 @@
+ def _standard_blob(root=ROOT):
+     spec = importlib.util.spec_from_file_location('registered_standard_blob',
+         root/HERE/'standard-blob/registration.py')
++    component = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(component)
++    return component
++
++
++def _standard_digest(root=ROOT):
++    spec = importlib.util.spec_from_file_location('registered_standard_digest',
++        root/HERE/'standard-digest/registration.py')
+     component = importlib.util.module_from_spec(spec)
+     spec.loader.exec_module(component)
+     return component
+@@ -639,8 +648,8 @@
+     for label, driver, needs_archive in drivers:
+         output = work/label
+         args = ['--output', output]
+-        if label == 'stage1-standard-blob':
+-            component_lock = work/'standard-blob-component.lock'
++        if label in ('stage1-standard-blob', 'stage1-standard-digest'):
++            component_lock = work/(label+'-component.lock')
+             component_lock.touch(exist_ok=True)
+             args += ['--lock', component_lock]
+         if needs_archive:
+@@ -654,6 +663,8 @@
+                 raise ValueError('original native driver did not complete: ' + str(driver))
+             if str(driver) == str(HERE/'standard-blob/native.py'):
+                 _standard_blob(root).check_native(result, root, output)
++            if str(driver) == str(HERE/'standard-digest/native.py'):
++                _standard_digest(root).check_native(result, root, output)
+             if str(driver) in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
+                 _check_create_native_result(root, Path(driver).parent.name, output, result)
+ 
+@@ -661,6 +672,8 @@
+         original = _original_file(receipt, 'result.json')
+         if driver == str(HERE/'standard-blob/native.py'):
+             _standard_blob(root).check_native(_read(original), root, original.parent)
++        if driver == str(HERE/'standard-digest/native.py'):
++            _standard_digest(root).check_native(_read(original), root, original.parent)
+         if driver in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
+             _check_create_native_result(root, Path(driver).parent.name, original.parent, _read(original))
+         receipts[label] = receipt
+@@ -811,10 +824,15 @@
+     add('standard-blob', HERE/'standard-blob/formal.py',
+         native=('stage1-standard-blob',), cases=('actual', 'repeat-first', 'second-error-first'))
+     jobs[-1]['four_cpu_component'] = True
++    add('standard-digest', HERE/'standard-digest/formal.py',
++        native=('stage1-standard-digest',), cases=('actual', 'input-empty', 'nonempty-tail-zero'))
++    jobs[-1]['four_cpu_component'] = True
+     return _append_create_jobs(jobs, output, root, profile)
+ 
+ 
+ def _actuals(result):
++    if result.get('kind') == 'current-standard-digest-and-original-load-development':
++        return [row.get('actual', {}) for row in result.get('views', {}).values()]
+     if result.get('kind') == 'current-standard-blob-and-original-load-domain-development':
+         return [row.get('actual', {}) for row in result.get('views', {}).values()]
+     if result.get('kind') in CREATE_KINDS.values():
+@@ -827,6 +845,9 @@
+ def _check_actual(result, job):
+     if result.get('complete') is not True:
+         raise ValueError('original formal driver incomplete: ' + job['name'])
++    if job['name'] == 'standard-digest':
++        _standard_digest().check(result, ROOT)
++        return
+     if job['name'] == 'standard-blob':
+         _standard_blob().check(result, ROOT)
+         return

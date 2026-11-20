@@ -51,21 +51,35 @@ impl WorkExecution for FleetHost {
 }
 
 impl WorkRecovery for FleetHost {
+    fn observe_lifecycle_original_continue_exit(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::OriginalContinueWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::OriginalContinueExitObservation> {
+        self.sandbox(action.command.command().sandbox())
+            .ok()?
+            .observe_lifecycle_original_continue_exit(action, work)
+    }
+
+    fn observe_lifecycle_restore_exit(
+        &self,
+        action: &WorkAction<core::EffectId>,
+        work: &sandproof_controller_service::capture::RestoreWorkRequest,
+    ) -> Option<sandproof_controller_service::capture::RestoreCandidateExitObservation> {
+        self.sandbox(action.command.command().sandbox())
+            .ok()?
+            .observe_lifecycle_restore_exit(action, work)
+    }
+
     fn observe(&self, _: &WorkAction<core::EffectId>) -> Option<WorkReceipt<Evidence>> {
         None
     }
 
-    fn reclaim_incomplete_prepare(
-        &self,
-        _: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
+    fn reclaim_incomplete_prepare(&self, _: &WorkAction<core::EffectId>) -> Result<(), PortError> {
         Err(PortError::Busy)
     }
 
-    fn reclaim_incomplete_cleanup(
-        &self,
-        _: &WorkAction<core::EffectId>,
-    ) -> Result<(), PortError> {
+    fn reclaim_incomplete_cleanup(&self, _: &WorkAction<core::EffectId>) -> Result<(), PortError> {
         Err(PortError::Busy)
     }
 }
@@ -121,16 +135,30 @@ impl HostCapacity for FleetHost {
 }
 
 impl LaunchConfiguration for FleetHost {
-    fn put_secret(&self, sandbox: core::SandboxId, token: &str) -> Result<(), PortError> {
-        self.sandbox(sandbox)?.put_secret(sandbox, token)
+    fn put_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        token: &str,
+    ) -> Result<(), PortError> {
+        self.sandbox(sandbox)?
+            .put_secret(sandbox, generation, token)
     }
 
-    fn has_secret(&self, sandbox: core::SandboxId) -> Result<bool, PortError> {
-        self.sandbox(sandbox)?.has_secret(sandbox)
+    fn has_secret(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<bool, PortError> {
+        self.sandbox(sandbox)?.has_secret(sandbox, generation)
     }
 
-    fn token_for(&self, sandbox: core::SandboxId) -> Result<String, PortError> {
-        self.sandbox(sandbox)?.token_for(sandbox)
+    fn token_for(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> Result<String, PortError> {
+        self.sandbox(sandbox)?.token_for(sandbox, generation)
     }
 }
 
@@ -447,13 +475,29 @@ async fn ordinary_sdk_create_stays_unchanged_and_http_cannot_supply_retirement_a
     assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
 }
 
+fn assert_other_quotas_fit_a_second_create(bounded: &BoundedHostConfig, settings: &ManagedConfig) {
+    assert!(settings.limits.max_active_global >= 2);
+    assert!(settings.limits.max_active_per_tenant >= 1);
+    assert!(bounded.maintenance.max_host_slots >= 2);
+    assert!(settings.limits.max_disk_bytes_per_tenant >= settings.disk_bytes);
+    assert!(
+        settings.limits.max_disk_bytes_global - settings.limits.cleanup_reserve_bytes
+            >= 2 * settings.disk_bytes
+    );
+    assert!(maintenance_config().capacity.unwrap().max_sql_bytes >= 2 * 4_943_872);
+}
+
 #[test]
-fn full_result_retention_refuses_new_admission_without_evicting_promised_results() {
+fn retained_results_leave_insufficient_capacity_for_the_next_create_promise() {
+    // The production capacity graph reserves Create, one Pause and Kill.
+    const REQUIRED_RESULTS_PER_CREATE: u64 = 3;
     let dir = TempDir::new().unwrap();
     let path = dir.path().join("controller.db");
     let host = FleetHost::new(dir.path());
     let mut bounded = host_config(&path);
-    bounded.maintenance.max_retained_results = 2;
+    bounded.maintenance.max_retained_results = REQUIRED_RESULTS_PER_CREATE;
+    let settings = config();
+    assert_other_quotas_fit_a_second_create(&bounded, &settings);
     let port = new_port(
         ControllerJournal::open_complete(
             &path,
@@ -464,15 +508,21 @@ fn full_result_retention_refuses_new_admission_without_evicting_promised_results
         )
         .unwrap(),
         host.clone(),
-        config(),
+        settings,
     );
     let first = port.create("1", request()).unwrap();
-    port.kill("1", &first.sandbox_id).unwrap();
-    assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
     let physical = host.sandbox(core::SandboxId(1)).unwrap();
     let actions_before = physical.0.lock().unwrap().actions.len();
-    // Full mode reserves eventual create/kill outcomes before admitting work,
-    // so this request is refused before another identity or command exists.
+    // The Running object already owns all three promised result slots. Owner
+    // two has no instance yet, and the other quotas permit another Create.
+    assert!(matches!(port.create("2", request()), Err(PortError::Busy)));
+    assert_eq!(physical.0.lock().unwrap().actions.len(), actions_before);
+    assert_eq!(host.hosts.lock().unwrap().len(), 1);
+    port.kill("1", &first.sandbox_id).unwrap();
+    assert_eq!(port.application().maintain().unwrap().retired_sandboxes, 1);
+    let actions_before = physical.0.lock().unwrap().actions.len();
+    // Two real retained results leave one slot out of three. The next Create
+    // cannot reserve its three-result promise; no result may be evicted early.
     assert!(matches!(port.create("1", request()), Err(PortError::Busy)));
     assert_eq!(physical.0.lock().unwrap().actions.len(), actions_before);
     let report = port.application().maintain().unwrap();
@@ -480,11 +530,25 @@ fn full_result_retention_refuses_new_admission_without_evicting_promised_results
     assert_eq!(report.pending_sandboxes, 0);
     assert_eq!(report.expired_results, 0);
     drop(port);
+    let retention_limit = bounded.maintenance.max_retained_results;
     let journal =
         ControllerJournal::open_complete(&path, NAMESPACE, bounded, maintenance_config(), 0)
             .unwrap();
     let world = journal.world().unwrap();
-    assert_eq!(world.maintenance_state().unwrap().retained_count(), 2);
+    let retained = world.maintenance_state().unwrap();
+    let retained_count = u64::try_from(retained.retained_count()).unwrap();
+    assert_eq!(retained_count, 2);
+    let remaining_results = retention_limit.checked_sub(retained_count).unwrap();
+    assert_eq!(remaining_results, 1);
+    assert!(remaining_results < REQUIRED_RESULTS_PER_CREATE);
+    let kill = retained
+        .retained_result(core::OperationKey {
+            sandbox: core::SandboxId(1),
+            operation: core::OperationId(2),
+        })
+        .unwrap();
+    assert_eq!(kill.ledger.operation.kind, core::OperationKind::Kill);
+    assert_eq!(kill.ledger.result, Some(core::OperationResult::Destroyed));
     assert!(world.sandbox_record(core::SandboxId(1)).is_none());
     assert!(world.sandbox_record(core::SandboxId(2)).is_none());
     assert_eq!(journal.next_sandbox_id().unwrap(), core::SandboxId(2));
@@ -511,26 +575,27 @@ fn full_capacity_idle_maintenance_does_not_spend_input_or_checkpoint_frontiers()
     // recommending deployment values.
     let policy = MaintenanceConfig {
         retention_ms: 100,
-        max_checkpoint_bytes: 4 * 1024 * 1024,
+        max_operations_per_sandbox: 8,
+        max_checkpoint_bytes: 32 * 1024 * 1024,
         max_records: 10_000,
-        max_references: 1_000_000,
+        max_references: 4_194_304,
         max_tail_inputs: 8,
         max_tail_bytes: 64 * 1024,
         max_input_bytes: 8192,
         prune_batch_rows: 3,
         capacity: Some(CapacityConfig {
             max_live_sandboxes: 4,
-            max_sql_rows: 1024,
-            max_sql_bytes: 16 * 1024 * 1024,
-            max_sql_value_bytes: 256 * 1024,
+            max_sql_rows: 8192,
+            max_sql_bytes: 256 * 1024 * 1024,
+            max_sql_value_bytes: 16 * 1024 * 1024,
             max_receipt_bytes: 16 * 1024,
             max_transaction_inputs: 4,
             max_transaction_bytes: 32 * 1024,
-            max_database_bytes: 512 * 1024 * 1024,
-            max_wal_bytes: 520 * 1024 * 1024,
-            max_shm_bytes: 2 * 1024 * 1024,
-            checkpoint_scratch_bytes: 8 * 1024 * 1024,
-            max_online_storage_bytes: 1042 * 1024 * 1024,
+            max_database_bytes: 4_294_967_296,
+            max_wal_bytes: 4_321_181_696,
+            max_shm_bytes: 9_437_184,
+            checkpoint_scratch_bytes: 64 * 1024 * 1024,
+            max_online_storage_bytes: 8_692_695_040,
         }),
     };
     let initial =

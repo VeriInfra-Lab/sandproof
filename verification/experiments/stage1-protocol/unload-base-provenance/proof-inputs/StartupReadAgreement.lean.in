@@ -1,0 +1,62 @@
+import ActualStartupOutput
+import SandproofUnloadStartupJoint.Provider
+
+open Aeneas Aeneas.Std
+open SandproofUnloadStartupJoint
+open SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot
+open SandproofUnloadStartupJoint.sandbox_controller_core.model (World SandboxRecord OperationPlan)
+
+namespace StartupReadAgreement
+
+variable [Representations] [Operations]
+
+/-- Invert the first two World reads of the actual command builder. Both
+    absent-row branches return the original error before producing commands. -/
+theorem expected_commands_reads_record_and_plan
+    (world : World) (binding : UnloadFirstActualStartup.Local)
+    (commands : alloc.vec.Vec UnloadFirstActualStartup.Command)
+    (returned : expected_commands world binding = .ok (.Ok commands)) :
+    ∃ record : SandboxRecord, ∃ plan : OperationPlan,
+      World.sandbox_record world binding.sandbox = .ok (some record) ∧
+      World.operation_plan world (startupKey binding) = .ok (some plan) := by
+  unfold expected_commands at returned
+  obtain ⟨foundRecord, recordRead, afterRecord⟩ :=
+    UnloadFirstActualStartup.normalBind _ _ _ returned
+  cases foundRecord with
+  | none =>
+    simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at afterRecord
+  | some record =>
+    simp only [core.option.Option.ok_or_some, core.result.Result.Insts.CoreOpsTry.branch,
+      bind_tc_ok] at afterRecord
+    obtain ⟨foundPlan, planRead, afterPlan⟩ :=
+      UnloadFirstActualStartup.normalBind _ _ _ afterRecord
+    cases foundPlan with
+    | none =>
+      simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at afterPlan
+    | some plan =>
+      exact ⟨record, plan, recordRead, planRead⟩
+
+/-- If the outer scan opened, its second plan read is for the same key of
+    the same World. The plan captured by the row callback is the same value
+    as the command builder's first plan read. -/
+theorem startup_reuses_command_plan {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (world : World) (binding : UnloadFirstActualStartup.Local)
+    (calls : UnloadFirstActualStartup.Opened host serde tx ns world binding) :
+    ∃ record : SandboxRecord, ∃ commandPlan : OperationPlan,
+      World.sandbox_record world binding.sandbox = .ok (some record) ∧
+      World.operation_plan world (startupKey binding) = .ok (some commandPlan) ∧
+      commandPlan = calls.plan := by
+  obtain ⟨record, plan, recordRead, planRead⟩ :=
+    expected_commands_reads_record_and_plan world binding calls.commands calls.expected
+  have selected : World.operation_plan world (startupKey binding) = .ok (some calls.plan) :=
+    calls.selectedPlan
+  exact ⟨record, plan, recordRead, planRead,
+    Option.some.inj (Result.ok_injective (planRead.symm.trans selected))⟩
+
+end StartupReadAgreement
+
+#audit_controller_proof StartupReadAgreement.expected_commands_reads_record_and_plan
+#audit_controller_proof StartupReadAgreement.startup_reuses_command_plan

@@ -1,0 +1,41 @@
+import SandboxModel.Lifecycle.Protocol.SavedProofs
+import SandboxModel.Lifecycle.Protocol.SavedValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.SavedRetirement
+noncomputable section
+open scoped Classical
+
+theorem normal_witnesses :
+    run Values.small Values.normal = .ok (.Ok ()) ∧
+    run Values.small Values.absent = .ok (.Ok ()) := by
+  simpa only [run, validate_saved_spec] using Values.model_normal_witnesses
+
+theorem field_omission_rejections :
+    run Values.small Values.wrongLocal = corrupt ∧
+    run Values.small Values.wrongVersion = corrupt ∧
+    run Values.small Values.wrongBinding = corrupt ∧
+    run Values.small Values.wrongWorker = corrupt ∧
+    run Values.small Values.wrongData = corrupt ∧
+    run Values.small Values.wrongHost = corrupt ∧
+    run Values.small Values.wrongPins = corrupt ∧
+    run Values.small Values.wrongEpoch = corrupt := by
+  simpa only [run, validate_saved_spec] using Values.model_rejections
+
+theorem size_boundary :
+    run (Values.encoding 8192 (by decide)) Values.normal = .ok (.Ok ()) ∧
+    run (Values.encoding 8193 (by decide)) Values.normal = corrupt := by
+  simpa only [run, validate_saved_spec] using Values.model_size_boundary
+
+theorem error_order :
+    run Values.intentError Values.wrongLocal = corrupt ∧
+    run Values.intentError Values.normal = .ok (.Err (.Json ⟨7⟩)) := by
+  simpa only [run, validate_saved_spec] using Values.model_error_order
+
+end
+end SandboxModel.Stage1Protocol.SavedRetirement
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.normal_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.field_omission_rejections
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.size_boundary
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.error_order

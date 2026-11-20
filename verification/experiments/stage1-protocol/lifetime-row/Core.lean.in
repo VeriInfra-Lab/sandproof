@@ -1,0 +1,71 @@
+import SandproofLifetimeRow.Funs
+import SandboxModel.Lifecycle.Protocol.LifetimeRow.Spec
+open Aeneas Aeneas.Std SandproofLifetimeRowRust
+namespace SandboxModel.Stage1Protocol.LifetimeRow
+theorem actual_row_contract : FullRowContract controller.admission.lifetime_from_row := by
+  intro owner row
+  rcases row with ⟨stored, deadline, disk, start, maximum, startup⟩
+  cases start with
+  | none =>
+    by_cases valid : Valid owner (stored, deadline, disk, none, maximum, startup)
+    all_goals
+      simp only [Expected, valid, ↓reduceIte]
+      simp only [Valid] at valid
+      simp [controller.admission.lifetime_from_row,
+        alloc.string.String.Insts.CoreCmpPartialEqShared0Str.ne,
+        core.option.Option.is_some_and, U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from,
+        core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+        controller.admission.lifetime_from_row.closure_1.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorAdmissionError.call_once,
+        IScalar.lt_equiv, IScalar.le_equiv];
+      split_ifs <;> simp_all [Projected, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] <;> omega
+  | some t =>
+    by_cases valid : Valid owner (stored, deadline, disk, some t, maximum, startup)
+    all_goals
+      simp only [Expected, valid, ↓reduceIte]
+      simp only [Valid] at valid
+      simp [controller.admission.lifetime_from_row,
+        alloc.string.String.Insts.CoreCmpPartialEqShared0Str.ne,
+        core.option.Option.is_some_and, U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from,
+        core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+        controller.admission.lifetime_from_row.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once,
+        controller.admission.lifetime_from_row.closure_1.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorAdmissionError.call_once,
+        IScalar.lt_equiv, IScalar.le_equiv];
+      split_ifs <;> simp_all [Projected, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] <;> omega
+
+theorem accepts_iff (owner : Str) (row : Row) :
+    (∃ value, controller.admission.lifetime_from_row owner row = .ok (.Ok value)) ↔ Valid owner row := by
+  rw [actual_row_contract]
+  by_cases valid : Valid owner row <;> simp [Expected, valid]
+
+theorem refuses_iff (owner : Str) (row : Row) :
+    controller.admission.lifetime_from_row owner row = .ok (.Err .CorruptLifetime) ↔ ¬ Valid owner row := by
+  rw [actual_row_contract]
+  by_cases valid : Valid owner row <;> simp [Expected, valid]
+
+theorem total (owner : Str) (row : Row) :
+    ∃ result, controller.admission.lifetime_from_row owner row = .ok result :=
+  ⟨Expected owner row, actual_row_contract owner row⟩
+
+theorem accepted_fields (owner : Str) (row : Row) (value : controller.admission.Lifetime)
+    (accepted : controller.admission.lifetime_from_row owner row = .ok (.Ok value)) :
+    Valid owner row ∧
+    value.started_at_ms = row.2.2.2.1 ∧ value.deadline_ms = row.2.1 ∧
+    value.max_deadline_ms = row.2.2.2.2.1 ∧ value.startup_deadline_ms = row.2.2.2.2.2 ∧
+    (value.disk_bytes.val : Int) = row.2.2.1.val := by
+  have valid := (accepts_iff owner row).mp ⟨value, accepted⟩
+  have same : value = Projected row := by
+    rw [actual_row_contract owner row] at accepted
+    simpa [Expected, valid, eq_comm] using accepted
+  have nonnegative : 0 ≤ row.2.2.1.val := by have := valid.2.2.2.1; omega
+  have cast := IScalar.hcast_inBounds_spec .U64 row.2.2.1 (by scalar_tac)
+  have cast_exact : ((IScalar.hcast .U64 row.2.2.1).val : Int) = row.2.2.1.val := by
+    simpa [lift, WP.spec_ok] using cast
+  subst value
+  exact ⟨valid, rfl, rfl, rfl, rfl, cast_exact⟩
+
+end SandboxModel.Stage1Protocol.LifetimeRow
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.actual_row_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.refuses_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.total
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.accepted_fields

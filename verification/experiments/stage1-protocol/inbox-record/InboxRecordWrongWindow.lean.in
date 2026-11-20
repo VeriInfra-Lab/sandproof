@@ -1,0 +1,76 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordWitnessSupport
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxRecord.WrongWindow
+open InboxLookup.Witness Values
+
+theorem foreign_window_inserted :
+    ∃ (sessions : alloc.vec.Vec Session) (index : Usize),
+      emptyInbox.record_fresh foreignWindowIntent =
+        .ok (.Ok (index, 0#usize), {emptyInbox with sessions := sessions}) ∧
+      index.val = 0 ∧
+      sessions.val = [freshSession foreignWindowIntent false (some 1#u64)] := by
+  obtain ⟨sessions, index, pushed, subtracted, indexval, contents⟩ :=
+    fresh_push_outcome emptyInbox foreignWindowIntent false (some 1#u64)
+      (by simp [emptyInbox, InboxLookup.Witness.empty, inbox])
+  refine ⟨sessions, index, ?_, indexval, contents⟩
+  obtain ⟨selected, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec emptyInbox.lanes 0#usize
+      (by simp [emptyInbox, InboxLookup.Witness.singleton]))
+  have retired : emptyInbox.recently_retired_identity foreignWindowIntent = .ok false := by
+    rw [recently_retired_identity_spec]; rfl
+  have zero : ¬ foreignWindowIntent.retention.slot = 0#u16 := by decide
+  have range : ¬ emptyInbox.config.max_sessions < foreignWindowIntent.retention.slot := by decide
+  have slot : foreignWindowIntent.retention.slot = 1#u16 := rfl
+  have capacity : ¬ emptyInbox.config.max_sessions.val ≤ emptyInbox.sessions.val.length := by decide
+  have occupied : emptyInbox.retention_slot_used 1#u16 = .ok false := by
+    rw [retention_slot_used_spec]; rfl
+  have operation : foreignWindowIntent.request.operation =
+      .Create Validation.Examples.createPayload 1#u64 := rfl
+  have options : Validation.Examples.createPayload.options.val.length ≤ emptyInbox.config.max_options_bytes.val := by decide
+  unfold Inbox.record_fresh
+  rw [retired]
+  simp only [bind_tc_ok, Bool.false_eq_true, ↓reduceIte, zero, range]
+  rw [slot, empty_lane_index]
+  simp only [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    bind_tc_ok, alloc.vec.Vec.index_slice_index, indexed, lift]
+  simp only [UScalar.le_equiv, alloc.vec.Vec.len_val,
+    core.convert.num.FromUsizeU16.from_val_eq, capacity, ↓reduceIte]
+  rw [occupied]
+  simp only [bind_tc_ok, Bool.false_eq_true, ↓reduceIte, operation, U32.cast_Usize_val_eq,
+    options, SessionId_clone, TenantId_clone, AcceptedLifecycleIntent_clone]
+  have singleton_push := fresh_entries_push foreignWindowIntent
+  dsimp [pendingEntry] at singleton_push
+  rw [singleton_push]
+  dsimp [freshSession] at pushed
+  simp only [bind_tc_ok, pushed, subtracted]
+
+theorem foreign_window_violates_post :
+    ¬ (emptyInbox.record_fresh foreignWindowIntent
+      ⦃ out => FreshPost emptyInbox foreignWindowIntent (freshDecision emptyInbox foreignWindowIntent) out ⦄) := by
+  intro contract
+  obtain ⟨sessions, index, actual, _, _⟩ := foreign_window_inserted
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists contract
+  rw [actual] at returned
+  have same : out = (.Ok (index, 0#usize), {emptyInbox with sessions := sessions}) := by simpa using returned.symm
+  rw [same] at post
+  simp [foreign_window_decision, FreshPost] at post
+
+theorem rejects_same_full_fresh_contract : ¬ FullFreshContract Inbox.record_fresh := by
+  intro contract
+  exact foreign_window_violates_post (contract emptyInbox foreignWindowIntent)
+
+theorem rejects_same_full_record_contract : ¬ FullNewSessionContract Inbox.record := by
+  intro contract
+  have post := contract emptyInbox foreignWindowIntent both_new_sessions.2
+  rw [record_new_session_path emptyInbox foreignWindowIntent both_new_sessions.2] at post
+  exact foreign_window_violates_post post
+
+end SandboxModel.Stage1Protocol.InboxRecord.WrongWindow
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.WrongWindow.foreign_window_inserted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.WrongWindow.foreign_window_violates_post
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.WrongWindow.rejects_same_full_fresh_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.WrongWindow.rejects_same_full_record_contract

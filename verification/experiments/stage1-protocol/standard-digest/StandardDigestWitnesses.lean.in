@@ -1,0 +1,15 @@
+import SandboxModel.Lifecycle.Protocol.StandardDigestCore
+import SandboxModel.Lifecycle.Protocol.StandardDigestValues
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.StandardDigest
+
+theorem normal_context_exists : Nonempty Context := ⟨Values.normal⟩
+theorem normal_empty : actual Values.normal Values.empty = expected Values.normal Values.empty :=
+  actual_refines _ _ Values.empty_normal
+theorem normal_abc : actual Values.normal Values.abc = expected Values.normal Values.abc :=
+  actual_refines _ _ Values.abc_normal
+
+end SandboxModel.Stage1Protocol.StandardDigest
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigest.normal_context_exists
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigest.normal_empty
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigest.normal_abc

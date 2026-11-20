@@ -1,0 +1,10 @@
+
+// No hash expression or receiver context is copied into these roots.
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_digest_instance_create_load(effects: &mut StandardCreateAttachment<'_, '_>, bytes: &[u8]) -> [u8;32] {
+    codec::InboxLoadEffects::digest(effects, bytes)
+}
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_digest_instance_create_save(effects: &mut StandardCreateAttachment<'_, '_>, bytes: &[u8]) -> [u8;32] {
+    codec::InboxSaveEffects::digest(effects, bytes)
+}

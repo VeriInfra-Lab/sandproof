@@ -1,0 +1,27 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolDestroyFlowValues
+import SandboxModel.Lifecycle.Protocol.InboxProtocolRecord
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+namespace SandboxModel.Stage1Protocol.ProtocolRecord.DestroyFlowValues
+noncomputable section
+open DestroyValues
+open InboxLoad.Values (saved terminal renewal unload)
+
+-- A legal decoded Destroy trace through the actual extracted correct caller.
+-- The explicit providers establish no physical resource or commit fact.
+theorem flow_actual (trace : InboxLoad.Values.Trace) :
+    record_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic effects trace destroyIntent EnvelopeValues.context =
+      .ok (.Ok (.Recorded (resultState 32#u64)),
+        (trace ++ InboxLoad.Values.completeTrace before) ++
+          [.encodedInbox (after 32#u64), .digested InboxLoad.Values.bytes.val]) := by
+  have refined := full_flow_contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic effects ComposedConfig.standard_graphic_contract
+    (Fixture.represented before before_represented) destroyIntent EnvelopeValues.context trace
+  exact refined.trans (flow_model trace)
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord.DestroyFlowValues
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyFlowValues.flow_actual

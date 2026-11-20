@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.NativeCompletionModel
+import SandboxModel.Lifecycle.Protocol.NativeCompletionValues
+
+open Aeneas Aeneas.Std SandproofNativeReadinessRust
+open sandbox_controller_core
+namespace SandboxModel.Stage1Protocol.NativeReadiness
+open scoped Classical
+noncomputable section
+
+
+theorem wrong_status_accepts_pending : run pendingSnapshot sampleBinding = .ok true := by
+  simp [run,
+    sandproof_controller_service.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    model.Phase.Insts.CoreCmpPartialEqPhase.eq, model.Phase.read_discriminant,
+    ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq,
+    model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq,
+    model.OperationKind.read_discriminant,
+    alloc.vec.Vec.is_empty, SandproofFoundationsRust.alloc.vec.Vec.is_empty,
+    pendingSnapshot, sampleCreate, sampleOperation, sampleBinding]
+
+theorem pending_rejected_by_unchanged_spec : ¬ CompletedOriginal pendingSnapshot sampleBinding := by
+  simp [CompletedOriginal, pendingSnapshot, sampleCreate, sampleOperation, sampleBinding]
+
+theorem wrong_status_refutes_full_contract : ¬ FullCompletionContract run := by
+  intro contract
+  have applied := contract pendingSnapshot sampleBinding
+  rw [wrong_status_accepts_pending] at applied
+  simp [pending_rejected_by_unchanged_spec] at applied
+
+end
+end SandboxModel.Stage1Protocol.NativeReadiness
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.wrong_status_accepts_pending
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.pending_rejected_by_unchanged_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.wrong_status_refutes_full_contract

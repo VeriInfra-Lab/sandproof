@@ -1,0 +1,17 @@
+{
+  "skip-binding": {
+    "source": "controller-service/src/capture/source.rs",
+    "before": "self.work_binding == requirement.work_binding\n            && self.resource == requirement.resource",
+    "after": "self.resource == requirement.resource"
+  },
+  "pid-only": {
+    "source": "controller-service/src/capture/source.rs",
+    "before": "self.source == requirement.source",
+    "after": "self.source.pid == requirement.source.pid"
+  },
+  "oversize-config": {
+    "source": "controller-service/src/capture/source.rs",
+    "before": "            && self.configuration.len() as u64\n                <= u64::from(requirement.limits.max_configuration_bytes)\n",
+    "after": ""
+  }
+}

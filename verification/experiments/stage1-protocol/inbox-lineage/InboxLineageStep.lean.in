@@ -1,0 +1,39 @@
+import SandboxModel.Lifecycle.Protocol.InboxLineageSupport
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity sandproof_protocol.internal
+namespace SandboxModel.Stage1Protocol.InboxLineage
+
+theorem body_end (values : Slice Entry) (index : Nat) (expected : Option IncarnationId)
+    (state : LineageState) (outside : values.val.length ≤ index) :
+    Session.validate_execution_lineage_loop.body expected (cursor values index)
+      state.incarnation state.previous state.frontier =
+      .ok (.done (observed (scan expected [] state))) := by
+  unfold Session.validate_execution_lineage_loop.body
+  rw [next_none values index outside]
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    scan, observed]
+  split <;> simp_all
+
+theorem body_next (values : Slice Entry) (index : Nat) (expected : Option IncarnationId)
+    (state : LineageState) (inside : index < values.val.length) :
+    Session.validate_execution_lineage_loop.body expected (cursor values index)
+      state.incarnation state.previous state.frontier =
+      .ok (bodyResult values index state values.val[index]) := by
+  unfold Session.validate_execution_lineage_loop.body
+  rw [next_some values index inside]
+  simp only [bind_tc_ok]
+  cases operation : values.val[index].intent.request.operation <;>
+    simp [operation, bodyResult, step,
+      core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      CaptureId.get, PositiveCounter.get]
+  all_goals split <;> simp_all -failIfUnchanged
+  all_goals split <;> simp_all -failIfUnchanged
+  all_goals split <;> simp_all -failIfUnchanged
+  all_goals split <;> simp_all -failIfUnchanged
+
+end SandboxModel.Stage1Protocol.InboxLineage
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.body_next

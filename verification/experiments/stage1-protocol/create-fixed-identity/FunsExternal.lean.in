@@ -1,0 +1,20 @@
+import SandproofStage1CreateAttachment.Types
+import SandproofFoundations.FunsExternal
+
+/-! Original identity-view leaves. This reuses the existing exact A6 byte,
+string, and iterator operations. must_use is transparently extracted from the fixed Std source;
+no generated axiom template is imported. -/
+open Aeneas Aeneas.Std
+namespace SandproofStage1CreateAttachmentRust
+
+abbrev core.num.U8.is_ascii_alphanumeric :=
+  SandproofFoundationsRust.core.num.U8.is_ascii_alphanumeric
+abbrev core.str.Str.len := SandproofFoundationsRust.core.str.Str.len
+abbrev core.str.Str.is_empty := SandproofFoundationsRust.core.str.Str.is_empty
+abbrev core.str.Str.bytes := SandproofFoundationsRust.core.str.Str.bytes
+abbrev core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all :=
+  @SandproofFoundationsRust.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all
+abbrev alloc.string.String.Insts.CoreOpsDerefDerefStr.deref :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+
+end SandproofStage1CreateAttachmentRust

@@ -1,0 +1,51 @@
+import SandproofSourcePreservation.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofSourcePreservationRust
+namespace SandboxModel.Stage1Protocol.SourcePreservation
+abbrev Record := controller.lifecycle_inbox.source_work.SourceWorkRecord
+abbrev Witness := controller.checkpoint.HostReleaseWitness
+abbrev State := controller.lifecycle_inbox.source_work.retirement.MaterialRetirementState
+abbrev Plan := controller.lifecycle_inbox.source_work.retirement.MaterialRetirementPlan
+abbrev Settlement := controller.lifecycle_inbox.source_work.retirement.MaterialRetirementSettlement
+abbrev Closure := controller.lifecycle_inbox.source_work.retirement.MaterialRetirementClosure
+abbrev Reason := controller.lifecycle_inbox.source_work.retirement.MaterialRetirementReason
+abbrev Digest := sandproof_protocol.lifecycle.digest.ContentDigest
+noncomputable instance keyDecEq : DecidableEq sandbox_controller_core.model.OperationKey := Classical.decEq _
+noncomputable instance hostBindingDecEq : DecidableEq sandbox_controller_core.maintenance.slots.HostBinding := Classical.decEq _
+noncomputable instance contextDecEq : DecidableEq host_contract.HostSlotContext := Classical.decEq _
+noncomputable instance witnessDecEq : DecidableEq Witness := Classical.decEq _
+noncomputable instance reasonDecEq : DecidableEq Reason := Classical.decEq _
+noncomputable instance closureDecEq : DecidableEq Closure := Classical.decEq _
+noncomputable instance planDecEq : DecidableEq Plan := Classical.decEq _
+noncomputable instance settlementDecEq : DecidableEq Settlement := Classical.decEq _
+noncomputable instance stateDecEq : DecidableEq State := Classical.decEq _
+
+/-- Existing facts are immutable; absence permits addition of a new value. -/
+def Retains {T : Type} (before after : Option T) : Prop :=
+  match before with
+  | none => True
+  | some value => after = some value
+
+/-- A saved Retiring plan remains whole through either next tag; a saved
+Settled state is immutable, including all plan and settlement fields. No
+settlement validity or real release is inferred from this value guard. -/
+def RetainsState (before after : Option State) : Prop :=
+  match before, after with
+  | none, _ => True
+  | some (.Settled saved settled), next => next = some (.Settled saved settled)
+  | some (.Retiring saved), some (.Retiring next) => next = saved
+  | some (.Retiring saved), some (.Settled next _) => next = saved
+  | some (.Retiring _), none => False
+
+def Preserves (before after : Record) : Prop :=
+  Retains before.material_release.producer after.material_release.producer ∧
+  Retains before.material_release.consumer after.material_release.consumer ∧
+  RetainsState before.retirement after.retirement
+
+noncomputable def Expected (before after : Record) : Bool := by
+  classical
+  exact decide (Preserves before after)
+
+def FullPreservationContract (run : Record → Record → Result Bool) : Prop :=
+  ∀ before after, run before after = .ok (Expected before after)
+end SandboxModel.Stage1Protocol.SourcePreservation

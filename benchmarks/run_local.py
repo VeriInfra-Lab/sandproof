@@ -251,14 +251,15 @@ async def run_task(args, entry, recipe, *, environment_factory=None, result_row=
         artifact_limits=getattr(args, 'artifact_limits', None),
     )
     oracle_mode = getattr(args, 'oracle_mode', 'original')
+    source_kind = getattr(environment, 'source_kind', 'fixed-base')
     # The enclosing supervisor retains this same row even when cancellation
     # propagates and result.json cannot be published. Disk reports are evidence,
     # not the only channel carrying the original identity and failure to cleanup.
     row = result_row if result_row is not None else {}
     row.update(name=task.name, status='running', stage='initialization',
                oracle_mode=oracle_mode,
-               environment_source_kind=getattr(environment, 'source_kind', 'fixed-base'),
-               original_environment=getattr(environment, 'source_kind', None) in ('oci', 'dockerfile'),
+               environment_source_kind=source_kind,
+               original_environment=source_kind in ('oci', 'dockerfile', 'prepared-original'),
                oracle='not_run', verifier='not_run')
     start = time.monotonic()
     def event(stage):

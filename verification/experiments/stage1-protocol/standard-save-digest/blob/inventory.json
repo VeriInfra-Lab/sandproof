@@ -1,0 +1,37 @@
+{
+  "scope": "finite joint A4/B4 fixed two-BLOB InboxSave UPDATE; no arbitrary SQL/ToSql equivalence",
+  "source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+  "capture_result_sha256": "0a8bf5a2951fecd171b7fce9e8f69b058a26f1b9b949beae90662253e22351f6",
+  "formal_acceptance": false,
+  "external_functions": [
+    "alloc::string::{alloc::string::String}::as_bytes",
+    "rusqlite::{rusqlite::Connection}::execute",
+    "rusqlite::statement::{rusqlite::statement::Statement<'_0>}::bind_parameters"
+  ],
+  "sources": {
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99"
+  },
+  "providers": {
+    "verification/experiments/stage1-protocol/create-lifetime-sql/materialize.py": "eefacb3a5e7598c51a1a6428b33be155fe7e9f3551e56058fac757e505033c04"
+  },
+  "exact_common_fragments": {
+    "sql_to_str": "7db3dc9879b62113d2450e3b2fd40ffd738e3458b237b6ce876272e5617dccf0",
+    "sql_string_deref": "9965e70eea4d4170cca8df5d5c734230c108d019ee008da5191ff4cba54843d6",
+    "sql_bind_values": "645d7adc027c741c7d7e1a0affa33c4d55275796072ba4ae5a18cc67ee31e7bf",
+    "sql_execute": "f5ad04423e778cd770b85d1464f9e34bd348428492ac6df084a3b33a4b9adaaf",
+    "string_empty": "419f83116d2fa205470327c9777584b5b08ceb7733d77be4d06f5df8927864a2",
+    "standard_to_str": "7db3dc9879b62113d2450e3b2fd40ffd738e3458b237b6ce876272e5617dccf0",
+    "literal_bytes_math": "f5d10e57842fe1f1059bd6ea5dcd00439e58da117ed1a66bc76bb154f7072c54"
+  },
+  "templates": {
+    "verification/experiments/stage1-protocol/standard-save-digest/blob/TypesExternal.lean.in": "b9b7e089d8c4b4904337384968e9a5b3089ba41f2fbac47d1b23abb95eed9faa",
+    "verification/experiments/stage1-protocol/standard-save-digest/blob/FunsExternal.lean.in": "bd3cb58a15dbe66870ae227f8ae921f2a7522a52d48935fa5a63fb9b51f088f7",
+    "verification/experiments/stage1-protocol/standard-save-digest/blob/InboxSaveBlob.lean.in": "5622a05aef44c550dbaaf7ea493ba640f4af6709be93bbc3dd4b75475b835ca8"
+  },
+  "generated": {
+    "verification/aeneas/stage1-protocol/standard-save-digest/blob/SandproofInboxSaveBlob/Types.lean": "d1c112f49a00f3f3837dd337c5cd4175a71eb3827a637260d8c650e3c2e21522",
+    "verification/aeneas/stage1-protocol/standard-save-digest/blob/SandproofInboxSaveBlob/Funs.lean": "4eda1da85a1d836745d62f85980a8b34c098aa3012317e3dc8002c2141c85b10",
+    "verification/aeneas/stage1-protocol/standard-save-digest/blob/translation.json": "d59b31c9f4db3d420f1e9a393c6351e019e699fde8ada278446a878362c2bebd"
+  }
+}

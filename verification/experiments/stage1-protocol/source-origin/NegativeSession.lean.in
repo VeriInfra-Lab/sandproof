@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.SourceOrigin.Examples
+open Aeneas Aeneas.Std SandproofSourceOriginRust
+namespace SandboxModel.Stage1Protocol.SourceOrigin.NegativeSession
+open sandbox_controller_core WitnessSupport
+
+theorem bad_actual : run Values.world Values.duplicated Values.anchor 1#usize = .ok (.Ok ()) := by
+  unfold run controller.lifecycle_inbox.source_work.snapshot.validate_execution_origin
+  simp only [Values.anchor, find_duplicated]
+  simp [core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    core.option.Option.ok_or, alloc.vec.Vec.index_usize,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+    ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq,
+    ids.VmId.Insts.CoreCmpPartialEqVmId.eq,
+    model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq,
+    model.OperationKind.read_discriminant,
+    Values.duplicated, Values.inbox, Values.session, Values.entry, Values.singleton,
+    Values.origin, Values.key, plan_contents, row_contents, Values.world,
+    SandboxModel.Foundations.tableLookup, Values.plan, Values.row,
+    epoch_actual, EpochExpected]
+
+theorem rejects_same_contract : ¬ FullOriginContract run := by
+  intro contract
+  have same := contract Values.world Values.duplicated Values.anchor 1#usize
+  rw [bad_actual, Examples.session_expected] at same
+  simp [Reject] at same
+end SandboxModel.Stage1Protocol.SourceOrigin.NegativeSession
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.NegativeSession.bad_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.NegativeSession.rejects_same_contract

@@ -1,0 +1,148 @@
+import SandboxModel.Lifecycle.Protocol.EnvelopeBytes
+
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofFoundationsRust
+open SandboxModel.Foundations SandboxModel.Boundaries
+open SandboxModel.Boundaries.JsonRequest
+namespace SandboxModel.Stage1Protocol.EnvelopeParser
+
+/-! Composition of the already registered field, content-return, container-end
+and document-end interfaces. This is not an implementation of scanning/derive.
+The fixed ContentDeserializer owns buffered ordinary values and keeps the
+original SliceRead cursor unchanged. The concrete dictionary/cursor observations
+remain the source-reviewed A6/B4 obligations in parser-binding/README.md. -/
+def bufferedReader {D : Type}
+    (provider : serde_core.de.Deserializer D serde_json.error.Error)
+    (input : D) (cursor : SliceCursor) : SliceFieldReader :=
+  ⟨D, provider, input, cursor, cursor⟩
+
+theorem buffered_reader_uses_existing_binding {D : Type}
+    (provider : serde_core.de.Deserializer D serde_json.error.Error)
+    (input : D) (cursor : SliceCursor) (bytes : Slice U8)
+    (same : cursor.input = bytes.val) (valid : cursor.Valid)
+    (counter : provider.ErrorInst.custom JsonCounter.originalDisplay JsonCounter.invalid =
+      plainCustom JsonCounter.originalDisplay JsonCounter.invalid)
+    (identifier : provider.ErrorInst.custom JsonIdentifiers.originalDisplay
+      sandproof_protocol.ContractError.InvalidIdentifier =
+      plainCustom JsonIdentifiers.originalDisplay sandproof_protocol.ContractError.InvalidIdentifier) :
+    (bufferedReader provider input cursor).BoundTo bytes := by
+  exact ⟨same, same, valid, valid, Nat.le_refl _, counter, identifier⟩
+
+-- The two tri! operations of visit_content_map/seq have the same short-circuit
+-- structure as finishDocument. Content end has no JSON cursor/fix_position.
+-- Conversely, the enclosing real JSON container eagerly executes its end.
+theorem buffered_error_then_real_container {T : Type}
+    (decoded : Result (core.result.Result T serde_json.error.Error))
+    (error : serde_json.error.Error) (failed : decoded = .ok (.Err error))
+    (contentEnd documentEnd : Unit → Result (core.result.Result Unit serde_json.error.Error))
+    (close : Unit → Result (core.result.Result Unit serde_json.error.Error × SliceCursor))
+    (ended : core.result.Result Unit serde_json.error.Error) (cursor : SliceCursor)
+    (closed : close () = .ok (ended, cursor)) :
+    (do
+      let visited ← finishDocument decoded contentEnd
+      let (value, _) ← closeContainer visited close
+      finishDocument (.ok value) documentEnd) =
+      .ok (.Err (fixErrorPosition cursor error)) := by
+  cases ended <;> simp [failed, finishDocument, closeContainer, closed]
+
+theorem original_counter_error_at_nearest_container
+    (code : EnvelopeBytes.CounterCode) (reader : SliceFieldReader) (bytes : Slice U8)
+    (bound : reader.BoundTo bytes)
+    (read : JsonCounter.primitive reader.provider reader.input = .ok (.Ok 0#u64))
+    (contentEnd documentEnd : Unit → Result (core.result.Result Unit serde_json.error.Error))
+    (close : Unit → Result (core.result.Result Unit serde_json.error.Error × SliceCursor))
+    (ended : core.result.Result Unit serde_json.error.Error) (cursor : SliceCursor)
+    (closed : close () = .ok (ended, cursor)) :
+    (do
+      let visited ← finishDocument (code.actual reader.provider reader.input) contentEnd
+      let (value, _) ← closeContainer visited close
+      finishDocument (.ok value) documentEnd) =
+      .ok (.Err ⟨"invalid or exhausted internal counter", .data, cursor.line, cursor.column⟩) := by
+  have failed : code.actual reader.provider reader.input =
+      .ok (.Err ⟨"invalid or exhausted internal counter", .data, 0, 0⟩) := by
+    rw [EnvelopeBytes.counter_code_refines]
+    exact bound_zero_uses_original_json_error reader bytes bound read
+  simpa [fixErrorPosition] using buffered_error_then_real_container _ _ failed
+    contentEnd documentEnd close ended cursor closed
+
+theorem original_identifier_error_at_nearest_container
+    (code : EnvelopeBytes.IdentifierCode) (reader : SliceFieldReader) (bytes : Slice U8)
+    (bound : reader.BoundTo bytes) (text : String)
+    (read : JsonIdentifiers.primitive reader.provider reader.input = .ok (.Ok text))
+    (representable : IdentifierLibrary.StringRepresentable text) (invalid : ¬opaqueValid text)
+    (contentEnd documentEnd : Unit → Result (core.result.Result Unit serde_json.error.Error))
+    (close : Unit → Result (core.result.Result Unit serde_json.error.Error × SliceCursor))
+    (ended : core.result.Result Unit serde_json.error.Error) (cursor : SliceCursor)
+    (closed : close () = .ok (ended, cursor)) :
+    (do
+      let visited ← finishDocument (code.actual reader.provider reader.input) contentEnd
+      let (value, _) ← closeContainer visited close
+      finishDocument (.ok value) documentEnd) =
+      .ok (.Err ⟨"invalid opaque identifier", .data, cursor.line, cursor.column⟩) := by
+  have failed : code.actual reader.provider reader.input =
+      .ok (.Err ⟨"invalid opaque identifier", .data, 0, 0⟩) := by
+    rw [EnvelopeBytes.identifier_code_refines]
+    exact bound_invalid_id_uses_original_json_error reader bytes bound code.kind text read representable invalid
+  simpa [fixErrorPosition] using buffered_error_then_real_container _ _ failed
+    contentEnd documentEnd close ended cursor closed
+
+-- Once the nearest real JSON container has attached a positive line, both
+-- Accepted and Recorded (and any additional enclosing container) preserve it.
+theorem enclosing_container_keeps_nearest_error {T : Type}
+    (error : serde_json.error.Error) (nearest outer : SliceCursor) (valid : nearest.Valid)
+    (close : Unit → Result (core.result.Result Unit serde_json.error.Error × SliceCursor))
+    (ended : core.result.Result Unit serde_json.error.Error)
+    (closed : close () = .ok (ended, outer)) :
+    closeContainer (T := T) (.Err (fixErrorPosition nearest error)) close =
+      .ok (.Err (fixErrorPosition nearest error), outer) := by
+  rw [visitor_error_wins_and_retains_close_cursor _ _ ended outer closed,
+    nearest_position_survives_outer_close nearest outer valid error]
+
+-- Ordinary serde errors are not Aeneas failures or effects. Eager close can
+-- still fail or perform an effect; the earlier data error does not erase it.
+theorem real_close_failure_is_not_a_data_error {T : Type}
+    (error : serde_json.error.Error) (failure : Error)
+    (contentEnd documentEnd : Unit → Result (core.result.Result Unit serde_json.error.Error)) :
+    (do
+      let visited ← finishDocument (T := T) (.ok (.Err error)) contentEnd
+      let (value, _) ← closeContainer visited (fun _ => .fail failure)
+      finishDocument (.ok value) documentEnd) = .fail failure := by
+  simp [finishDocument, closeContainer]
+
+theorem real_close_effect_survives_buffered_error {T : Type}
+    (error : serde_json.error.Error) (effect : RustEffect.Input)
+    (continuation : RustEffect.Output effect → Result
+      (core.result.Result Unit serde_json.error.Error × SliceCursor))
+    (contentEnd : Unit → Result (core.result.Result Unit serde_json.error.Error)) :
+    (do
+      let visited ← finishDocument (T := T) (.ok (.Err error)) contentEnd
+      closeContainer visited (fun _ => .vis effect continuation)) =
+      .vis effect (fun response => closeContainer (T := T) (.Err error)
+        (fun _ => continuation response)) := by
+  simp [finishDocument, closeContainer]
+
+-- A normal witness uses the same interfaces as the error case, and preserves
+-- the complete payload, not just a key/session/digest projection.
+theorem complete_value_survives_all_three_ends {T : Type}
+    (payload : T) (decoded : Result (core.result.Result T serde_json.error.Error))
+    (read : decoded = .ok (.Ok payload))
+    (contentEnd documentEnd : Unit → Result (core.result.Result Unit serde_json.error.Error))
+    (contentOk : contentEnd () = .ok (.Ok ())) (documentOk : documentEnd () = .ok (.Ok ()))
+    (close : Unit → Result (core.result.Result Unit serde_json.error.Error × SliceCursor))
+    (cursor : SliceCursor) (closed : close () = .ok (.Ok (), cursor)) :
+    (do
+      let visited ← finishDocument decoded contentEnd
+      let (value, _) ← closeContainer visited close
+      finishDocument (.ok value) documentEnd) = .ok (.Ok payload) := by
+  simp [read, finishDocument, contentOk, closeContainer, closed, documentOk]
+
+end SandboxModel.Stage1Protocol.EnvelopeParser
+
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeParser.buffered_reader_uses_existing_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeParser.buffered_error_then_real_container
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeParser.original_counter_error_at_nearest_container
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeParser.original_identifier_error_at_nearest_container
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeParser.enclosing_container_keeps_nearest_error
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeParser.real_close_failure_is_not_a_data_error
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeParser.real_close_effect_survives_buffered_error
+#audit_controller_proof SandboxModel.Stage1Protocol.EnvelopeParser.complete_value_survives_all_three_ends

@@ -66,7 +66,7 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
                 profile["coordination_file"] = str(root / "physical-profile")
                 for index, pool in enumerate(profile["pools"]):
                     pool.update(database=str(root / str(index) / "db/controller.db"),
-                        node_state_dir=str(root / str(index) / "state"), chroot_base=str(root / str(index) / "jails"))
+                        node_state_dir=str(root / str(index) / "state"), chroot_base=str(root / str(index) / "p/v"))
                 profile["public_build"].update(root=str(root / "builds"), registry_root=str(root / "registry"))
             policy_path = parent / "policy.json"
             policy_path.write_text(json.dumps(policy))
@@ -97,6 +97,10 @@ class CompleteRegistryFixtureTests(unittest.TestCase):
                 for suffix in ('registry','registry/inbox','registry/artifacts'):
                     (root / suffix).mkdir(mode=0o700)
                 for index, native in enumerate(settings):
+                    self.assertEqual(Path(native['chroot_base']), root / str(index) / 'p/v')
+                    # The inert assembly port still supplies the exact native
+                    # directory used by the real same-filesystem preflight.
+                    Path(native['chroot_base']).mkdir(mode=0o700)
                     self.assertFalse({'bind','credentials','internal_build_vms','build_retry_windows'} & native.keys())
                     transfers = native['data_transfer']
                     expected = 4 if index else options.get('runtime_transfers_per_vm', 4)

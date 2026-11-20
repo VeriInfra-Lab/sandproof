@@ -1,0 +1,37 @@
+import SandproofNativeReadiness.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofNativeReadinessRust
+open sandbox_controller_core
+namespace SandboxModel.Stage1Protocol.NativeReadiness
+open scoped Classical
+noncomputable section
+
+abbrev Snapshot := sandproof_controller_service.controller.lifecycle_inbox.readiness.NativeCreateSnapshot
+abbrev LocalBinding := sandproof_controller_service.controller.internal_inbox.model.InternalLocalBinding
+abbrev Operation := sandbox_controller_core.model.Operation
+abbrev Phase := sandbox_controller_core.model.Phase
+abbrev Kind := sandbox_controller_core.model.OperationKind
+abbrev Status := sandbox_controller_core.model.OperationStatus
+
+/-- Exact conjunction of the original checker. Lifetime contents, the actual VM,
+its existence, source authentication and the binding's sandbox are separate. -/
+def CompletedOriginal (snapshot : Snapshot) (binding : LocalBinding) : Prop :=
+  snapshot.owner = binding.owner ∧ snapshot.phase = .Running ∧ snapshot.terminal = false ∧
+  snapshot.generation ≠ 0#u64 ∧ snapshot.current_vm.isSome = true ∧
+  snapshot.uncertain_actions.val = [] ∧
+  ∃ operation, snapshot.current_operation = some operation ∧
+    operation.id = binding.operation ∧ operation.epoch = snapshot.epoch ∧
+    (operation.kind = .Create ∨ operation.kind = .Resume) ∧
+    (operation.kind = .Create ↔ snapshot.generation = 1#u64) ∧
+    operation.status = .Succeeded
+
+def run (snapshot : Snapshot) (binding : LocalBinding) : Result Bool :=
+  sandproof_controller_service.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution snapshot binding
+
+def FullCompletionContract (check : Snapshot → LocalBinding → Result Bool) : Prop :=
+  ∀ snapshot binding, check snapshot binding = .ok (decide (CompletedOriginal snapshot binding))
+
+
+end
+end SandboxModel.Stage1Protocol.NativeReadiness

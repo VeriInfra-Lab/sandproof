@@ -1,0 +1,245 @@
+import SandproofParentCommit.Types
+import SandproofStage1Request.Types
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+set_option maxHeartbeats 200000
+
+/-!
+Candidate only: prepared offline for A's combined kernel/service check.
+This module imports Types only; it must not depend on Parent FunsExternal.
+The outer lifting below uses the existing Aeneas bind, not a new evaluator.
+-/
+namespace SandproofParentCommitRust.ErrorTransport
+
+abbrev RequestError := SandproofStage1RequestRust.sandproof_controller_service.JournalError
+abbrev ParentError := SandproofParentCommitRust.JournalError
+
+/-- Every original constructor and its complete payload are retained. -/
+def fromRequest (error : RequestError) : ParentError :=
+  match error with
+  | .Io payload => .Io payload
+  | .Sqlite payload => .Sqlite payload
+  | .CommitUncertain payload => .CommitUncertain payload
+  | .Json payload => .Json payload
+  | .Contract payload => .Contract payload
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .InjectedCrash payload => .InjectedCrash payload
+  | .ControllerRejected payload => .ControllerRejected payload
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+def toRequest (error : ParentError) : RequestError :=
+  match error with
+  | .Io payload => .Io payload
+  | .Sqlite payload => .Sqlite payload
+  | .CommitUncertain payload => .CommitUncertain payload
+  | .Json payload => .Json payload
+  | .Contract payload => .Contract payload
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .InjectedCrash payload => .InjectedCrash payload
+  | .ControllerRejected payload => .ControllerRejected payload
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+@[simp] theorem toRequest_fromRequest (error : RequestError) :
+    toRequest (fromRequest error) = error := by
+  cases error <;> rfl
+
+@[simp] theorem fromRequest_toRequest (error : ParentError) :
+    fromRequest (toRequest error) = error := by
+  cases error <;> rfl
+
+abbrev RequestRustResult (α : Type) := core.result.Result α RequestError
+abbrev ParentRustResult (α : Type) := core.result.Result α ParentError
+abbrev RequestUnitResult := RequestRustResult Unit
+abbrev ParentUnitResult := ParentRustResult Unit
+
+/-- Inner Rust Result: normal values are unchanged, all errors are transported. -/
+def fromRequestRustResult {α : Type} (value : RequestRustResult α) : ParentRustResult α :=
+  match value with
+  | .Ok result => .Ok result
+  | .Err error => .Err (fromRequest error)
+
+def toRequestRustResult {α : Type} (value : ParentRustResult α) : RequestRustResult α :=
+  match value with
+  | .Ok result => .Ok result
+  | .Err error => .Err (toRequest error)
+
+@[simp] theorem toRequestRustResult_fromRequestRustResult {α : Type}
+    (value : RequestRustResult α) :
+    toRequestRustResult (fromRequestRustResult value) = value := by
+  cases value with
+  | Ok result => rfl
+  | Err error =>
+    exact congrArg (fun e : RequestError => (core.result.Result.Err e : RequestRustResult α))
+      (toRequest_fromRequest error)
+
+@[simp] theorem fromRequestRustResult_toRequestRustResult {α : Type}
+    (value : ParentRustResult α) :
+    fromRequestRustResult (toRequestRustResult value) = value := by
+  cases value with
+  | Ok result => rfl
+  | Err error =>
+    exact congrArg (fun e : ParentError => (core.result.Result.Err e : ParentRustResult α))
+      (fromRequest_toRequest error)
+
+abbrev fromRequestUnitResult : RequestUnitResult → ParentUnitResult := fromRequestRustResult
+abbrev toRequestUnitResult : ParentUnitResult → RequestUnitResult := toRequestRustResult
+
+@[simp] theorem toRequestUnitResult_fromRequestUnitResult (value : RequestUnitResult) :
+    toRequestUnitResult (fromRequestUnitResult value) = value :=
+  toRequestRustResult_fromRequestRustResult value
+
+@[simp] theorem fromRequestUnitResult_toRequestUnitResult (value : ParentUnitResult) :
+    fromRequestUnitResult (toRequestUnitResult value) = value :=
+  fromRequestRustResult_toRequestRustResult value
+
+/-- Map only the return value, using the original Aeneas effectful bind. -/
+def liftResult {α β : Type} (f : α → β) (m : Result α) : Result β :=
+  Aeneas.Std.bind m (fun value => .ok (f value))
+
+theorem liftResult_eq_map {α β : Type} (f : α → β) (m : Result α) :
+    liftResult f m = f <$> m := by
+  change (m >>= fun value => pure (f value)) = f <$> m
+  exact bind_pure_comp f m
+
+@[simp] theorem liftResult_ok {α β : Type} (f : α → β) (value : α) :
+    liftResult f (.ok value) = .ok (f value) :=
+  Aeneas.Std.bind_ok value (fun x => .ok (f x))
+
+@[simp] theorem liftResult_fail {α β : Type} (f : α → β) (error : Error) :
+    liftResult f (.fail error) = .fail error :=
+  Aeneas.Std.bind_fail error (fun x => .ok (f x))
+
+@[simp] theorem liftResult_div {α β : Type} (f : α → β) :
+    liftResult f .div = .div :=
+  Aeneas.Std.bind_div (fun x => .ok (f x))
+
+theorem liftResult_vis {α β : Type} (f : α → β)
+    (effect : RustEffect.Input) (continuation : RustEffect.Output effect → Result α) :
+    liftResult f (.vis effect continuation) =
+      .vis effect (fun response => liftResult f (continuation response)) :=
+  Aeneas.Std.bind_vis effect continuation (fun x => .ok (f x))
+
+theorem liftResult_bind {α β γ : Type} (f : β → γ) (m : Result α)
+    (continuation : α → Result β) :
+    liftResult f (m >>= continuation) =
+      (m >>= fun value => liftResult f (continuation value)) := by
+  change ((m >>= continuation) >>= fun value => pure (f value)) =
+    (m >>= fun value => continuation value >>= fun result => pure (f result))
+  exact bind_assoc m continuation (fun value => pure (f value))
+
+theorem liftResult_comp {α β γ : Type} (f : α → β) (g : β → γ) (m : Result α) :
+    liftResult g (liftResult f m) = liftResult (fun value => g (f value)) m := by
+  change ((m >>= fun value => pure (f value)) >>= fun value => pure (g value)) =
+    (m >>= fun value => pure (g (f value)))
+  rw [bind_assoc]
+  simp only [pure_bind]
+
+@[simp] theorem liftResult_id {α : Type} (m : Result α) : liftResult id m = m := by
+  change (m >>= pure) = m
+  exact bind_pure m
+
+/-- Applies to every original result, including effects and divergence. -/
+theorem liftResult_leftInverse {α β : Type} (f : α → β) (g : β → α)
+    (inverse : ∀ value, g (f value) = value) (m : Result α) :
+    liftResult g (liftResult f m) = m := by
+  rw [liftResult_comp]
+  have same : (fun value => g (f value)) = id := funext inverse
+  rw [same]
+  exact liftResult_id m
+
+/-- Outer Aeneas Result, with every original effect retained by bind. -/
+def fromRequestResult {α : Type} (m : Result (RequestRustResult α)) :
+    Result (ParentRustResult α) := liftResult fromRequestRustResult m
+
+def toRequestResult {α : Type} (m : Result (ParentRustResult α)) :
+    Result (RequestRustResult α) := liftResult toRequestRustResult m
+
+theorem fromRequestResult_eq_map {α : Type} (m : Result (RequestRustResult α)) :
+    fromRequestResult m = fromRequestRustResult <$> m :=
+  liftResult_eq_map fromRequestRustResult m
+
+theorem toRequestResult_eq_map {α : Type} (m : Result (ParentRustResult α)) :
+    toRequestResult m = toRequestRustResult <$> m :=
+  liftResult_eq_map toRequestRustResult m
+
+theorem fromRequestResult_bind {α β : Type} (m : Result α)
+    (continuation : α → Result (RequestRustResult β)) :
+    fromRequestResult (m >>= continuation) =
+      (m >>= fun value => fromRequestResult (continuation value)) :=
+  liftResult_bind fromRequestRustResult m continuation
+
+theorem toRequestResult_bind {α β : Type} (m : Result α)
+    (continuation : α → Result (ParentRustResult β)) :
+    toRequestResult (m >>= continuation) =
+      (m >>= fun value => toRequestResult (continuation value)) :=
+  liftResult_bind toRequestRustResult m continuation
+
+@[simp] theorem toRequestResult_fromRequestResult {α : Type}
+    (m : Result (RequestRustResult α)) : toRequestResult (fromRequestResult m) = m :=
+  liftResult_leftInverse fromRequestRustResult toRequestRustResult
+    toRequestRustResult_fromRequestRustResult m
+
+@[simp] theorem fromRequestResult_toRequestResult {α : Type}
+    (m : Result (ParentRustResult α)) : fromRequestResult (toRequestResult m) = m :=
+  liftResult_leftInverse toRequestRustResult fromRequestRustResult
+    fromRequestRustResult_toRequestRustResult m
+
+/-- The actual four wrappers also return Self; its entire value is retained. -/
+def fromRequestStateResult {α σ : Type} (m : Result (RequestRustResult α × σ)) :
+    Result (ParentRustResult α × σ) :=
+  liftResult (fun value => (fromRequestRustResult value.1, value.2)) m
+
+def toRequestStateResult {α σ : Type} (m : Result (ParentRustResult α × σ)) :
+    Result (RequestRustResult α × σ) :=
+  liftResult (fun value => (toRequestRustResult value.1, value.2)) m
+
+@[simp] theorem toRequestStateResult_fromRequestStateResult {α σ : Type}
+    (m : Result (RequestRustResult α × σ)) :
+    toRequestStateResult (fromRequestStateResult m) = m := by
+  apply liftResult_leftInverse
+  intro value
+  cases value with
+  | mk reply state =>
+    exact congrArg (fun result : RequestRustResult α => (result, state))
+      (toRequestRustResult_fromRequestRustResult reply)
+
+@[simp] theorem fromRequestStateResult_toRequestStateResult {α σ : Type}
+    (m : Result (ParentRustResult α × σ)) :
+    fromRequestStateResult (toRequestStateResult m) = m := by
+  apply liftResult_leftInverse
+  intro value
+  cases value with
+  | mk reply state =>
+    exact congrArg (fun result : ParentRustResult α => (result, state))
+      (fromRequestRustResult_toRequestRustResult reply)
+
+end SandproofParentCommitRust.ErrorTransport

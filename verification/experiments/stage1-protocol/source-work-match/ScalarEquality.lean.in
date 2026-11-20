@@ -1,0 +1,181 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.Containers
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars
+
+theorem core_operation_id_eq (left right : sandbox_controller_core.ids.OperationId) :
+    sandbox_controller_core.ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandbox_controller_core.ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq]
+
+theorem core_sandbox_id_eq (left right : sandbox_controller_core.ids.SandboxId) :
+    sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq]
+
+theorem core_vm_id_eq (left right : sandbox_controller_core.ids.VmId) :
+    sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq]
+
+theorem core_net_slot_id_eq (left right : sandbox_controller_core.ids.NetSlotId) :
+    sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq]
+
+theorem core_fs_id_eq (left right : sandbox_controller_core.ids.FsId) :
+    sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq]
+
+theorem core_snapshot_id_eq (left right : sandbox_controller_core.ids.SnapshotId) :
+    sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq]
+
+theorem core_tenant_id_eq (left right : sandbox_controller_core.ids.TenantId) :
+    sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq]
+
+theorem core_policy_digest_eq (left right : sandbox_controller_core.ids.PolicyDigest) :
+    sandbox_controller_core.ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandbox_controller_core.ids.PolicyDigest.Insts.CoreCmpPartialEqPolicyDigest.eq]
+
+theorem core_manifest_digest_eq (left right : sandbox_controller_core.ids.ManifestDigest) :
+    sandbox_controller_core.ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandbox_controller_core.ids.ManifestDigest.Insts.CoreCmpPartialEqManifestDigest.eq]
+
+theorem core_phase_eq (left right : sandbox_controller_core.model.Phase) :
+    sandbox_controller_core.model.Phase.Insts.CoreCmpPartialEqPhase.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left <;> cases right
+  all_goals simp [sandbox_controller_core.model.Phase.Insts.CoreCmpPartialEqPhase.eq,
+    sandbox_controller_core.model.Phase.read_discriminant]
+
+theorem core_file_policy_ref_eq (left right : sandbox_controller_core.model.FilePolicyRef) :
+    sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  all_goals simp [sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq,
+    core_policy_digest_eq,
+    sandbox_controller_core.model.FilePolicyRef.mk.injEq]
+
+theorem core_snapshot_manifest_ref_eq (left right : sandbox_controller_core.model.SnapshotManifestRef) :
+    sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  all_goals simp [sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq,
+    core_manifest_digest_eq,
+    sandbox_controller_core.model.SnapshotManifestRef.mk.injEq]
+
+theorem core_protocol_eq (left right : sandbox_controller_core.model.Protocol) :
+    sandbox_controller_core.model.Protocol.Insts.CoreCmpPartialEqProtocol.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left <;> cases right
+  all_goals simp [sandbox_controller_core.model.Protocol.Insts.CoreCmpPartialEqProtocol.eq,
+    sandbox_controller_core.model.Protocol.read_discriminant]
+
+theorem core_failure_kind_eq (left right : sandbox_controller_core.model.FailureKind) :
+    sandbox_controller_core.model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left <;> cases right
+  all_goals simp [sandbox_controller_core.model.FailureKind.Insts.CoreCmpPartialEqFailureKind.eq,
+    sandbox_controller_core.model.FailureKind.read_discriminant]
+
+theorem core_operation_kind_eq (left right : sandbox_controller_core.model.OperationKind) :
+    sandbox_controller_core.model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left <;> cases right
+  all_goals simp [sandbox_controller_core.model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq,
+    sandbox_controller_core.model.OperationKind.read_discriminant]
+
+theorem wire_resource_id_eq (left right : sandproof_protocol.ResourceId) :
+    sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem wire_tenant_id_eq (left right : sandproof_protocol.TenantId) :
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem wire_sandbox_id_eq (left right : sandproof_protocol.SandboxId) :
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem wire_operation_id_eq (left right : sandproof_protocol.OperationId) :
+    sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem wire_logical_action_id_eq (left right : sandproof_protocol.LogicalActionId) :
+    sandproof_protocol.LogicalActionId.Insts.CoreCmpPartialEqLogicalActionId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandproof_protocol.LogicalActionId.Insts.CoreCmpPartialEqLogicalActionId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem wire_resource_kind_eq (left right : sandproof_protocol.ResourceKind) :
+    sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left <;> cases right
+  all_goals simp [sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq,
+    sandproof_protocol.ResourceKind.read_discriminant]
+
+theorem wire_content_digest_eq (left right : sandproof_protocol.lifecycle.digest.ContentDigest) :
+    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq,
+    RequestEquality.array_eq]
+
+end SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_operation_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_sandbox_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_vm_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_net_slot_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_fs_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_snapshot_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_tenant_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_policy_digest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_manifest_digest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_phase_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_file_policy_ref_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_snapshot_manifest_ref_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_protocol_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_failure_kind_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.core_operation_kind_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.wire_resource_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.wire_tenant_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.wire_sandbox_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.wire_operation_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.wire_logical_action_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.wire_resource_kind_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Scalars.wire_content_digest_eq

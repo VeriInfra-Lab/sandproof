@@ -1,0 +1,75 @@
+import SandboxModel.Lifecycle.Protocol.InboxLookupModel
+import SandboxModel.Lifecycle.Protocol.ReplayEquality
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxLookup
+
+abbrev Iter (T : Type) := core.iter.adapters.enumerate.Enumerate (core.slice.iter.Iter T)
+
+def cursor (values : Slice T) (index : Usize) : Iter T := ⟨⟨values, index.val⟩, index⟩
+
+theorem next_none (values : Slice T) (index : Usize) (bound : values.val.length ≤ index.val) :
+    core.iter.adapters.enumerate.IteratorEnumerate.next
+      (core.iter.traits.iterator.IteratorSliceIter T) (cursor values index) =
+      .ok (none, cursor values index) := by
+  simp [core.iter.adapters.enumerate.IteratorEnumerate.next,
+    core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, Nat.not_lt.mpr bound]
+
+theorem next_some (values : Slice T) (index next : Usize)
+    (bound : index.val < values.val.length) (added : next.val = index.val + 1) :
+    core.iter.adapters.enumerate.IteratorEnumerate.next
+      (core.iter.traits.iterator.IteratorSliceIter T) (cursor values index) =
+      .ok (some (index, values.val[index.val]), cursor values next) := by
+  have add : ((index + 1#usize) : Result Usize) = .ok next := by
+    obtain ⟨v, hv, post⟩ := (WP.spec_equiv_exists _ _).mp
+      (Usize.add_bv_spec (x := index) (y := 1#usize) (by scalar_tac))
+    have same : v = next := by scalar_tac
+    simpa [same] using hv
+  simp [core.iter.adapters.enumerate.IteratorEnumerate.next,
+    core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, bound, add, added]
+
+theorem inbox_body_none (values : Slice Session) (index : Usize)
+    (intent : AcceptedLifecycleIntent) (bound : values.val.length ≤ index.val) :
+    Inbox.find_loop.body intent (cursor values index) = .ok (.done (.Ok none)) := by
+  unfold Inbox.find_loop.body
+  rw [next_none values index bound]
+  simp
+
+theorem inbox_body_step (values : Slice Session) (index next : Usize)
+    (intent : AcceptedLifecycleIntent) (bound : index.val < values.val.length)
+    (added : next.val = index.val + 1)
+    (localResult : values.val[index.val].find_entry intent = .ok (.Ok none)) :
+    Inbox.find_loop.body intent (cursor values index) = .ok (.cont (cursor values next)) := by
+  unfold Inbox.find_loop.body
+  rw [next_some values index next bound added]
+  simp [localResult, core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem inbox_body_hit (values : Slice Session) (index next entry : Usize)
+    (intent : AcceptedLifecycleIntent) (bound : index.val < values.val.length)
+    (added : next.val = index.val + 1)
+    (localResult : values.val[index.val].find_entry intent = .ok (.Ok (some entry))) :
+    Inbox.find_loop.body intent (cursor values index) = .ok (.done (.Ok (some (index, entry)))) := by
+  unfold Inbox.find_loop.body
+  rw [next_some values index next bound added]
+  simp [localResult, core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem inbox_body_conflict (values : Slice Session) (index next : Usize)
+    (intent : AcceptedLifecycleIntent) (bound : index.val < values.val.length)
+    (added : next.val = index.val + 1)
+    (localResult : values.val[index.val].find_entry intent = .ok (.Err .Conflict)) :
+    Inbox.find_loop.body intent (cursor values index) = .ok (.done (.Err .Conflict)) := by
+  unfold Inbox.find_loop.body
+  rw [next_some values index next bound added]
+  simp [localResult, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+end SandboxModel.Stage1Protocol.InboxLookup
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.next_none
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.next_some
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.inbox_body_none
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.inbox_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.inbox_body_hit
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLookup.inbox_body_conflict

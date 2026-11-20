@@ -1,0 +1,88 @@
+import SandboxModel.Lifecycle.Protocol.LaneModel
+import SandboxModel.Lifecycle.Protocol.TerminalValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.RetentionLane.Values
+noncomputable section
+open scoped Classical
+
+abbrev context := EnvelopeValues.context
+
+def retired (request : AcceptedLifecycleIntent) : LifecycleRetentionLane :=
+  ⟨request.retention.slot, request.retention.window, successor request.retention.window,
+    some (Terminal.Values.observation request .Cleaned)⟩
+def fresh : LifecycleRetentionLane := ⟨0#u16, 0#u64, successor 0#u64, none⟩
+def normal := retired Terminal.Values.original
+def distinctWindow := retired Terminal.Values.retained
+def highest := retired Terminal.Values.highest
+def wrongSuccessor := { normal with current_window := some 3#u64 }
+def wrongStatus := { normal with
+  last_retired := some (Terminal.Values.observation Terminal.Values.original .Pending) }
+def wrongSlot := { normal with slot := 2#u16 }
+def wrongWindow := { normal with last_retired := some (Terminal.Values.observation
+  { Terminal.Values.original with retention := ⟨1#u16, 2#u64⟩ } .Cleaned) }
+def foreignContext : AuthenticatedCenterContext := { context with center := ⟨"deployment", "other"⟩ }
+def bytes (n : Nat) (bound : n ≤ 8193) : alloc.vec.Vec U8 :=
+  alloc.vec.Vec.from (List.replicate n 0#u8) (by simp; scalar_tac)
+def encode (n : Nat) (bound : n ≤ 8193) : Encoding := fun _ => .ok (.Ok (bytes n bound))
+def small : Encoding := encode 0 (by decide)
+
+theorem bytes_length (n : Nat) (bound : n ≤ 8193) : (bytes n bound).val.length = n := by
+  simp only [bytes, alloc.vec.Vec.from_val, List.length_replicate]
+
+theorem normal_prefixes :
+    Prefix normal context (Terminal.Values.observation Terminal.Values.original .Cleaned) ∧
+    Prefix distinctWindow context (Terminal.Values.observation Terminal.Values.retained .Cleaned) ∧
+    Prefix highest context (Terminal.Values.observation Terminal.Values.highest .Cleaned) := by
+  have env := Terminal.Values.normal_envelopes
+  have matching :=  Terminal.Values.normal_matches
+  have e1 := env Terminal.Values.original (by simp)
+  have e2 := env Terminal.Values.retained (by simp)
+  have e3 := env Terminal.Values.highest (by simp)
+  have m1 := matching Terminal.Values.original (by simp) TerminalStatus.Cleaned
+  have m2 := matching Terminal.Values.retained (by simp) TerminalStatus.Cleaned
+  have m3 := matching Terminal.Values.highest (by simp) TerminalStatus.Cleaned
+  dsimp only [normal, distinctWindow, highest, retired, Prefix, Terminal.Values.observation]
+  refine ⟨⟨?_, rfl, m1, e1, rfl, rfl⟩,
+    ⟨?_, rfl, m2, e2, rfl, rfl⟩, ⟨?_, rfl, m3, e3, rfl, rfl⟩⟩ <;> decide
+
+theorem model_normal_witnesses :
+    validateView small fresh context = .ok true ∧
+    validateView small normal context = .ok true ∧
+    validateView small distinctWindow context = .ok true ∧
+    validateView small highest context = .ok true := by
+  have p := normal_prefixes
+  simp only [normal, distinctWindow, highest, retired] at p ⊢
+  simp [validateView, fresh, small, encode, encodedWithin, bytes, p.1, p.2.1, p.2.2]
+
+theorem model_rejections :
+    validateView small wrongSuccessor context = .ok false ∧
+    validateView small wrongStatus context = .ok false ∧
+    validateView small normal foreignContext = .ok false ∧
+    validateView small wrongSlot context = .ok false ∧
+    validateView small wrongWindow context = .ok false := by
+  have next : successor 1#u64 = some 2#u64 := rfl
+  simp [validateView, wrongSuccessor, wrongStatus, wrongSlot, wrongWindow,
+    normal, retired, Prefix, foreignContext, Terminal.Values.observation,
+    Terminal.Values.original, EnvelopeValues.intent, EnvelopeValues.context, EnvelopeValues.center,
+    Validation.ValidEnvelope, next]
+
+theorem model_size_boundary :
+    validateView (encode 8192 (by decide)) normal context = .ok true ∧
+    validateView (encode 8193 (by decide)) normal context = .ok false := by
+  have p := normal_prefixes.1
+  simp only [normal, retired] at p ⊢
+  simp only [validateView, ne_eq, not_true_eq_false, ↓reduceIte, p, encodedWithin, encode, bind_tc_ok, bytes_length]
+  simp
+
+end
+end SandboxModel.Stage1Protocol.RetentionLane.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.Values.normal_prefixes
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.Values.model_normal_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.Values.model_rejections
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.Values.model_size_boundary
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.Values.bytes_length

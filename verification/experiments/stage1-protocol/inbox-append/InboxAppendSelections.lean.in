@@ -1,0 +1,35 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.InboxAppend.Values
+open InboxRecord InboxLookup InboxLookup.Witness
+
+theorem unload_selection : ExistingSelection (withSession runningSession) unload 0#usize := by
+  simp [ExistingSelection, NoKey, firstIndex, withSession, runningSession, session, createEntry,
+    pendingEntry, InboxLookup.Witness.singleton, inbox, unload, operationIntent, EnvelopeValues.intent,
+    InboxRecord.Values.createIntent]
+
+theorem resume_selection (capture target : U64) :
+    ExistingSelection (withSession afterUnload) (resume capture target) 0#usize := by
+  simp [ExistingSelection, NoKey, firstIndex, withSession, afterUnload, runningSession, session,
+    createEntry, pendingEntry, InboxLookup.Witness.singleton, inbox, unload, resume, operationIntent, EnvelopeValues.intent,
+    InboxRecord.Values.createIntent]
+
+theorem renewal_selections :
+    ExistingSelection (withSession runningSession) firstRenew 0#usize ∧
+    ExistingSelection (withSession waitingSdk) laterRenew 0#usize := by
+  simp [ExistingSelection, NoKey, firstIndex, withSession, waitingSdk, runningSession, session,
+    createEntry, pendingEntry, InboxLookup.Witness.singleton, inbox, firstRenew, laterRenew, operationIntent, EnvelopeValues.intent,
+    InboxRecord.Values.createIntent]
+
+theorem reserved_destroy_selection : ExistingSelection (withSession waitingSdk 3#u16) destroy 0#usize := by
+  simp [ExistingSelection, NoKey, firstIndex, withSession, waitingSdk, runningSession, session,
+    createEntry, pendingEntry, InboxLookup.Witness.singleton, inbox, firstRenew, destroy, operationIntent, EnvelopeValues.intent,
+    InboxRecord.Values.createIntent]
+
+end SandboxModel.Stage1Protocol.InboxAppend.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.Values.unload_selection
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.Values.resume_selection
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.Values.renewal_selections
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.Values.reserved_destroy_selection

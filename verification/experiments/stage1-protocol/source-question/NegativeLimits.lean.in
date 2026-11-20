@@ -1,0 +1,21 @@
+import SandboxModel.Lifecycle.Protocol.SourceQuestion.Cloning
+import SandboxModel.Lifecycle.Protocol.SourceQuestion.Examples
+open Aeneas Aeneas.Std SandproofSourceQuestionRust
+namespace SandboxModel.Stage1Protocol.SourceQuestion.Candidate.NegativeLimits
+open Values Cloning
+theorem bad_actual : run anchor limits digest = .ok (Build anchor
+    { limits with max_material_bytes := limits.max_disk_bytes } digest vmAction.resource) := by
+  simp [run, controller.lifecycle_inbox.source_work.snapshot.question_from_binding,
+    alloc.vec.Vec.index_usize, Build, anchor]
+theorem rejects_same_contract : ¬ FullQuestionContract run := by
+  intro claimed
+  have failed := claimed anchor limits digest
+  rw [bad_actual, normal_expected] at failed
+  have same : Build anchor { limits with max_material_bytes := limits.max_disk_bytes } digest vmAction.resource =
+      Build anchor limits digest vmAction.resource := by
+    simpa using failed
+  have wrong := congrArg (fun work : Work => work.requirement.limits.max_material_bytes.val) same
+  simp [Build, limits] at wrong
+end SandboxModel.Stage1Protocol.SourceQuestion.Candidate.NegativeLimits
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.NegativeLimits.bad_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.NegativeLimits.rejects_same_contract

@@ -16,6 +16,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import signal
 import subprocess
@@ -72,7 +73,7 @@ def no_resources(deployment):
         try:
             for index, native in enumerate(deployment.settings):
                 root = deployment.root / str(index)
-                if (root / 'jails/.claims').is_dir():
+                if (original_chroot(root) / '.claims').is_dir():
                     check_no_resources(root, deployment.namespaces[index], Path(native['firecracker']),
                                        native['uid_base'], native=native)
                 assert_terminal_rows(root / 'db/controller.db')

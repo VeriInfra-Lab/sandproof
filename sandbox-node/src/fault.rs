@@ -31,6 +31,9 @@ pub(crate) fn project(
                 }
                 RuntimeError::Json(error) => json_kind(error),
                 RuntimeError::InvalidConfiguration(_) => FaultKind::InvalidConfiguration,
+                RuntimeError::HelperGateBusy => {
+                    FaultKind::Application(ApplicationError::DataGateBusy)
+                }
                 RuntimeError::InvalidId => FaultKind::InvalidId,
                 RuntimeError::AlreadyClaimed => FaultKind::AlreadyClaimed,
                 RuntimeError::MissingRecord => FaultKind::MissingRecord,

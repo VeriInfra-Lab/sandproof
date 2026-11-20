@@ -1,0 +1,109 @@
+import SandproofUnloadFirstObservation.Types
+
+open Aeneas Aeneas.Std
+namespace SandproofUnloadFirstObservation
+
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  .ok value
+
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (item : core.cmp.PartialEq T T) : Option T → Option T → Result Bool
+  | none, none => .ok true
+  | some left, some right => item.eq left right
+  | _, _ => .ok false
+
+class ParentCalls [Representations] where
+  equalBootText : String → String → Result Bool
+  transactionConnection : rusqlite.transaction.Transaction → Result rusqlite.Connection
+  equalOperationResult : sandbox_controller_core.model.OperationResult → sandbox_controller_core.model.OperationResult → Result Bool
+  cloneNode : sandproof_protocol.internal.NodeIdentity → Result sandproof_protocol.internal.NodeIdentity
+  cloneResource : sandproof_protocol.ResourceRef → Result sandproof_protocol.ResourceRef
+  cloneCompleteIntent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent → Result sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+  continuedIdentity : capture.continuation.OriginalContinueWorkRequest → Result sandbox_controller_core.capture.continuation.OriginalContinueIdentity
+  continuedSource : capture.continuation.OriginalContinueWorkRequest → Result capture.source.SourceObservationRequirement
+  cloneLimits : capture.source.SourceObservationConfig → Result capture.source.SourceObservationConfig
+  cloneHostRegistration : capture.HostEpochRegistration → Result capture.HostEpochRegistration
+  equalHostObservation : capture.HostEpochObservation → capture.HostEpochObservation → Result Bool
+  cloneProcessIdentity : capture.SourceProcessIdentity → Result capture.SourceProcessIdentity
+  readCreateOptions : rusqlite.Connection → Str → sandbox_controller_core.ids.SandboxId → Result (core.result.Result host_contract.CreateOptions host_contract.AdmissionError)
+  readOriginalSource {E : Type} (host_contractHostEvidenceInst : host_contract.HostEvidence E) (serde_coredeDeserializeOwnedInst : serde_core.de.DeserializeOwned E) : rusqlite.transaction.Transaction → Str → sandbox_controller_core.model.World → sandbox_controller_core.ids.SandboxId → Result (core.result.Result capture.SourceProcessIdentity JournalError)
+  readCredential : rusqlite.Connection → sandbox_controller_core.model.World → Str → sandbox_controller_core.ids.SandboxId → Bool → Result (core.result.Result (Option (Std.U64 × (Array Std.U8 32#usize))) JournalError)
+  inboxContext : controller.lifecycle_inbox.model.LifecycleInboxConfig → Result sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
+  inboxFindCompleteRequest : controller.lifecycle_inbox.model.Inbox → sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent → Result (core.result.Result (Option (Std.Usize × Std.Usize)) JournalError)
+  inboxState : controller.lifecycle_inbox.model.Inbox → Std.Usize → Std.Usize → Result controller.lifecycle_inbox.model.LifecycleWorkState
+  sessionExecutionOrigin : controller.lifecycle_inbox.model.Session → Result (Option controller.lifecycle_inbox.model.Entry)
+  readOriginalStartupRecords {E : Type} (host_contractHostEvidenceInst : host_contract.HostEvidence E) (serde_coredeDeserializeOwnedInst : serde_core.de.DeserializeOwned E) : rusqlite.transaction.Transaction → Str → sandbox_controller_core.model.World → controller.internal_inbox.model.InternalLocalBinding → Result (core.result.Result ((alloc.vec.Vec (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId)) × (alloc.vec.Vec (alloc.vec.Vec Std.U8))) JournalError)
+  readBaseSnapshot : rusqlite.transaction.Transaction → Str → sandbox_controller_core.model.World → sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent → sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext → Result (core.result.Result controller.lifecycle_inbox.readiness.snapshot.ReadyCandidate JournalError)
+  hasCompletedOriginalExecution : controller.lifecycle_inbox.readiness.NativeCreateSnapshot → controller.internal_inbox.model.InternalLocalBinding → Result Bool
+  readContinuedRecords {E : Type} (host_contractHostEvidenceInst : host_contract.HostEvidence E) (serde_coredeDeserializeOwnedInst : serde_core.de.DeserializeOwned E) : rusqlite.Connection → sandbox_controller_core.model.World → Str → controller.internal_inbox.model.InternalLocalBinding → controller.lifecycle_inbox.readiness.NativeCreateSnapshot → Result (core.result.Result (Option (capture.continuation.OriginalContinueWorkRequest × (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) × (alloc.vec.Vec Std.U8))) JournalError)
+  checkLiveNative : controller.lifecycle_inbox.readiness.NativeCreateSnapshot → controller.internal_inbox.model.InternalLocalBinding → Std.U64 → Std.U64 → Std.I64 → Result Bool
+  journalFromJsonError : serde_json.error.Error → Result JournalError
+  digestCompleteBytes : Slice Std.U8 → Result sandproof_protocol.lifecycle.digest.ContentDigest
+  encodeCreateOptions : host_contract.CreateOptions → Result (core.result.Result (alloc.vec.Vec Std.U8) serde_json.error.Error)
+  encodeCompleteSourceAnchor : controller.lifecycle_inbox.source_work.SourceAnchor → Result (core.result.Result (alloc.vec.Vec Std.U8) serde_json.error.Error)
+  originalReceiptDigests : Slice (alloc.vec.Vec Std.U8) → Result (alloc.vec.Vec sandproof_protocol.lifecycle.digest.ContentDigest)
+  originalActionIdentities : Slice (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) → Result (alloc.vec.Vec sandproof_protocol.ActionIdentity)
+
+variable [Representations] [calls : ParentCalls]
+
+abbrev alloc.string.String.Insts.CoreCmpPartialEqString.eq : String → String → Result Bool := calls.equalBootText
+
+abbrev rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref : rusqlite.transaction.Transaction → Result rusqlite.Connection := calls.transactionConnection
+
+abbrev sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult.eq : sandbox_controller_core.model.OperationResult → sandbox_controller_core.model.OperationResult → Result Bool := calls.equalOperationResult
+
+abbrev sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone : sandproof_protocol.internal.NodeIdentity → Result sandproof_protocol.internal.NodeIdentity := calls.cloneNode
+
+abbrev sandproof_protocol.ResourceRef.Insts.CoreCloneClone.clone : sandproof_protocol.ResourceRef → Result sandproof_protocol.ResourceRef := calls.cloneResource
+
+abbrev sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent → Result sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent := calls.cloneCompleteIntent
+
+abbrev capture.continuation.OriginalContinueWorkRequest.identity : capture.continuation.OriginalContinueWorkRequest → Result sandbox_controller_core.capture.continuation.OriginalContinueIdentity := calls.continuedIdentity
+
+abbrev capture.continuation.OriginalContinueWorkRequest.source : capture.continuation.OriginalContinueWorkRequest → Result capture.source.SourceObservationRequirement := calls.continuedSource
+
+abbrev capture.source.SourceObservationConfig.Insts.CoreCloneClone.clone : capture.source.SourceObservationConfig → Result capture.source.SourceObservationConfig := calls.cloneLimits
+
+abbrev capture.HostEpochRegistration.Insts.CoreCloneClone.clone : capture.HostEpochRegistration → Result capture.HostEpochRegistration := calls.cloneHostRegistration
+
+abbrev capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation.eq : capture.HostEpochObservation → capture.HostEpochObservation → Result Bool := calls.equalHostObservation
+
+abbrev capture.SourceProcessIdentity.Insts.CoreCloneClone.clone : capture.SourceProcessIdentity → Result capture.SourceProcessIdentity := calls.cloneProcessIdentity
+
+abbrev controller.admission.read_create_options : rusqlite.Connection → Str → sandbox_controller_core.ids.SandboxId → Result (core.result.Result host_contract.CreateOptions host_contract.AdmissionError) := calls.readCreateOptions
+
+abbrev controller.capture.original_source {E : Type} (host_contractHostEvidenceInst : host_contract.HostEvidence E) (serde_coredeDeserializeOwnedInst : serde_core.de.DeserializeOwned E) : rusqlite.transaction.Transaction → Str → sandbox_controller_core.model.World → sandbox_controller_core.ids.SandboxId → Result (core.result.Result capture.SourceProcessIdentity JournalError) := calls.readOriginalSource host_contractHostEvidenceInst serde_coredeDeserializeOwnedInst
+
+abbrev controller.data_credentials.snapshot : rusqlite.Connection → sandbox_controller_core.model.World → Str → sandbox_controller_core.ids.SandboxId → Bool → Result (core.result.Result (Option (Std.U64 × (Array Std.U8 32#usize))) JournalError) := calls.readCredential
+
+abbrev controller.lifecycle_inbox.model.LifecycleInboxConfig.context : controller.lifecycle_inbox.model.LifecycleInboxConfig → Result sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext := calls.inboxContext
+
+abbrev controller.lifecycle_inbox.model.Inbox.find : controller.lifecycle_inbox.model.Inbox → sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent → Result (core.result.Result (Option (Std.Usize × Std.Usize)) JournalError) := calls.inboxFindCompleteRequest
+
+abbrev controller.lifecycle_inbox.model.Inbox.state : controller.lifecycle_inbox.model.Inbox → Std.Usize → Std.Usize → Result controller.lifecycle_inbox.model.LifecycleWorkState := calls.inboxState
+
+abbrev controller.lifecycle_inbox.model.Session.current_execution_origin : controller.lifecycle_inbox.model.Session → Result (Option controller.lifecycle_inbox.model.Entry) := calls.sessionExecutionOrigin
+
+abbrev controller.lifecycle_inbox.readiness.snapshot.startup_records {E : Type} (host_contractHostEvidenceInst : host_contract.HostEvidence E) (serde_coredeDeserializeOwnedInst : serde_core.de.DeserializeOwned E) : rusqlite.transaction.Transaction → Str → sandbox_controller_core.model.World → controller.internal_inbox.model.InternalLocalBinding → Result (core.result.Result ((alloc.vec.Vec (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId)) × (alloc.vec.Vec (alloc.vec.Vec Std.U8))) JournalError) := calls.readOriginalStartupRecords host_contractHostEvidenceInst serde_coredeDeserializeOwnedInst
+
+abbrev controller.lifecycle_inbox.readiness.snapshot.base_snapshot : rusqlite.transaction.Transaction → Str → sandbox_controller_core.model.World → sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent → sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext → Result (core.result.Result controller.lifecycle_inbox.readiness.snapshot.ReadyCandidate JournalError) := calls.readBaseSnapshot
+
+abbrev controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution : controller.lifecycle_inbox.readiness.NativeCreateSnapshot → controller.internal_inbox.model.InternalLocalBinding → Result Bool := calls.hasCompletedOriginalExecution
+
+abbrev controller.lifecycle_inbox.source_work.full.continuation.ready_records {E : Type} (host_contractHostEvidenceInst : host_contract.HostEvidence E) (serde_coredeDeserializeOwnedInst : serde_core.de.DeserializeOwned E) : rusqlite.Connection → sandbox_controller_core.model.World → Str → controller.internal_inbox.model.InternalLocalBinding → controller.lifecycle_inbox.readiness.NativeCreateSnapshot → Result (core.result.Result (Option (capture.continuation.OriginalContinueWorkRequest × (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) × (alloc.vec.Vec Std.U8))) JournalError) := calls.readContinuedRecords host_contractHostEvidenceInst serde_coredeDeserializeOwnedInst
+
+abbrev controller.lifecycle_inbox.source_work.snapshot.live_native : controller.lifecycle_inbox.readiness.NativeCreateSnapshot → controller.internal_inbox.model.InternalLocalBinding → Std.U64 → Std.U64 → Std.I64 → Result Bool := calls.checkLiveNative
+
+abbrev JournalError.Insts.CoreConvertFromError.from : serde_json.error.Error → Result JournalError := calls.journalFromJsonError
+
+abbrev controller.lifecycle_inbox.source_work.digest : Slice Std.U8 → Result sandproof_protocol.lifecycle.digest.ContentDigest := calls.digestCompleteBytes
+
+abbrev controller.lifecycle_inbox.source_work.snapshot.encode_source_options : host_contract.CreateOptions → Result (core.result.Result (alloc.vec.Vec Std.U8) serde_json.error.Error) := calls.encodeCreateOptions
+
+abbrev controller.lifecycle_inbox.source_work.snapshot.encode_source_anchor : controller.lifecycle_inbox.source_work.SourceAnchor → Result (core.result.Result (alloc.vec.Vec Std.U8) serde_json.error.Error) := calls.encodeCompleteSourceAnchor
+
+abbrev controller.lifecycle_inbox.source_work.snapshot.original_receipt_digests : Slice (alloc.vec.Vec Std.U8) → Result (alloc.vec.Vec sandproof_protocol.lifecycle.digest.ContentDigest) := calls.originalReceiptDigests
+
+abbrev controller.lifecycle_inbox.source_work.snapshot.original_action_identities : Slice (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) → Result (alloc.vec.Vec sandproof_protocol.ActionIdentity) := calls.originalActionIdentities
+
+end SandproofUnloadFirstObservation

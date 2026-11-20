@@ -1,0 +1,119 @@
+import SandboxModel.Lifecycle.Protocol.InboxRetiredSupport
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.RetiredIdentity
+open scoped Classical
+noncomputable section
+
+theorem entry_body (values : Slice Entry) (index : Nat) (key : OperationKey) :
+    Session.contains_entry_key_loop.body key (cursor values index) = .ok
+      (if h : index < values.val.length then
+        if entryHit key values.val[index] then .done true else .cont (cursor values (index+1))
+       else .done false) := by
+  unfold Session.contains_entry_key_loop.body
+  by_cases h : index < values.val.length
+  · rw [next_some values index h]
+    by_cases same : values.val[index].intent.request.binding.key = key <;>
+      simp [h, Replay.key_eq, entryHit, same]
+  · rw [next_none values index (by omega)]
+    simp [h]
+
+theorem entry_loop (values : Slice Entry) (index : Nat) (key : OperationKey) :
+    Session.contains_entry_key_loop (cursor values index) key =
+      .ok ((values.val.drop index).any (entryHit key)) := by
+  unfold Session.contains_entry_key_loop
+  exact any_loop values (entryHit key) _ (fun i => entry_body values i key) index
+
+theorem entries_refines (binding : BorrowedVecBinding Entry) (session : Session) (key : OperationKey) :
+    session.contains_entry_key key = .ok (session.entries.val.any (entryHit key)) := by
+  unfold Session.contains_entry_key
+  rw [binding]
+  simp only [core.slice.Slice.iter, bind_tc_ok]
+  change Session.contains_entry_key_loop (cursor (alloc.vec.Vec.deref session.entries) 0) key = _
+  rw [entry_loop]
+  simp [alloc.vec.Vec.deref]
+
+theorem lane_body (values : Slice LifecycleRetentionLane) (index : Nat) (id : SessionId) (key : OperationKey) :
+    Inbox.prior_retired_identity_conflict_loop.body id key (cursor values index) = .ok
+      (if h : index < values.val.length then
+        if laneHit id key values.val[index] then .done true else .cont (cursor values (index+1))
+       else .done false) := by
+  unfold Inbox.prior_retired_identity_conflict_loop.body
+  by_cases h : index < values.val.length
+  · rw [next_some values index h]
+    cases last : values.val[index].last_retired with
+    | none => simp [last, h, laneHit]
+    | some retired =>
+      by_cases sameId : retired.request.request.binding.session = id <;>
+        by_cases sameKey : retired.request.request.binding.key = key <;>
+        simp [last, h, laneHit, session_eq, Replay.key_eq, sameId, sameKey]
+  · rw [next_none values index (by omega)]
+    simp [h]
+
+theorem lane_loop (values : Slice LifecycleRetentionLane) (index : Nat) (id : SessionId) (key : OperationKey) :
+    Inbox.prior_retired_identity_conflict_loop (cursor values index) id key =
+      .ok ((values.val.drop index).any (laneHit id key)) := by
+  unfold Inbox.prior_retired_identity_conflict_loop
+  exact any_loop values (laneHit id key) _ (fun i => lane_body values i id key) index
+
+theorem session_body (binding : BorrowedVecBinding Entry) (values : Slice Session)
+    (index : Nat) (id : SessionId) (key : OperationKey) :
+    Inbox.current_identity_conflict_loop.body id key (cursor values index) = .ok
+      (if h : index < values.val.length then
+        if sessionHit id key values.val[index] then .done true else .cont (cursor values (index+1))
+       else .done false) := by
+  unfold Inbox.current_identity_conflict_loop.body
+  by_cases h : index < values.val.length
+  · rw [next_some values index h]
+    simp only [bind_tc_ok]
+    by_cases sameId : values.val[index].id = id <;>
+      cases sameKey : values.val[index].entries.val.any (entryHit key) <;>
+      simp [h, sessionHit, session_eq, entries_refines binding, sameId, sameKey,
+        -List.any_eq_true, -List.any_eq_false]
+  · rw [next_none values index (by omega)]
+    simp [h]
+
+theorem session_loop (binding : BorrowedVecBinding Entry) (values : Slice Session)
+    (index : Nat) (id : SessionId) (key : OperationKey) :
+    Inbox.current_identity_conflict_loop (cursor values index) id key =
+      .ok ((values.val.drop index).any (sessionHit id key)) := by
+  unfold Inbox.current_identity_conflict_loop
+  exact any_loop values (sessionHit id key) _ (fun i => session_body binding values i id key) index
+
+theorem current_refines (entries : BorrowedVecBinding Entry) (sessions : BorrowedVecBinding Session)
+    (inbox : Inbox) (id : SessionId) (key : OperationKey) :
+    inbox.current_identity_conflict id key = .ok (inbox.sessions.val.any (sessionHit id key)) := by
+  unfold Inbox.current_identity_conflict
+  rw [sessions]
+  simp only [core.slice.Slice.iter, bind_tc_ok]
+  change Inbox.current_identity_conflict_loop (cursor (alloc.vec.Vec.deref inbox.sessions) 0) id key = _
+  rw [session_loop entries]
+  simp [alloc.vec.Vec.deref]
+
+theorem prior_refines (inbox : Inbox) (index : Usize) (id : SessionId) (key : OperationKey)
+    (bound : index.val ≤ inbox.lanes.val.length) :
+    inbox.prior_retired_identity_conflict index id key =
+      .ok ((inbox.lanes.val.take index.val).any (laneHit id key)) := by
+  obtain ⟨part, extracted, partVal, partLen⟩ := (WP.spec_equiv_exists _ _).mp
+    (alloc.vec.Vec.index_RangeTo_spec inbox.lanes ⟨index⟩ (by simpa using bound))
+  unfold Inbox.prior_retired_identity_conflict
+  rw [extracted]
+  simp only [bind_tc_ok, SharedSlice.Insts.CoreIterTraitsCollectIntoIteratorSharedIter.into_iter]
+  change Inbox.prior_retired_identity_conflict_loop (cursor part 0) id key = _
+  rw [lane_loop]
+  simp [partVal, List.slice]
+
+end
+end SandboxModel.Stage1Protocol.RetiredIdentity
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.entry_body
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.entry_loop
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.entries_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.lane_body
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.lane_loop
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.session_body
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.session_loop
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.current_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.RetiredIdentity.prior_refines

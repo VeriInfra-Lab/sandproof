@@ -1,16 +1,28 @@
 //! Current lifecycle admission and authorized observations use one authority.
 //! Host I/O never holds the center's shared decision lock.
+use crate::application::diagnostics::{
+    self, Failure as DiagnosticFailure, Stage as DiagnosticStage,
+};
 use crate::application::tenant_id;
+use crate::lifecycle_dispatch::CurrentObservationError;
 use crate::{
-    CenterApplication, CenterPort, HostPort, TemplateProvider, business::SharedBusinessAuthority,
+    CenterApplication, CenterPort, HostPort, TemplateProvider,
+    business::{LifecycleQuery, SharedBusinessAuthority},
 };
 use sandproof_api::{PortError, lifecycle::LifecyclePort};
 use sandproof_center_core::SessionPhase;
+use sandproof_protocol::TenantId;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, CurrentCreateReadiness, LifecycleOperation, PublicAcceptance,
-    PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase, PublicSessionView,
-    PublicUnloadRequest, SessionId,
+    PublicCreateRequest, PublicDestroyRequest, PublicResumeRequest, PublicSessionPhase,
+    PublicSessionView, PublicUnloadRequest, SessionId,
 };
+use std::time::Instant;
+
+fn query_lock_error(stage: DiagnosticStage) -> PortError {
+    diagnostics::emit(stage, DiagnosticFailure::Port(PortError::OutcomeUnknown));
+    PortError::OutcomeUnknown
+}
 
 impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority, H, T> {
     /// # Errors
@@ -76,17 +88,96 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         {
             return Ok(acceptance(intent));
         }
-        let (current, phase) = self.current_lifecycle_intent(&owner, session)?;
-        if !matches!(phase, SessionPhase::Creating | SessionPhase::Running) {
-            return Err(PortError::Conflict);
+        let deadline = self.reply_deadline()?;
+        loop {
+            match self.accept_unload_from_current_observation(&owner, session, request, deadline) {
+                Ok(intent) => return Ok(acceptance(intent)),
+                Err(cause) => {
+                    let pending = matches!(cause, CurrentObservationError::Pending);
+                    let observation_expired = matches!(cause, CurrentObservationError::Deadline);
+                    let error = cause.into_port();
+                    // A duplicate may have committed while this observation was
+                    // detached. Unknown authority never becomes a cached success.
+                    let replay = self
+                        .authority
+                        .lock()
+                        .map_err(|_| PortError::OutcomeUnknown)?
+                        .replay_public_unload(&owner, session, request)?;
+                    if let Some(intent) = replay {
+                        return Ok(acceptance(intent));
+                    }
+                    // No acceptance was attempted by this readonly observation.
+                    // Only the successful exact replay above establishes absence;
+                    // unknown shared storage or host results remain unchanged.
+                    let error = if observation_expired {
+                        PortError::Busy
+                    } else {
+                        error
+                    };
+                    let left = deadline.saturating_duration_since(Instant::now());
+                    if !pending || left.is_zero() {
+                        diagnostics::emit(
+                            DiagnosticStage::LifecycleUnloadReplayAbsent,
+                            DiagnosticFailure::Port(error),
+                        );
+                        return Err(error);
+                    }
+                    // Only an authenticated Pending view is waited on. No new
+                    // key, no repeated unknown write, and no refreshed deadline.
+                    std::thread::sleep(self.config.poll_interval.min(left));
+                    if Instant::now() >= deadline {
+                        return Err(error);
+                    }
+                }
+            }
         }
-        let observation = self.current_create_observation(&current)?;
+    }
+
+    fn accept_unload_from_current_observation(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+        request: &PublicUnloadRequest,
+        deadline: Instant,
+    ) -> Result<AcceptedLifecycleIntent, CurrentObservationError> {
+        let (current, phase) = self.current_lifecycle_intent(owner, session)?;
+        if !matches!(phase, SessionPhase::Creating | SessionPhase::Running) {
+            return Err(PortError::Conflict.into());
+        }
+        if self.is_resumed_execution(&current)? {
+            let observation = self.current_resume_observation_before(&current, deadline)?;
+            let intent = self
+                .authority
+                .lock()
+                .map_err(|_| PortError::OutcomeUnknown)?
+                .accept_public_resumed_unload(owner, session, request, &observation, self.now()?)?;
+            return Ok(intent);
+        }
+        let observation = self.current_create_observation_before(&current, deadline)?;
         let now = self.now()?;
         let intent = self
             .authority
             .lock()
             .map_err(|_| PortError::OutcomeUnknown)?
-            .accept_public_unload(&owner, session, request, &observation, now)?;
+            .accept_public_unload(owner, session, request, &observation, now)?;
+        Ok(intent)
+    }
+
+    /// # Errors
+    /// Replay uses the complete original input before current phase or time.
+    /// This accepts durable work only, not a completed resumed execution.
+    pub fn resume_lifecycle(
+        &self,
+        owner: &str,
+        session: &SessionId,
+        request: &PublicResumeRequest,
+    ) -> Result<PublicAcceptance, PortError> {
+        let owner = tenant_id(owner)?;
+        let intent = self
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .accept_public_resume(&owner, session, request, || self.now())?;
         Ok(acceptance(intent))
     }
 
@@ -97,12 +188,52 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         owner: &str,
         session: &SessionId,
     ) -> Result<PublicSessionView, PortError> {
+        let _query = sandproof_center_store::DiagnosticScope::enter(
+            sandproof_center_store::DiagnosticFlow::LifecycleQuery,
+            sandproof_center_store::DiagnosticStep::Lookup,
+        );
         let owner = tenant_id(owner)?;
-        let (intent, phase) = self
+        let prepared = self
             .authority
             .lock()
-            .map_err(|_| PortError::OutcomeUnknown)?
-            .public_lifecycle_intent(&owner, session)?;
+            .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryLookup))?
+            .begin_lifecycle_query(&owner, session, || self.now())
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleQueryLookup,
+                    DiagnosticFailure::Port(*error),
+                );
+            })?;
+        match prepared {
+            LifecycleQuery::Ready(view) => Ok(view),
+            LifecycleQuery::Current { intent, phase } => {
+                self.query_lifecycle_projection(&owner, session, &intent, phase)
+            }
+        }
+    }
+
+    fn query_lifecycle_projection(
+        &self,
+        owner: &sandproof_protocol::TenantId,
+        session: &SessionId,
+        intent: &AcceptedLifecycleIntent,
+        phase: SessionPhase,
+    ) -> Result<PublicSessionView, PortError> {
+        let _projection = sandproof_center_store::DiagnosticScope::step(
+            sandproof_center_store::DiagnosticStep::Projection,
+        );
+        if phase == SessionPhase::Running
+            && matches!(intent.request.operation, LifecycleOperation::Unload { .. })
+        {
+            return self.query_continued(owner, session, intent);
+        }
+        if matches!(
+            phase,
+            SessionPhase::Resuming | SessionPhase::Running | SessionPhase::Renewing
+        ) && self.is_resumed_execution(intent)?
+        {
+            return self.query_resumed(owner, session, intent);
+        }
         if matches!(
             phase,
             SessionPhase::Creating | SessionPhase::Running | SessionPhase::Renewing
@@ -113,13 +244,14 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
             // A local Running can already be committed while the center still
             // retains pending Create. Observe that same operation; never issue
             // another create or infer current readiness from saved history.
-            let observation = match self.current_create_observation_attempt(&intent) {
+            let observation = match self.current_create_observation_attempt(intent) {
                 Ok(observation) => Some(observation),
                 Err(crate::lifecycle_dispatch::CurrentObservationError::Shared(error)) => {
                     return Err(error);
                 }
                 Err(
                     crate::lifecycle_dispatch::CurrentObservationError::Host(_)
+                    | crate::lifecycle_dispatch::CurrentObservationError::Pending
                     | crate::lifecycle_dispatch::CurrentObservationError::Superseded
                     | crate::lifecycle_dispatch::CurrentObservationError::Deadline,
                 ) => None,
@@ -132,13 +264,20 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     let mut authority = self
                         .authority
                         .lock()
-                        .map_err(|_| PortError::OutcomeUnknown)?;
+                        .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryResult))?;
                     crate::AuthorityPort::accept_lifecycle_create_refusal(
                         &mut *authority,
                         &observation,
                     )
                     .map_err(crate::application::authority_error)?;
-                    return authority.query_public_lifecycle(&owner, session);
+                    return authority
+                        .query_public_lifecycle(owner, session)
+                        .inspect_err(|error| {
+                            diagnostics::emit(
+                                DiagnosticStage::LifecycleQueryResult,
+                                DiagnosticFailure::Port(*error),
+                            );
+                        });
                 }
                 let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
                     return Err(PortError::Busy);
@@ -146,7 +285,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 let mut authority = self
                     .authority
                     .lock()
-                    .map_err(|_| PortError::OutcomeUnknown)?;
+                    .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryResult))?;
                 crate::AuthorityPort::accept_lifecycle_create_observation(
                     &mut *authority,
                     &observation,
@@ -155,8 +294,8 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 // Commit/reaffirm first, then inspect a fresh authority under
                 // the same short lock. A newer unload/termination cannot be
                 // overwritten by the result of the detached observation.
-                let (current, phase) = authority.public_lifecycle_intent(&owner, session)?;
-                if current != intent
+                let (current, phase) = authority.public_lifecycle_intent(owner, session)?;
+                if current != *intent
                     || phase != SessionPhase::Running
                     || self.now()? >= facts.end_at_ms
                 {
@@ -167,6 +306,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                     operation: current.request.binding.key.clone(),
                     current_version: current.accepted_version,
                     phase: PublicSessionPhase::Running,
+                    unload_outcome: None,
                     create_refusal: None,
                 });
             }
@@ -175,8 +315,14 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
         // the current intent. The authority refuses historical-only Running.
         self.authority
             .lock()
-            .map_err(|_| PortError::OutcomeUnknown)?
-            .query_public_lifecycle(&owner, session)
+            .map_err(|_| query_lock_error(DiagnosticStage::LifecycleQueryResult))?
+            .query_public_lifecycle(owner, session)
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleQueryResult,
+                    DiagnosticFailure::Port(*error),
+                );
+            })
     }
 }
 
@@ -209,8 +355,17 @@ impl<H: HostPort, T: TemplateProvider> LifecyclePort for CenterPort<SharedBusine
         session: SessionId,
         request: PublicUnloadRequest,
     ) -> Result<PublicAcceptance, PortError> {
+        use sandproof_center_store::{DiagnosticFlow, DiagnosticScope, DiagnosticStep};
+        let _scope =
+            DiagnosticScope::enter(DiagnosticFlow::LifecycleUnload, DiagnosticStep::Lookup);
         self.application()
             .unload_lifecycle(owner, &session, &request)
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::LifecycleUnloadResult,
+                    DiagnosticFailure::Port(*error),
+                );
+            })
     }
     fn query_lifecycle(
         &self,
@@ -218,6 +373,15 @@ impl<H: HostPort, T: TemplateProvider> LifecyclePort for CenterPort<SharedBusine
         session: SessionId,
     ) -> Result<PublicSessionView, PortError> {
         self.application().query_lifecycle(owner, &session)
+    }
+    fn resume_lifecycle(
+        &self,
+        owner: &str,
+        session: SessionId,
+        request: PublicResumeRequest,
+    ) -> Result<PublicAcceptance, PortError> {
+        self.application()
+            .resume_lifecycle(owner, &session, &request)
     }
 }
 

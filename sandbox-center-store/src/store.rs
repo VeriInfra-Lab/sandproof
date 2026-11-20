@@ -7,7 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-mod diagnostics;
+pub(crate) mod diagnostics;
 use diagnostics::{Failure, Phase};
 
 const MAX_BLOCK_BYTES: usize = 16 * 1024 * 1024;

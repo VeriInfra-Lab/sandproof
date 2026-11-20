@@ -1,0 +1,10 @@
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+pub(crate) fn proof_current_accepted_parser(
+    bytes: &[u8],
+    context: &sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+) -> Result<AcceptedLifecycleIntent, crate::lifecycle::AcceptedBodyError> {
+    crate::lifecycle::decode_accepted_with(bytes, context, |input| {
+        serde_json::from_slice::<AcceptedLifecycleIntent>(input)
+    })
+}

@@ -1,0 +1,48 @@
+--- a/docs/formal/03-protocol-inbox.md
++++ b/docs/formal/03-protocol-inbox.md
+@@ -195,3 +195,9 @@
+ 公共 SQL 定义、完整生成错误／值载体和原字节数学继续复用；数组不得套用五元组提前
+ 计数条件。该值／错误切片不闭合标准实例的对象／guard、同一事务、物理行效果、提交
+ 未知、重启或字节／认证链；采用后的当前生成体、普通与正式共享验收仍分别取得。
++
++[来源操作绑定](../../verification/experiments/stage1-protocol/source-origin/README.md)
++从给定完整 World/Inbox/Anchor 和 session 开始，校验实际全文来源查找、local operation、
++plan/record、类别、generation、epoch/continued identity、VM 及 restore_from 形状。
++它不自行计算请求的 session，不添加 VM 必须为 Some 等条件。给定值的完整对应不代替
++历史来源策略、外层 validate_record、真实编码/SQL/同事务、授权或物理事实的连接。
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -969,3 +969,13 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++### V3 来源操作绑定的实际使用点候选
++
++`source-origin` 复用原 A6 普通 String/Option/Vec、字典比较和 bool::then_some，
++保留回调的效果/失败或不返回。完整 native OperationKey 的 sandbox/operation 比较由
++实际生成体证明，再通过仅保留完整 entries 的表示连接复用原 LoopCallbacks 的
++共享查询定理，不另造表模型或假设键唯一。原通用迭代和字节/数组/Vec 引理正文
++在当前独立视图重绑定；这不更换模型/工具或信任整个标准库。
++Actual World getter 和 historical_identity 透明保留；同一持久状态、具体历史策略、
++外层 caller、标准 JSON/SHA/SQL 和认证/物理来源仍逐项连接，不以 whole-handler 正确为前提。
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2214,3 +2214,17 @@
+ 此前完整入口检出的两次失败均保留：一次为字节LLBC嵌入的整份验证文件测试文本过期，按完整字段重新生成后增加提前源码身份检查；另一次为两个旧检查器私有夹具漏复制新公共依赖，19项在原断言前缺文件。修复只补13行夹具依赖和六份摘要，19个测试方法AST、全部检查器及原输入集合未变，最终完整套件中的19项均通过。没有放宽断言、安全检查或AST准入，也未改变生产Rust、Charon/Aeneas、工具版本或清理`.lake`。
+
+ 原opt-in/特权忽略项未计为已运行；完整VM、部署TLS/网络、授权/存储/宿主效果、真实排空及系统完成性未由本批验收。本项提供代表性完整请求的有条件接入，不关闭T1/T2的其它使用点、T0–T8或整个V0，T9继续排除。
++
++### V3 来源操作绑定候选
++
++固定 `9c50da7c` 的 snapshot.rs 将原 epoch match 移到唯一 bool helper，
++在原调用位置复用；其它函数和原查询/首拒绝顺序保留。source-origin 的完整值合同
++连接任意 decoded World/Inbox/Anchor/session 的全文来源查找、原 operation、
++plan/record、类别、generation、epoch/continued identity、VM/restore_from，
++保留实际查询的结果/效果。正确及三份实际 Rust 字段遗漏版共用同一固定 Spec；
++正常接受、存在性和同合同反例的精确输入及原始证据在 #635 交付记录中登记。
++原159函数视图的生成类型失败保留，新160函数视图经工具抽取而非手改；
++其它 snapshot.rs 冻结保持原版本，公共维护方核对语义、精确闭包和验收后协调采用。
++ning普通/正式原生和共享接线另列；本段候选不单独签署验收。
++Actual history 策略、外层 validate_record、编码/SQL/事务未知/重启、
++V1/V2/V4/V5/V6/V7 邻接及完整18要求/49义务尚未闭合。

@@ -2,7 +2,7 @@
 //! Each instance has a private directory, endpoint, writer lock and AOF.
 //! Missing approved material fails; these helpers never download or skip.
 use redis::{Connection, ConnectionAddr, IntoConnectionInfo, RedisConnectionInfo};
-use sandproof_center_store::{REDIS_VERSION, RedisEndpoint, StoreConfig, WriterLease};
+use sandproof_center_store::{RedisEndpoint, StoreConfig, WriterLease};
 use sandproof_protocol::DeploymentId;
 use std::{
     fs,
@@ -10,13 +10,20 @@ use std::{
     net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
     os::unix::fs::PermissionsExt,
     process::{Child, Command, Stdio},
+    sync::Mutex,
     thread,
     time::{Duration, Instant},
 };
 
 pub(crate) const MEMORY: u64 = 64 << 20;
 pub(crate) const KEY: &str = "sandproof:authority:fixture-deployment";
+// Keep this process's parallel fixtures from selecting a just-released port
+// before the original Redis child binds it. Only startup holds this guard;
+// test bodies and their concurrency scenarios remain independent.
+static STARTUP: Mutex<()> = Mutex::new(());
 const PASSWORD: &str = "component-fixture-not-a-production-credential";
+#[path = "engine/initial.rs"]
+mod initial;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum FixtureIdentityError {
@@ -60,21 +67,26 @@ pub(crate) struct Engine {
 }
 impl Engine {
     pub(crate) fn new() -> Self {
-        let binary = std::env::var("SANDPROOF_REDIS_SERVER").expect(
-            "mandatory fixed Redis fixture missing: set SANDPROOF_REDIS_SERVER (never skip)",
-        );
-        assert!(std::path::Path::new(&binary).is_absolute());
-        let version = Command::new(&binary).arg("--version").output().unwrap();
-        assert!(version.status.success());
-        assert!(
-            String::from_utf8(version.stdout)
-                .unwrap()
-                .split_whitespace()
-                .any(|field| field == format!("v={REDIS_VERSION}"))
-        );
+        Self::initial(|_, reservation, _| drop(reservation), None)
+            .unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    fn prepare(binary: String) -> (Self, TcpListener) {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
         let port = listener.local_addr().unwrap().port();
-        let root = tempfile::tempdir().unwrap();
+        // Snapshot fixtures may require loop XFS, but this fsync-backed Redis
+        // fixture does not. Keep its private AOF on the operator-selected disk
+        // without changing the workspace TMPDIR or any request deadline.
+        let root = if let Some(parent) = std::env::var_os("SANDPROOF_REDIS_TEST_TMPDIR") {
+            let parent = std::path::PathBuf::from(parent);
+            assert!(
+                parent.is_absolute(),
+                "Redis fixture parent must be absolute"
+            );
+            tempfile::tempdir_in(parent).expect("explicit Redis fixture parent must be usable")
+        } else {
+            tempfile::tempdir().unwrap()
+        };
         fs::set_permissions(root.path(), fs::Permissions::from_mode(0o700)).unwrap();
         fs::create_dir(root.path().join("writer")).unwrap();
         fs::set_permissions(
@@ -93,17 +105,13 @@ impl Engine {
             fs::Permissions::from_mode(0o600),
         )
         .unwrap();
-        let mut fixture = Self {
+        let fixture = Self {
             root,
             child: None,
             address: SocketAddrV4::new(Ipv4Addr::LOCALHOST, port),
             binary,
         };
-        // Reserve the selected endpoint during filesystem preparation. A
-        // released ephemeral port is not an ownership claim on a later Redis.
-        drop(listener);
-        fixture.start();
-        fixture
+        (fixture, listener)
     }
     pub(crate) fn spawn(&mut self) {
         assert!(self.child.is_none());
@@ -119,24 +127,39 @@ impl Engine {
     }
     pub(crate) fn start(&mut self) {
         self.spawn();
-        let deadline = Instant::now() + Duration::from_secs(5);
+        // An existing fixture always keeps its endpoint and original AOF.
+        self.wait_ready(Instant::now() + initial::READY_TIMEOUT)
+            .unwrap_or_else(|error| panic!("{error}"));
+    }
+
+    fn wait_ready(&mut self, deadline: Instant) -> Result<(), initial::StartupFailure> {
         loop {
+            if Instant::now() >= deadline {
+                return Err(initial::StartupFailure::Deadline(
+                    "fixture Redis readiness deadline",
+                ));
+            }
             if let Some(status) = self.child.as_mut().unwrap().try_wait().unwrap() {
                 // Synthetic fixture logs only, bounded before TempDir cleanup.
                 // Keep the actual startup cause; never retry an unknown engine
                 // or mistake a different process's open port for readiness.
                 let diagnostic = self.startup_diagnostic();
-                panic!("fixture Redis exited before ready ({status}): {diagnostic}");
+                return Err(initial::StartupFailure::Exited {
+                    pid: self.child.as_ref().unwrap().id(),
+                    status,
+                    diagnostic,
+                });
             }
             if let Ok(stream) =
                 TcpStream::connect_timeout(&self.address.into(), Duration::from_millis(30))
             {
                 drop(stream);
                 let Ok(mut connection) = try_connect(self.address) else {
-                    assert!(
-                        Instant::now() < deadline,
-                        "fixture Redis authentication/readiness deadline"
-                    );
+                    if Instant::now() >= deadline {
+                        return Err(initial::StartupFailure::Deadline(
+                            "fixture Redis authentication/readiness deadline",
+                        ));
+                    }
                     thread::sleep(Duration::from_millis(10));
                     continue;
                 };
@@ -146,26 +169,27 @@ impl Engine {
                 {
                     if let Err(error) = self.verify_ready_identity(&mut connection) {
                         let diagnostic = self.startup_diagnostic();
-                        panic!("fixture Redis identity not verified ({error:?}): {diagnostic}");
+                        return Err(initial::StartupFailure::Identity { error, diagnostic });
                     }
-                    break;
+                    return Ok(());
                 }
             }
-            assert!(
-                Instant::now() < deadline,
-                "fixture Redis readiness deadline"
-            );
+            if Instant::now() >= deadline {
+                return Err(initial::StartupFailure::Deadline(
+                    "fixture Redis readiness deadline",
+                ));
+            }
             thread::sleep(Duration::from_millis(10));
         }
     }
 
     fn startup_diagnostic(&self) -> String {
         let mut diagnostic = String::new();
-        fs::File::open(self.root.path().join("redis.log"))
-            .unwrap()
-            .take(4096)
-            .read_to_string(&mut diagnostic)
-            .unwrap();
+        let observed = fs::File::open(self.root.path().join("redis.log"))
+            .and_then(|file| file.take(4096).read_to_string(&mut diagnostic));
+        if let Err(error) = observed {
+            return format!("fixture Redis startup log unavailable: {error}");
+        }
         diagnostic
     }
 
@@ -247,6 +271,17 @@ impl Engine {
             .arg("revision")
             .query(&mut connect(self.address))
             .unwrap()
+    }
+    pub(crate) fn durable_block(&self) -> (u64, Vec<u8>) {
+        // Read the revision and exact committed bytes together, bypassing the
+        // proxy and the authority's reaffirmation writes.
+        let (revision, bytes): (String, Vec<u8>) = redis::cmd("HMGET")
+            .arg(KEY)
+            .arg("revision")
+            .arg("payload")
+            .query(&mut connect(self.address))
+            .unwrap();
+        (revision.parse().unwrap(), bytes)
     }
 }
 impl Drop for Engine {

@@ -1,0 +1,29 @@
+import SandboxModel.Lifecycle.Protocol.LifetimeRow.Core
+import SandboxModel.Lifecycle.Protocol.LifetimeRow.Values
+open Aeneas Aeneas.Std SandproofLifetimeRowRust
+namespace SandboxModel.Stage1Protocol.LifetimeRow
+
+theorem normal_witness : Valid Values.owner Values.normal := by decide
+
+theorem normal_result : controller.admission.lifetime_from_row Values.owner Values.normal =
+    .ok (.Ok (Projected Values.normal)) := by
+  rw [actual_row_contract]
+  simp [Expected, normal_witness]
+
+theorem empty_start_witness : Valid Values.owner Values.noStart := by decide
+
+theorem foreign_owner_rejected : controller.admission.lifetime_from_row Values.owner Values.foreign =
+    .ok (.Err .CorruptLifetime) := by
+  rw [refuses_iff]
+  decide
+
+theorem negative_startup_rejected : controller.admission.lifetime_from_row Values.owner Values.negativeStartup =
+    .ok (.Err .CorruptLifetime) := by
+  rw [refuses_iff]
+  decide
+end SandboxModel.Stage1Protocol.LifetimeRow
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.normal_witness
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.normal_result
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.empty_start_witness
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.foreign_owner_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeRow.negative_startup_rejected

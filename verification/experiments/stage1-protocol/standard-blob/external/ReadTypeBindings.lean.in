@@ -1,0 +1,9 @@
+import SandproofLoadBlob.Types
+
+namespace SandproofLoadBlobRust
+
+/-- Alias for the original Rust type after extraction-only name metadata.
+No constructor, field or implementation body is replaced. -/
+abbrev JournalError := ReadJournalError
+
+end SandproofLoadBlobRust

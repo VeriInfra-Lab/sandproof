@@ -1,0 +1,78 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordNewSessionModel
+import SandboxModel.Lifecycle.Protocol.ValidationExamples
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxRecord.Values
+open InboxLookup.Witness
+
+def createIntent : AcceptedLifecycleIntent := {
+  (EnvelopeValues.intent 1#u64) with request := {
+    (EnvelopeValues.intent 1#u64).request with
+    binding := { (EnvelopeValues.intent 1#u64).request.binding with expected := .Absent },
+    operation := .Create Validation.Examples.createPayload 1#u64 } }
+
+def foreignWindowIntent : AcceptedLifecycleIntent :=
+  { createIntent with retention := ⟨1#u16, 2#u64⟩ }
+
+def emptyInbox : Inbox := {
+  (inbox 1#u64) with
+  sessions := empty _,
+  lanes := singleton ⟨1#u16, 0#u64, some 1#u64, none⟩ }
+
+theorem both_inputs_valid :
+    Validation.ValidEnvelope createIntent EnvelopeValues.context ∧
+    Validation.ValidEnvelope foreignWindowIntent EnvelopeValues.context := by
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK, Validation.versionOK,
+    createIntent, foreignWindowIntent, EnvelopeValues.intent, EnvelopeValues.context,
+    EnvelopeValues.center, EnvelopeValues.node, Validation.Examples.createPayload,
+    Validation.createView, SandboxModel.Foundations.CreatePlan.valid,
+    Validation.resourceView, SandboxModel.Foundations.ResourceVector.positive,
+    SandboxModel.Foundations.maxCounter]
+
+theorem both_new_sessions : NewSession emptyInbox createIntent ∧ NewSession emptyInbox foreignWindowIntent := by
+  simp [NewSession, emptyInbox, empty]
+
+theorem normal_decision : freshDecision emptyInbox createIntent = .insert false (some 1#u64) := by
+  classical
+  simp [freshDecision, emptyInbox, InboxLookup.Witness.empty, InboxLookup.Witness.singleton, InboxLookup.Witness.inbox, retiredMatch, firstIndex,
+    createIntent, EnvelopeValues.intent, Validation.Examples.createPayload]
+
+theorem foreign_window_decision : freshDecision emptyInbox foreignWindowIntent = .reject .Conflict := by
+  classical
+  simp [freshDecision, emptyInbox, InboxLookup.Witness.empty, InboxLookup.Witness.singleton, InboxLookup.Witness.inbox, retiredMatch, firstIndex,
+    foreignWindowIntent, createIntent, EnvelopeValues.intent]
+
+def destroyIntent : AcceptedLifecycleIntent := { createIntent with
+  request := { createIntent.request with
+    binding := { createIntent.request.binding with expected := .Version 0#u64 },
+    operation := .Destroy } }
+
+theorem destroy_input_valid : Validation.ValidEnvelope destroyIntent EnvelopeValues.context := by
+  have checked : U64.checked_add 0#u64 1#u64 = some 1#u64 := by decide
+  simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK, Validation.versionOK,
+    destroyIntent, createIntent, EnvelopeValues.intent, EnvelopeValues.context,
+    EnvelopeValues.center, EnvelopeValues.node, checked]
+
+theorem destroy_new_session : NewSession emptyInbox destroyIntent := by
+  simp [NewSession, emptyInbox, empty]
+
+theorem destroy_decision : freshDecision emptyInbox destroyIntent = .insert true none := by
+  classical
+  simp [freshDecision, emptyInbox, InboxLookup.Witness.empty, InboxLookup.Witness.singleton,
+    InboxLookup.Witness.inbox, retiredMatch, firstIndex,
+    destroyIntent, createIntent, EnvelopeValues.intent]
+
+end SandboxModel.Stage1Protocol.InboxRecord.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.Values.both_inputs_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.Values.both_new_sessions
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.Values.normal_decision
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.Values.foreign_window_decision
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.Values.destroy_input_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.Values.destroy_new_session
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.Values.destroy_decision

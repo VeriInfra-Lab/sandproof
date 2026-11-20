@@ -18,6 +18,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import sys
@@ -45,7 +46,7 @@ def exercise(args: argparse.Namespace) -> None:
     root = Path(tempfile.mkdtemp(prefix="sp-netcrash-", dir=parent))
     namespace = secrets.token_hex(8)
     api_key = secrets.token_hex(32)
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     kernel = root / "vmlinux"
     rootfs = root / "rootfs.ext4"
@@ -60,7 +61,7 @@ def exercise(args: argparse.Namespace) -> None:
         "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)),
         "firecracker": str(args.firecracker.resolve(strict=True)),
-        "chroot_base": str(root / "jails"),
+        "chroot_base": str(root / "p/v"),
         "kernel": str(kernel),
         "rootfs": str(rootfs),
         "uid_base": args.uid_base,
@@ -102,7 +103,7 @@ def exercise(args: argparse.Namespace) -> None:
             )
             identity = vm_identity(root, namespace, 0)
             assert process_start_ticks(identity[0]) == identity[1]
-            claim = root / "jails/.claims" / f"vm-{namespace}-0"
+            claim = original_chroot(root) / ".claims" / f"vm-{namespace}-0"
             assert (claim / "uplink-prepared.json").is_file()
             create_identity = original_create_identity(services, metadata)
             native_id = services.native_id_for(create_identity['binding']['session'])

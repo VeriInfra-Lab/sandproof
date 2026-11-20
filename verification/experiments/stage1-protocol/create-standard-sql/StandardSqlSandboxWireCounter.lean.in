@@ -1,0 +1,63 @@
+import SandboxModel.Lifecycle.Protocol.StandardSqlDelegateFixture
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlComplete
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlFixture
+open Aeneas Aeneas.Std SandproofLifecycleSqlRust
+namespace SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter
+open Fixture LifetimeSqlFixture
+
+def emptySandbox : Str := SandproofLifecycleSqlRust.toStr ""
+def selected (sandbox : Str) : Effects :=
+  normalEffects selectedWorld (observing normalDeadline sandbox 17#usize)
+
+theorem original_normal_specification :
+    expected (selected normalSandbox) statement normalDeadline normalSandbox =
+      .ok (.Ok 17#usize,selected normalSandbox) := by
+  change (do
+    let result ←
+      LifetimeSql.expected (observing normalDeadline normalSandbox 17#usize)
+        statement normalDeadline normalSandbox
+    .ok (result,selected normalSandbox)) = _
+  rw [normal_expected]
+  simp only [bind_tc_ok]
+
+theorem empty_sandbox_differs : emptySandbox ≠ normalSandbox := by
+  intro same
+  have bytes := congrArg Slice.val same
+  change (SandproofFoundationsRust.toStr "").val =
+    (SandproofFoundationsRust.toStr "sb-normal-2").val at bytes
+  rw [SandboxModel.Foundations.literal_string_bytes_refines,
+    SandboxModel.Foundations.literal_string_bytes_refines] at bytes
+  exact (by decide : SandproofFoundationsRust.IdentifierLibrary.stringBytes "" ≠
+    SandproofFoundationsRust.IdentifierLibrary.stringBytes "sb-normal-2") bytes
+
+theorem actual_sandbox_is_lost :
+    call (selected normalSandbox) statement normalDeadline normalSandbox =
+      .ok (.Ok 0#usize,selected normalSandbox) := by
+  unfold call sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateLifetimeSqlEffects.execute_lifetime_update
+  rw [LifetimeSql.execute_complete]
+  have different : SandproofLifecycleSqlRust.toStr "" ≠ normalSandbox := empty_sandbox_differs
+  simp [LifetimeSql.expected, selected, Fixture.normalEffects, LifetimeSqlFixture.observing, LifetimeSql.completeInputs,
+    different]
+
+theorem still_preserves_empty_sandbox :
+    call (selected emptySandbox) statement normalDeadline emptySandbox =
+      .ok (.Ok 17#usize,selected emptySandbox) := by
+  unfold call sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateLifetimeSqlEffects.execute_lifetime_update
+  rw [LifetimeSql.execute_complete]
+  simp [LifetimeSql.expected, selected, Fixture.normalEffects, LifetimeSqlFixture.observing, LifetimeSql.completeInputs,
+    emptySandbox]
+
+theorem same_full_contract_rejected : ¬FullStandardSqlContract call := by
+  intro law
+  have promised := law (selected normalSandbox) statement normalDeadline normalSandbox
+  rw [actual_sandbox_is_lost, original_normal_specification] at promised
+  have reply := congrArg Prod.fst (Result.ok_injective promised)
+  injection reply with rows
+  exact (by decide : (0#usize) ≠ 17#usize) rows
+
+end SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.original_normal_specification
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.empty_sandbox_differs
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.actual_sandbox_is_lost
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.still_preserves_empty_sandbox
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.same_full_contract_rejected

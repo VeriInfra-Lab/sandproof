@@ -53,12 +53,21 @@ pub async fn bind<T: TemplateProvider>(
         ),
     }
     .map_err(|_| "center data boundary rejected")?;
+    let port = Arc::new(CenterPort::new(Arc::clone(&app)));
     let mut public = sandproof_api::router_with_admission(
-        Arc::new(CenterPort::new(Arc::clone(&app))),
+        Arc::clone(&port),
         credentials.clone(),
         Arc::clone(&admission),
     )
-    .map_err(|_| "public center boundary rejected")?;
+    .map_err(|_| "public center boundary rejected")?
+    .merge(
+        sandproof_api::lifecycle::router_with_admission(
+            port,
+            credentials.clone(),
+            Arc::clone(&admission),
+        )
+        .map_err(|_| "public lifecycle boundary rejected")?,
+    );
     let private = if let Some(private) = private {
         let router = sandproof_api::private_build_router_with_admission(
             Arc::new(CenterBuildPort::new(app)),

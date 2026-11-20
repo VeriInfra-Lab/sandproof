@@ -1,0 +1,102 @@
+import SandproofLifecycleSql.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.LifetimeSqlLibrary
+open SandproofLifecycleSqlRust
+
+abbrev Output := rusqlite.types.to_sql.ToSqlOutput
+abbrev ValueRef := rusqlite.types.value_ref.ValueRef
+abbrev Statement := rusqlite.statement.Statement
+abbrev SqlValue := SandproofSqliteStatementsRust.SqlValue
+
+theorem original_integer_owned (number : I64) :
+    I64.Insts.RusqliteTypesTo_sqlToSql.to_sql number =
+      .ok (.Ok (.Owned (.Integer number))) := by
+  simp [I64.Insts.RusqliteTypesTo_sqlToSql.to_sql,
+    rusqlite.types.to_sql.ToSqlOutput.Insts.CoreConvertFromI64.from,
+    rusqlite.types.value.Value.Insts.CoreConvertFromI64.from]
+
+theorem original_text_borrowed (text : Str) :
+    Str.Insts.RusqliteTypesTo_sqlToSql.to_sql text =
+      .ok (.Ok (.Borrowed (.Text text))) := by
+  simp [Str.Insts.RusqliteTypesTo_sqlToSql.to_sql,
+    rusqlite.types.to_sql.ToSqlOutput.Insts.CoreConvertFromSharedAT.from,
+    rusqlite.types.value_ref.ValueRef.Insts.CoreConvertFromSharedAStr.from,
+    core.str.Str.as_bytes]
+
+theorem shared_text_forwards (text : Str) :
+    Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql
+      Str.Insts.RusqliteTypesTo_sqlToSql text =
+      Str.Insts.RusqliteTypesTo_sqlToSql.to_sql text := rfl
+
+theorem borrowed_normalizes (value : ValueRef) :
+    rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql.to_sql
+      (.Borrowed value) = .ok (.Ok (.Borrowed value)) := rfl
+
+theorem owned_integer_normalizes (number : I64) :
+    rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql.to_sql
+      (.Owned (.Integer number)) =
+      .ok (.Ok (.Borrowed (.Integer number))) := by
+  simp [rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql.to_sql,
+    rusqlite.types.value_ref.ValueRef.Insts.CoreConvertFromSharedAValue.from]
+
+-- The exact ValueRef conversion in Statement.bind_parameter's Owned arm.
+-- This equality describes a value, not a completed sqlite3_bind call.
+theorem original_integer_value_ref (number : I64) :
+    rusqlite.types.value_ref.ValueRef.Insts.CoreConvertFromSharedAValue.from
+      (.Integer number) = .ok (.Integer number) := rfl
+
+def effective (action : Result (core.result.Result Output rusqlite.error.Error)) :
+    Result (core.result.Result SqlValue rusqlite.error.Error) := do
+  let reply ← action
+  match reply with
+  | .Err error => .ok (.Err error)
+  | .Ok value =>
+      observedPlainReply (rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql.to_sql value)
+
+theorem original_integer_effective (number : I64) :
+    effective (I64.Insts.RusqliteTypesTo_sqlToSql.to_sql number) =
+      .ok (.Ok (.integer number)) := by
+  simp [effective, original_integer_owned, owned_integer_normalizes,
+    observedPlainReply, observedPlainParameter]
+
+theorem original_text_effective (text : Str) :
+    effective (Str.Insts.RusqliteTypesTo_sqlToSql.to_sql text) =
+      .ok (.Ok (.text text)) := by
+  simp [effective, original_text_borrowed, borrowed_normalizes,
+    observedPlainReply, observedPlainParameter]
+
+def inputs (number : I64) (text : Str) : Array Output 2#usize :=
+  Array.make 2#usize [.Borrowed (.Integer number), .Borrowed (.Text text)]
+
+-- A logical whole-call parameter descriptor. It is not a standalone physical
+-- binding-success contract. The shared run observation retains raw failures.
+theorem array_complete_inputs (statement : Statement) (number : I64) (text : Str) :
+    ArrayT2.Insts.RusqliteParamsParams.__bind_in
+      rusqlite.types.to_sql.ToSqlOutput.Insts.RusqliteTypesTo_sqlToSql
+      (inputs number text) statement =
+      .ok (.Ok (), {statement with arguments :=
+        statement.arguments ++ [.integer number, .text text]}) := by
+  simp only [ArrayT2.Insts.RusqliteParamsParams.__bind_in,
+    rusqlite.statement.Statement.bind_parameters,
+    SharedArray.Insts.CoreIterTraitsCollectIntoIteratorSharedIter.into_iter,
+    core.slice.iter.IteratorSliceIter.next, inputs,
+    Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql,
+    observedPlainReply, observedPlainParameter,
+    SandproofSqliteStatementsRust.bindValues, List.append_assoc,
+    Slice.len_val, Array.make_val, bind_tc_ok, Nat.reduceAdd]
+  dsimp only [getElem, instGetElemSliceNatLtLengthVal, Slice.from, Slice.val,
+    Aeneas.Data.ListN.ListN.fromList, Aeneas.Data.ListN.ListN.toList]
+  simp [Slice.val, Slice.length, Aeneas.Data.ListN.ListN.toList, borrowed_normalizes]
+
+end SandboxModel.Stage1Protocol.LifetimeSqlLibrary
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_owned
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_borrowed
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlLibrary.shared_text_forwards
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlLibrary.borrowed_normalizes
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlLibrary.owned_integer_normalizes
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_value_ref
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_effective
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_effective
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlLibrary.array_complete_inputs

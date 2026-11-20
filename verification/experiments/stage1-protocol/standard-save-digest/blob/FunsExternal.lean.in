@@ -1,0 +1,50 @@
+import SandproofInboxSaveBlob.Types
+import SandproofInboxSaveBlob.SqliteCommonBinding
+
+/- Finite joint A4/B4 usepoint: exactly two plain borrowed BLOB inputs of the
+actual InboxSave UPDATE. This is a logical whole-call input descriptor, not
+success of standalone raw binding. Connection.run keeps original raw-bind,
+parameter-count and step/reset failures. No arbitrary ToSql/SQL equivalence,
+durability, affected-row policy or transaction-frame claim is introduced. -/
+open Aeneas Aeneas.Std
+namespace SandproofInboxSaveBlobRust
+
+abbrev alloc.string.String.as_bytes :=
+  SandproofSqliteStatementsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+
+def observedBlobParameter (value : rusqlite.types.to_sql.ToSqlOutput) :
+    Result SandproofSqliteStatementsRust.SqlValue :=
+  match value with
+  | .Borrowed (.Blob bytes) => .ok (.blob ⟨bytes⟩)
+  | _ => .fail .panic
+
+def observedBlobReply (action : Result
+    (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error)) :
+    Result (core.result.Result SandproofSqliteStatementsRust.SqlValue rusqlite.error.Error) := do
+  let reply ← action
+  match reply with
+  | .Err error => .ok (.Err error)
+  | .Ok value =>
+      let projected ← observedBlobParameter value
+      .ok (.Ok projected)
+
+def rusqlite.statement.Statement.bind_parameters
+    {P Item Iter : Type}
+    (into : core.iter.traits.collect.IntoIterator P Item Iter)
+    (encode : rusqlite.types.to_sql.ToSql Item)
+    (statement : rusqlite.statement.Statement) (parameters : P) := do
+  let initial ← into.into_iter parameters
+  let (first, next) ← into.iteratorInst.next initial
+  let (second, last) ← into.iteratorInst.next next
+  let (ended, _) ← into.iteratorInst.next last
+  match first, second, ended with
+  | some left, some right, none =>
+      SandproofSqliteStatementsRust.bindValues
+        [observedBlobReply (encode.to_sql left), observedBlobReply (encode.to_sql right)] statement
+  | _, _, _ => .fail .panic
+
+def rusqlite.Connection.execute {P : Type} (dictionary : rusqlite.params.Params P)
+    (connection : rusqlite.Connection) (statement : Str) (parameters : P) :=
+  SandproofSqliteStatementsRust.rusqlite.Connection.execute
+    dictionary connection statement parameters
+end SandproofInboxSaveBlobRust

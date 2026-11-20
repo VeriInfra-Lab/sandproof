@@ -47,12 +47,13 @@ def component_files(project, names, profile, extra=()):
     seeds += [str(p.relative_to(project)) for p in sorted((project / LIBRARY / profile).rglob('*.lean'))
               if '_Template' not in p.name]
     seeds += list(extra)
-    return sorted(resolver.closure(project, seeds))
+    return sorted(resolver.closure(project, seeds, active_view='lakefile.toml'))
 
 
 def check_inventory(project, frozen):
-    actual = {p.stem for p in (project / PROOFS).glob('*.lean')}
-    if actual != set(POSITIVE) or frozen['positive_files'] != POSITIVE_BY_PROFILE:
+    inventory = load_module('unified_protocol_source_inventory', project / HERE / 'source_inventory.py')
+    inventory.retained(project, POSITIVE)
+    if frozen['positive_files'] != POSITIVE_BY_PROFILE:
         raise ValueError('unregistered or missing retained protocol proof file')
 
 
@@ -321,9 +322,10 @@ def replay(output, archive, native, native_archive, selected):
                 with tarfile.open(archive) as tar:
                     tar.extractall(project, filter='data')
                 check_inputs(project)
-                (project / '.tools').symlink_to(ROOT / '.tools', target_is_directory=True)
+                runtime = load_module('protocol_stable_tools', ROOT / HERE / 'formal_runtime.py')
+                (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
                 (project / '.lake').mkdir()
-                (project / '.lake/packages').symlink_to(ROOT / '.lake/packages', target_is_directory=True)
+                (project / '.lake/packages').symlink_to(runtime.package_root(ROOT), target_is_directory=True)
                 source = project / mutation['source']
                 text = source.read_text()
                 if text.count(mutation['old']) != 1 or sha(source) != native_rows[name]['original_source_sha256']:

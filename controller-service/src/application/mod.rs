@@ -29,6 +29,8 @@ pub enum ApplicationError {
     Conflict,
     QuotaExceeded,
     Busy,
+    /// A host data gate refused before acquiring or launching a relay.
+    DataGateBusy,
     OutcomeUnknown,
     Failed,
 }

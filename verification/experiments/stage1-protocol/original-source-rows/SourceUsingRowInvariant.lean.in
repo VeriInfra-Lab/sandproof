@@ -1,0 +1,147 @@
+import SourceUsingSuccess
+import OriginalRowsInvariant
+import SandboxModel.ProofAuditCommand
+
+/-!+Uninstantiated composition rule for the actual callback and caller. Its row
+rule must be proved from the actual handler; it is not a new trusted callback
+assumption or a completed source-evidence proof. Error, fail and divergence do
+not acquire a successful result or a transaction-frame promise.
+-/
+open Aeneas Aeneas.Std
+namespace SandproofOriginalSourceRowsRust.SourceUsingRowInvariant
+open SourceUsingSuccess
+
+abbrev Source := capture.SourceProcessIdentity
+abbrev Rows := controller.capture.OriginalSourceRows
+abbrev Binding := sandbox_controller_core.ids.SandboxId ×
+  sandbox_controller_core.ids.VmId × sandproof_protocol.SandboxId
+abbrev RowInput := core.result.Result (alloc.vec.Vec U8 × alloc.vec.Vec U8)
+  rusqlite.error.Error
+
+def RowsSatisfy (prepared activated : Source → Prop) (rows : Rows) : Prop :=
+  (∀ source, rows.prepared = some source → prepared source) ∧
+  (∀ source, rows.activated = some source → activated source)
+
+theorem actual_callback_normal_success_projects_complete_handler_poststate {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (world : sandbox_controller_core.model.World) (ns : Str)
+    (current : sandbox_controller_core.model.SandboxRecord) (binding : Binding)
+    (row : RowInput) (before after : Rows) (codec : D)
+    (afterCapture : controller.capture.original_source_using.closure_1 E D)
+    (returned : controller.capture.original_source_using.closure_1.Insts.CoreOpsFunctionFnMutPairResultPairVecU8VecU8ErrorOriginalSourceRowsPairResultTupleJournalErrorOriginalSourceRows.call_mut
+      evidence ops
+      (world, ns, current, binding, codec) (row, before) =
+      .ok ((.Ok (), after), afterCapture)) :
+    ∃ afterCodec,
+      afterCapture = (world, ns, current, binding, afterCodec) ∧
+      controller.capture.accept_original_source_row evidence ops row world ns current
+        binding before codec = .ok ((.Ok (), after), afterCodec) := by
+  rcases binding with ⟨sandbox, vm, publicSandbox⟩
+  unfold controller.capture.original_source_using.closure_1.Insts.CoreOpsFunctionFnMutPairResultPairVecU8VecU8ErrorOriginalSourceRowsPairResultTupleJournalErrorOriginalSourceRows.call_mut
+    at returned
+  obtain ⟨⟨⟨reply, nextRows⟩, afterCodec⟩, called, returned⟩ :=
+    (bind_normal_iff _ _ _).mp returned
+  have equal := Result.ok_injective returned
+  have payloadSame := congrArg Prod.fst equal
+  have captureSame := congrArg Prod.snd equal
+  have replySame := congrArg Prod.fst payloadSame
+  have rowsSame := congrArg Prod.snd payloadSame
+  change reply = .Ok () at replySame
+  change nextRows = after at rowsSame
+  change (world, ns, current, (sandbox, vm, publicSandbox), afterCodec) = afterCapture at captureSame
+  subst reply
+  subst nextRows
+  exact ⟨afterCodec, captureSame.symm, called⟩
+
+/-- Normal-return induction for the real callback dictionary. Full closure D
+state is existentially retained across every call; the fixed World, namespace,
+current record and sandbox/VM/public binding remain the original ones. -/
+theorem actual_driver_preserves_rows {I E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (iterator : core.iter.traits.iterator.Iterator I RowInput)
+    (world : sandbox_controller_core.model.World) (ns : Str)
+    (current : sandbox_controller_core.model.SandboxRecord) (binding : Binding)
+    (prepared activated : Source → Prop)
+    (rowRule : ∀ row before after codec afterCodec,
+      RowsSatisfy prepared activated before →
+      controller.capture.accept_original_source_row evidence ops row world ns current
+        binding before codec = .ok ((.Ok (), after), afterCodec) →
+      RowsSatisfy prepared activated after)
+    (iter : I) (before after : Rows) (codec : D)
+    (initial : RowsSatisfy prepared activated before)
+    (returned : controller.capture.accept_original_rows iterator (Acceptor evidence ops)
+      iter before (world, ns, current, binding, codec) = .ok (.Ok (), after)) :
+    RowsSatisfy prepared activated after := by
+  let Inv : I → Rows → controller.capture.original_source_using.closure_1 E D → Prop :=
+    fun _ rows captured => ∃ state,
+      captured = (world, ns, current, binding, state) ∧ RowsSatisfy prepared activated rows
+  let Post : (core.result.Result Unit JournalError × Rows) → Prop := fun result =>
+    match result.1 with
+    | .Ok _ => RowsSatisfy prepared activated result.2
+    | .Err _ => True
+  change SandboxModel.Stage1Protocol.OriginalRowsDriver.run iterator (Acceptor evidence ops)
+    iter before (world, ns, current, binding, codec) = .ok (.Ok (), after) at returned
+  apply SandboxModel.Stage1Protocol.OriginalRowsDriver.run_normal_return_of_calls
+    iterator (Acceptor evidence ops) Inv Post ?_ ?_ ?_
+    iter before (world, ns, current, binding, codec) ?_ (.Ok (), after) returned
+  · rintro _ rows captured _ ⟨state, _captured, valid⟩ _next
+    exact valid
+  · intro i rows captured nextI row nextRows nextCapture valid _next called
+    rcases valid with ⟨state, rfl, rowsValid⟩
+    obtain ⟨afterCodec, afterCapture, handler⟩ :=
+      actual_callback_normal_success_projects_complete_handler_poststate
+        evidence ops world ns current binding row rows nextRows state nextCapture called
+    exact ⟨afterCodec, afterCapture, rowRule row rows nextRows state afterCodec rowsValid handler⟩
+  · intros
+    trivial
+  · exact ⟨codec, rfl, initial⟩
+
+/-- The final original two-slot check transfers both distinct row predicates
+to the same complete source record. A concrete business theorem must supply
+rowRule from the actual handler's command/receipt/evidence checks. -/
+theorem actual_source_success_inherits_both_row_properties {E D : Type}
+    (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E)
+    (transaction : rusqlite.transaction.Transaction) (ns : Str)
+    (world : sandbox_controller_core.model.World)
+    (sandbox : sandbox_controller_core.ids.SandboxId) (codec : D)
+    (prepared activated : sandbox_controller_core.model.SandboxRecord →
+      sandbox_controller_core.ids.VmId → sandproof_protocol.SandboxId → Source → Prop)
+    (rowRule : ∀ current vm publicSandbox row before after state afterState,
+      RowsSatisfy (prepared current vm publicSandbox) (activated current vm publicSandbox) before →
+      controller.capture.accept_original_source_row evidence ops row world ns current
+        (sandbox, vm, publicSandbox) before state = .ok ((.Ok (), after), afterState) →
+      RowsSatisfy (prepared current vm publicSandbox) (activated current vm publicSandbox) after)
+    (source : Source)
+    (returned : controller.capture.original_source_using evidence ops
+      transaction ns world sandbox codec = .ok (.Ok source)) :
+    ∃ current vm publicSandbox,
+      sandbox_controller_core.model.World.sandbox_record world sandbox = .ok (some current) ∧
+      current.phase = .Running ∧ current.terminal = false ∧ current.current_vm = some vm ∧
+      controller.identity.sandbox_id ns sandbox = .ok (.Ok publicSandbox) ∧
+      prepared current vm publicSandbox source ∧ activated current vm publicSandbox source := by
+  rcases actual_success_has_complete_path evidence ops transaction ns world sandbox codec
+    source returned with ⟨current, vm, physical, statement, publicSandbox,
+      parameter, cursor, afterStatement, rows, facts⟩
+  rcases facts with ⟨lookup, phase, terminal, presentVm, _physical, _owner, _sandbox,
+    _generation, _executing, _prepared, publicCall, _parameter, _query, driver,
+    preparedPresent, activatedPresent⟩
+  have initial : RowsSatisfy (prepared current vm publicSandbox) (activated current vm publicSandbox)
+      { prepared := none, activated := none } := by
+    simp [RowsSatisfy]
+  have checkedRows := actual_driver_preserves_rows evidence ops
+    (rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError
+      (Mapper evidence ops)) world ns current (sandbox, vm, publicSandbox)
+    (prepared current vm publicSandbox) (activated current vm publicSandbox)
+    (rowRule current vm publicSandbox) cursor
+    { prepared := none, activated := none } rows codec initial driver
+  exact ⟨current, vm, publicSandbox, lookup, phase, terminal, presentVm, publicCall,
+    checkedRows.1 source preparedPresent, checkedRows.2 source activatedPresent⟩
+
+end SandproofOriginalSourceRowsRust.SourceUsingRowInvariant
+
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceUsingRowInvariant.actual_callback_normal_success_projects_complete_handler_poststate
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceUsingRowInvariant.actual_driver_preserves_rows
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceUsingRowInvariant.actual_source_success_inherits_both_row_properties

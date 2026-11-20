@@ -1,0 +1,13 @@
+{
+  "source_commit": "7aa235451ad887dffb429ca9e21c0e2f57d3fa7f",
+  "original_package": "verification/experiments/stage1-protocol/digest-uses",
+  "math_and_generated_data_unchanged": {
+    "DigestByteBridge.lean.in": "33db23fa4534f074efbad50bb75f86035e8e6f8a3120dfef73640378fd77b14a",
+    "Sha256Bytes.lean.in": "589116992a3802fd78f811d44f0dbe2f59255c9827701d8c7623659bc3b3642d",
+    "Sha256BytesChecks.lean.in": "7aaf65dfa2f8e0f954d527554091c979ab0d140310051ecdb3a534fcb31b06ce",
+    "DigestArray32Representation.lean.in": "d2477cb582900ceb3356d451107586fa3f23f0de2127f808e20dcf22e4bddd7f",
+    "verification/aeneas/stage1-protocol/digest-array32/SandproofDigestArray32/Types.lean": "b1499342657eba6f5fd9053e506b35a6a4d08cd7caf362eb1bf5f36f8ad309d7"
+  },
+  "old_entire_package_or_production_factoring_imported": false,
+  "library_models_are_conditional_not_crypto_implementation_proofs": true
+}

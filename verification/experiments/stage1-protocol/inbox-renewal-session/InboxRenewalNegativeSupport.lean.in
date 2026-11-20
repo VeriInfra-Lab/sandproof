@@ -1,0 +1,37 @@
+import SandboxModel.Lifecycle.Protocol.InboxRenewalReduction
+import SandboxModel.Lifecycle.Protocol.RenewalBindings
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_protocol.lifecycle.renewal
+namespace SandboxModel.Stage1Protocol.InboxRenewal
+open scoped Classical
+noncomputable section
+
+/- Reduction of the actual common control body only. Each wrong view proves its
+own helper results; this lemma assumes no correct business contract. -/
+theorem accepts_given_actual_checks (encode : Encoding) (session : Session)
+    (confirmed : RenewalConfirmation) (present : session.confirmed_renewal = some confirmed)
+    (shape : Renewal.Shape confirmed) (bytes : alloc.vec.Vec U8)
+    (encoded : encode confirmed = .ok (.Ok bytes)) (size : bytes.val.length ≤ 8192)
+    (hasLocal : session.local.isNone = false)
+    (checkpoint : renewal_confirmation.checkpoint_entry_invalid session confirmed = .ok false)
+    (frontier : core.option.Option.is_some_and
+      (renewal_confirmation.validate_session_using.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool
+        (E := Unit) ⟨encode⟩) session.compacted_sdk_through (confirmed, session) = .ok false)
+    (unapplied : renewal_confirmation.has_unapplied_sdk_through
+      session confirmed.request.accepted_version = .ok false) :
+    run encode session = .ok (.Ok ()) := by
+  have valid := Renewal.shape_refines confirmed
+  simp only [renewal_valid, shape, decide_true] at valid
+  simp [run, renewal_confirmation.validate_session_using,
+    core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+    present, valid, encoded, core.result.Result.Insts.CoreOpsTry.branch,
+    alloc.vec.Vec.len, sandproof_protocol.lifecycle.RENEWAL_CONFIRMATION_BODY_BYTES,
+    Nat.not_lt.mpr size, core.option.Option.is_none, hasLocal,
+    checkpoint, frontier, unapplied]
+
+end
+end SandboxModel.Stage1Protocol.InboxRenewal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.accepts_given_actual_checks

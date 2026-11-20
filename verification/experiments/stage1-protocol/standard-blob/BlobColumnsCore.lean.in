@@ -1,0 +1,70 @@
+import SandboxModel.Lifecycle.Protocol.BlobColumnsLibrary
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.BlobColumns
+noncomputable section
+
+abbrev actual := controller.lifecycle_inbox.codec.read_blob_pair
+
+theorem actual_refines (row : rusqlite.row.Row) (first second : Usize) :
+    actual row first second = .ok (expected row first second) := by
+  unfold actual controller.lifecycle_inbox.codec.read_blob_pair
+  rw [fixed_get_model_refines]
+  cases left : column row first with
+  | Err error =>
+    simp [expected, left, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok leftValue =>
+    simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch]
+    rw [fixed_get_model_refines]
+    cases right : column row second <;>
+      simp [expected, left, right,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem full_columns_contract : FullColumnsContract actual := by
+  intro row first second
+  exact actual_refines row first second
+
+theorem first_error (row : rusqlite.row.Row) (first second : Usize) (error : SqlError)
+    (failed : column row first = .Err error) :
+    actual row first second = .ok (.Err error) := by
+  rw [actual_refines]
+  simp [expected, failed]
+
+theorem success_keeps_both_columns (row : rusqlite.row.Row) (first second : Usize)
+    (left right : Bytes) :
+    actual row first second = .ok (.Ok (left, right)) ↔
+      column row first = .Ok left ∧ column row second = .Ok right := by
+  rw [actual_refines]
+  cases firstValue : column row first <;> cases secondValue : column row second <;>
+    simp [expected, firstValue, secondValue]
+
+theorem column_digest_input_bound (row : rusqlite.row.Row) (index : Usize) (bytes : Bytes)
+    (bounded : RowBlobBound row) (read : column row index = .Ok bytes) :
+    bytes.val.length < 2^61 := by
+  unfold column at read
+  split at read
+  · rename_i inside
+    cases raw : row.column index <;> simp only [raw, reduceCtorEq] at read
+    rename_i original
+    cases read
+    exact lt_of_le_of_lt (bounded index original inside raw) (by decide)
+  · cases read
+
+theorem actual_success_digest_bounds (row : rusqlite.row.Row) (first second : Usize)
+    (left right : Bytes) (bounded : RowBlobBound row)
+    (read : actual row first second = .ok (.Ok (left, right))) :
+    left.val.length < 2^61 ∧ right.val.length < 2^61 := by
+  obtain ⟨leftRead, rightRead⟩ := (success_keeps_both_columns row first second left right).mp read
+  exact ⟨column_digest_input_bound row first left bounded leftRead,
+    column_digest_input_bound row second right bounded rightRead⟩
+
+end
+end SandboxModel.Stage1Protocol.BlobColumns
+
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.actual_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.full_columns_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.first_error
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.success_keeps_both_columns
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.column_digest_input_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.actual_success_digest_bounds

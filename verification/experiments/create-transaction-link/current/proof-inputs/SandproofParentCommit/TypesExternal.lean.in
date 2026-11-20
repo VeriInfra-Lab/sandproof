@@ -1,0 +1,44 @@
+import SandproofParentRead.TypesExternal
+
+open Aeneas Aeneas.Std
+namespace SandproofParentCommitRust
+
+abbrev core.cell.RefCell := SandproofParentReadRust.core.cell.RefCell
+abbrev core.cell.Ref := SandproofParentReadRust.core.cell.Ref
+abbrev sandbox_controller_core.model.World := SandproofParentReadRust.sandbox_controller_core.model.World
+abbrev core.io.error.Error := SandproofSqliteRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofSqliteRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofSqliteRust.serde_json.error.Error
+abbrev rusqlite.transaction.DropBehavior := SandproofStage1RequestRust.rusqlite.transaction.DropBehavior
+
+-- These exact payloads are only carried, never constructed/read in this slice.
+abbrev sandproof_protocol.ContractError := SandproofStage1RequestRust.sandproof_protocol.ContractError
+abbrev sandbox_controller_core.controller.ControllerReject :=
+  SandproofStage1RequestRust.sandbox_controller_core.controller.ControllerReject
+abbrev CrashPoint := SandproofStage1RequestRust.sandproof_controller_service.CrashPoint
+
+abbrev OriginalConnection := SandproofTxFinishRust.RollbackCallView
+abbrev OriginalOwner := SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.WorldTransaction
+abbrev OriginalError := SandproofStage1RequestRust.sandproof_controller_service.JournalError
+abbrev OriginalReply := core.result.Result Unit OriginalError
+abbrev World := sandbox_controller_core.model.World
+
+/-- Four arbitrary call observations, indexed by complete original value
+arguments. They do not implement validation or predict pre-save DB state.
+V5 must still provide actual-call/refinement and normal Ok AND Err frames. -/
+structure V5CallObservations where
+  candidate : OriginalConnection → World → Result OriginalReply
+  inbox : OriginalConnection → World → Result OriginalReply
+  capacity : OriginalConnection → World → Result OriginalReply
+  transaction : OriginalOwner → Result OriginalReply
+
+/-- A finite call view, retaining the entire original A10 base and A08 whole
+commit result. This is not another physical connection or transaction. -/
+structure ParentCallView where
+  base : OriginalConnection
+  commitReply : Result (core.result.Result Unit rusqlite.error.Error)
+  v5 : V5CallObservations
+
+abbrev rusqlite.Connection := ParentCallView
+
+end SandproofParentCommitRust

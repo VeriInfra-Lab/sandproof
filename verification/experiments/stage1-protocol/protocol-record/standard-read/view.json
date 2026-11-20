@@ -1,0 +1,182 @@
+{
+  "schema": 1,
+  "kind": "finite-standard-record-read-view",
+  "files": {
+    "SandboxModel/Lifecycle/Protocol/StandardRecordReads.lean": {
+      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/StandardRecordReads.lean.in",
+      "source_sha256": "2fd16c70ac641f7dacc227548ec72d2b9532f3cbd3ffa4e91898055c807d5ca6",
+      "sha256": "2fd16c70ac641f7dacc227548ec72d2b9532f3cbd3ffa4e91898055c807d5ca6"
+    },
+    "SandboxModel/ProofAuditCommand.lean": {
+      "source": "SandboxModel/ProofAuditCommand.lean",
+      "source_sha256": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+      "sha256": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188"
+    },
+    "SandboxModel/Foundations/LoopCallbacks/Refinement.lean": {
+      "source": "SandboxModel/Foundations/LoopCallbacks/Refinement.lean",
+      "source_sha256": "b4ba1236ea979e0124d5db188a4880f032349d891f1dc0649a8993da86b132fd",
+      "sha256": "b4ba1236ea979e0124d5db188a4880f032349d891f1dc0649a8993da86b132fd"
+    },
+    "SandboxModel/Foundations/LoopCallbacks/Loop.lean": {
+      "source": "SandboxModel/Foundations/LoopCallbacks/Loop.lean",
+      "source_sha256": "749f692b56bfba325a1187e62fbf7b06f1f53ccf41c9b9f7f424ed8a1e27e670",
+      "sha256": "749f692b56bfba325a1187e62fbf7b06f1f53ccf41c9b9f7f424ed8a1e27e670"
+    },
+    "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Funs.lean": {
+      "source": "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Funs.lean",
+      "source_sha256": "00aef5571e8c00ad2e91b88a53ce869f1faea84df3660f209a1d18a15f07b6cb",
+      "sha256": "00aef5571e8c00ad2e91b88a53ce869f1faea84df3660f209a1d18a15f07b6cb"
+    },
+    "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Types.lean": {
+      "source": "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Types.lean",
+      "source_sha256": "2390d17cca950a3fb2547600bed042089c73316d83919bf35a96cb355b939b06",
+      "sha256": "2390d17cca950a3fb2547600bed042089c73316d83919bf35a96cb355b939b06"
+    },
+    "SandboxModel/Foundations/LoopCallbacks/Contracts.lean": {
+      "source": "SandboxModel/Foundations/LoopCallbacks/Contracts.lean",
+      "source_sha256": "09c33952c2dbb391ae74cef01ee83ce88a2615bcdc8a377b779cac0601a7318f",
+      "sha256": "09c33952c2dbb391ae74cef01ee83ce88a2615bcdc8a377b779cac0601a7318f"
+    },
+    "SandboxModel/Foundations/TableQueryContracts.lean": {
+      "source": "SandboxModel/Foundations/TableQueryContracts.lean",
+      "source_sha256": "9376c02ca0d8529463729e6a5abc9f9b6b2f79ee5dd44a1883c7462c01dabfe1",
+      "sha256": "9376c02ca0d8529463729e6a5abc9f9b6b2f79ee5dd44a1883c7462c01dabfe1"
+    },
+    "SandboxModel/Foundations/TableWriteContracts.lean": {
+      "source": "SandboxModel/Foundations/TableWriteContracts.lean",
+      "source_sha256": "31a90acda3429ffb9d6c1c4f60b09e3be21b492f94f701d42e5160f6f1a81be2",
+      "sha256": "31a90acda3429ffb9d6c1c4f60b09e3be21b492f94f701d42e5160f6f1a81be2"
+    },
+    "SandboxModel/Foundations/TableWrites.lean": {
+      "source": "SandboxModel/Foundations/TableWrites.lean",
+      "source_sha256": "208dfa301f1dd93efe247f5dfb4fb81e91f1af0fc05c97eae0725ce06e154128",
+      "sha256": "208dfa301f1dd93efe247f5dfb4fb81e91f1af0fc05c97eae0725ce06e154128"
+    },
+    "SandboxModel/Foundations/Containers.lean": {
+      "source": "SandboxModel/Foundations/Containers.lean",
+      "source_sha256": "2a2c85d734b4733bde95309e462f57895c0c98918b37cbed32af730593c2d869",
+      "sha256": "2a2c85d734b4733bde95309e462f57895c0c98918b37cbed32af730593c2d869"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/Funs.lean": {
+      "source": "verification/aeneas/foundations/SandproofFoundations/Funs.lean",
+      "source_sha256": "fae9c5ccc60e8bccf35f3812eb173dbdb59f5bb4f23645e9ba2070bcc0092c62",
+      "sha256": "fae9c5ccc60e8bccf35f3812eb173dbdb59f5bb4f23645e9ba2070bcc0092c62"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": {
+      "source": "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean",
+      "source_sha256": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+      "sha256": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": {
+      "source": "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+      "source_sha256": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
+      "sha256": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": {
+      "source": "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+      "source_sha256": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
+      "sha256": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/Types.lean": {
+      "source": "verification/aeneas/foundations/SandproofFoundations/Types.lean",
+      "source_sha256": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9",
+      "sha256": "a4c2bd74106833edb937005ff9f8ed5bdfa0fe963ffce18ece47aeccd0ea66d9"
+    },
+    "SandboxModel/Foundations/Model.lean": {
+      "source": "SandboxModel/Foundations/Model.lean",
+      "source_sha256": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559",
+      "sha256": "d1072deb2d99704488bdebc005a58f1221b071e70d4aeac0eb26189124769559"
+    },
+    "SandboxModel/Access/Cloning.lean": {
+      "source": "SandboxModel/Access/Cloning.lean",
+      "source_sha256": "4af0b705b4f12df99ed3927249ce3d1c69e085c0fbf967d2561d732a016d598a",
+      "sha256": "bb3ea03b9f4de6b32b1640b902fbfbe549e84a9f7befc1e7b608c90384a2c7cf",
+      "replace": [
+        [
+          "import SandproofNetwork.Funs",
+          "import SandproofStandardRecord.Funs\nimport SandboxModel.Lifecycle.Protocol.StandardRecordCloningDelta"
+        ],
+        [
+          "open Aeneas Aeneas.Std SandproofNetworkRust",
+          "open Aeneas Aeneas.Std SandproofStandardRecordRust"
+        ]
+      ]
+    },
+    "SandboxModel/Foundations/Cloning.lean": {
+      "source": "SandboxModel/Foundations/Cloning.lean",
+      "source_sha256": "506d1b9f1a2b487bfe821ba8075fbf39a69f9f4a472195f177f828fb90b42090",
+      "sha256": "506d1b9f1a2b487bfe821ba8075fbf39a69f9f4a472195f177f828fb90b42090"
+    },
+    "SandboxModel/Lifecycle/Protocol/StandardRecordCloningDelta.lean": {
+      "source": "verification/experiments/stage1-protocol/create-standard-adapter/StandardCreateCloningDelta.lean.in",
+      "source_sha256": "9abf9e54e1ac16b86b6c2356c320a929edbf7a8e563a579e768f248040b1d32c",
+      "sha256": "4109b3d459c018f385641700848380bd431764dd93ad7222d01395386ebbd732",
+      "replace": [
+        [
+          "SandproofStandardCreate",
+          "SandproofStandardRecord"
+        ]
+      ]
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Funs.lean": {
+      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Funs.lean",
+      "source_sha256": "c57b890e1f5eee5827316279b76e4cf8d7f8f16b34c6f5bf01015eb6f993a472",
+      "sha256": "c57b890e1f5eee5827316279b76e4cf8d7f8f16b34c6f5bf01015eb6f993a472"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/FunsExternal.lean": {
+      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/FunsExternal.lean.in",
+      "source_sha256": "22f828972faacc28c7ea4a124bdd76c757910cfc4026753605d678727662f9bc",
+      "sha256": "22f828972faacc28c7ea4a124bdd76c757910cfc4026753605d678727662f9bc"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Types.lean": {
+      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Types.lean",
+      "source_sha256": "c3d0a193cba91a5aa663cb257ce7902162f2f4128afe49f0fa3eddff674f6e2f",
+      "sha256": "c3d0a193cba91a5aa663cb257ce7902162f2f4128afe49f0fa3eddff674f6e2f"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/TypesExternal.lean": {
+      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/TypesExternal.lean.in",
+      "source_sha256": "0750324493f8f67e15ef16b22f40ec7b766f8713b07cb2ad0cd7e8d814fe757c",
+      "sha256": "0750324493f8f67e15ef16b22f40ec7b766f8713b07cb2ad0cd7e8d814fe757c"
+    },
+    "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean": {
+      "source": "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+      "source_sha256": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab",
+      "sha256": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab"
+    },
+    "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean": {
+      "source": "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+      "source_sha256": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673",
+      "sha256": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673"
+    },
+    "lean-toolchain": {
+      "source": "lean-toolchain",
+      "source_sha256": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
+      "sha256": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee"
+    },
+    "lake-manifest.json": {
+      "source": "lake-manifest.json",
+      "source_sha256": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+      "sha256": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264"
+    },
+    "tools/lean_session.py": {
+      "source": "tools/lean_session.py",
+      "source_sha256": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+      "sha256": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3"
+    },
+    "tools/proof_services.py": {
+      "source": "tools/proof_services.py",
+      "source_sha256": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+      "sha256": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7"
+    },
+    "scripts/lean-mcp-server.sh": {
+      "source": "scripts/lean-mcp-server.sh",
+      "source_sha256": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
+      "sha256": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f"
+    },
+    "lakefile.toml": {
+      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/view.toml.in",
+      "source_sha256": "4daadf2a4888e650811170edfa3ae72c784cff1d2977018e388fcbd498ec1ac3",
+      "sha256": "4daadf2a4888e650811170edfa3ae72c784cff1d2977018e388fcbd498ec1ac3"
+    }
+  }
+}

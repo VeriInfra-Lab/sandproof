@@ -1,0 +1,44 @@
+{
+  "kind": "ning-original-and-unadopted-standard-digest-native-plan",
+  "native_run": false,
+  "production_adopted": true,
+  "actual_source_original_sha256": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
+  "cases_sha256": "6e65643790fb26f16a673238cf1c49304a0ad850844d3528345fb9c546e3210c",
+  "native_variants": {
+    "original": {
+      "test_count": 5,
+      "expected_failures": [],
+      "expected_clippy_codes": []
+    },
+    "actual": {
+      "test_count": 5,
+      "expected_failures": [],
+      "expected_clippy_codes": []
+    },
+    "input-empty": {
+      "test_count": 5,
+      "expected_failures": [
+        "abc_known_digest",
+        "binary_bytes_preserved",
+        "complete_block",
+        "block_and_tail"
+      ],
+      "expected_clippy_codes": []
+    },
+    "nonempty-tail-zero": {
+      "test_count": 5,
+      "expected_failures": [
+        "abc_known_digest",
+        "binary_bytes_preserved",
+        "complete_block",
+        "block_and_tail"
+      ],
+      "expected_clippy_codes": []
+    },
+    "restored": {
+      "test_count": 5,
+      "expected_failures": [],
+      "expected_clippy_codes": []
+    }
+  }
+}

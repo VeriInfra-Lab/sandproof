@@ -4,15 +4,39 @@
 
 本页维护场景与通过判据，不维护逐批进度或机器台账。每次验收在 issue/PR 绑定精确提交、配置、产物摘要、结果和未运行项；原始日志放私有 artifacts 或脱敏 CI 附件。基础、组件、KVM、题集和形式化证明分层报告，不能互相冒充。
 
+## 两沙箱生命周期干扰对照
+
+使用同一获授权模板及两个不同请求编号创建独立沙箱；模板仅属于一个用户时，不用第二个
+未授权用户绕过可见性规则。保持控制 CPU/内存、Redis 持久化、所有超时和健康窗口不变。
+[原生命周期客户端](../tests/system/lifecycle_unload_scenario.py)允许调用者显式选择初次
+请求编号；同用户的后续操作仍须分配不同完整请求键，不重发副作用未知的操作。
+
+[同伴请求采样](../tests/system/lifecycle_peer_probe.py)在 A 上最多每秒开始一轮、最多一个
+未完成请求，分别记录状态查询、短命令写入独立标记和原 SDK 文件回读。关闭 SDK 自动重试，
+保留每次失败，回读不匹配必须失败；日志只保留错误类型/状态码，不复制异常正文。样本上限
+512 轮。B 分别保持运行、暂停/恢复、写入固定文件后暂停/恢复，记录各阶段时间和 A 的请求
+分布。它是干扰对照，不是开放到达率压力或 p99 保证。任何协议、资源、产物或清理未知均不
+视为通过；性能诊断允许采集同一服务组及辅助进程的 CPU 栈，最终对照须注明诊断开销。
+
+## 单机物理余量验收
+
+固定同一源码、模板和资源形状，分别报告最低启动卷与允许暂停/恢复的卷容量，不能把两者
+混为一项“最低部署容量”。规划给出固定增长、最大操作余量和 inode 上界；Rust 必须按相同
+要求激活。普通检查覆盖精确边界、算术溢出、外来池/缓存和 Python/Rust 相同口径。
+实机复用既有生命周期入口，核对小卷创建及首条命令、暂停/恢复/再暂停、低空间时原实例
+继续运行和精确清理。磁盘未来写满的逻辑额度保持，不以本轮采样占用替代上界。
+原登记/并发检查继续验证两个请求不能重复消费最后额度、未知操作不提前释放及重开保留责任。
+
+
 ## 第一阶段生命周期验收
 
-以下 E1–E16 是新增待实测场景，不把旧 S/DC/DK 或两题成绩迁记为通过。原基础/兼容/晋升检查继续保留，后文旧 V1 描述是既有工程检查，不扩大第一阶段证明目标。每批记录同一源码、工具/FC/guest/镜像/CPU/内核/文件系统指纹、故障点、操作键、持久与物理轨迹及精确残留。
+以下 E1–E16 是第一阶段完成判据；各场景是否通过仅按 issue/PR 的精确版本证据判断，不把旧 S/DC/DK 或两题成绩迁记为通过。首次卸载后查询 Unloaded 的成功只覆盖这条有限链，不完成 E1 的恢复连续性或整个故障矩阵。原基础/兼容/晋升检查继续保留，后文旧 V1 描述是既有工程检查，不扩大第一阶段证明目标。每批记录同一源码、工具/FC/guest/镜像/CPU/内核/文件系统指纹、故障点、操作键、持久与物理轨迹及精确残留。
 
 | 场景 | 输入与故障点 | 必须观察的结果 |
 |---|---|---|
 | E1 正常连续 | RAM-only 随机 nonce、已修改磁盘、长期 guest 进程；unload 后 resume | 新 VMM 继续同一状态和进程；旧 VMM 已退出、运行名额确实可复用；不能用磁盘文件重建 nonce |
 | E2 请求重试 | 同键同全文/不同全文、并发重发、过期窗口 | 同一原结果或明确冲突/过期；无第二身份/执行；未授权 owner 不可查询 |
-| E3 捕获前/中崩溃 | 暂停确认前后、文件短写/复制中重启 host manager | 原唯一 live/frozen 状态仍可继续；无未提交来源导致停机；普通失败不变 destroy |
+| E3 捕获前/中崩溃 | 暂停确认前后、Full 文件写入及克隆/摘要/同步窗口重启 host manager | 原唯一 live/frozen 状态仍可继续；无未提交来源导致停机；普通失败不变 destroy |
 | E4 文件已发布未登记 | rename/同步完成后 SQLite 提交前崩溃 | 由原计划对账；目录存在不直接授权恢复；无静默遗失或逐出 |
 | E5 已登记未收 stop 回执 | bundle 登记后旧 VMM stop 回包丢失 | 保留完整来源和原停止责任；只有真实退出/释放后报 Unloaded |
 | E6 已加载未激活 | LoadPaused 完成、MayHaveExecuted 标记前后崩溃 | 未越过激活点的原候选可安全对账；旧工作失效后才允许受控重试 |
@@ -28,6 +52,523 @@
 | E16 实用性测量 | 相同镜像/CPU/工作集，冷/热缓存，反复周期与不同材料规模 | 分别报告 freeze/capture/copy/sync/stop/load/activate/ready 时间，p50/p95/样本数，CPU/RSS/实际磁盘及峰值；不只报 API 返回耗时 |
 
 E7 必须在恢复后制造只存在于最新 RAM 的变化，再丢失激活确认，才能排除“重载旧快照也能通过”的伪测试。E10 包含 load 返回后、VMM 仍运行的时段；E1 包含旧 slot 被另一个会话实际复用。观测 oracle 接受临时两库差异，检查最终事实、责任和禁止状态，不要求每瞬间强一致。RAM/文件见证使用明确屏障或描述允许捕获点；不能把应用的两个非原子写入强行要求为永远相等，从而误报协议错误。
+
+E8 的[原 journal/应用回归](../controller-service/src/controller/lifecycle_inbox/source_work/tests/end_pipeline.rs)
+区分第二次 Unload 的 Freeze 仍为 dispatched/OutcomeUnknown，以及原 Freeze 成功观察已保存两种情况。
+真实 SQLite 重开后，观察不可用不能代替成功、派发当前终止围栏或释放原恢复 backing/pin/额度；
+成功分支由受控提供方返回完整原 Freeze 观察，检查先保存该观察，再派发同一当前 Kill 的围栏和同源 Stop，
+Stop 前 backing 责任保持。原应用恢复协调器另检查观察不可用时不执行新动作，解除观察故障后只重查原 Freeze，
+再执行当前终止动作；Host 观察与效果仍由受控提供方给出。它没有执行真实 VMM 查询或 SIGSTOP，不证明不响应的 VMM 已能终止，
+不能用该组件结果改判实机故障场景或代替完整 E8/E15 验收。
+
+[公共生命周期响应检查](../tools/tests/test_lifecycle_public_identity.py)核对请求接受、同键并发回复、
+重放、管理服务重开、卸载事实和同伴状态。操作键、版本、寿命及摘要中的整数、浮点数和布尔值
+必须各自保留原类型；JSON 键顺序和空白允许改变。检查使用受控的 HTTP 和来宾提供方，实际
+终止、恢复及到期场景的实机证据仍按各自精确候选登记。
+
+### 从性质定位测试与缺口
+
+下表定位已有入口及需要检查的覆盖范围，不代表执行结果。每批在 issue/PR 逐项记录：
+精确提交、入口/选择、实际命中的同步点、用户可观察结果、物理/持久证据、收尾结果，以及
+尚未检查的分支。状态使用「当前提交实跑」「历史证据已核对可复用」「仅组件通过」
+「入口存在但未执行」「失败/阻断」；一项同时包含不同状态时分别列出，不用一个绿色覆盖整行。
+历史报告仍保留原提交；源码相同只能支持明确输入范围的复用，不能把旧普通检查、单题成绩
+或一个故障代表写成当前完整生命周期/故障矩阵通过。LC-G 编号引用[现有性质定义](formal-verification-design.md)，不另造测试版业务规则。
+
+| 场景 / 主要性质 | 已有入口或组件定位 | 需要单独核对的覆盖范围 |
+| -- | -- | -- |
+| E1 / G1、G2、G3、G5 | [生命周期入口](../tests/system/lifecycle_unload_scenario.py) `normal`；[物理与账本观察](../tests/system/lifecycle_unload_runtime.py) | RAM-only 见证、同一进程/文件继续；另一会话实际复用旧位置；每次恢复的首条命令可用，不能只检查 Running。 |
+| E2 / G2、G4、G5 | 生命周期入口的同键屏障并发、重放/owner 检查；[中心决定](../sandbox-center-core/tests/lifecycle.rs)、[Redis](../sandbox-center-store/tests/redis_ledger.rs) | 已有同键并发及异文拒绝代表；过期窗口、不同操作的并发重发和回包丢失组合仍须分别记录，同时核对实际实例和原操作结果。 |
+| E3 / G1、G4 | `capture-freeze-receipt`、`capture-measurement-partial`；[捕获故障门](../tests/system/lifecycle_unload_capture_faults.py) | 冻结前后、Full 写入、克隆/摘要/同步是不同窗口；复制改为 CoW 后不能直接沿用旧复制中断证据。普通失败必须能继续原 VM。 |
+| E4 / G1、G4 | `capture-seal-receipt`；捕获故障门 | 文件完成、封存、SQLite 登记各自的前后窗口；目录存在不能代替恢复授权。 |
+| E5 / G3、G4 | `capture-stop-receipt`；生命周期物理观察 | 区分已经退出但回执丢失、仍运行、观察未知；Unloaded 与释放位置必须有原对象依据。 |
+| E6 / G1、G2、G4 | `restore-prepare-receipt`、`restore-prepare-destroy` | LoadPaused 与可能执行标记两侧分别检查；加载未知时不能重新分配另一个候选。 |
+| E7 / G1、G2、G4 | `restore-activation-loss`、`restore-candidate-exit` | 存活分支必须保留激活后新增 RAM；死亡分支明确 StateLost，不能重载旧来源假装恢复。 |
+| E8 / G2、G4、G6 | `restore-prepare-destroy`、`restore-activation-destroy`、`capture-freeze-receipt-destroy`；[公开竞争入口](../tests/system/sdk_lifecycle_races.py) | 激活前/实际激活后的 Destroy 是不同窗口；有限代表仍需独立实机验收，不完成全部 Destroy/到期竞争。 |
+| E9 / G2、G3、G4 | `normal` 的实际位置复用、`material-retirement-late-receipt`、`slot-reuse-late-stop-delete`；[精确材料回收](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)、[进程身份观察](../sandbox-runtime/src/uid_retirement_tests.rs)、[迟到材料回执组合](../controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement/application.rs)、[复用观察器与回执门](../tests/system/lifecycle_late_material_receipt.py)、[原 Stop/Cleanup 迟到重放](../tests/system/lifecycle_late_host_actions.py) | 回执代表压住原删除后的结算；动作代表保存原 Destroy 的 StopVm/CleanupVm，在另一 owner 实际复用后重放并独立检查资源和 guest 连续性。入口已接、自测通过不表示实机已验收，也不覆盖任意 unlink、CleanupSlot 或完整 E9。 |
+| E10 / G1、G3、G4 | `normal`、`material-retirement-restart`；[旧代回收观察](../tests/system/lifecycle_unload_retirement.py)、[源材料观察](../tests/system/lifecycle_unload_cow.py) | 顺序 A/B/C 回收不覆盖 reader 已接受、Load 返回、VMM 仍运行时的全部 GC 交错；分别观察 pin、文件与结算。 |
+| E11 / G1、G3、G4、G6 | [空间不足入口](../tests/system/host_enospc.py)、`capture-measurement-partial`；[Full 回收组件](../sandbox-runtime/src/snapshot_full_retirement_tests.rs) | 空间不足、短写、sync/rename/删除失败、提交未知需分别记录；保留原沙箱，并检查解除故障后的产品收尾。 |
+| E12 / G1、G2、G3、G5 | `normal` 的两 owner/两会话/三代保存点；[同伴采样](../tests/system/lifecycle_peer_probe.py) | 两会话有限代表不等于长期容量或开放并发压力；记录逻辑额度、物理峰值和最后实际残留。 |
+| E13 / G4、G6 | `normal` 的双管理重启、捕获/恢复故障选择、`material-retirement-restart`；[解码后终止组件](../sandbox-center-service/tests/business_authority/lifecycle_decoded_resume.rs) | 实际 mTLS/JSON 解码后到原 Redis CAS 的有限交错是组件边界；一次双重启不覆盖中心/宿主各自持久化、发送和接收确认窗口的独立中断及消息乱序。 |
+| E14 / G1、G2、G4 | `normal` 的旧/新授权检查、`data-drain`、`command-disconnect`；[真实上传排空](../tests/system/lifecycle_unload_data_drain.py)、[命令订阅观察](../tests/system/lifecycle_command_disconnect.py) | 在途上传只有已写前缀见证，不表示完整上传成功；命令切片检查同一原 PID 的静默 Start 订阅关闭、relay 内核退出与恢复后重新订阅，不覆盖任意输出中断点；不承诺旧 TCP/vsock 连续或命令重放。 |
+| E15 / G3、G4、G6 | `restore-prepare-expiry`、`restored-running-expiry`；[到期观察](../tests/system/lifecycle_unload_expiry.py)、[生命周期与寿命组件](../sandbox-center-core/tests/lifecycle.rs) | 分别核对加载中到期和运行 backing 到期；实际结果绑定精确提交，回收中及其它交错仍须另跑。普通 Destroy 和寿命不重置不能代替到期验收。 |
+| E16 / 实用性 | 生命周期入口的 `operation_timings`；同伴采样与既有 Harbor 入口 | 公共操作耗时不等于 freeze/capture/sync 等内部分段；冷/热缓存、规模、样本数和资源峰值分别报告，不从一题推出性能排名。 |
+
+E13 解码后终止组件使用原 `InternalClient`/`InternalServer`、独立登记的 mTLS peer、
+有界 JSON 解码与完整 `matches_request`，在客户端原调用已成功返回后持有同一 Resume
+观察值，再经原公开 Destroy 应用入口接受终止，交给原 `AuthorityPort` 的真实 Redis CAS。
+该 Destroy 调用直接进入应用方法，不经过外层公开 HTTP 路由；实际传输检查位于前面的内部 mTLS 调用。
+它同时要求正常当前 Resume 经原确认加状态提交接受；终止后旧值按 Stale 拒绝，只有原
+持久确认的一次 revision 递增，完整业务状态及 Redis 原 payload 字节保持，重开原
+Redis 账本后仍如此；同会话改 center/retention/node/version 的
+反例使用同一完整合同。反例是解码后主动构造的值，不声称原客户端接受了错误字节。
+物理就绪与材料事实由受控 Host 提供，原接收方提供匹配观察；实际 TLS、HTTP、JSON、
+公开接受与 Redis 路径原样执行。客户端返回是已解码的组件屏障，不能换成 relay flush
+或 EOF；本入口不声称截住已部署父调用的同一次 CAS，也不代表真实 VM、独立服务重启
+故障、全部乱序、系统 E13 或形式证明完成。
+
+[普通恢复竞争组件](../sandbox-center-service/tests/business_authority/lifecycle_resume_races.rs)
+分别从原 `reconcile_once` 和公开查询应用方法进入，沿真实 Redis 保存路径处理同一
+Resume。既有受控 Host 先保留完整成功回复，原 Destroy 接受后才放行；查询必须明确
+返回 Conflict，后台不得完成旧恢复，完整终止状态与未完成 Destroy 责任保持，不能提前
+退额。两条入口各有不插入 Destroy 的正常对照，必须采纳同一回复并进入 Running。
+从启动该调用之前计时到调用返回，须小于夹具原 200ms 回复预算；否则测试失败，不能把
+超时拒绝当成终止检查通过。没有新增生产控制点；Host 物理事实受控，没有执行外层
+HTTP、真实 VM 或中心进程重启，不能据此声称全部 E8/E13 或形式证明完成。
+
+[调和回复期限组件](../sandbox-center-service/tests/business_authority/lifecycle_ready.rs)
+复用原真实 Redis/应用夹具、200ms 回复期限和同一 Create 工作。持有一条已进入的
+Host 观察回复，同伴先由原 worker 提交 Running，再检查其公开查询；只在记录的剩余
+预算加采样时刻这一保守期限上界之后放行完整原 Ready。原扫描只完成同伴，原接受的
+完整 Sandbox、编号前沿和在途责任保持；下一次调和继续同一原工作，不能新建 Create
+或释放未确认责任。既有 `Ok(2)` 并发用例和全部预算/断言保持。此处跨越的是回复期限，
+没有推进业务时钟或制造 TTL 到期；Host 物理事实为受控输入，无 KVM/新 Lean 结论，
+也不能把该确定性分支直接认作任何旧计数失败的根因。
+
+[Unloaded 准备夹具](../sandbox-center-service/tests/business_authority/unload_setup.rs)
+仍走原公开 Unload 应用方法，不经过外层 HTTP 路由。正常 Ready 只调用一次；
+仅在返回 Busy 后，读取完整已确认
+CenterState 并断言与原 Running Create 状态相同，才允许用同一 session、完整请求及
+原 200ms 单次预算再准备一次。第二次仍失败就保留失败；OutcomeUnknown 和其它错误
+不补发，确认状态本身未知也停止。这是至多两次的测试准备，不能用于重试未知写入或
+承诺一条请求必然成功。原主体断言和单次期限测试不使用此准备策略。独立组件回归用
+真实 Redis 和受控 Host 检查一次成功、已知 Busy、实际跨期限的迟到 Ready 及未知结果
+停止；不把夹具调整称为旧 CI 超时根因修复或 KVM 验收。
+
+准备夹具另直接检查两个停止边界：首个 Busy 已由原公开方法确认无重放后，
+只丢失随后状态确认的真实 Redis 回执，原 helper 返回 OutcomeUnknown 并保持围栏，
+显式恢复后完整状态及原包络字节不变；受控观察连续两次因原时钟偏差规则返回 Busy，
+原 helper 保留第二次 Busy，最多两次原来源观察，不发第三次或新键。两例均保留原
+200ms 单次预算，不修改准备算法、生产重试策略或实际期限。
+
+E13 首次 Unload 的中心回执窗口使用同一入口的显式 `--scenario unload-receipt-restart`，默认 `normal` 不变；该选择器的精确实机结果按 issue/PR 记录，入口存在不代表验收通过。它装配[一次性回执门](../tests/system/_internal_fault_relay.py)和[恢复观察器](../tests/system/lifecycle_unload_receipt_loss.py)，在原配置封存及服务初始化前接入同证书、固定回环地址的双向 mTLS relay，不改变预算、原库、身份或生产协议。回执门只在原 `/internal/lifecycle/unload-observation` 返回真实完整 `Unloaded` 时，在发送任何回复头之前挂起；`Pending`、`OriginalContinued`、其他路径和错误状态均不算完成回执。并发完成回执必须全文相同，显式丢弃、关闭后端并全部排空才提供证据；超时、503、回复尝试或 relay worker 失败不能代替该证据。原 Create/DK02 行为保持独立。
+
+该选择为原 SDK 后台 RAM 见证启用 relay 的数据回复流式透传，真实回复头/首帧不等待整个命令流结束；控制回执仍走原有限完整解析。两端保留原 mTLS 和固定路径检查，请求及回复仍各限 2 MiB、原 worker 上限 8，每个数据 worker 至多一个取消监视器，流不得延长原场景绝对截止时间。客户端取消、产品原数据撤销或停止夹具时关闭该调用拥有的后端连接；数据中止只表示该数据流结束为未知，不补发第二个 HTTP 回复，也不能作为 Unloaded 证据。此有限测试 relay 不提供通用大文件/无限输出代理。原生 `secure_data` 的 `original_stream_crosses_python_relay_before_eof_and_cancels_backend` 复用原 Rust 流提供方和两段真实 TLS，检查 EOF 前首帧及取消后的真实后端流关闭；该组件不执行来宾命令或 VM。
+
+观察器范围为同一原 Create→首次 Unload：在门武装前单独计划读取原中心审计取得 `create_identity`，原宿主运行证据提供四个寿命字段，公开 Unload 回执提供完整接受键/会话/版本；按 `hold → center_stopped → discarded → restarted → recovered` 顺序比对原中心审计和实际进程观察。`hold` 在门已截获真实完成回执时记录 `Processes.observe()`；随后只强停中心，原 `Processes.audit('center')` 必须仍显示完整接受的 Unload、尚未保存结果且未退额。`observe_survivors(processes)` 直接复用原 procfs/cgroup 观察器，要求中心已死、Host/Redis 的 PID/启动时钟/账号/二进制 inode 均未变化。丢弃后等待 `drained`，使用 `relay.unload_loss_evidence()`，再启动原中心并采样 `Processes.observe()` 交给 `restarted`。恢复后的原生中心审计只允许该操作增加同一完整 `unloaded` 结果及相位变为 `unloaded`；Create 历史、接受时刻、完整 intent/context/retention、源代/capture、摘要/材料字节、寿命保持；完成结果保存后，只释放该会话原实例/CPU/内存运行额度，磁盘额度保持，未收结果时不得先退额。节点身份与注册策略也保持；`NodeRegistration.refresh_node` 实际更新的健康租约和物理 `free` 可以刷新，`free` 仍须在原 limit 内，不能用物理空闲代替逻辑退额。
+
+中心原生审计需要停止其写者，因此故障窗口的重启后进程采样先完成，再做恢复后的计划审计；武装前及恢复后的计划停止在报告中分别记录，不能冒充全场只有一次重启。任何需要重启 Host 的离线审计也放在该窗口之外。Unload 已完成时原 VMM 应已退出，不能套用 DK02 要求旧 VMM 仍运行。该选择器继续复用原 `RuntimeServices`、受保护配置、HostLease、固定预算及同一个绝对截止时间，并执行原 normal 的 A/B/C 三代、另一 owner 实际位置复用、源材料回读、旧代退休及 Resume→Destroy→GC；relay 同时透传原 Resume 观察路径。仍须实机核对 Host 原持久 Unloaded/清单及材料、原 VMM 退出、重复观察的原捕获责任和最终精确收尾，不能仅凭字段相等断言物理事实。包括失败路径在内均停止本夹具拥有的 relay、等待原有限 worker；最终 relay 错误使报告失败，未知产品资源和 HostLease 按原路径保留。
+
+[自测](../tools/tests/test_lifecycle_unload_receipt_loss.py)覆盖正常记录、遗漏/变更字段、进程身份、共享计划审计和门/观察器的真实装配顺序、截止时间及失败关闭；原生 `secure_probe` 的 `original_unload_receipt_is_held_dropped_and_retried_across_double_mtls` 使用 Rust 真实请求/响应编解码及原双向 mTLS relay，并在显式丢弃/重试后实际传输原 Resume 观察请求，两端 CA/SAN/叶 pin/ALPN 保持原检查。其 receiver 是受控值提供者，不是持久收件、Redis 恢复或 VM 证据。这些组件检查不表示 E13 或 Linux/KVM 场景已验收。
+
+回执场景 relay 的数据回复使用明确的 HTTP 分块结束标记，不能依赖 Python TLS socket
+关闭表示正常 EOF。原生组件同时检查首帧转发、正常完整结束和取消后后端关闭；实际传输
+错误、声明长度截断、取消或场景截止均不能补成功结束标记。2 MiB 正文字节上限不变，
+分块编码仅补 HTTP framing，不能把丢失或截断的数据变成成功。SDK 错误类型必须结合原始
+RPC/传输错误判断，不能把所有 TimeoutException 都解释为真实等待超时。
+
+E13 的 [Destroy 终局提交回归](../sandbox-center-service/tests/business_authority/lifecycle_terminal_reply_loss.rs)
+分别丢弃实际保存 `Cleaned` 和实际保存 Host 确认的 Redis 提交回包。两侧都要观察到
+中心状态未知且禁止继续派发，并用独立 Redis 读取核对原业务块。前者不能向 Host 发确认，
+显式对账后只补原 Destroy 的确认。后者对账后直接读回已确认终局，不能再发原动作。
+仍保留原结果、额度结算和全文重放。Host 的终局和确认由组件夹具提供，实机收尾单独记录。
+
+E13 首次 Resume 的中心回执窗口使用同一入口的 `--scenario resume-receipt-restart`，精确实机结果同样按 issue/PR 记录。该选择复用上述双 mTLS、有限流、固定配置/预算/绝对截止时间和中心独立重启流程，保留原 normal 的两 owner、实际位置复用及 A/B/C 三代。它在首次 Unload 已完成、原来源物理证据取得之后计划读取中心审计，随后只武装 Resume 门；不会同时丢弃 Unload 回执。`/internal/lifecycle/resume-observation` 只有 HTTP 200、完整当前请求相同的 `Observed` 才在回复头前被保持；Pending、NotCurrent、NotRunning、Expired、StateLost 均不触发。全部 binding、操作参数、center、retention、接受版本与独立原 Unload 来源关联，目标代允许大于来源代的空洞，不要求加一，也不要求 key window 等于 retention window。
+
+并发只读 Resume 观察的 `observed_at_ms` 可以变化；每次实际合法时间单独保留，完整意图和另外四个寿命字段必须相同。门终身最多保持八份完成回执，显式丢弃、后端关闭并排空后，才允许 `held == dropped > 0` 且 `response_attempts == 0` 的丢失证据。超时、503、回复尝试、工作者失败和未知收尾不能代替它。中心停止后的原账本必须仍为同一 Resuming、当前操作尚无 Running 结果，原 Create/Unload 历史不变；接受 Resume 时相对 Unloaded 精确重新占用原实例/CPU/内存额度，磁盘额度不变，中心故障及恢复不能重复占用或提前释放。重开后只允许同一 Resume 增加原寿命的 Running 结果和更新 `last_running`，新的合法只读观察时间不冻结。
+
+[Resume 观察器](../tests/system/lifecycle_resume_receipt_loss.py)在强停中心之前、以及原中心重开就绪之后，短暂只读原宿主 SQLite，按完整意图核对同一 restore claim、可能执行标记和 backing 使用 pin，并复用原受保护进程记录、procfs、netns、磁盘、cgroup 及位置 UID 观察器核对同一活候选；不停止或重开 Host/Redis 来取得该窗口的证据。故障后原计划 Host 审计另核对同一 context/source/pin，原 RAM/进程/文件继续与材料未写坏仍由正常链独立检查。候选未知或换代使本轮失败并保留原责任；两次快照相同不证明窗口内没有任何 API 调用，也不替代 E7 激活后新 RAM 的独立故障证据。中心计划审计重启、原双管理重启和故障后 Host 计划审计分别记录，不能说全场只重启了一次中心或 Host 始终未重启。
+
+[Resume 自测](../tools/tests/test_lifecycle_resume_receipt_loss.py)覆盖完整字段关联、原来源独立寿命、合法时间变化与限额、未知/替换候选拒绝及原编排顺序；原生 `secure_probe` 的 `original_observed_resume_receipt_is_held_dropped_then_read_again` 通过真实 Rust 编解码和两段原 mTLS 运行保持、显式丢弃及重读。其事实提供方仍是受控值，不能当作宿主接受、持久收件或 VM 运行证明。实机须在独立新部署上运行此选择，核对报告 `resume_receipt_restart` 的 pending/fault_window/candidate/recovery、`resume_receipt_same_candidate`、三轮正常记录与最终产品 Destroy/GC/额度、relay 和环境收尾；任何必需观察缺失仍未验收。该有限代表不关闭全部 E13。
+
+该 Resume 选择另在武装故障门前建立正常同伴的原 SDK RAM/进程/文件见证，中心恢复后、
+计划 Host 审计前，用同一执行授权推进一次计数。`resume_receipt_peer_progress` 分别保存
+同伴 session、初始化状态、前后见证和完成状态；初始化未知或恢复后未推进使场景失败，
+保留两会话，不重发 Resume 或自动 Destroy。复用同一个正常 Running 消费者和受控 SDK
+自测，保留失败 Unload 的原结果/寿命判据。该观察不承诺中心停机期间公开 API 可用；
+默认 normal、三代流程、原预算和故障点保持，新增实机仍须由 ning 验收。
+
+先收齐正常链：create → 修改 RAM/文件 → unload → 双管理重启 → 另一 owner 复用旧位置
+→ resume → 继续修改 → 后续保存/恢复 → destroy。复用 `normal` 原有三代检查，不改成
+更短演示；逐代验证旧材料回收、当前来源可用、两会话无串扰，最后同时核对公开结果、
+SQLite/Redis 责任、实际 VM/文件/网络及额度。产品收尾通过之后才做测试环境回收，两个结果分别保存。
+本轮未做的故障窗口保持缺口，不因正常链通过关闭 E2–E15；有限时间内收尾也不是 G6 的全称证明。
+
+独立生命周期实机入口 `tests/system/lifecycle_unload_scenario.py` 使用两个保留会话、两个运行位置：第一会话卸载后让第二会话占用原位置，再恢复第一会话，核对另一会话未受影响，随后销毁第二会话。`normal` 在同一第一会话形成 A/B/C 三个保存点并各恢复，继续核对旧代回收；其它明确故障选择只按其原有限周期和到达点验收。会话保留数直接传给中心账本和宿主 inbox，不从任务数推算。该入口可使用已有基础模板；两题评测的 10 GiB 模板不是此场景的前提。按实际模板大小和 2 GiB VM 内存计算完整包络，继续检查原有限激活上限、实际可用字节/inode、同文件系统以及材料项目硬配额。该场景不代表两题评测或 E1–E16 全部通过；实际部署和结果绑定精确提交另行记录。实机服务使用优化构建（`opt-level=2`），显式保留调试断言和溢出检查，并记录构建输入与实际二进制摘要；基础单元测试仍走原入口。未优化程序在受限 CPU 下的超时不能直接当作产品性能结论。
+
+E14 的显式 `--scenario command-disconnect` 保留同一正常链的两 owner、实际位置复用、三轮保存/恢复、源文件核对、旧代材料回收与最终 Destroy/结算，实际执行与收尾结果按对应候选的 issue/PR 记录。它只对原 RAM witness 的唯一公开 PID 调用固定 SDK 2.51.0 的 `commands.connect`，在首个 Start 事件返回后由同一线程单次 `handle.disconnect`；不并发关闭正在执行的生成器，不调用 kill/close_stdin，也不重发未知 Connect 或改用 Start。首次 Unload 前及每次 Resume 后各执行一次，并用原受保护 helper route 和原 pidfd 确认对应 host relay 的内核退出，再经独立有限命令确认原 guest PID/start ticks/RAM nonce 不变、RAM counter 与磁盘标记继续进展。每轮恢复仍先由原场景核对新元数据/激活 RAM 与旧凭据拒绝，再用新授权连接原 PID。客户端关闭返回不等于内核退出，relay 退出也不表示 guest 退出或全部服务端登记已退休。报告不保存 bearer 或原 RAM nonce。这一静默命令订阅代表不覆盖任意 stdout/stderr 中断、卸载撤销时仍持有的命令流或网络连接连续性；普通自测的 SDK/受保护 route 提供方是受控输入，真实 Linux 子进程与 pidfd 检查也不代替 KVM 验收。
+
+正常链复现与收尾按下列顺序记录，不能用测试环境卸载工作卷来代替产品回收：
+
+1. 固定干净源码提交和实际 Center/Host 二进制清单；保留优化构建的调试断言及溢出检查。
+   普通测试解释器还须实际支持 `os.pidfd_open` / `signal.pidfd_send_signal`，仅 Python 版本满足不足以说明环境完整。
+   真实 Redis 二进制须由运行测试的账号可执行且摘要匹配原固定材料；不放宽受保护材料目录的权限。
+2. 使用[原 fixture 构造](../tests/system/_complete_runtime.py)和[原容量计算](../tools/runtime_acceptance_budget.py)
+   生成两 owner、两位置、1 GiB 基础磁盘及 2 GiB 内存的显式输入。工作卷大小是部署选择，
+   与启动所需空间、材料项目硬配额、实际物理峰值分别记录；不能把预分配卷大小写成实际使用量。
+3. 由[原存储工具](../tools/single_host_storage.py)准备独立工作卷，使用原 HostLease 排除冲突任务，
+   再经[配额读回](../tests/system/lifecycle_unload_quota.py)核对实际内核额度及原文件系统身份。
+   保留原服务/VM cgroup、独立角色账号、镜像摘要、TLS 和启动检查，失败不自动缩小预算或延长期限。
+4. 执行原生命周期入口 `--scenario normal`，完整保留三轮保存与恢复；记录全部 CLI 参数、
+   SDK/Redis/Firecracker/宿主版本和部署期限。不同部署期限的结果不能直接拿来做延迟排名。
+5. 核对 `complete`、三项 `cycles`、每轮 `cow_source_after_guest_write` 的源文件未改写及原 backing pin；
+   前两轮 `old_material_retirement` 必须同时表明旧 VMM 退出、旧材料确已删除、释放正额度且后继材料仍被保留。
+   最终 `settlement` 必须来自原产品账本和物理观察，不能用操作被接受或公开状态文本代替。
+6. 只有原入口给出 `product-gc-settled-exact-runtime-free-managers-exited` 才进入环境回收。
+   先导出原报告、SQLite/Redis 及日志的受保护证据并保留摘要；确认原服务组为空、原 VM 域无进程、
+   工作卷身份未变，再正常卸载并删除本轮创建的原工作卷，最后释放原 HostLease。未知结果保留现场，
+   不使用强制/惰性卸载、全局 kill 或按目录年龄删除。
+
+测试报告分别写「产品资源归零」「测试部署已回收」「剩余或未知资源」。普通测试中预置的特权忽略项
+不计为实机通过；受控并行下通过与默认高并行失败也分别保留，不以重跑覆盖原失败记录。
+这一正常链不代替其它故障选择、到期竞争或全称证明。
+
+同一生命周期入口用 `--scenario` 明确选择 `normal`、`restore-activation-loss` 或
+`restore-candidate-exit`。后两者复用受保护的激活观察门，先确认原持久激活标记与只存在于
+最新 RAM 的变化，再丢失管理服务的激活回执。存活分支必须接续同一 VMM/netns 和来宾进程，
+继续完成两轮恢复；退出分支只运行一个故障恢复周期，由隔离测试监督器先核对原进程身份、
+持有 pidfd，再仅对该句柄发送退出信号并确认内核退出，不用 PID 缺席或超时代替退出。
+随后检查公开 `StateLost`、同请求重放及管理服务重开后仍为同一结果、旧授权及本次恢复
+凭据拒绝、原恢复记录/材料引用保持且未出现替代候选、另一用户会话不受影响，最后由公开
+Destroy 和原产品流程完成 Cleaned、物理释放及账本结算。故障注入不修改账本或删除进程/
+材料记录；退出本身不是释放位置或材料的凭据。该分支不认领正常两周期或任意故障后的
+状态可恢复性，不能关闭存活分支的原断言。
+
+E7 的 [迟到就绪回归](../sandbox-center-service/tests/business_authority/lifecycle_resume_races.rs)
+使用真实 Redis 与原中心后台或查询入口。先保持同一 Resume 的旧就绪答复，再通过原
+查询把 `StateLost` 保存到仍是同一键和版本的 Resume；在旧答复的原期限内放行，
+核对旧就绪被拒、业务块字节及原额度保持、全文重放只返回原接受。已发布过 Running 的
+查询分支还核对本次恢复的数据凭据已撤销。重开原 Redis 账本仍读回同一
+`StateLost`，无需再次询问 Host。Host 退出与就绪来自受控组件输入，实机分别验收。
+
+`restore-prepare-destroy` 先核原 LoadPaused 候选，再持同一 pidfd 暂停该 VMM 进程，
+使原只读 API 观察暂时不可用。只有真实 Destroy 已进入宿主、原终止围栏已安装且原
+Prepare 仍未完成时，才恢复这个进程供原取证/Stop 流程推进；SIGCONT 不等于激活 vCPU。
+原另一会话的查询在该候选仍停止期间必须返回。随后复用已有 Cleanup 成功但 SQL 回执
+未记录时的管理服务退出点，稳定读取原 Prepared/Stop 完整回执及精确进程退出；未决
+Cleanup 阻止明细退休，不靠轮询碰巧抢在 GC 之前。重开后沿原 Cleanup 观察、公开
+Cleaned 与产品结算完成收尾，不用缺失记录或测试信号冒充成功。
+
+同一场景还在公开 Destroy 已接受、原 LoadPaused 候选仍停止的 `Terminating` 阶段，
+以及实际产品回收后的 `Cleaned` 阶段，分别重放原完整 Resume 请求。必须返回原历史接受，
+当前终止版本和阶段保持不变；同键改写期望版本必须冲突，数据访问和旧凭据仍拒绝。
+前一重放之后继续检查原 Prepared/Stop 与没有第二次 Prepare/Activate，后一重放之后继续
+核对最终资源结算，不能只凭两次 HTTP 202 宣称不会复活。这只覆盖原保留窗口内的重放，
+不替代过期窗口、迟到物理删除或 TTL 竞争。
+
+到期代表使用 `restore-prepare-expiry` 与 `restored-running-expiry`，第一会话初始寿命明确
+为 75 秒，另一 owner 保持原部署寿命。不得改宿主时钟或发送第一会话的 Destroy；若到期前
+未达到指定加载/运行位置，场景失败而不是跳过。依据原 Rust 中心审计中的实际内部终止键、
+原寿命和完整操作历史确认后台到期，不能从经过了某段等待或公开查询自触发到期推断。
+内部终止没有采样接受时刻，报告必须保留 Unsampled，不能伪造一个到期接受时间。
+
+前者复用原 LoadPaused 候选暂停，在后台终止已到达时确认原材料使用登记与正额度仍保留。
+为确定性覆盖原缺陷，加载中代表在期限到达前停止中心，观察宿主独立进入原 Resume 的
+期限补偿后再恢复中心；不得用中心先发 Kill 的另一合法交错替代。中心的暂停只影响管理
+服务，不暂停宿主时钟或修改寿命。到期加入原 Resume 的期限补偿，而不是另建 Kill；同一原生操作只能计数一次，但真实
+重复 Prepare 或任何 Activate 仍须拒绝。仅在原操作已关闭运行资格且完整身份一致时撤去
+进程暂停，让原只读 Prepare 观察完成；这不执行来宾激活。原终止围栏必须在 Stop 前生效，
+并在 Cleanup 已完成、SQL 回执尚未写入的固定位置核对其成功回执及文件，再完成实际回收。
+后者在原 Stop 派发后、物理效果前
+让宿主管理服务退出，稳定核对到期后的原 VMM 和另一 owner VMM 仍在、来源文件完整、
+使用登记和额度未提前清除，再重开原管理服务完成 Stop/GC。管理服务退出期间不承诺另一
+会话的管理请求持续可用；恢复后仍须确认它保持原实例且可用。两者最后分别记录自动终止
+完成与全局资源归零，不把它计入主动 Destroy 的操作耗时，也不替代其它到期/回收交错。
+
+`normal --expired-window-replay` 在完整原三轮正常链及产品结算之后，另检查 E2 的窗口边界。
+[窗口观察器](../tests/system/lifecycle_window_replay.py)只轮询原服务的当前窗口，等待产品按
+原保留期、确认和关窗协议自然退休，不改时钟、数据库、保留期或原场景绝对期限。
+退休后原 Create 原文和合法改参、旧 Resume/Destroy 须因过期窗口返回 Conflict（409）；
+旧 Unload 及原/另一 owner 查询先查已退休会话，须返回 NotFound（404）。各接口只接受
+自己的精确分类，不能把任意错误算作拒绝成功；旧数据令牌仍拒绝。原物理/账本结算须再次确认无新责任。
+同配置重开两个 manager 后重复这些检查，原窗口不得倒退。
+
+为排除“所有请求都拒绝”的伪通过，再用同一 owner、同一原序号和完整原参数，在原接口
+返回的新窗口创建一次新的会话，确认实际 Running、首条 SDK 工作和原 VMM 身份。新键原文
+重放须保持同一接受及同一 VMM，旧请求拒绝不能影响这个后继。最后通过原 Destroy、原
+物理观察和产品结算确认后继收尾，之后才允许回收测试部署。原正常链的三轮、两 owner、
+位置复用和材料检查均保留；附加创建/销毁的计时另列，不改写原三轮或第一次结算的时长。
+本扩展没有故障写重试，不以 Stale 推断旧请求历史上没有执行。
+
+新窗口验收按 JSON 类型核对重放接受，以及重放后和旧请求拒绝后的两次完整 Running
+查询。字段顺序可以变化，数值相等的布尔或浮点值必须拒绝。观察器回归从原场景入口
+读取受控 JSON 回执，覆盖回执与查询中的这些差异以及提前失败后保留现场的路径。
+
+报告的 `known_sessions` 纳入已取得合法接受回执的后继会话及其当前已知接受。
+窗口扩展失败时，`expired_window_successor_write_attempt` 保存后继最近一次 Create 或
+Destroy 的完整操作键。尝试记录只说明客户端进入了发送路径。回执未知时该次接受记录
+为 `null`，仍可从会话清单看到此前已核准的接受。失败后按已知身份保留现场。
+
+[HTTP/Redis 组件](../sandbox-center-service/tests/business_authority/lifecycle_window_replay.rs)
+另覆盖确认/保留期限/准确关窗回执三个独立门、同一 owner 尚被保留的旧窗口请求、不同
+owner 的独立键域，以及原 Redis 权威重新打开后的拒绝前沿。其宿主终局证据是受控输入，
+不算真实 VM 退出或完整 E2 实机通过；观察器自测同样不代替实际运行。每个层次的执行提交、
+结果和未运行项分别在 issue/PR 记录。关窗与丢回包的组合仍需另验。
+
+[Resume 并发组件](../sandbox-center-service/tests/business_authority/lifecycle_resume_replay.rs)
+从受控宿主 Unloaded 结果和真实 Redis 账本出发，屏障后将同一完整请求两次交给原公开
+HTTP 路由。正常对照核对两份相同的公开接受。故障对照让 Redis 实际提交，然后丢弃该
+次写的答复，两个请求都得到未知，原结果经耐久重确认后由同键原文读回。推进到无法
+读取的时钟后，全文重放仍返回原接受，同键改写期望版本仍冲突。原 Redis 负载、恢复
+材料键、记录与额度只允许一次业务决定。宿主结果由受控提供方输入，KVM 恢复结果另验。
+
+`restore-activation-destroy` 复用 E7 的原激活门，在原 MayHaveExecuted 已持久、实际
+激活后的新 RAM 见证已取得、SQL 尚无激活回执时接受公开 Destroy。复用原只读候选观察，
+核对完整 Resume/来源摘要、原激活标记、完整进程记录（包含 CPU 域）、位置/UID/网络/
+cgroup 及 backing pin；不能把旧 Unloaded VMM 登记为这次清理对象。原门继续后管理服务
+必须在既有激活回执前退出 86，随后只为精确终止收尾登记实际新候选，不称公开 Running。
+
+重开原 Host 并持既有 Stop 门，同一 SQL 快照须有当前 Destroy/Kill、真实终止围栏及
+全局唯一同源 Stop。原 Prepare/Activate 身份、完整 Full、寿命、正在使用的 pin/正额度
+和原材料保持，另一 owner 的实际 RAM/文件工作负载继续。历史 producer End 或 producer
+释放见证可以合法补齐，不将这类历史字段冻结成强一致要求，也不提前释放 live consumer。
+放行后在原 Cleanup 成功但回执未入库的退出点确认完整 Stop 回执与原 pidfd 的内核退出，
+再沿原产品 Cleanup/GC 达到 Cleaned；旧激活可仍未知或有同源迟到回执，均不能恢复终止
+资格。两阶段旧 Resume 重放、异文冲突、同伴同源进展及最终资源/材料结算分别核对。
+入口及受控自测不代表 KVM 已执行；本分支终止在首次恢复的公共 Running 之前，不认领
+正常三周期、E7 存活恢复或全部 E8 交错。未知/失败保留原工作、材料、首错及 HostLease。
+
+正常同伴在 Stop 门持有时及原会话 Cleaned 后，都按当前 Running 接受核对同一 RAM、
+进程、前后文件和执行授权，并各推进一次计数；同伴寿命仍由原物理观察核对。
+受控编排回归实际执行共享 Running 检查器：门持有期间停滞时不放行 Stop，Cleaned 后
+授权变化时不自动 Destroy 同伴。失败 Unload 的原接受、结果及寿命检查继续保留。
+初始观察也通过真实 SQLite 字节回执进入相同检查器；解析后仍核对完整身份、命令、
+成功结果和原进程。重复 JSON 键、损坏回执或外来身份必须拒绝，未收回执仍保持未知。
+
+宿主扫描公平性组件把“第五个请求获得工作名额”和“其创建完成”分开观察：第一轮四个
+缺失模板请求持额，第五个不能进入；第二轮必须实际选中第五个，再于模板边界等待同轮
+其它回调结束，避免材料维护的同沙箱工作许可竞争替代扫描测试。仍只执行两轮，保持
+原成功计数、一次 Prepare、其余请求未被接纳和最终名额归零断言；不以额外扫描或延长
+期限取得通过。这里不承诺任意并发维护下单轮必然完成，真实竞争的收尾另由对应场景验收。
+
+失败卸载后继续原 VM 再退出，由同一入口分别选择
+`continued-after-capture-exit` 与 `continued-before-admission-exit`。前者用受保护的
+测试门，在原工作器 Ready 和 SQL 授权之后、Full Release 之前，核对完整动作、Full
+摘要和真实工作器，再取消原等待；必须由该工作器自己持久记录 `NoRequest`，不能由
+监督器写入结束事实。随后沿产品继续协议确认原 RAM、来宾进程、凭据和寿命未重置。
+后者先保留合法来源及失败工作责任，在同一正式材料预算内触发下一次准入拒绝，并
+核对确无新的本地 Pause/Full；若原合法回收使所需责任不再占额，须记录场景未到达，
+不能暂停回收、降低容量检查或伪造记录来凑出拒绝。
+
+两者都只对已核对身份并持有 pidfd 的原候选注入退出，检查 StateLost、同请求重放、
+双管理重启、旧凭据拒绝及另一会话不受影响；历史 `OriginalContinued` 保持不变，
+没有替代加载，也不能先清 pin 或退额。最后必须沿公开 Destroy 完成产品回收。
+两种资格分别登记到达证据：未准入路径不得借不存在的 Full，已有捕获路径不得借旧
+Resume 围栏。存活、错误工作/围栏/进程、观察未知及观察期间终止的拒绝另由确定性
+组件覆盖。新增场景的实际执行状态按精确候选回执判断，不由入口存在推断通过。
+
+再次卸载的组件必须经过公开的 create→unload→resume→失败卸载继续→新键 unload，
+同时核对原历史和接受结果；不能只手造已接受意图后调用宿主准入。受控 Host 必须区分
+旧 Create 与当前 Resume 的真实观察来源，错误来源返回 NotCurrent，不能对任何旧
+Create 都返回 Observed 而掩盖路由错误。新的运行观察应核对已有继续事实，不改写历史。
+
+续期组合在同一公开链的 Resume 与失败卸载之间加入原 `set_timeout`：续长后越过旧来源
+期限但尚未到当前期限时，新键卸载仍可接受；缩短后即使旧来源尚有效，到达当前期限
+也必须拒绝。核对原来源和继续历史不变，并保留错 owner、错全文、终止抢占及迟到观察
+的拒绝条件。需要以真实 Redis 组件区分修复前后的同一断言；不把这项组件结论记为
+真实虚拟机或任意续期交错的形式化证明。
+
+在途数据写入代表复用正常两会话入口中的原 VM。先发送一个声明正文尚未完整的真实
+上传，实际读回已写前缀，并核对原持久 route 与仍存活的精确中继。卸载撤销后，调试
+屏障只停在该中继原停止流程之前；必须观察后台确实推进了同一完整卸载请求并因尚未
+排空返回 Busy，而非在后台尚未运行时检查一次数据库。屏障期间不得派发 Freeze/Seal，
+旧授权必须拒绝；放行后只沿原停止/等待与许可释放流程，再完成捕获、重启和恢复。
+恢复后核对真实前缀、旧凭据拒绝及新凭据可用。上传没有发送最后一个字节，不报告上传
+成功、原子写入或自动重传。独立 body/relay 两种释放顺序另由实际 SQLite 与子进程组件
+覆盖；组件通过不能替代这一物理代表。屏障仅用于隔离调试验收，不提供退出或业务资格。
+
+未知加载与终止的组件分两阶段检查。第一阶段保持 Prepare 未知，销毁/到期及重开不能
+清除原加载责任或 backing 引用；此时阻塞可以是正确行为。第二阶段解除故障，通过原
+只读恢复入口提交同一 Prepare 的确定观察，必须接续原停止与清理，不能再次 Load 或
+Activate。分别核对显式 Destroy 与到期补偿，以及来源摘要/代数错误的拒绝。Resume 的
+补偿清理计划排除已确定回收的旧代资源时，还须验证存活、未回收、当前代和记录缺失的对象仍被
+保留，并运行原正常恢复及再次暂停回归。受控物理提供方的组件结果与实际 LoadPaused
+回执丢失场景分别报告。
+
+上述有限代表使用同一实机入口的显式 `--scenario`，默认 `normal` 不变：
+
+| 选择值 | 实际到达点与接续要求 |
+|---|---|
+| `data-drain` | 首次卸载前持有实际上传中继；原驱动已经尝试推进但尚未排空，不得派发 Freeze；结束后按正常链恢复前缀 |
+| `capture-freeze-receipt` | 原 Pause 已返回、SQL 尚未收到回执；重开原管理服务，保留同一 VM 与原卸载责任（E3） |
+| `capture-freeze-receipt-destroy` | 原 Pause 已返回、SQL 尚未收到 Freeze 回执时，公开接受 Destroy；用同一 SQLite 读快照核对原 Kill、待回执 Freeze 和原材料责任。在持久接受原 Kill 后恢复同一 VMM 应答，并观察终止围栏、同源 Stop、原进程退出、旧请求重放、同伴继续及最终 GC（E8） |
+| `capture-freeze-receipt-expiry` | 保留原到期期限，由仍在运行的 Center 自动接受终止。审计重启后先确认原进程的监听端口，按原截止时间观察实际到期，再沿同一 Kill、围栏、Stop 和 GC 路径验收（E8/E15 的一个窗口） |
+| `capture-measurement-partial` | 当前 CoW 路径在 Memory 整文件克隆完成后、目标摘要尚未读完的实际 `Measuring` 窗口注入；原工作器记录真实 Returned End，失败后继续原 VM，再显式销毁，不称第二次 Unloaded，也不把该事件称部分复制写入（E3） |
+| `capture-seal-receipt` | Full 包和原物理完成记录已发布，SQL 尚未采纳；按原工作核对完整材料并接续，不能仅凭目录存在授权恢复（E4） |
+| `capture-stop-receipt` | 材料已采纳且原 VMM 已确切退出，SQL 尚未收到 Stop 回执；重开后按原责任完成卸载（E5） |
+| `restore-prepare-receipt` | 原候选实际 LoadPaused，SQL 回执和激活标记尚未记录；接续同一候选 PID/代数/VM，不能重新加载来源（E6） |
+| `restore-prepare-destroy` | 在同一 LoadPaused 候选的观察暂不可用时，经原公开接口接受 Destroy；先确认宿主终止意图及真实终止围栏，再取得原加载事实并沿原 Stop/GC 收尾，禁止第二次加载或激活（E8） |
+| `restore-activation-destroy` | 实际激活及新 RAM 见证之后、激活 SQL 回执之前接受 Destroy；同源终止围栏/Stop、pin/材料、同伴进展及原退出/GC 分别确认（E8；实机待验收） |
+| `material-retirement-restart` | 原 A 已按固定计划实际删除、SQL 仍为 Retiring 时同步重启管理服务；同一计划结算，当前 B 完整并合法恢复，最后产品 Destroy 退额（E10/E11/E13，G7） |
+| `unload-receipt-restart` | 首次完整 Unloaded 回执在回复头之前截住；只强停中心、审计同一待办且未保存结果，再显式丢弃并恢复；故障窗口 Host/Redis 原进程保持，前后计划读取分列；接续原 A/B/C 三代、位置复用、材料与最终收尾（E13 的一个中心回执窗口，实机未执行） |
+| `material-retirement-late-receipt` | 另一 owner 保持占用旧位置；旧材料实际删除后，压住原回执并验证占用者的原 guest RAM/进程/凭据和文件读写，放行后同一计划结算，再沿两会话原 Destroy/GC 退额（E9 的回执代表） |
+| `slot-reuse-late-stop-delete` | A 卸载后恢复，经原 Destroy 在 CleanupVm 成功、SQL 回执未记录的退出点保存真实 StopVm/CleanupVm；恢复并完成 A 的产品 GC/退额后，B 实际复用该位置。停下原 Host，用同候选的受信助手重放两条旧命令，独立核对 B 与账本，再恢复原 Host、读写原 guest，最后销毁 B 并退额（E9 的动作重复代表） |
+
+迟到材料回执代表沿原两会话与两位置预算执行：来源会话恢复到另一位置后再次卸载，
+另一 owner 一直保持原占用。原门先核对实际删除完成、完整 work/plan、已采纳的后继材料
+及仍为 Retiring 的完整额度；只读观察器在此时固定基线。门内和原回执结算后分别通过
+同一 SDK 读回并推进原 RAM-only 见证、读写原磁盘标记，核对 guest PID/start、RAM/激活
+见证、凭据及公开 Running 不变；同时比较原宿主 PID/start/boot、运行代、磁盘/网络/
+cgroup 身份、其它材料记录与账本预留。只有原完整命令放行后的 SQL Settled 才算结算，
+门的命中、发出 release 或路径缺失均不单独算通过。两会话最终须由产品 Destroy/GC
+完成物理与额度收尾，之后才退休本次精确门文件。
+
+该门的基线位于实际删除之后，证明范围限于后续迟到回执；不声称已经覆盖迟到 stop、
+迟到 delete、B 在删除前后的全部物理变化、项目配额的任意交错或完整 E9。安装测试门
+会在进入该窗口前按原实现重启 Host；门内保持同一 Host 进程与配置，不把这次准备重启
+写作 E13 故障恢复。未知、身份变化或期限耗尽保留失败报告、原责任和未确认的资源，
+不能刷新基线、放大预算或替换为一次正常场景。实机结果按精确候选和原批准输入另记。
+
+迟到 Stop/Cleanup 代表另需 `--stale-probe <同一制备 target/release/examples/stale_host_actions>`
+及 `--stale-probe-sha256 <批准制备清单中的 SHA256>`；使用唯一制备入口原有的 debug assertions
+构建，不能拿另一个候选助手或缺失退出点的普通 release 替代。保存动作时核对完整公开
+Destroy/原 Host intent、本地操作、原 Prepare resource、当前代 VM/epoch、成功 Stop 的
+PID/start 回执及尚未记录的 Cleanup 回执；动作缺失、退出码不符或历史先被退休均失败，
+不重新拼装命令。A 的原回收和退额完成后才让另一 owner 复用，同一 position 还须直接
+接续旧 VM（expected_previous），否则不能算覆盖此代表。
+生命周期请求采用协议 4，原生 WorkAction 采用协议 1。原 Prepare/Stop/Cleanup 的资源
+均须与同一来源 VM 的 resource_id 一致。保存动作时，公开接受、Host 版本、本地操作、
+终止 epoch、命令和 Stop 回执的身份字段须保持 JSON 整数类型。Cleanup 回执未登记
+要求原列为 SQL NULL，已存储的 JSON `null` 会拒绝并保留原故障现场。
+
+重放期间所属 Host 保持停止，助手初始化、传输、超时或格式失败不能通过。原助手把
+两条动作的 `Unknown` 或 `DefinitiveFailure` 汇总为未成功。独立核对原 node/claim
+元数据逐文件身份与摘要不变、原 B 的 PID/start/boot、UID、netns/cgroup/磁盘身份
+以及只读 SQL 的代数/凭据/额度/其它来源不变；恢复原
+配置 Host 后，再通过同一 SDK 凭据读写原 guest RAM 和磁盘标记。此处是已经正确回收的
+原命令迟到重复，不覆盖第一次物理删除与位置释放的任意竞争，也不把准备停启写作 E13。
+观察证据不足时保留两会话、原输入和责任；最终须取得两次产品 Destroy/GC 及零额度证据。
+
+在 `capture-freeze-receipt-destroy` 的 Host 重开前，以当前 Destroy 版本和新键尝试 Resume，
+要求 409。原样重放 Destroy 须返回同一完整接受，仅改 `expected_version` 的同键请求须返回
+409。每次请求后核对完整公开 Terminating 视图。Resume 拒绝及 Destroy 重放检查后，分别
+复查同一冻结窗口、原 VMM 端点、待回执 Freeze 和 backing pin/正额度。任何一处失败均
+保留已取得的接受和观察记录，停止后续 Host 重开与 Stop 放行。
+
+捕获点复用原第二次卸载，LoadPaused 点复用原第一次恢复；不为每个错误码新建虚拟机。
+命中故障开关、退出码 86、发送 gate 命令都不是通过条件，仍须比对完整请求、动作、
+来源、实际工作器/进程与持久记录，并完成各分支的公开结果和原产品回收。测试控制文件
+仅在原物理完成及产品 GC 后核对原身份退休；未知或失败保留原始证据。
+
+E4 的 [SQLite 登记回归](../controller-service/src/controller/lifecycle_inbox/source_work/tests/end_pipeline.rs)
+在原 Seal 与捕获结束记录已入库后，对同一 `CommitSnapshot` 回执注入实际 SQLite 回滚或
+实际提交后的结果未知。重开须保留原材料和额度。回滚分支没有登记或普通 Stop，未取得
+确切观察时继续保持未知；已提交分支不再次观察。接续时只保留一份原回执历史，普通 Stop
+绑定原 VM，且确认原物理位置释放后才可读到 Unloaded。VMM、文件及释放的输入由受控
+夹具给出，实际材料发布与实机回执仍按 `capture-seal-receipt` 单独核对。
+
+实机 Redis 等待预算通过公共参数 `--redis-operation-timeout-ms` 显式配置，默认 1000，范围 1–60000 毫秒。先定位同步落盘、调度或资源争抢；确认为部署负载与预算不匹配时，才根据证据选择该环境的值，不能因失败直接加大。参数在创建资源前校验，进入原中心配置及其摘要；生命周期报告的 `measurement_identity.redis_operation_timeout_ms` 核对并记录实际值。它不改变 `appendfsync always`、写前后健康检查、未知结果围栏、HTTP 状态断言、请求/场景期限或寿命，也不允许重试未知写入。该值是存储操作的等待配置，不是整个 HTTP 请求的硬墙钟上界；一次查询可包含多次顺序确认，验收须同时检查外层期限。某一环境通过不能说明任意存储负载都满足该预算。
+
+### CoW 文件与恢复组合
+
+固定候选先核对运行根、store、恢复私有目录所在的同一实际挂载、reflink 和项目配额
+能力；普通测试沿同一受支持文件系统建夹具，不用 skip 或复制回退让不支持环境通过。
+能力不符须在放行捕获/恢复前明确拒绝；能力预检不能代替每次实际克隆/同步错误处理。
+初始化须实际完成私有双文件 clone/读回/同步/精确删除，之后才发布 version 2 布局；
+旧 version 1 拒绝且无自动迁移。对原公开 `reopen` 检查正常打开→同设备不同 bind mount
+拒绝→卸载该别名后恢复正常，原布局字节不被改写；mount ID 仅在当次 FD 上观察。
+探针或后续发布失败后保留原目录锚点/部分文件，不能自动清空后伪装为首次初始化。
+
+E11 的[回执目录同步对照](../sandbox-runtime/src/snapshot_completion.rs)分别覆盖材料完成
+和原 Full API End。测试使用同一目录的 `O_PATH` 描述符，让原文件完成重命名、最后的
+目录 `fsync` 返回内核 `EBADF`。此时最终路径已有原字节，使用该描述符读取仍须失败。
+以正常描述符重开后，由原读取入口同步目录并读回同一 inode、相同字节。整个过程
+保持独立键并核对暂存不存在。组件结果约束文件读取与同步，SQL 收件、停机和产品实机
+另行验收。
+
+真实文件检查覆盖 state/RAM/磁盘的原字节、完整长度/摘要、稀疏区间、不同 inode、单链接、
+原属主及只读/可写模式。分别改写源与目标、unlink 一方后核对另一方仍保持原内容；
+测试可由自身文件的可信属主显式改权限制造写入，不放宽生产封存模式。覆盖重复目标、
+符号链接/硬链接、替换、跨挂载/不支持、配额不足以及第二个文件失败，保留已创建文件
+和原工作责任。源 stamp（含时间字段）按原判据检查，观察到合法变化时先分析裁定，
+不能为测试通过直接删除检查。
+
+E11 的[项目配额克隆对照](../sandbox-runtime/src/snapshot_store_tests.rs)在批准的私有
+reflink XFS 卷上运行。准备一个非稀疏的 2 MiB 来源和同一挂载上的两个空 store。
+用原配额工具分别读回项目标签、继承、硬限、实际用量及卷空闲。受限 store 采用
+1 MiB 项目硬限且留足 inode，健康 store 使用另一个能容纳完整克隆的项目。
+通过 `SANDPROOF_UNIT_CLONE_QUOTA_SOURCE`、`SANDPROOF_UNIT_CLONE_QUOTA_STORE`
+和 `SANDPROOF_UNIT_CLONE_QUOTA_CONTROL` 提供三个规范绝对路径，再显式选择：
+
+```sh
+cargo test -p sandbox-runtime --locked --lib \
+  snapshot_store::tests::actual_project_quota_clone_failure_with_healthy_control \
+  -- --exact --ignored --nocapture --test-threads=1
+```
+
+受限项目必须到达原 `BeforeClone`，记录实际 ENOSPC 或 EDQUOT，且没有完成克隆或发布。
+不调整限额，使用同一个来源 FD 在健康项目用新键完成克隆及同步，核对源摘要、独立 inode
+以及受限项目的原部分文件仍在。再次读回两项目和卷的用量，与固定提交的真实测试输出一并
+保留。原双路径的配额负例仍可独立运行。本对照只验证文件层克隆与保留责任，产品继续运行、
+数据库记账和最终回收须由各自实机场景取证。
+
+E11 的[清单短写对照](../sandbox-runtime/src/snapshot_store_tests.rs)以单独子进程运行
+`actual_manifest_short_write_retains_stage_and_allows_healthy_publication`。原 XFS 三件
+材料可写入并克隆，同一子进程的 `RLIMIT_FSIZE=128` 与忽略 SIGXFSZ 只作用于该进程。
+原发布入口须留下清单的 128 字节前缀并返回 EFBIG，原 staging 和已测材料保持，旧键
+不能打开或重新接管。提高该子进程上限后，以独立新键用同一源材料完成发布及读回。
+重开 store 后用原有计划精确回收残件，保留新包和原来源。只验证文件层短写及收尾，
+主机空间/配额、数据库责任和真实 VM 的结果各自验收。
+
+捕获故障点须对应真实克隆前后、目标摘要读取、同步与发布窗口；不能将摘要读取进度
+标成复制写入。恢复失败不得发布 Loaded/Ready、解除 source pin 或回退另一个 capture。
+事件选择使用同一 `SnapshotArtifactEvent` 及原 artifact/work 身份；`Cloned` 不等于
+`Synced` 或完整 bundle 发布，Measuring 的已读/总字节须来自原目标而非测试自己推算。
+该中途摘要门只接受当前 schema 2、`measuring-cloned-artifact` 阶段和
+`0 < measured_bytes < total_bytes`，不保留旧 `capture-copy-partial` 选择值或 copied 进度别名。
+历史 #712 的逐块复制故障证据保留原提交身份，不改记为本次克隆窗口已经通过。
+一次固定候选的定向真实生命周期仍检查 RAM-only nonce、guest 进程、磁盘和原运行身份、
+位置/材料回收；恢复后写入不得污染封存来源。已有工程链只能按实际输入范围复用，
+不将旧逐块复制路径的实机结果直接记成新 CoW 路径通过。
+
+小样分别记录逻辑长度、实际分配/共享块、后续写入增长、配额结果、读写量和耗时；
+保留 Firecracker Full 写 RAM、目标全量摘要读取的成本，不预设零读写或加速倍数。
+普通/文件组件、真实 KVM、形式证明及完整论文矩阵分别报告；本项不提前回收仍被运行
+VMM 使用的材料，自动回收按下述材料级判据验收。
+
+### 后继接管后的旧代材料回收
+
+确定性组件须覆盖后继未完整发布/未持久登记/提交未知、普通暂停失败均保持 A；合法
+B 接管且全部原使用结束后可以退休，不能以全部拒绝满足安全。beginRetire 与 claim/
+新引用的交错在同一 SQLite 事务只能有一方成功；原 loader、activation、Full worker、
+private backing、位置或其它 pin 未决时拒绝退休。真实结束必须完整匹配原材料/代次，
+并检查原释放事实在后继 Unloaded 事务固定，不能由位置最新记录或当前终止证书补造。
+
+E11 的[提交结果丢失对照](../controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement/commit_reply_loss.rs)
+从原应用入口触发删除许可与结算的 `CommitUncertain`，分别重开已提交和已回滚的 SQLite。
+未收到确认删除许可时不调用删除端。重开后，有固定计划则继续同一计划，确认回滚且无
+计划后才重新询问。已结算不再次删除或退额，未结算时保留原占用并用同一计划重试。
+新运行代的 backing、凭据和原释放记录须保持。Host 回执由受控提供方给出，
+本对照验证 SQLite 与应用编排，真实删除和 VM 观察另行验收。
+
+Retiring 提交前后故障、部分删除、删除完成丢回执、管理重启及重复/迟到回执均沿原
+work/plan 继续。核对错误身份不能删除后继或复用位置，后继再演进/续期不使合法旧计划
+损坏或不能结算，结果重放不双退额。旧 SourceWork/inbox 历史和消费标记仍可查询/
+重放，旧 Resume 不重新加载；直接使用当前严格内部格式，旧开发数据拒绝且不迁移。
+逐项核对源包、private backing、在途克隆和收尾的原预算；Retiring 未结算仍全额占用，
+回收受阻时按原容量拒绝后续工作。逻辑退额与共享物理块释放分别报告。
+
+E11 的[实际 unlink 失败对照](../sandbox-runtime/src/snapshot_material_retirement_tests.rs)
+用已批准 Linux 宿主的私有挂载命名空间，将原 Memory 文件绑定挂载到自身。原文件
+身份和已保存计划须继续匹配。真实退休先删除 State，在 Memory 的 unlink 返回
+`EBUSY` 后停止，保留原 Memory、Disk、原回执标记和另一键的材料。移除本用例的
+私有挂载后重开 store，用同一份序列化计划完成回收，重复执行仍成功。组件结果只
+约束文件和原计划，产品层的持久责任、配额和 VM 证据另行验收。
+
+G6 只扩展唯一 `normal`：产生 A→恢复 R1→B→恢复 R2→C→恢复 R3。在每次 Resume 前
+沿当前完整包锚定 C6 原目录/文件身份，真实 guest RAM/进程/磁盘推进后全读原五个文件，
+关闭观察 FD 才开始下一次 Unload。B/C 完整接管后，在会话仍未终止时用原 SQLite 的
+只读一致快照观察旧材料 Settled、固定原计划/回执及原预留结算，再核对原精确路径已
+删除和当前来源完整。观察不能停止/重启 manager 以碰巧制造窗口，不持旧 FD 阻塞 GC，
+也不把路径缺席当作结算。正常收敛后的旧大文件数量不随完成轮数增长；当前来源须仍
+合法恢复并延续原见证，最后通过公开 Destroy 完成原产品回收和总账结算，环境收尾另记。
+
+G7 在同一入口选择 `material-retirement-restart` 回收中断/管理重启代表：B 的 Unload
+已接受后先等待明确同步点，不以 public Unloaded 作为到达原删除 gate 的前置条件。原计划已经 SQL
+持久且物理删除完成，但尚未记录结算；部分删除由组件覆盖。监督器将生产 gate 与原
+work/plan、原 capture key、raw-plan 长度/摘要及真实 source resource 对上；同一只读
+SQLite 事务按 B 原 accepted key/version/intent/capture 及 A closure 的后继绑定核对
+B 已持久接管、Retiring 仍占额度，再全读 B 完整材料。原 manager 均已确切停止、
+新 manager 尚未启动时，沿同一重启流程再次只读核对 A 仍为 Retiring、原 raw plan/
+closure/claim/release facts 不变且完整占额；此刻已 Settled 表示未取得中断切点，必须失败，
+不能记 G7 通过。检查成功才重启同配置 manager。consumer
+等待 ready 使用原操作/总场景期限，producer 的 post-delete timeout 不从 arm 时提前消耗。
+原 one-shot consumed 必须在
+ready 之前持久，重开保留相同测试环境变量，让真实删除重试核对同一 consumed 后不再
+等待；不能跳过原物理身份检查。重开继续同一固定计划并到达 Settled 后，再要求原
+public Unloaded 与完整后续链，不能由 gate/SQL 观察伪造公共成功。旧请求/原 claim 不变，当前来源可恢复，最终 Destroy
+结算；不以退出码或测试 gate 文件作为业务完成凭据。其它交错由上述确定性组件覆盖，
+不展开任意排列或重复整套论文矩阵。实际执行和首次失败仍绑定精确候选保存。
 
 ### 同一性质拒绝的错误版本
 
@@ -93,9 +634,9 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 [持久 PID 检查](../sandbox-guest-runtime/src/pid_claims/tests.rs)以真实私有临时文件覆盖回执丢弃/启动失败后的永久占用、重开及新会话不复用、有限范围/全满、VM/范围错配、缺失/截断/坏校验/非规范位、权限/链接/多写者和原名称替换。写前、位写后、摘要后和同步后故障点以及 panic 验证未知结果不返回回执，旧位保持，损坏文件不自动修复；六项可移植测试已在 macOS 运行，不冒充断电/故障磁盘实测。入口为 `cargo test -p sandproof-guest-runtime --locked --lib pid_claims::`。Linux [真实准备连接](../sandbox-guest-runtime/tests/preparation/pid_registration.rs)新增三项测试：保存后才实际 exec、结束/重开仍拒绝 PID，重复/错 VM/繁忙/丢弃不执行，单阻塞线程排队取消不写记录，并在原 worker 超时且进程额度已归还后继续保留独立存储名额、拒绝并发登记；使用原 pidfd、明确屏障及实际 wait/私有 gate 清理。Linux 交叉 Clippy 已通过；尚无公开命令注册表、PID 复用内核交错、服务强杀/重启仍存活的完整 E04 或 KVM 证据。
 
-#428 首次 CI（源 e7447ac4e4f0b7ef9bad331ed3af80b74c8bc209，实际 checkout a01e833）在旧文件传输 SDK 用例的 QP 上传错误后立即读取时失败，未运行到 PID 连接测试：收到错误响应并不保证被取消的阻塞写者已经归还唯一传输名额。单槽顺序夹具现通过 FileStreams::available_slots 的真实池快照，在下一次请求前及结束后限时等待实际归还；没有固定 sleep、请求重放或增加池容量。该屏障只属于回环测试，生产准入仍立即 try-acquire；快照不是文件持久化或 VM 清理回执。修正后的源 c9629f9244983d6e2169cd4827200708a1b50114 已在 [#428 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38533020885) 通过（实际 checkout ba9821350613b42be72769a39accd6b3558e442f）：六项真实文件 PID 测试和三项真实准备登记测试全部通过，preparation 共 15 passed；原文件 SDK 496 次请求、service lib 320 passed / 50 ignored 及封存 Redis 通过，四项检查成功。该证据不覆盖正式命令路由、完整 E04 或 KVM。
+#428 首次 CI（源 e7447ac4e4f0b7ef9bad331ed3af80b74c8bc209，实际 checkout a01e833）在旧文件传输 SDK 用例的 QP 上传错误后立即读取时失败，未运行到 PID 连接测试：收到错误响应并不保证被取消的阻塞写者已经归还唯一传输名额。单槽顺序夹具现通过 FileStreams::available_slots 的真实池快照，在下一次请求前及结束后限时等待实际归还；没有固定 sleep、请求重放或增加池容量。该屏障只属于回环测试，生产准入仍立即 try-acquire；快照不是文件持久化或 VM 清理回执。修正后的源 c9629f9244983d6e2169cd4827200708a1b50114 已在 [#428 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38533020885) 通过（实际 checkout ba9821350613b42be72769a39accd6b3558e442f）：六项真实文件 PID 测试和三项真实准备登记测试全部通过，preparation 共 15 passed；原文件 SDK 496 次请求、service lib 320 passed / 50 ignored 及封存 Redis 通过，四项检查成功。该证据不覆盖正式命令路由、完整 E04 或 KVM。
 
-[PID 登记检查](../sandbox-guest-service/src/command/registry/tests.rs)增加无效配置、元数据/条数满额拒绝及未轮询 owner 丢失保留未知责任；[真实连接](../sandbox-guest-runtime/tests/preparation/pid_registry.rs)增加四项 Linux 场景：受理前取消实际停止原 worker 并保留永久 PID 位，受理后 Start 回复丢失仍连接原 stdin/输出，原始订阅不丢首段及 exec 失败不变成成功终局，错 VM/会话不执行。真实结束/排空时间绑定保留起点，假时钟验证第 29 秒可重连、第 30 秒拒绝，旧外部句柄仍占进程额度，登记记录实际退休后才可再次预留。使用原 pidfd、受控输入和确切完成观察，不以随机 sleep 假定收尾。新增六项测试已在 [#430 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38535708180) 实跑通过（源 4779354d72cd7c7b6625b9427710b045d0fc8165，实际 checkout ae26e678a13b08ccab31eca37c6ec8be024d4927）；该次四项 CI、原 SDK 命令/文件与封存 Redis 检查均通过；没有 tag/HTTP 路由、强杀重启保留原进程或完整 E04/E05 证据。
+[PID 登记检查](../sandbox-guest-service/src/command/registry/tests.rs)增加无效配置、元数据/条数满额拒绝及未轮询 owner 丢失保留未知责任；[真实连接](../sandbox-guest-runtime/tests/preparation/pid_registry.rs)增加四项 Linux 场景：受理前取消实际停止原 worker 并保留永久 PID 位，受理后 Start 回复丢失仍连接原 stdin/输出，原始订阅不丢首段及 exec 失败不变成成功终局，错 VM/会话不执行。真实结束/排空时间绑定保留起点，假时钟验证第 29 秒可重连、第 30 秒拒绝，旧外部句柄仍占进程额度，登记记录实际退休后才可再次预留。使用原 pidfd、受控输入和确切完成观察，不以随机 sleep 假定收尾。新增六项测试已在 [#430 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38535708180) 实跑通过（源 4779354d72cd7c7b6625b9427710b045d0fc8165，实际 checkout ae26e678a13b08ccab31eca37c6ec8be024d4927）；该次四项 CI、原 SDK 命令/文件与封存 Redis 检查均通过；没有 tag/HTTP 路由、强杀重启保留原进程或完整 E04/E05 证据。
 
 [所有者进程崩溃检查](../sandbox-guest-runtime/tests/preparation/owner_restart.rs)在独立监督子进程中执行真实所有者与 gated worker/登记/持久 PID 组件；只有该监督进程设置 subreaper，不改变并行测试主进程。私有 FIFO 和有限 socket 回执确认命令已执行一次、原 PID/start_ticks 已公开且仍存活，再通过原 pidfd SIGKILL 所有者并实际 wait。重开同一 PID 文件、建立新会话登记后，旧 PID 的 live/connectable 查询均拒绝、同号再次 claim 为 Reused，而原命令的 pidfd 非消费 wait 仍显示存活；新会话可完成另一合法命令；其真实退出后仍占登记/进程名额，复用第 29/30 秒保留检查推进时钟，恢复正常时钟并等原记录实际退休后才核对容量。最后释放原 FIFO，经被收养的原 pidfd 等待真实退出并回收，分别核对一次效果、新命令效果及新命令 worker socket/容量。当前候选在首次放行前退休原 gate 路径，强杀回归相应要求旧 gate 为零；外层夹具仍只删除本次私有临时树，不把测试清理记为正式重启服务的清理能力。普通 preparation 测试会调用两个显式 ignored 的私有子进程入口，它们不是未执行的场景豁免。该场景已在下述 #474/#475 CI 通过；只覆盖组件所有者的真实进程死亡与登记重建，不代表正式 daemon/config 重启、强制 PID 复用、完整 HTTP/SDK 或 E04 整体验收。
 
@@ -103,15 +644,15 @@ S02/S11/S12 的命令输出验收采用持续流策略：超过旧累计上限�
 
 #475 在上述基线上完成 gate 清理及成功删除后解除旧 TempDir 析构责任，已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38673355770) 通过（源 65dfdc033fc58605a99a9e7454a69c150ee62572、checkout ab21318763482c56a91ae46340ee8bd83c1b5cda）：process 23 passed、preparation 55 passed / 2 个 helper ignored、service lib 414 passed / 69 ignored；原 SDK、八轮 PID/80 个操作错误调用、封存 Redis及四项检查成功。实际覆盖 ENOTEMPTY 回退、成功删除后同名路径重建不被旧析构删除、取消后 Unknown 与强杀后旧 gate 为零；仍不是握手前崩溃、故障文件系统、正式 daemon 重启或 E04/E07 整体验收。
 
-[准备请求所有权检查](../sandbox-guest-runtime/tests/preparation/request_ownership.rs)新增三项 Linux 实进程场景：原请求已到期时不 spawn；较短请求期限中止准备，而未丢弃票据仍持有请求额度；单阻塞线程排队的 PID 登记被取消、原 child 实际回收后仍占请求额度，闭包退出且文件锁释放后确认没有烧掉 PID；SIGSTOP/waitid 建立登记后的原 worker 暂停点，确认接受到实际放行期间不归还请求额度，恢复后后台命令继续持有独立进程记录。使用真实 pidfd/退出观察、明确屏障及可推进时钟，真实收尾前恢复正常时钟；三项已在 [#437 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38559610341) 实跑通过（源 f2626cea8624be04330951a4d815dcd10862e562，实际 checkout 6dee2c3ecd66e090343b7a19b7ce53ea8c1e8aea）：preparation 25 passed、service lib 341 passed / 50 ignored，原 SDK/封存 Redis 和四项 CI 均通过；后续 Start 装配须另验。公开 Start、tag、HTTP 及完整 E04/E05 仍待验收。
+[准备请求所有权检查](../sandbox-guest-runtime/tests/preparation/request_ownership.rs)新增三项 Linux 实进程场景：原请求已到期时不 spawn；较短请求期限中止准备，而未丢弃票据仍持有请求额度；单阻塞线程排队的 PID 登记被取消、原 child 实际回收后仍占请求额度，闭包退出且文件锁释放后确认没有烧掉 PID；SIGSTOP/waitid 建立登记后的原 worker 暂停点，确认接受到实际放行期间不归还请求额度，恢复后后台命令继续持有独立进程记录。使用真实 pidfd/退出观察、明确屏障及可推进时钟，真实收尾前恢复正常时钟；三项已在 [#437 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38559610341) 实跑通过（源 f2626cea8624be04330951a4d815dcd10862e562，实际 checkout 6dee2c3ecd66e090343b7a19b7ce53ea8c1e8aea）：preparation 25 passed、service lib 341 passed / 50 ignored，原 SDK/封存 Redis 和四项 CI 均通过；后续 Start 装配须另验。公开 Start、tag、HTTP 及完整 E04/E05 仍待验收。
 
 [Start 预检组合](../sandbox-guest-service/src/command_requests/tests/start.rs)新增三项 Linux 单元场景，核对 Basic 账户只查一次、缺省账户失败先于非法命令和 tag 预约，以及默认账户查询取消/到期后的原授权/请求保持。[真实启动组合](../sandbox-guest-runtime/tests/preparation/start_dispatch.rs)新增三项 Linux 场景：原默认 cwd/环境和请求覆盖进入实际 worker，Start 回复丢弃后通过原 PID 重连并往返全部 byte、只执行一次 shell；stdin=false 的真实 EOF、初始 PTY 尺寸窄化及终端输入；首帧超限/登记满额/过期/错 VM 持久登记均无用户效果并实际归还容量。现由 service lib/preparation 入口发现，原提交已在下述 #438 CI 实跑；后续候选须独立重跑。该历史证据不覆盖后续正式 HTTP/tag 分派、Go 双端同调用集或完整 E03/E04/E05。
 
 [共用期限检查](../sandbox-guest-service/src/connect_timeout/tests.rs)增加两项可移植检查，区分同一首字段的执行/HTTP 期限：空值、带符号零、负数、正数和大值，重复字段首值选择、非法首值不能被后值修复，以及符号计入十字节界。命令原执行时钟测试同步改为固定 Go 语义，仍核对原始起点和不可表示期限拒绝。原文件 SetTimeout 的 533 项显式 Go 对照继续回归；该对照验证解析投影，不是完整 Start/Connect HTTP 生命周期对照，也不表示非正 wire 期限可执行命令。
 
-[命令响应体检查](../sandbox-guest-runtime/tests/owner/body.rs)新增七项真实进程场景及一项受控退出编码检查：二进制 stdout/stderr、非零 End 与独立终结帧顺序、终局重连不重放；累计输出大于单消息预算；保留 Bytes 克隆期间禁止预读并持续占请求/订阅/记录额度；假时钟 keepalive 和持有帧到期不终止原命令或关闭 stdin；慢订阅与编码超额不伪造成功终结；无效配置拒绝。core-dump 真/假在受控结束值上检查，没有制造真实 core 文件；原 Linux 信号及 wait 场景另核对真实状态。固定 SDK 夹具新增同步/异步管道及 PTY 四次调用，经过原执行 owner 和新异步响应体，检查 HTTP 发送后额度与实际进程收尾；原十次低层编解码调用仍保留。新增组件与 SDK 用例已在 [#431 CI 第二次运行](https://github.com/ningZhang-cs/sandproof/actions/runs/38537986048/attempts/2) 通过（源 dabac36c87beb050d61af6032e24fc0160238ab7，实际 checkout 4854dcd11f075888965260a69b519b18fa94e133）；第一次 SDK 步骤通过但后续 Redis 步骤触发任务 15 分钟期限，第二次四项 CI 与封存 Redis 均通过，没有放宽检查。该证据不计为正式命令路由、Go 双端或完整 E03/E05。
+[命令响应体检查](../sandbox-guest-runtime/tests/owner/body.rs)新增七项真实进程场景及一项受控退出编码检查：二进制 stdout/stderr、非零 End 与独立终结帧顺序、终局重连不重放；累计输出大于单消息预算；保留 Bytes 克隆期间禁止预读并持续占请求/订阅/记录额度；假时钟 keepalive 和持有帧到期不终止原命令或关闭 stdin；慢订阅与编码超额不伪造成功终结；无效配置拒绝。core-dump 真/假在受控结束值上检查，没有制造真实 core 文件；原 Linux 信号及 wait 场景另核对真实状态。固定 SDK 夹具新增同步/异步管道及 PTY 四次调用，经过原执行 owner 和新异步响应体，检查 HTTP 发送后额度与实际进程收尾；原十次低层编解码调用仍保留。新增组件与 SDK 用例已在 [#431 CI 第二次运行](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38537986048/attempts/2) 通过（源 dabac36c87beb050d61af6032e24fc0160238ab7，实际 checkout 4854dcd11f075888965260a69b519b18fa94e133）；第一次 SDK 步骤通过但后续 Redis 步骤触发任务 15 分钟期限，第二次四项 CI 与封存 Redis 均通过，没有放宽检查。该证据不计为正式命令路由、Go 双端或完整 E03/E05。
 
-[命令请求准入检查](../sandbox-guest-service/src/command_requests/tests.rs)覆盖无队列容量、每请求 token、头部/正文/帧/trailers 边界、原绝对期限、阻塞解码取消后的实际授权/容量保持；[Linux 预检](../sandbox-guest-service/src/command_requests/tests/preflight.rs)核对显式 Basic 先于 JSON、默认账户延后、阻塞账户超时后仍占额、派发后授权释放与 Bytes 克隆保留额度、未轮询一元正文到期，以及 PID/tag 缺失及错误 Start 分派入口的组件拒绝。[真实 PID 组合](../sandbox-guest-runtime/tests/preparation/request_dispatch.rs)通过原持久登记与 worker 检查 List、Connect、二进制输入/空输入、关闭后终局重连、坏 token/过期请求/未知信号不改变原进程，以及 PTY 尺寸窄化和终端输入。六项可移植检查已实跑；五项 Linux 预检及三项真实进程检查已在 [#433 汇总 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38549727042) 实跑通过（源 3f417a2911fe15c0ee42dc8fd21368fb83be8e6f，实际 checkout c7ad7f542ea302477669be0c1014f6028f113667）：preparation 22 passed、service lib 339 passed / 50 ignored，原 SDK/封存 Redis 及四项检查均通过。该候选修正成功退出 status 的完整断言及暂停时钟跨毫秒刻度的测试等待，生产期限未改；该证据不覆盖后续准备请求所有权变更。它们由已有 service lib/preparation 入口执行，不是公开 HTTP negotiation、固定 SDK 全操作双端对照或完整 E03/E04/E05。
+[命令请求准入检查](../sandbox-guest-service/src/command_requests/tests.rs)覆盖无队列容量、每请求 token、头部/正文/帧/trailers 边界、原绝对期限、阻塞解码取消后的实际授权/容量保持；[Linux 预检](../sandbox-guest-service/src/command_requests/tests/preflight.rs)核对显式 Basic 先于 JSON、默认账户延后、阻塞账户超时后仍占额、派发后授权释放与 Bytes 克隆保留额度、未轮询一元正文到期，以及 PID/tag 缺失及错误 Start 分派入口的组件拒绝。[真实 PID 组合](../sandbox-guest-runtime/tests/preparation/request_dispatch.rs)通过原持久登记与 worker 检查 List、Connect、二进制输入/空输入、关闭后终局重连、坏 token/过期请求/未知信号不改变原进程，以及 PTY 尺寸窄化和终端输入。六项可移植检查已实跑；五项 Linux 预检及三项真实进程检查已在 [#433 汇总 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38549727042) 实跑通过（源 3f417a2911fe15c0ee42dc8fd21368fb83be8e6f，实际 checkout c7ad7f542ea302477669be0c1014f6028f113667）：preparation 22 passed、service lib 339 passed / 50 ignored，原 SDK/封存 Redis 及四项检查均通过。该候选修正成功退出 status 的完整断言及暂停时钟跨毫秒刻度的测试等待，生产期限未改；该证据不覆盖后续准备请求所有权变更。它们由已有 service lib/preparation 入口执行，不是公开 HTTP negotiation、固定 SDK 全操作双端对照或完整 E03/E04/E05。
 
 [固定 Go tag 观察](../tests/compat/connect-reference/command_tags_test.go)复制原 getProcess、lookupTerminated、clearTerminatedForTag 的方法体，仅替换接收者/记录类型；使用原生成选择器与 Connect 错误，显式安排 Range 访问次序，Load/Store/CompareAndDelete 仍用真实 sync.Map。四组检查已在固定 Go 1.26.8 / 64 位本地通过：12 个存活表用例覆盖唯一目标漏查、重复目标顺序、nil/空 tag 和错误文本，5 个退出表用例核对首匹配，另测读取后替换记录的清除保护及 PID/缺选择器路径。入口为 `cd tests/compat/connect-reference && GOTOOLCHAIN=local go test -mod=readonly -run '^TestFixedGo' -count=1 -v .`；普通 CI 不自动运行 Go 观察。它固定的是原方法在受控遍历下的结果，不运行原 Start、计时保留、HTTP、真实进程或 SDK，不作为 Rust 新规则的相等性判据；owner 已批准的确定性差异在模块合同维护。
 
@@ -203,7 +744,7 @@ SANDPROOF_GUEST_ROOT_WORKER=/usr/bin/false \
 
 命令装配配置回归在同一 [HTTP 场景](../sandbox-guest-runtime/tests/preparation/http_dispatch.rs) 扩为 20 类拒绝：已有别名池/VM/会话/回复错误，进程 chunk/launch/握手预算、准备/清理/重试期限的零与溢出、worker/gate 路径语法及另一 VM 的持久登记器。每次核对无 worker gate/用户效果、请求与进程容量可用、原及外来 PID 文件字节不变；异 VM 存储本身合法，不能仅以注册表正确推断组合一致。新增 Linux 构造断言已在 [#479 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38678622537) 通过（源 f58b66682897090169aaa17c96ac01bd5e21d7a1，checkout 69376d3430a715d3e71efd6a378699ba30dc8d0e）：preparation 56 passed / 2 helper ignored、service lib 418 passed / 70 ignored，固定 SDK 77 场景、封存 Redis 与四项 CI 均通过；原真实 Start/SDK 调用继续覆盖有效配置；不证明 worker 安装、当前存储完整性或正式 daemon 启动。
 
-#439 的八轮 SDK/PID 组合已在 [Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38564633601) 通过：源 a0329fa9a899059f4a2ef56ced87d66f8f389e40，checkout 06fb36868fb3a37f39c3296cce50d56793241e0b；四项 CI、原命令/文件与封存 Redis 均通过。首轮测试错误要求 identity 头缺失而失败，修正为原客户端显式 identity 后实跑通过，生产代码未为测试改变语义。后续迁移到共用 HTTP 选择的候选须独立重跑。
+#439 的八轮 SDK/PID 组合已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38564633601) 通过：源 a0329fa9a899059f4a2ef56ced87d66f8f389e40，checkout 06fb36868fb3a37f39c3296cce50d56793241e0b；四项 CI、原命令/文件与封存 Redis 均通过。首轮测试错误要求 identity 头缺失而失败，修正为原客户端显式 identity 后实跑通过，生产代码未为测试改变语义。后续迁移到共用 HTTP 选择的候选须独立重跑。
 
 [命令空消息回归](../sandbox-guest-runtime/tests/protocol.rs)核对零长度完整帧、最小正预算、缺失/截断/错误 flags/多个消息和一元空正文的区别；EOS 回归另核对先解码首消息、两个载荷独立预算和不采纳客户端 error。[固定 Go F 对照](../sandbox-guest-runtime/tests/command_requests.rs)通过原 server-stream handler 回显生成 Start/Connect 请求，覆盖全部 256 个空帧 flags、JSON 形状、截断和多个数据消息。[后续 EOS 对照](../sandbox-guest-runtime/tests/command_requests/streams.rs)新增 3,948 组首消息存在性、所有尾帧 flags、完整 EOF、已知字段形状/null/重复/折叠、UTF-8/surrogate、base64 和深度边界；只比较接受性与成功解码字段，错误码/全文、压缩及完整服务未据此验收。
 
@@ -277,7 +818,7 @@ F 与 Q 的一元 JSON 回显分开报告，共用 SANDPROOF_GUEST_CONNECT_REFER
 
 [命令 HTTP 选择检查](../sandbox-guest-service/src/command_requests/http/tests.rs)覆盖七种方法的一元/流式 JSON、重复头首值、MIME 参数、压缩字段分离及 q 非权重、拒绝顺序、期限与失败格式。显式固定 Go V 入口经原生成消息和 Connect v1.18.1 真实回环对照 329 组选择/状态/错误文本；handler 为受控回复，不执行命令，也不证明原 Start 在零/负期限没有副作用。[Linux 所有权检查](../sandbox-guest-service/src/command_requests/tests/http.rs)核对失败持有原请求但释放完成的鉴权锁，gzip/过期不读正文，成功解码保留同一 Ready/期限；该提交已在下述 #440 CI 实跑，后续候选仍须独立重跑。旧 identity 入口仍拒绝请求 gzip，新 Selected::decode 的 gzip 检查见上文；完整错误映射尚未完成，不能计完整 E03。V 共用 SANDPROOF_GUEST_CONNECT_REFERENCE，需重建参考二进制并显式 --include-ignored。
 
-#440 的 HTTP 选择和八轮 SDK/PID 组合已在 [Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38567961659) 通过：源 411c9fec8f511eedb3141dc01ff60fe098cbe050，checkout 8756de4a0c3ec2b20892e88fd966c16d2bb7d1d8；新增两项选择所有权检查、preparation 28 项、service lib 349 passed / 51 ignored、八轮 SDK 实进程及四项 CI 均通过。显式固定 Go 对照另在本地运行，不能由 CI 的 ignored 推算通过；此父提交不覆盖新增头错误响应。
+#440 的 HTTP 选择和八轮 SDK/PID 组合已在 [Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38567961659) 通过：源 411c9fec8f511eedb3141dc01ff60fe098cbe050，checkout 8756de4a0c3ec2b20892e88fd966c16d2bb7d1d8；新增两项选择所有权检查、preparation 28 项、service lib 349 passed / 51 ignored、八轮 SDK 实进程及四项 CI 均通过。显式固定 Go 对照另在本地运行，不能由 CI 的 ignored 推算通过；此父提交不覆盖新增头错误响应。
 
 #441–#448 的头/方法、显式账户/token/默认账户与空帧/EOS 连接已有累积 Linux 证据：[#442](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38571233313) 源 065b70f0b6e7f19bf6d84f95ad207e1dc6be38b1、checkout 736bf8496a94526419af12e0fcda3218f7deedf3；[#447](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38583740598) 源 db327e9ea840be23d6db69a5224b7b8968d2b58e、checkout a15e028333dcacc078c0bedca138e65fb52e0d18；[#448](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38586175865) 源 ad6fbfb3ea226f0a54c7a358892851d6e094adb8、checkout 4d06bfa9e90c219fe3cd5930e7840c623e86928b。三次四项 CI 均通过；#447/#448 的 service lib 各 368 passed / 56 ignored，含账户顺序/所有权和八轮 SDK/PID 真实进程，#448 另覆盖合法 EOS 的默认账户顺序。固定 Go 显式对照仍另行执行，不由 ignored 推算通过。
 
@@ -285,11 +826,11 @@ F 与 Q 的一元 JSON 回显分开报告，共用 SANDPROOF_GUEST_CONNECT_REFER
 
 请求 gzip 在 [#451 Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38592180107) 通过：源 530227c14c5a4bea64174536646feb5242bb2ac0、checkout 9041fdd0c8b2c34758286e8dcc95381fdc68eeb7，service 380 passed / 58 ignored，含七方法解压、Start 失败顺序及排队取消。已知 gzip 回复在 [#452 Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38593528212) 通过：源 0e15d65664d9c6573a47f02de1a5764b1e5388b5、checkout f5793b488ddf28baa5bfe482b6410517de904e73，service 383 passed / 59 ignored，含原选择到错误响应及最后副本。两次四项 CI、77 项 SDK、八轮真实 PID/SDK 与封存 Redis 均通过；固定 Go 显式对照独立报告，不包含后续 PID 操作错误或完整 E03。
 
-上述 Start 组件的六项账户/准入/实进程回归已在 [#438 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38562089660) 实跑通过（源 550ca46ecb595d25932936a33999fe4fec8cf5fa，实际 checkout e596ebabe93f29dc90504b2e8d2d4d6f34145bb1）：preparation 28 passed、service lib 344 passed / 50 ignored，SDK 与封存 Redis 检查通过。该精确父提交证据不覆盖新增 SDK/PID 组合或完整公开端点。
+上述 Start 组件的六项账户/准入/实进程回归已在 [#438 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38562089660) 实跑通过（源 550ca46ecb595d25932936a33999fe4fec8cf5fa，实际 checkout e596ebabe93f29dc90504b2e8d2d4d6f34145bb1）：preparation 28 passed、service lib 344 passed / 50 ignored，SDK 与封存 Redis 检查通过。该精确父提交证据不覆盖新增 SDK/PID 组合或完整公开端点。
 
-[命令响应检查](../sandbox-guest-runtime/tests/command_responses.rs)补充 List/空回复和事件默认值、optional/oneof 存在性、完整长度及转义后预算边界。显式 SANDPROOF_GUEST_CONNECT_REFERENCE 入口已在 macOS 与原始生成 process.pb.go（Git blob bdfc62a0aa95980ee9c15ec03a106ceaf9ff2449，SHA-256 e35da822dfb2870b1a6441c536b215f7a2503b37674e12a197f45f9caa083cf5）、Go 1.26.8、Connect v1.18.1 和 protobuf v1.36.12 完成 259 项真实回环 HTTP 对照：五种一元回复以及 Start/Connect 的 Start/Data/End/keepalive 和独立终结帧，包含全部 byte 值、整数边界、空值/存在性与 Unicode；只规范化 JSON 空白和对象键序，验证原帧长度，不声称字节级 JSON 相同。Go 方法为受控回复，不执行用户进程或 List 活跃表。Linux 原 SDK 组合另新增每轮三种合成 List 回复（同步/异步共 30 次），已在 [#429 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38534107339) 通过（源 0ea617e03aa54bd4165ef7ed7547362097eeb396，实际 checkout 800be298e5be7772ba6664f92ef903988217b0e6）；该次四项 CI、原命令/文件及封存 Redis 也通过；不把合成列表当作已接通公开登记。普通兼容入口运行两项独立响应测试及原协议测试，Go 对照仍需显式执行。
+[命令响应检查](../sandbox-guest-runtime/tests/command_responses.rs)补充 List/空回复和事件默认值、optional/oneof 存在性、完整长度及转义后预算边界。显式 SANDPROOF_GUEST_CONNECT_REFERENCE 入口已在 macOS 与原始生成 process.pb.go（Git blob bdfc62a0aa95980ee9c15ec03a106ceaf9ff2449，SHA-256 e35da822dfb2870b1a6441c536b215f7a2503b37674e12a197f45f9caa083cf5）、Go 1.26.8、Connect v1.18.1 和 protobuf v1.36.12 完成 259 项真实回环 HTTP 对照：五种一元回复以及 Start/Connect 的 Start/Data/End/keepalive 和独立终结帧，包含全部 byte 值、整数边界、空值/存在性与 Unicode；只规范化 JSON 空白和对象键序，验证原帧长度，不声称字节级 JSON 相同。Go 方法为受控回复，不执行用户进程或 List 活跃表。Linux 原 SDK 组合另新增每轮三种合成 List 回复（同步/异步共 30 次），已在 [#429 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38534107339) 通过（源 0ea617e03aa54bd4165ef7ed7547362097eeb396，实际 checkout 800be298e5be7772ba6664f92ef903988217b0e6）；该次四项 CI、原命令/文件及封存 Redis 也通过；不把合成列表当作已接通公开登记。普通兼容入口运行两项独立响应测试及原协议测试，Go 对照仍需显式执行。
 
-[命令请求 JSON 检查](../sandbox-guest-runtime/tests/command_requests.rs)有三项普通回归和显式固定 Go Q 对照：以原始生成 process.pb.go 与默认 Connect codec，在真实回环 HTTP 上比较 2,824 组解码值或 invalid_argument 分类；包含七种请求、未知字段/枚举、重复 null 字段及环境键、精确有符号/无符号整数和裸指数、深度边界、每个原始 byte 及 base64 字母表/尾位/换行/padding。Q 使用七种请求消息的一元回显，包括 Start/Connect 请求类型，只隔离 JSON 行为，不代替 Start/Connect 流 framing、错误全文或进程操作。已在 macOS 显式实跑通过；Go 1.26.8 参考二进制 SHA-256 cfb9d72db3915368f6d268953902c37165857c92246c12727f6d3d31e192a484。三项普通回归已在 [#432 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38540335634) 通过（源 bdc6a31da456605095a6ef790eb8d1b8c6a11f05，实际 checkout 13c002cbaa3ae95484cadf2e100631c427501378），四项 CI 与封存 Redis 均通过；Go Q 在该 Linux 运行中仍忽略，需 SANDPROOF_GUEST_CONNECT_REFERENCE 并显式 --include-ignored。共用文件扫描器保留原文件哨兵行为，原文件 Go 对照独立回归；不把这批解码结果记为完整 E03。
+[命令请求 JSON 检查](../sandbox-guest-runtime/tests/command_requests.rs)有三项普通回归和显式固定 Go Q 对照：以原始生成 process.pb.go 与默认 Connect codec，在真实回环 HTTP 上比较 2,824 组解码值或 invalid_argument 分类；包含七种请求、未知字段/枚举、重复 null 字段及环境键、精确有符号/无符号整数和裸指数、深度边界、每个原始 byte 及 base64 字母表/尾位/换行/padding。Q 使用七种请求消息的一元回显，包括 Start/Connect 请求类型，只隔离 JSON 行为，不代替 Start/Connect 流 framing、错误全文或进程操作。已在 macOS 显式实跑通过；Go 1.26.8 参考二进制 SHA-256 cfb9d72db3915368f6d268953902c37165857c92246c12727f6d3d31e192a484。三项普通回归已在 [#432 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38540335634) 通过（源 bdc6a31da456605095a6ef790eb8d1b8c6a11f05，实际 checkout 13c002cbaa3ae95484cadf2e100631c427501378），四项 CI 与封存 Redis 均通过；Go Q 在该 Linux 运行中仍忽略，需 SANDPROOF_GUEST_CONNECT_REFERENCE 并显式 --include-ignored。共用文件扫描器保留原文件哨兵行为，原文件 Go 对照独立回归；不把这批解码结果记为完整 E03。
 
 [文件协议检查](../sandbox-guest-runtime/tests/file_protocol.rs)消费同一文件共享样例，核对重复/畸形消息、缺省/null、uint32 深度、int64 尺寸、可选链接字段、时间戳精度/边界和编码预算。[文件上下文测试](../sandbox-guest-service/src/files/tests.rs)覆盖 Basic 与 HTTP username 的分离、一次 Move 查询、默认值/环境不改变身份、词法路径、无效 UID 和展开后预算。Linux 兼容入口还运行[固定同步/异步 SDK 组合](../sandbox-guest-runtime/tests/sdk_files.rs)：原会话授权与路径解析接到文件编解码，核对各一元方法、大尺寸/纳秒/元数据/空列表/可选链接及超额错误。该测试只返回预定合成属性，没有实际 stat、目录修改或文件传输；真实文件权限、链接竞争、磁盘满、部分读写、Go 双端对照和 KVM 仍须独立执行。
 
@@ -332,9 +873,9 @@ SANDPROOF_GUEST_AUTH_REFERENCE=/absolute/path/to/auth-reference \
 
 [一元真实文件检查](../sandbox-guest-runtime/tests/filesystem.rs)使用独占临时目录，覆盖属性/特殊类型、断链与长链接/循环、xattr 与 UTF-8、词法父目录、深度/别名/顺序、覆盖移动及失败后的父目录、递归删除大批次与部分删除预算。普通 CI 禁止创建 SUID/SGID 文件，真实属性夹具使用普通权限；[权限字符串向量](../sandbox-guest-runtime/src/filesystem/metadata.rs)核对固定 Go 的特殊位/类型格式，实际 SUID/SGID 属性读取保留在下面的显式 Go 对照中，不算普通 CI 的内核权限实测。[删除交错检查](../sandbox-guest-runtime/src/filesystem/remove_tests.rs)在真实目录打开后精确替换为链接，核对目标未被遍历；这是指定交错，不能覆盖全部并发文件系统变化。[文件工作池检查](../sandbox-guest-service/src/file_io/tests.rs)以通道屏障和可推进时钟核对取消/超时后授权与额度、结果保留、异常和释放，未轮询请求无副作用。新增[一元请求组合检查](../sandbox-guest-service/src/file_io/rpc/tests.rs)核对满额/到期先于账户查询、取消/到期后的账户与授权保留、Move 部分效果及结果/错误保留原名额；文件工作池另以单线程阻塞池和屏障核对排队到期不执行及运行中到期不提前归还请求所有权。这些一元编排组件已在上述 #408 的同一 Linux CI 运行；普通 Linux 基础检查与兼容入口执行这些组件。
 
-[真实文件 SDK 组合](../sandbox-guest-runtime/tests/sdk_file_io.rs)通过原授权、真实本地账户、路径解析及文件池，让固定同步/异步 SDK 在各自临时树上实际执行五种一元方法，核对链接/元数据、错误、创建与移动、失败后父目录、删除及配额失败后的正常请求。夹具已迁移到共享 FileRpcHttp 的 prepare/execute 入口，内部复用 FileRpcRequests→FilePool::prepare_rpc→ReadyRpc::execute 编排，在原始 Body 提取后、正文读取前准入，再经受保护鉴权、Basic 前置查询、有界正文解码和同一封装进入文件池；固定调用集使用 JSON；原 40 个文件场景外，新增同步/异步各一次真实显式账户查询成功，以及显式空/未知/转义用户名与未知缺省账户的固定 ConnectError code/message，共 10 个账户场景。未知缺省账户有独立会话和路由，Rust 检查拒绝请求未创建目标。成功响应使用 FileReply 的有界 identity/gzip 编码、原期限和需求驱动正文，账户及已映射 Stat/MakeDir/Move 错误使用实际 RpcFailure::into_response，原 SDK 同步/异步调用逐一核对完整 code/message，另新增缺失目录/普通文件 ListDir 失败，另加同步/异步 Remove 的末尾点/非目录父路径失败，再加同步/异步 Stat 与 Move 源路径的展开失败，再加同步/异步各一次 gzip 成功解码与协商 gzip 后的 identity 错误，再增加同步/异步各一次显式 gzip 请求成功/错误，共 60 文件 + 10 账户 + 2 timeout 场景；目录配额仍使用测试合成错误并在 Bytes 中保留实际失败所有者。原 40 文件场景及 10 账户场景已在 [#408 的 Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38503390750) 通过（源 b125b717307380f549635815ce134da2384aed61，合并测试 9b76a3879072bedd3d0292b2f6d8abc9b2f5992f），不计为完整双端对照。仅测试路由开放回环端口、接受预定目录内路径；没有 HTTP 上传/下载、特权账号切换、正式监听器或 KVM。
+[真实文件 SDK 组合](../sandbox-guest-runtime/tests/sdk_file_io.rs)通过原授权、真实本地账户、路径解析及文件池，让固定同步/异步 SDK 在各自临时树上实际执行五种一元方法，核对链接/元数据、错误、创建与移动、失败后父目录、删除及配额失败后的正常请求。夹具已迁移到共享 FileRpcHttp 的 prepare/execute 入口，内部复用 FileRpcRequests→FilePool::prepare_rpc→ReadyRpc::execute 编排，在原始 Body 提取后、正文读取前准入，再经受保护鉴权、Basic 前置查询、有界正文解码和同一封装进入文件池；固定调用集使用 JSON；原 40 个文件场景外，新增同步/异步各一次真实显式账户查询成功，以及显式空/未知/转义用户名与未知缺省账户的固定 ConnectError code/message，共 10 个账户场景。未知缺省账户有独立会话和路由，Rust 检查拒绝请求未创建目标。成功响应使用 FileReply 的有界 identity/gzip 编码、原期限和需求驱动正文，账户及已映射 Stat/MakeDir/Move 错误使用实际 RpcFailure::into_response，原 SDK 同步/异步调用逐一核对完整 code/message，另新增缺失目录/普通文件 ListDir 失败，另加同步/异步 Remove 的末尾点/非目录父路径失败，再加同步/异步 Stat 与 Move 源路径的展开失败，再加同步/异步各一次 gzip 成功解码与协商 gzip 后的 identity 错误，再增加同步/异步各一次显式 gzip 请求成功/错误，共 60 文件 + 10 账户 + 2 timeout 场景；目录配额仍使用测试合成错误并在 Bytes 中保留实际失败所有者。原 40 文件场景及 10 账户场景已在 [#408 的 Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38503390750) 通过（源 b125b717307380f549635815ce134da2384aed61，合并测试 9b76a3879072bedd3d0292b2f6d8abc9b2f5992f），不计为完整双端对照。仅测试路由开放回环端口、接受预定目录内路径；没有 HTTP 上传/下载、特权账号切换、正式监听器或 KVM。
 
-[共享一元 HTTP 检查](../sandbox-guest-service/src/file_rpc_http/tests.rs)核对五种真实操作、规范化 charset、prepare 阶段无文件效果、拒绝前不读取正文、显式账户先于方法/头拒绝、共享入口满额、最后字节副本、取消正文后初始化/容量恢复，以及成功 mkdir 后回复编码失败保留原期限和已完成效果。六项 Linux 组件及 SDK 同一 52 场景的新入口迁移已在 [#411 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38506866432) 执行通过（源 0871dcbb35d2238a0324d3631f848180c6a6c33f，合并测试 6614fd276bce9924ba34f6bdb97888e880117e52）；定向入口为 `cargo test -p sandproof-guest-service --locked --lib file_rpc_http`。SDK 夹具仍在 prepare 后检查临时树内的不可变路径，Stat/MakeDir/Move 文件阶段错误、rename 前置检查、worker 错误自身保留容量、SDK 精确文本已在 [#412 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38508480755) 执行通过（源 de22025ea9d861b3df9634728474c47485117a20，合并测试 e773c89066729ceb4bc426e64f46c6ab366b74f8）。目录阶段六项 runtime 与一项 HTTP 组件、SDK 56 场景已在 [#413 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38509964858) 通过（源 89b67bdee3e022d34952e068e2b5686a33eb823f，合并测试 204705dd87aa85c08bd49e0b231a5d52c44a2d63）。Remove 四项新增 runtime、一项 HTTP 组件及 SDK 60 场景已在 [#414 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38511250356) 通过（源 d270b4ec7de406c425468551618c500bc8d21a6d，合并测试 4c27a17823e0fd60859fba73f5e9cfd4182a803b）；路径展开四项新增 service 组件及 SDK 64 场景已在 [#415 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38512018326) 通过（源 042b96e015652b6517f880620c345181a4db4ea4，合并测试 d0e1ba520b50554661d9a576c190c0161aae8140）；gzip 响应和请求的后续 Linux CI 证据分别见下文；新错误响应候选须另跑适用检查。
+[共享一元 HTTP 检查](../sandbox-guest-service/src/file_rpc_http/tests.rs)核对五种真实操作、规范化 charset、prepare 阶段无文件效果、拒绝前不读取正文、显式账户先于方法/头拒绝、共享入口满额、最后字节副本、取消正文后初始化/容量恢复，以及成功 mkdir 后回复编码失败保留原期限和已完成效果。六项 Linux 组件及 SDK 同一 52 场景的新入口迁移已在 [#411 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38506866432) 执行通过（源 0871dcbb35d2238a0324d3631f848180c6a6c33f，合并测试 6614fd276bce9924ba34f6bdb97888e880117e52）；定向入口为 `cargo test -p sandproof-guest-service --locked --lib file_rpc_http`。SDK 夹具仍在 prepare 后检查临时树内的不可变路径，Stat/MakeDir/Move 文件阶段错误、rename 前置检查、worker 错误自身保留容量、SDK 精确文本已在 [#412 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38508480755) 执行通过（源 de22025ea9d861b3df9634728474c47485117a20，合并测试 e773c89066729ceb4bc426e64f46c6ab366b74f8）。目录阶段六项 runtime 与一项 HTTP 组件、SDK 56 场景已在 [#413 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38509964858) 通过（源 89b67bdee3e022d34952e068e2b5686a33eb823f，合并测试 204705dd87aa85c08bd49e0b231a5d52c44a2d63）。Remove 四项新增 runtime、一项 HTTP 组件及 SDK 60 场景已在 [#414 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38511250356) 通过（源 d270b4ec7de406c425468551618c500bc8d21a6d，合并测试 4c27a17823e0fd60859fba73f5e9cfd4182a803b）；路径展开四项新增 service 组件及 SDK 64 场景已在 [#415 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38512018326) 通过（源 042b96e015652b6517f880620c345181a4db4ea4，合并测试 d0e1ba520b50554661d9a576c190c0161aae8140）；gzip 响应和请求的后续 Linux CI 证据分别见下文；新错误响应候选须另跑适用检查。
 
 [一元文件错误检查](../sandbox-guest-service/src/file_rpc_response/io/tests.rs)可移植核对 lstat、MakeDir 初始 stat/已存在、rename、父目录 stat/mkdir/chown/非目录九种阶段的固定文本、Connect code/status/头、特殊字节与 Go JSON 转义、精确编码预算、缺失观察和最后字节副本的容量保留。权限/磁盘满/chown 的 errno 向量是受控格式检查，不是特权或磁盘故障实测。工作池另检查实际错误结果自身继续保留名额，返回后文件被替换也不重查/改变原诊断；共享 HTTP Linux 组件新增真实缺失路径、非目录、已有目录/文件、循环链接、Move 部分效果及错误编码超限后的原期限/双槽位检查；以上 Stat/MakeDir/Move 新增组件及原 SDK 52 场景中的精确 message 断言已在上述 #412 Linux CI 执行。
 
@@ -354,21 +895,21 @@ Remove 新增五组可移植阶段格式向量及上下文角色拒绝；Linux �
 
 [一元响应检查](../sandbox-guest-service/src/file_rpc_response/tests.rs)在 macOS/Linux 使用同一原文件 JSON 编码器，覆盖三个响应形状、编码边界/转义膨胀、原期限、背压、最后字节副本、取消编码 worker 及失败对象的容量保留。共享纯命令/文件协议测试也可移植执行，新增 Vec 扩容不越过线长预算的检查。Linux 一元组合另检查真实 mkdir 完成后编码超限、实际池期限先于原请求期限、初始化不被结果保留阻塞，以及到期正文副本继续持有请求/文件两个槽位；这些 Linux 所有权组件已在上述 #408 CI 运行，SDK 执行范围见上方；不用可移植测试代替。
 
-[一元 gzip 响应检查](../sandbox-guest-service/src/file_rpc_response/tests/gzip.rs)覆盖三种成功形状、空对象也压缩、JSON/压缩后双字节预算、压缩载荷背压/取消/到期与最后副本占额，原屏障编码取消检查同时覆盖 identity/gzip。固定 Go Connect v1.18.1 参考新增 G 操作：12 组第一字段/重复字段/精确大小写/权重/空白输入 × 四种完整成功载荷和一个原路径错误，共 60 组本地回环 HTTP 对照，比较状态、选定响应头和完整解压正文，并核对存在的 Content-Length 等于实际编码字节数；不要求 DEFLATE 字节或跨压缩库的近 2048 字节边界一致。passthrough codec 不执行 protobuf，也不是完整 envd 双端。[Linux gzip 接线检查](../sandbox-guest-service/src/file_rpc_http/tests/gzip.rs)新增五种方法、charset、错误 identity、实际删除后压缩超限仍保留原双槽位/期限的两项组件；固定 SDK 工厂构造原同步/异步生成客户端时，显式设置 accept_compression=[GzipCompression()]，新增四项协商成功/错误检查；普通工厂默认关闭压缩且会覆盖每次调用的压缩头，不能仅传头冒充已协商。Rust 核对实际 gzip,identity 请求头和两次 gzip 成功响应计数。这些 Linux 组件及 SDK 68 场景已在修复客户端构造选项后的 [#416 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38514457822) 通过（源 945c2df0d8b2fbc54d453c16a982f97572f49e93，合并测试 136e4792110f2f4e8986e78f948210247148f779），service lib 286 passed / 41 ignored，封存 Redis 通过。初次夹具只有调用头而无构造选项，实际 gzip 计数为零的失败不计为压缩证据。
+[一元 gzip 响应检查](../sandbox-guest-service/src/file_rpc_response/tests/gzip.rs)覆盖三种成功形状、空对象也压缩、JSON/压缩后双字节预算、压缩载荷背压/取消/到期与最后副本占额，原屏障编码取消检查同时覆盖 identity/gzip。固定 Go Connect v1.18.1 参考新增 G 操作：12 组第一字段/重复字段/精确大小写/权重/空白输入 × 四种完整成功载荷和一个原路径错误，共 60 组本地回环 HTTP 对照，比较状态、选定响应头和完整解压正文，并核对存在的 Content-Length 等于实际编码字节数；不要求 DEFLATE 字节或跨压缩库的近 2048 字节边界一致。passthrough codec 不执行 protobuf，也不是完整 envd 双端。[Linux gzip 接线检查](../sandbox-guest-service/src/file_rpc_http/tests/gzip.rs)新增五种方法、charset、错误 identity、实际删除后压缩超限仍保留原双槽位/期限的两项组件；固定 SDK 工厂构造原同步/异步生成客户端时，显式设置 accept_compression=[GzipCompression()]，新增四项协商成功/错误检查；普通工厂默认关闭压缩且会覆盖每次调用的压缩头，不能仅传头冒充已协商。Rust 核对实际 gzip,identity 请求头和两次 gzip 成功响应计数。这些 Linux 组件及 SDK 68 场景已在修复客户端构造选项后的 [#416 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38514457822) 通过（源 945c2df0d8b2fbc54d453c16a982f97572f49e93，合并测试 136e4792110f2f4e8986e78f948210247148f779），service lib 286 passed / 41 ignored，封存 Redis 通过。初次夹具只有调用头而无构造选项，实际 gzip 计数为零的失败不计为压缩证据。
 
-[一元 gzip 请求检查](../sandbox-guest-service/src/file_rpc_requests/tests/gzip.rs)新增四项可移植组件：五种方法与拼接成员、独立压缩/展开精确预算、校验/后续坏头/空输入、HTTP 完结与头拒绝顺序、取消/到期后排队 worker 的原授权与槽位。固定 Connect 参考 Z 操作对照 100 组：五组 Content-Encoding 第一字段/重复字段 × 五组 Accept-Encoding × 四种原始载荷，包含零字节、拼接空成员与跨成员 JSON；比较原 handler 解压内容和响应编码。passthrough codec 不执行 protobuf 或文件方法，畸形流公开文本不在此对照内。[Linux 请求接线检查](../sandbox-guest-service/src/file_rpc_http/tests/gzip_request.rs)新增两项组件，核对五种真实方法、显式账户不刷新、gzip 请求覆盖 identity 接受头、完整校验先于默认账户/文件派发、失败原双槽位及后续恢复。SDK 工厂保留标准环境/传输，构造原生成客户端时另显式启用 send_compression=GzipCompression()，新增四项真实请求及成功/错误解码；Rust 另核对四次 gzip 请求。八项同步/异步客户端选项探针已在本地合成 HTTP 验证；两项 Linux 请求组件及 SDK 72 场景已在 [#417 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38515049974) 通过（源 45163772170ddc5644a620546b3118fb2717757a，合并测试 643a0d54f92d36b8c46e771727672c683f7c7915），service lib 292 passed / 42 ignored，封存 Redis 通过。不是普通工厂的默认压缩行为，也不是完整双端/KVM 验收。
+[一元 gzip 请求检查](../sandbox-guest-service/src/file_rpc_requests/tests/gzip.rs)新增四项可移植组件：五种方法与拼接成员、独立压缩/展开精确预算、校验/后续坏头/空输入、HTTP 完结与头拒绝顺序、取消/到期后排队 worker 的原授权与槽位。固定 Connect 参考 Z 操作对照 100 组：五组 Content-Encoding 第一字段/重复字段 × 五组 Accept-Encoding × 四种原始载荷，包含零字节、拼接空成员与跨成员 JSON；比较原 handler 解压内容和响应编码。passthrough codec 不执行 protobuf 或文件方法，畸形流公开文本不在此对照内。[Linux 请求接线检查](../sandbox-guest-service/src/file_rpc_http/tests/gzip_request.rs)新增两项组件，核对五种真实方法、显式账户不刷新、gzip 请求覆盖 identity 接受头、完整校验先于默认账户/文件派发、失败原双槽位及后续恢复。SDK 工厂保留标准环境/传输，构造原生成客户端时另显式启用 send_compression=GzipCompression()，新增四项真实请求及成功/错误解码；Rust 另核对四次 gzip 请求。八项同步/异步客户端选项探针已在本地合成 HTTP 验证；两项 Linux 请求组件及 SDK 72 场景已在 [#417 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38515049974) 通过（源 45163772170ddc5644a620546b3118fb2717757a，合并测试 643a0d54f92d36b8c46e771727672c683f7c7915），service lib 292 passed / 42 ignored，封存 Redis 通过。不是普通工厂的默认压缩行为，也不是完整双端/KVM 验收。
 
-[一元 gzip 错误检查](../sandbox-guest-service/src/file_rpc_requests/tests/gzip_errors.rs)以两段压缩正文的所有非空截断前缀（排除完整首成员）、坏首头、CRC/ISIZE 和后续坏头核对实际 Header/Body 阶段，覆盖固定 400 JSON、精确响应预算、编码失败与最后副本占额、授权释放；预算/传输/期限和未知 DEFLATE 错误不能伪造公开诊断。固定 Connect G 操作另执行 46 种损坏输入 × 两种 Accept-Encoding，共 92 组实际回环 HTTP 对照，比较状态、选定头、实际 Content-Length 与完整 identity 错误正文；有限损坏流不代表全部 codec 错误或完整端点。Linux HTTP 组件将原损坏请求检查接到已知响应，并增加错误编码失败保留原双槽位/期限、无账户/文件派发及恢复检查；新增组合的精确提交证据见下文。SDK 夹具另增加同步/异步各五次合成损坏 gzip HTTP 输入，由固定 ConnectWireError 原解析器检查 code/message，Rust 核对十次已知拒绝及无目标文件效果；这十次独立于原 SDK 72 场景，不称为 SDK 自己编码的损坏请求。本地五种合成 JSON 解析探针通过；上述 Linux HTTP/文件组合已在 [#418 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38516493555) 通过（源 cb8ed7087ca8aedec8a7f54d41b4f6dba0e568b6，合并测试 733ebbf15a8c3c2b386155d5a6b8054431fe10d7），SDK 72 原调用及十次合成坏 gzip、service lib 295 passed / 43 ignored、封存 Redis 均通过。
+[一元 gzip 错误检查](../sandbox-guest-service/src/file_rpc_requests/tests/gzip_errors.rs)以两段压缩正文的所有非空截断前缀（排除完整首成员）、坏首头、CRC/ISIZE 和后续坏头核对实际 Header/Body 阶段，覆盖固定 400 JSON、精确响应预算、编码失败与最后副本占额、授权释放；预算/传输/期限和未知 DEFLATE 错误不能伪造公开诊断。固定 Connect G 操作另执行 46 种损坏输入 × 两种 Accept-Encoding，共 92 组实际回环 HTTP 对照，比较状态、选定头、实际 Content-Length 与完整 identity 错误正文；有限损坏流不代表全部 codec 错误或完整端点。Linux HTTP 组件将原损坏请求检查接到已知响应，并增加错误编码失败保留原双槽位/期限、无账户/文件派发及恢复检查；新增组合的精确提交证据见下文。SDK 夹具另增加同步/异步各五次合成损坏 gzip HTTP 输入，由固定 ConnectWireError 原解析器检查 code/message，Rust 核对十次已知拒绝及无目标文件效果；这十次独立于原 SDK 72 场景，不称为 SDK 自己编码的损坏请求。本地五种合成 JSON 解析探针通过；上述 Linux HTTP/文件组合已在 [#418 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38516493555) 通过（源 cb8ed7087ca8aedec8a7f54d41b4f6dba0e568b6，合并测试 733ebbf15a8c3c2b386155d5a6b8054431fe10d7），SDK 72 原调用及十次合成坏 gzip、service lib 295 passed / 43 ignored、封存 Redis 均通过。
 
-[一元未知压缩检查](../sandbox-guest-service/src/file_rpc_requests/tests/unsupported_compression.rs)覆盖未知第一字段先于版本/超时/正文、合法首字段忽略后续未知值、固定 501 / unimplemented、精确回复预算、原收紧期限、到期不刷新和最后副本占额。固定 Connect H 操作新增原始压缩头，134 种未知编码（含全部 0x80–0xff 字节及 Unicode/转义）× 两组版本/超时，共 268 组实际 HTTP 对照，逐项比较状态、头和完整 identity JSON。Linux [入口检查](../sandbox-guest-service/src/file_rpc_http/tests/unsupported_compression.rs)核对显式账户错误优先、缺省账户不查询、正文不读取、无文件效果和编码失败保留双槽位/期限；原选择拒绝测试同步迁移。SDK 夹具新增同步/异步各两次合成 br/GZIP 请求，同时携带坏版本/超时，由固定原错误解析器核对四次 501 及无目标文件；与 72 个原 SDK 场景和十次坏 gzip 输入分开统计。本地七种错误 JSON 解析探针通过；新增 Linux 组合已在 [#419 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38517259405) 通过（源 d171ca79a81caa41520d1fd11ade4158b89e82f9，合并测试 13d785d7654bb307d5e0788a0444d12e48b14c4b）：SDK 72 原调用、十次坏 gzip 和四次未知编码、service lib 298 passed / 44 ignored 及封存 Redis 通过。
+[一元未知压缩检查](../sandbox-guest-service/src/file_rpc_requests/tests/unsupported_compression.rs)覆盖未知第一字段先于版本/超时/正文、合法首字段忽略后续未知值、固定 501 / unimplemented、精确回复预算、原收紧期限、到期不刷新和最后副本占额。固定 Connect H 操作新增原始压缩头，134 种未知编码（含全部 0x80–0xff 字节及 Unicode/转义）× 两组版本/超时，共 268 组实际 HTTP 对照，逐项比较状态、头和完整 identity JSON。Linux [入口检查](../sandbox-guest-service/src/file_rpc_http/tests/unsupported_compression.rs)核对显式账户错误优先、缺省账户不查询、正文不读取、无文件效果和编码失败保留双槽位/期限；原选择拒绝测试同步迁移。SDK 夹具新增同步/异步各两次合成 br/GZIP 请求，同时携带坏版本/超时，由固定原错误解析器核对四次 501 及无目标文件；与 72 个原 SDK 场景和十次坏 gzip 输入分开统计。本地七种错误 JSON 解析探针通过；新增 Linux 组合已在 [#419 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38517259405) 通过（源 d171ca79a81caa41520d1fd11ade4158b89e82f9，合并测试 13d785d7654bb307d5e0788a0444d12e48b14c4b）：SDK 72 原调用、十次坏 gzip 和四次未知编码、service lib 298 passed / 44 ignored 及封存 Redis 通过。
 
 [一元账户回执检查](../sandbox-guest-service/src/file_rpc_response/rejection/tests.rs)核对两个拒绝阶段的文本/响应头、转义后精确预算、原期限、最后字节副本、编码排队取消及失败对象保留。Go 参考新增 A/U 操作使用原 authn v0.1.0 中间件和原 Connect v1.18.1 handler，显式路径同时给出非法 JSON/timeout 仍先返回账户错误；16 个实际回环 HTTP 向量含空/特殊字符及 2047/2048/2049/8192 字节边界，已本地执行。账户缺失是受控观察，不运行 Go 账户数据库或完整 envd；原 SDK 错误解析组合另行验收。
 
-[HTTP 方法拒绝检查](../sandbox-guest-service/src/file_rpc_response/tests/methods.rs)覆盖空回复在 EOF、丢弃、原期限到达时的容量归还，以及无效配置/过期失败保留原所有者和期限。固定 Go Connect 参考 M 操作使用原生成消息及 schema，在实际回环 HTTP 比较五条一元方法 × 十种非 POST 方法 × 五组媒体类型，共 250 组状态、Allow/Accept-Post、其他选定头和完整空正文，HEAD 的 Content-Length 缺省不作归一化；同时携带非法压缩、版本、超时和 JSON，确认方法拒绝先行。显式入口为 `SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference cargo test -p sandproof-guest-service --locked --lib file_rpc_response::tests::methods -- --include-ignored --nocapture`。三个可移植测试及 250 组对照已本地通过。Linux [入口检查](../sandbox-guest-service/src/file_rpc_http/tests/methods.rs)检查五条路由/八种方法的缺省、有效显式和缺失显式账户矩阵，正文被轮询即失败；核对双槽位、初始化不被回复保留阻塞、失败的较早期限、无文件效果和后续恢复。这些 Linux 方法组合已在 [#424 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38525263351) 通过（源 8f32d7727de6082c77fb25a54a7ebcc794d64b9f，合并 checkout 2047c538bc409861eb7882f2bc032b577f8591e6）：service lib 306 passed / 49 ignored、原 SDK 72 场景及既有 10/4/8 次 gzip/编码/JSON 拒绝、封存 Redis 均通过，四项检查成功。普通 CI 未运行显式 Go 对照；方法输入不是 SDK 正常调用，不代表完整 E03 或正式监听器。
+[HTTP 方法拒绝检查](../sandbox-guest-service/src/file_rpc_response/tests/methods.rs)覆盖空回复在 EOF、丢弃、原期限到达时的容量归还，以及无效配置/过期失败保留原所有者和期限。固定 Go Connect 参考 M 操作使用原生成消息及 schema，在实际回环 HTTP 比较五条一元方法 × 十种非 POST 方法 × 五组媒体类型，共 250 组状态、Allow/Accept-Post、其他选定头和完整空正文，HEAD 的 Content-Length 缺省不作归一化；同时携带非法压缩、版本、超时和 JSON，确认方法拒绝先行。显式入口为 `SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference cargo test -p sandproof-guest-service --locked --lib file_rpc_response::tests::methods -- --include-ignored --nocapture`。三个可移植测试及 250 组对照已本地通过。Linux [入口检查](../sandbox-guest-service/src/file_rpc_http/tests/methods.rs)检查五条路由/八种方法的缺省、有效显式和缺失显式账户矩阵，正文被轮询即失败；核对双槽位、初始化不被回复保留阻塞、失败的较早期限、无文件效果和后续恢复。这些 Linux 方法组合已在 [#424 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38525263351) 通过（源 8f32d7727de6082c77fb25a54a7ebcc794d64b9f，合并 checkout 2047c538bc409861eb7882f2bc032b577f8591e6）：service lib 306 passed / 49 ignored、原 SDK 72 场景及既有 10/4/8 次 gzip/编码/JSON 拒绝、封存 Redis 均通过，四项检查成功。普通 CI 未运行显式 Go 对照；方法输入不是 SDK 正常调用，不代表完整 E03 或正式监听器。
 
-[一元令牌回执检查](../sandbox-guest-service/src/file_rpc_requests/tests/token.rs)由实际 Session 拒绝触发响应，覆盖缺失/空/错误/非 UTF-8/超令牌长度/重复字段及初始化前严格拒绝、成功令牌回归、Debug 隐私、精确响应预算、HEAD 完整预算与正文抑制、原期限/最后字节副本、初始化锁释放和未映射头预算。固定 [Go 鉴权参考](../tests/compat/guest_authorization_reference.go)新增 R 操作，保留原 WithAuthorization 与 jsonError，在受控已初始化令牌存储上执行 536 组真实回环 HTTP：四种方法 × 缺失/空/错值/超长/错误首字段重复项及所有 0x80–0xff 字节，比较状态、五个响应头和完整正文，无正文归一化。该对照不含 MMDS、Basic 或文件；原 Go 的有效首字段重复项/未初始化放行不被冒充为 Rust 等价行为。三个可移植测试和该对照已本地通过，显式入口为 `SANDPROOF_GUEST_AUTH_REFERENCE=/absolute/path/to/auth-reference cargo test -p sandproof-guest-service --locked --lib file_rpc_requests::tests::token -- --include-ignored --nocapture`。Linux [入口组合](../sandbox-guest-service/src/file_rpc_http/tests/token.rs)检查令牌先于账户/方法/类型/超时/正文、不查询账户/预占文件槽位、编码失败原期限与合法并发请求继续；原同步/异步 SDK 各新增三次实际缺失/空/错令牌调用，携带缺失 Basic 账户和非法超时，核对 UNAUTHENTICATED/完整消息及六次拒绝、无 token-refused 文件。Linux/原 SDK 实际文件组合已在 [#425 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38527056907) 通过（源 6541b8e6135dd0e9deb6e441fc4d007eda019115，实际合并 checkout 3eec8ec39304ee18751fcb5570224ebf557869c5）：两项 Linux 令牌组件、原 SDK 72 场景及新增六次令牌拒绝、既有 10/4/8 次 gzip/编码/JSON 拒绝、service lib 310 passed / 50 ignored 和封存 Redis 均通过，四项检查成功。普通 CI 不执行显式 Go 对照，不代替完整 E03。
+[一元令牌回执检查](../sandbox-guest-service/src/file_rpc_requests/tests/token.rs)由实际 Session 拒绝触发响应，覆盖缺失/空/错误/非 UTF-8/超令牌长度/重复字段及初始化前严格拒绝、成功令牌回归、Debug 隐私、精确响应预算、HEAD 完整预算与正文抑制、原期限/最后字节副本、初始化锁释放和未映射头预算。固定 [Go 鉴权参考](../tests/compat/guest_authorization_reference.go)新增 R 操作，保留原 WithAuthorization 与 jsonError，在受控已初始化令牌存储上执行 536 组真实回环 HTTP：四种方法 × 缺失/空/错值/超长/错误首字段重复项及所有 0x80–0xff 字节，比较状态、五个响应头和完整正文，无正文归一化。该对照不含 MMDS、Basic 或文件；原 Go 的有效首字段重复项/未初始化放行不被冒充为 Rust 等价行为。三个可移植测试和该对照已本地通过，显式入口为 `SANDPROOF_GUEST_AUTH_REFERENCE=/absolute/path/to/auth-reference cargo test -p sandproof-guest-service --locked --lib file_rpc_requests::tests::token -- --include-ignored --nocapture`。Linux [入口组合](../sandbox-guest-service/src/file_rpc_http/tests/token.rs)检查令牌先于账户/方法/类型/超时/正文、不查询账户/预占文件槽位、编码失败原期限与合法并发请求继续；原同步/异步 SDK 各新增三次实际缺失/空/错令牌调用，携带缺失 Basic 账户和非法超时，核对 UNAUTHENTICATED/完整消息及六次拒绝、无 token-refused 文件。Linux/原 SDK 实际文件组合已在 [#425 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38527056907) 通过（源 6541b8e6135dd0e9deb6e441fc4d007eda019115，实际合并 checkout 3eec8ec39304ee18751fcb5570224ebf557869c5）：两项 Linux 令牌组件、原 SDK 72 场景及新增六次令牌拒绝、既有 10/4/8 次 gzip/编码/JSON 拒绝、service lib 310 passed / 50 ignored 和封存 Redis 均通过，四项检查成功。普通 CI 不执行显式 Go 对照，不代替完整 E03。
 
-[有界监听检查](../sandbox-guest-service/src/listener/tests.rs)含十一项可移植测试：真实回环 TCP 检查容量满额不派发、完成后恢复、头字段/缓冲/非法长度拒绝、处理器失败和响应截断、单连接 panic 后继续服务、外层取消关闭监听与传输；独立工作持有容量直到显式退出。内存双工流、通道屏障和可推进时钟检查慢头部、正文/处理/响应/keep-alive 共用原连接期限、慢消费者占满传输缓冲、停机排空和不接收后续请求。定向入口为 `cargo test -p sandproof-guest-service --locked --lib listener::`，这些组件已在 macOS 本地通过，Linux 交叉 Clippy 及固定 SDK 文件夹具迁移另行验证。固定 SDK 文件夹具现使用该监听组件，配置只属于回环测试；原调用集不变，结束时核对无拒绝/失败/到期、全部连接回收及峰值不超过 32。该监听组件和 SDK 迁移已在 [#426 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38529328112) 通过（源 c558044b94a07ab4768cab1b864f01cbc4c04747，实际合并 checkout f5471a53b07cc7178e3e7a3fb4ba2346877f59f7）：十项 Linux 监听测试、service lib 320 passed / 50 ignored、原 SDK 全部文件场景及封存 Redis 通过，监听报告 admitted/completed 各 4、peak_connections 3、refused/failed/expired 均 0，四项检查成功。没有进程 RSS/内核缓冲峰值、完整来宾 daemon 或 KVM 通过声明。
+[有界监听检查](../sandbox-guest-service/src/listener/tests.rs)含十一项可移植测试：真实回环 TCP 检查容量满额不派发、完成后恢复、头字段/缓冲/非法长度拒绝、处理器失败和响应截断、单连接 panic 后继续服务、外层取消关闭监听与传输；独立工作持有容量直到显式退出。内存双工流、通道屏障和可推进时钟检查慢头部、正文/处理/响应/keep-alive 共用原连接期限、慢消费者占满传输缓冲、停机排空和不接收后续请求。定向入口为 `cargo test -p sandproof-guest-service --locked --lib listener::`，这些组件已在 macOS 本地通过，Linux 交叉 Clippy 及固定 SDK 文件夹具迁移另行验证。固定 SDK 文件夹具现使用该监听组件，配置只属于回环测试；原调用集不变，结束时核对无拒绝/失败/到期、全部连接回收及峰值不超过 32。该监听组件和 SDK 迁移已在 [#426 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38529328112) 通过（源 c558044b94a07ab4768cab1b864f01cbc4c04747，实际合并 checkout f5471a53b07cc7178e3e7a3fb4ba2346877f59f7）：十项 Linux 监听测试、service lib 320 passed / 50 ignored、原 SDK 全部文件场景及封存 Redis 通过，监听报告 admitted/completed 各 4、peak_connections 3、refused/failed/expired 均 0，四项检查成功。没有进程 RSS/内核缓冲峰值、完整来宾 daemon 或 KVM 通过声明。
 
 构造容量回归只调用 Listener::new：拒绝两组头解析记录合计超出 isize::MAX、乘法溢出及字节缓冲超过 isize::MAX；同时检查算术边界，不为这些极值创建连接、启动 Hyper 或分配数组。该回归在修复前明确失败、修复后通过；真实回环仍使用原小额度，不能把构造接受最大值当成内存可用或巨型请求实测。Linux 当前提交实跑与部署 RSS 验收仍待补齐。
 
@@ -379,21 +920,21 @@ Remove 新增五组可移植阶段格式向量及上下文角色拒绝；Linux �
 [固定 SDK 回归](../sandbox-guest-runtime/tests/sdk_registered/transport.rs)保留原错误码、完整消息、无 PID/gate/命令效果和容量归还断言，增加同步/异步发送首字节后暂停余下消息的时序。Linux `scripts/check-compat.sh` 先构建[回环辅助入口](../sandbox-host-service/examples/guest_rejection_gateway.rs)，再通过 `SANDPROOF_GUEST_GATEWAY_HELPER` 连接原 `data_gateway::handle`、请求/传输名额、真实 stdio relay 和原来宾 Listener/CommandHttp。辅助入口仅替换持久授权来源与命名空间放置，不复制网关业务；退出时核对一次授权/派发、原 relay 排空和全部请求名额恢复。它不代表中心 mTLS、真实 namespace/VM、完整 GuestHttp/daemon 或外部代理已验收。[生成器关闭回归](../tests/compat/test_sdk_rejection_body.py)固定消费者取走尾块后不再恢复迭代器的顺序，尾块在 yield 前记录为已提供；夹具等待同步/异步生成器实际关闭或耗尽后才读取事件，上传取消后仍等待控制通道的服务端 EOF，不要求拒绝后的客户端继续拉取。[事件循环收尾回归](../tests/compat/test_sdk_event_loop.py)固定“响应结果已交付，但原生线程仍停在跨线程唤醒”的顺序，夹具关闭循环时等待已进入的通知返回，避免解释器先退出；不替换原 SDK 传输、协议字节或错误解析器，也不表示所有 SDK 后台任务已结束。SDK 迭代器屏障及服务端响应体结束不等于网络数据已抵达对端；确定性失败机制、选定 SDK 时序及完整部署验收分开报告。
 
 
-[一元头拒绝检查](../sandbox-guest-service/src/file_rpc_requests/tests/headers.rs)核对可选版本的第一字段、重复头、不修剪原值、版本与超时格式错误顺序、正文未读取、有效期限先收紧及拒绝后的原容量。实际初始化、响应字节副本和编码失败验证授权与名额分别释放；未映射错误不能补造 400。固定 Go 参考 H 操作使用原 Connect handler，229 组真实回环 HTTP 对照比较状态/头/正文，含 Unicode、非法 UTF-8、特殊转义、重复字段和大字段，已本地执行；不代表其他媒体类型或压缩协议。Linux 前置连接新增版本/超时拒绝的显式/缺省查询次数、无目录副作用和双槽位保留检查；SDK 同步/异步各新增一次超长 timeout 拒绝，显式缺失账户同时携带超长 timeout 仍先返回 401。新增头拒绝和 SDK 52 场景已在 [#409 的 Linux CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38504921791) 通过（源 0cbcb4d42f3dd076df7edfacfdbd5acf318144b5，合并测试 970f72de981f9077f55c6aa0d56f45b627299af2）。
+[一元头拒绝检查](../sandbox-guest-service/src/file_rpc_requests/tests/headers.rs)核对可选版本的第一字段、重复头、不修剪原值、版本与超时格式错误顺序、正文未读取、有效期限先收紧及拒绝后的原容量。实际初始化、响应字节副本和编码失败验证授权与名额分别释放；未映射错误不能补造 400。固定 Go 参考 H 操作使用原 Connect handler，229 组真实回环 HTTP 对照比较状态/头/正文，含 Unicode、非法 UTF-8、特殊转义、重复字段和大字段，已本地执行；不代表其他媒体类型或压缩协议。Linux 前置连接新增版本/超时拒绝的显式/缺省查询次数、无目录副作用和双槽位保留检查；SDK 同步/异步各新增一次超长 timeout 拒绝，显式缺失账户同时携带超长 timeout 仍先返回 401。新增头拒绝和 SDK 52 场景已在 [#409 的 Linux CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38504921791) 通过（源 0cbcb4d42f3dd076df7edfacfdbd5acf318144b5，合并测试 970f72de981f9077f55c6aa0d56f45b627299af2）。
 
 [Linux 一元账户回执连接](../sandbox-guest-service/src/file_io/rpc/tests/preflight/rejection.rs)检查显式/缺省来源、固定文本、无文件效果、实际授权释放、原双槽位到字节副本/编码失败/到期的保留，以及不可用源/重复 Basic 保持未映射。账户回执及头拒绝连接已分别在上述 #408/#409 CI 运行。文件传输 SDK 的 Range 检查读取原始 MIME 字段，保持精确 Content-Type 值及重复字段拒绝，避免 Python email.policy 对参数补引号造成假失败；仍逐项核对 range、两个 part 内容及总长度，并保留该夹具的五项回归。
 
 有限响应收尾回归 `known_length_rpc_reply_releases_on_last_bytes_without_an_extra_eof_poll` 检查 identity/gzip 及单块/多块载荷：完整收到 Content-Length 指定字节后保留正文对象，不再轮询 EOF，最后字节副本释放才归还原名额。Linux `final_rpc_bytes_release_both_pools_without_an_http_eof_poll` 另覆盖实际 mkdir 成功及 stat 失败、请求/文件双名额和随后的正常请求；本地可移植回归先复现旧实现名额不归还，修复后通过，Linux 新组合尚待该汇总候选实跑。上传原编码取消/实际退出、最后字节及真实解码收尾回归保留；这些用例不更改容量或期限，也不算 KVM/完整来宾服务验收。
 
-[文件属性 protobuf 对照](../sandbox-guest-service/src/file_rpc_response/tests/protobuf.rs)使用上游固定生成的 [filesystem.pb.go](../tests/compat/connect-reference/filesystem/filesystem.pb.go)，Git blob 7724e46497b97b24e4238068360f7244b93ee2cb，与 runtime f455fd58fa3f289e78ce1de690c35968d8d29322 的 packages/envd/internal/services/spec/filesystem/filesystem.pb.go 字节相同，参考程序启动时另检查嵌入源码 SHA-256 94e27e6aa36a685ea38c1ab636f2823ade538da494b476cd241f445866887b7f，[原许可证](../tests/compat/connect-reference/filesystem/E2B-LICENSE)随源码保留。参考 P 操作直接构造原消息并经默认 Connect HTTP codec 编码，不使用透传 JSON codec；48 组向量覆盖空/单/多属性、零值、枚举、int64、mode、optional 空值/epoch、时间戳边界、空元数据值和控制/Unicode 字符。比较状态、选定头和完整紧凑 JSON，双方先独立核对实际 Content-Length；原 protojson 可变空白被压紧，不宣称临近 2048 字节时头阈值相同。记录是合成属性，不运行 Go 文件方法、legacy 转换或整个 envd；现代固定 SDK 使用其正常 User-Agent。Rust 另有精确预算及存在性回归，原 SDK 18 场景夹具现在断言空目录正文为 {}、链接零 type/mode 缺省但空 symlinkTarget 存在；上述属性/空目录 Linux 组合已在 [#420 SDK CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38518473350) 通过（源 8b0b964db1e56521da8f6a1edfc9eed6342e28d2，实际合并 checkout 64b1de1eb60f58d9fd64e5b7f64b1fe8db4bbf50）：原 SDK 18 个合成属性场景、文件组合、service lib 298 passed / 45 ignored 及封存 Redis 通过；该运行两项流程检查曾在 checkout 被取消，随后仅重试未通过项，四项检查现均成功；重试没有改变源提交。原文件方法参考改用默认 MarshalOptions，并移除空 metadata 的额外归一化；Linux 原文件方法对照本候选未执行，不能沿用先前结果。显式入口为 `SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference cargo test -p sandproof-guest-service --locked --lib original_generated_properties -- --include-ignored --nocapture`。
+[文件属性 protobuf 对照](../sandbox-guest-service/src/file_rpc_response/tests/protobuf.rs)使用上游固定生成的 [filesystem.pb.go](../tests/compat/connect-reference/filesystem/filesystem.pb.go)，Git blob 7724e46497b97b24e4238068360f7244b93ee2cb，与 runtime f455fd58fa3f289e78ce1de690c35968d8d29322 的 packages/envd/internal/services/spec/filesystem/filesystem.pb.go 字节相同，参考程序启动时另检查嵌入源码 SHA-256 94e27e6aa36a685ea38c1ab636f2823ade538da494b476cd241f445866887b7f，[原许可证](../tests/compat/connect-reference/filesystem/E2B-LICENSE)随源码保留。参考 P 操作直接构造原消息并经默认 Connect HTTP codec 编码，不使用透传 JSON codec；48 组向量覆盖空/单/多属性、零值、枚举、int64、mode、optional 空值/epoch、时间戳边界、空元数据值和控制/Unicode 字符。比较状态、选定头和完整紧凑 JSON，双方先独立核对实际 Content-Length；原 protojson 可变空白被压紧，不宣称临近 2048 字节时头阈值相同。记录是合成属性，不运行 Go 文件方法、legacy 转换或整个 envd；现代固定 SDK 使用其正常 User-Agent。Rust 另有精确预算及存在性回归，原 SDK 18 场景夹具现在断言空目录正文为 {}、链接零 type/mode 缺省但空 symlinkTarget 存在；上述属性/空目录 Linux 组合已在 [#420 SDK CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38518473350) 通过（源 8b0b964db1e56521da8f6a1edfc9eed6342e28d2，实际合并 checkout 64b1de1eb60f58d9fd64e5b7f64b1fe8db4bbf50）：原 SDK 18 个合成属性场景、文件组合、service lib 298 passed / 45 ignored 及封存 Redis 通过；该运行两项流程检查曾在 checkout 被取消，随后仅重试未通过项，四项检查现均成功；重试没有改变源提交。原文件方法参考改用默认 MarshalOptions，并移除空 metadata 的额外归一化；Linux 原文件方法对照本候选未执行，不能沿用先前结果。显式入口为 `SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference cargo test -p sandproof-guest-service --locked --lib original_generated_properties -- --include-ignored --nocapture`。
 
 [文件请求 protobuf 对照](../sandbox-guest-service/src/file_rpc_requests/tests/protobuf.rs)的 J 操作经同一固定生成消息与默认 Connect HTTP codec 解码五种原请求，测试 handler 仅回显解码结果，不查账户或执行文件操作。6,280 组本地向量比较解码字段及 invalid_argument 分类，覆盖缺省/null、重复已知/未知字段、转义字段名、所有单个原始字节、代理项、嵌套边界、超大未知数字、精确小数/指数及 uint32 边界；该 J 操作只比较解码值/分类，错误全文由下述 K 操作另行比较。裸指数矩阵另覆盖正/负零、非法前缀、小数/范围边界、e/E/符号、分隔符与空白、已知字符串/数值字段及未知嵌套值；先前四个 `{"depth":1e}` 与未知值 `1e`/`1e+`/`1e-` 差异已修复，并保留逐项相等断言。按需兼容副本的长度/容量不超过原正文，正常数字直接借用，长数字段一次推进；转换不改变原始字节预算、字符串、重复字段与结构拒绝。可移植回归另检查原消息预算先行、扫描深度、精确整数与同一准入名额/期限；不存在浮点舍入或先构造整棵 Value 树。显式执行 `SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference cargo test -p sandproof-guest-service --locked --lib file_rpc_requests::tests::protobuf -- --include-ignored --nocapture`；普通 CI 不自动执行 Go 对照。这些组件结果不能代替 Linux 实际文件、原 SDK 双端 E03、正式监听器或 KVM。
 
-前序请求 JSON 与裸指数实现已分别在 [#421 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38519983349)（源 7ccc7f109a40571172993fb2bf561b29138230a6，合并 checkout a5e2487a0aec1ce5582db48de2e358a89a5225d0）和 [#422 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38521089460)（源 d61d0896222e707d3ee44b1c26c7aeaab0aded01，合并 checkout ad0d66105704b8225005e82620347db5448c3a2f）通过四项检查；两者 service lib 均为 299 passed / 47 ignored，原 SDK 72 场景、十次坏 gzip、四次未知编码及封存 Redis 通过。原 Go 显式对照未在这些 CI 执行；这些父层结果不覆盖后续 JSON 错误映射。
+前序请求 JSON 与裸指数实现已分别在 [#421 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38519983349)（源 7ccc7f109a40571172993fb2bf561b29138230a6，合并 checkout a5e2487a0aec1ce5582db48de2e358a89a5225d0）和 [#422 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38521089460)（源 d61d0896222e707d3ee44b1c26c7aeaab0aded01，合并 checkout ad0d66105704b8225005e82620347db5448c3a2f）通过四项检查；两者 service lib 均为 299 passed / 47 ignored，原 SDK 72 场景、十次坏 gzip、四次未知编码及封存 Redis 通过。原 Go 显式对照未在这些 CI 执行；这些父层结果不覆盖后续 JSON 错误映射。
 
 [JSON 错误响应检查](../sandbox-guest-service/src/file_rpc_requests/tests/json_errors.rs)经已鉴权请求、原阻塞解码和实际有界发送器执行 7,303 组固定 Go K 操作对照，比较完整错误消息、选定 HTTP 头及 JSON 字节。覆盖五种方法、字段/结构/重复项优先级、Unicode 行列、每个转义位置的全部原始字节、代理项、裸指数与深度边界；每方独立核对实际 Content-Length。只将原 protobuf 按二进制摘要选出的 proto: 后 NBSP 转成普通空格，保留其他原始 JSON 转义（包括无效 UTF-8 的替代表示）；临近 2048 字节的头阈值仍取各自实际编码长度，不承诺两种前缀构建具有相同阈值。空载荷不增加 protobuf 类型前缀。可移植回归核对 Debug 隐私、精确响应预算、最后副本/错误对象占额和可推进时钟下的过期拒绝；未知方法/其他分类继续未映射。显式入口为 `SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference cargo test -p sandproof-guest-service --locked --lib file_rpc_requests::tests::json_errors -- --include-ignored --nocapture`。
 
-Linux [JSON 入口组合](../sandbox-guest-service/src/file_rpc_http/tests/json_errors.rs)检查显式/缺省账户拒绝顺序、无文件效果、错误超限保留双槽位和恢复；固定 SDK 夹具另执行同步/异步各四次合成非法 JSON HTTP 输入，由原 ConnectWireError 解析器核对完整 code/message，Rust 断言八次拒绝及未创建 json-refused。四种合成错误的原 SDK 解析探针已本地通过；Linux 实际组合已在 [#423 CI](https://github.com/ningZhang-cs/sandproof/actions/runs/38524031451) 通过（源 92977a220fe068bf097c5da80cf39240a1d9ad83，实际合并 checkout 947d0ed67a7408296df575deb1f29afd28bfe748）：八次 JSON 拒绝、原 SDK 72 场景、十次坏 gzip、四次未知编码、service lib 302 passed / 48 ignored 及封存 Redis 通过，四项检查均成功。合成坏输入与原 SDK 自身编码的场景分开报告，不作为完整 E03、正式监听器或 KVM 验收；普通 CI 未执行上文显式 Go 对照。
+Linux [JSON 入口组合](../sandbox-guest-service/src/file_rpc_http/tests/json_errors.rs)检查显式/缺省账户拒绝顺序、无文件效果、错误超限保留双槽位和恢复；固定 SDK 夹具另执行同步/异步各四次合成非法 JSON HTTP 输入，由原 ConnectWireError 解析器核对完整 code/message，Rust 断言八次拒绝及未创建 json-refused。四种合成错误的原 SDK 解析探针已本地通过；Linux 实际组合已在 [#423 CI](https://github.com/VeriInfra-Lab/sandproof/actions/runs/38524031451) 通过（源 92977a220fe068bf097c5da80cf39240a1d9ad83，实际合并 checkout 947d0ed67a7408296df575deb1f29afd28bfe748）：八次 JSON 拒绝、原 SDK 72 场景、十次坏 gzip、四次未知编码、service lib 302 passed / 48 ignored 及封存 Redis 通过，四项检查均成功。合成坏输入与原 SDK 自身编码的场景分开报告，不作为完整 E03、正式监听器或 KVM 验收；普通 CI 未执行上文显式 Go 对照。
 
 [Connect 传输参考](../tests/compat/connect-reference/main.go)以固定 Go 1.26.8、原 Connect v1.18.1、authn v0.1.0 和 protobuf v1.36.12 在本机真实 HTTP 上返回同一个已编码载荷，比较八组状态/头/正文，包括 2047/2048/2049 字节边界。参考使用 passthrough 测试 codec，隔离原 Connect 传输；成功传输对照不执行 protobuf 编解码、认证、文件操作或完整 envd，不能视为 E03 双端通过。该显式 ignored 对照已本地执行，普通 CI 不自动安装 Go 依赖。新增 X 操作使用 [固定路径函数](../tests/compat/connect-reference/path.go)的实际展开错误交给原 Connect handler，透传 codec 不校验 protobuf，也不访问真实账户/文件；显式执行 `SANDPROOF_GUEST_CONNECT_REFERENCE=/absolute/path/to/connect-reference cargo test -p sandproof-guest-service --locked --lib fixed_go_rpc_expansion_rejections_match_http -- --ignored --nocapture`，已有本地结果。
 
@@ -693,6 +1234,8 @@ sudo timeout --signal=KILL 150 unshare --mount --net --pid --fork --kill-child -
 对应组件回归检查[原工作门的有界健康采样](../sandbox-host-service/tests/driver.rs)、[无上传 EOF 的来宾断流](../sandbox-data-transport/src/tunnel.rs)和[真实 worker 输入拒绝后的继续读写](../sandbox-guest-runtime/tests/preparation/input_limit_http.rs)。定点诊断先保留 503 与节点健康期限、原中心/宿主无载荷故障分类，不因单轮未复现就宣布旧故障已解决；不得延长有效期、增加测试容量或移除原检查。上述入口仍须按精确候选分别记录组件、SDK 和 KVM 实跑证据。
 
 私有构建数据路由也输出原节点新鲜度拒绝的固定 `CenterNodeFreshness` 分类，仍返回 Busy；仅有通用 `CenterDataAuthorization` 不能直接断言是健康过期。实际 Redis 回归核对过期拒绝不修改权威状态、其他租户拒绝和原观察恢复后的同一路由，不自动重传失败上传或创建替代 VM。
+
+公开卸载拒绝沿原 `center_wait` 的每进程 64 条预算记录固定类别：原内部传输错误、观察未就绪/过期、完整重放未命中及最终返回错误。每次同步卸载调用用 `u` 加单调序号关联原 Redis/服务错误，不记录用户、会话、凭据或请求正文。诊断不新增网络请求、不重试、不修改拒绝条件；没有分支记录不能据此认定根因。
 
 原中心状态观察另保留有限的 `center_observation` 诊断：区分状态请求未取得回复、原回复被拒绝、取得合格回复时旧健康期限已经过去。只记录本轮节点序号、原调用前后及宿主观察时间、旧期限和原时间策略，不输出节点字符串、路径、凭据、错误正文或模板数据。每个中心进程至多尝试写入 64 条，每条少于 512 字节，最后一条标明 `remaining=0`；写入失败也消耗名额且不重试。记录来自原调用及既有时间值，不新增状态请求、不改变准入、期限或权威提交；取得合格回复不等于后续提交成功。缺日志也可能是限额已用尽，不能当作健康或请求成功证据。
 

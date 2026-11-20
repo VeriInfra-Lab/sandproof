@@ -1,0 +1,64 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.Containers
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch.ContainerInstances
+
+/-- The same value proposition, independent of which decidability dictionary is inferred. -/
+theorem option_eq {T : Type} [DecidableEq T] [DecidableEq (Option T)]
+    (dictionary : core.cmp.PartialEq T T)
+    (lawful : ∀ a b, dictionary.eq a b = .ok (decide (a = b)))
+    (left right : Option T) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq dictionary left right =
+      .ok (decide (left = right)) := by
+  have converted : ∀ a b, dictionary.eq a b =
+      .ok (@decide (a = b) (Classical.propDecidable (a = b))) := by
+    intro a b
+    rw [lawful]
+    congr 1
+    exact decide_eq_decide.mpr Iff.rfl
+  rw [Containers.option_eq_of dictionary converted left right]
+  congr 1
+  exact decide_eq_decide.mpr Iff.rfl
+
+theorem vec_eq {T : Type} [DecidableEq T] [DecidableEq (alloc.vec.Vec T)]
+    (dictionary : core.cmp.PartialEq T T)
+    (lawful : ∀ a b, dictionary.eq a b = .ok (decide (a = b)))
+    (left right : alloc.vec.Vec T) :
+    alloc.vec.partial_eq.PartialEqVec.eq dictionary left right =
+      .ok (decide (left = right)) := by
+  have converted : ∀ a b, dictionary.eq a b =
+      .ok (@decide (a = b) (Classical.propDecidable (a = b))) := by
+    intro a b
+    rw [lawful]
+    congr 1
+    exact decide_eq_decide.mpr Iff.rfl
+  rw [Containers.vec_eq_of dictionary converted left right]
+  congr 1
+  exact decide_eq_decide.mpr Iff.rfl
+
+theorem pair_eq {U T : Type} [DecidableEq U] [DecidableEq T] [DecidableEq (U × T)]
+    (first : core.cmp.PartialEq U U) (second : core.cmp.PartialEq T T)
+    (first_law : ∀ a b, first.eq a b = .ok (decide (a = b)))
+    (second_law : ∀ a b, second.eq a b = .ok (decide (a = b)))
+    (left right : U × T) :
+    Pair.Insts.CoreCmpPartialEqPair.eq first second left right =
+      .ok (decide (left = right)) := by
+  have first_converted : ∀ a b, first.eq a b =
+      .ok (@decide (a = b) (Classical.propDecidable (a = b))) := by
+    intro a b
+    rw [first_law]
+    congr 1
+    exact decide_eq_decide.mpr Iff.rfl
+  have second_converted : ∀ a b, second.eq a b =
+      .ok (@decide (a = b) (Classical.propDecidable (a = b))) := by
+    intro a b
+    rw [second_law]
+    congr 1
+    exact decide_eq_decide.mpr Iff.rfl
+  rw [Containers.pair_eq_of first second first_converted second_converted left right]
+  congr 1
+  exact decide_eq_decide.mpr Iff.rfl
+
+end SandboxModel.Stage1Protocol.SourceWorkMatch.ContainerInstances
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.ContainerInstances.option_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.ContainerInstances.vec_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.ContainerInstances.pair_eq

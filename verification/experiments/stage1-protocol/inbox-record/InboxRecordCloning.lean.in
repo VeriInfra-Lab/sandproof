@@ -1,0 +1,145 @@
+import SandboxModel.Lifecycle.Protocol.Library
+import SandboxModel.Foundations.Cloning
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.InboxRecord
+
+@[simp] theorem byte_array_clone (value : Array U8 n) :
+    core.array.CloneArray.clone core.clone.CloneU8 value = .ok value := by
+  obtain ⟨copy, returned, same⟩ := WP.spec_imp_exists
+    (core.array.CloneArray.clone_spec core.clone.CloneU8 value (by intro x member; rfl))
+  simpa [← same] using returned
+
+@[simp] theorem byte_vector_clone (value : alloc.vec.Vec U8) :
+    alloc.vec.CloneVec.clone core.clone.CloneU8 value = .ok value :=
+  SandboxModel.Foundations.vec_clone_exact core.clone.CloneU8 value (by intro x; rfl)
+
+@[simp] theorem string_clone (value : String) :
+    alloc.string.String.Insts.CoreCloneClone.clone value = .ok value := rfl
+
+@[simp] theorem SandboxId_clone (value : sandproof_protocol.SandboxId) :
+    sandproof_protocol.SandboxId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.SandboxId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem SessionId_clone (value : sandproof_protocol.lifecycle.identity.SessionId) :
+    sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem CaptureId_clone (value : sandproof_protocol.lifecycle.identity.CaptureId) :
+    sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem IncarnationId_clone (value : sandproof_protocol.lifecycle.identity.IncarnationId) :
+    sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem ContentDigest_clone (value : sandproof_protocol.lifecycle.digest.ContentDigest) :
+    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCloneClone.clone]
+
+@[simp] theorem ResourceId_clone (value : sandproof_protocol.ResourceId) :
+    sandproof_protocol.ResourceId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.ResourceId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem Resources_clone (value : sandproof_protocol.internal.lifecycle.Resources) :
+    sandproof_protocol.internal.lifecycle.Resources.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem CreateBinding_clone (value : sandproof_protocol.internal.lifecycle.CreateBinding) :
+    sandproof_protocol.internal.lifecycle.CreateBinding.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.internal.lifecycle.CreateBinding.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem LifecycleOperation_clone (value : sandproof_protocol.lifecycle.request.LifecycleOperation) :
+    sandproof_protocol.lifecycle.request.LifecycleOperation.Insts.CoreCloneClone.clone value = .ok value := by
+  cases value <;> simp [sandproof_protocol.lifecycle.request.LifecycleOperation.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem ExpectedSession_clone (value : sandproof_protocol.lifecycle.identity.ExpectedSession) :
+    sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem RequestSequence_clone (value : sandproof_protocol.lifecycle.identity.RequestSequence) :
+    sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem RequestWindowId_clone (value : sandproof_protocol.lifecycle.identity.RequestWindowId) :
+    sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem DeploymentId_clone (value : sandproof_protocol.DeploymentId) :
+    sandproof_protocol.DeploymentId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.DeploymentId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem TenantId_clone (value : sandproof_protocol.TenantId) :
+    sandproof_protocol.TenantId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.TenantId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem OperationKey_clone (value : sandproof_protocol.lifecycle.identity.OperationKey) :
+    sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCloneClone.clone]
+
+@[simp] theorem NodeId_clone (value : sandproof_protocol.NodeId) :
+    sandproof_protocol.NodeId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.NodeId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem PositiveCounter_clone (value : sandproof_protocol.internal.PositiveCounter) :
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem NodeIdentity_clone (value : sandproof_protocol.internal.NodeIdentity) :
+    sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone]
+
+@[simp] theorem OperationBinding_clone (value : sandproof_protocol.lifecycle.identity.OperationBinding) :
+    sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCloneClone.clone, lift]
+
+@[simp] theorem LifecycleRequest_clone (value : sandproof_protocol.lifecycle.request.LifecycleRequest) :
+    sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCloneClone.clone]
+
+@[simp] theorem RetentionBinding_clone (value : sandproof_protocol.lifecycle.identity.RetentionBinding) :
+    sandproof_protocol.lifecycle.identity.RetentionBinding.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem CenterId_clone (value : sandproof_protocol.lifecycle.authority.CenterId) :
+    sandproof_protocol.lifecycle.authority.CenterId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.authority.CenterId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem CenterIdentity_clone (value : sandproof_protocol.lifecycle.authority.CenterIdentity) :
+    sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCloneClone.clone]
+
+@[simp] theorem AcceptedLifecycleIntent_clone (value : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent) :
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCloneClone.clone, lift]
+
+end SandboxModel.Stage1Protocol.InboxRecord
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.byte_array_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.byte_vector_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.string_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.SandboxId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.SessionId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.CaptureId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.IncarnationId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.ContentDigest_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.ResourceId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.Resources_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.CreateBinding_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.LifecycleOperation_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.ExpectedSession_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.RequestSequence_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.RequestWindowId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.DeploymentId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.TenantId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.OperationKey_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.NodeId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.PositiveCounter_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.NodeIdentity_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.OperationBinding_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.LifecycleRequest_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.RetentionBinding_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.CenterId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.CenterIdentity_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecord.AcceptedLifecycleIntent_clone

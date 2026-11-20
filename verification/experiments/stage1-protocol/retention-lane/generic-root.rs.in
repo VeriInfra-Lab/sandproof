@@ -1,0 +1,7 @@
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+pub(super) fn proof_retention_lane_valid_using<E: TerminalEncoding>(
+    lane: &LifecycleRetentionLane,
+    context: &AuthenticatedCenterContext,
+) -> bool {
+    lane.valid_using::<E>(context)
+}

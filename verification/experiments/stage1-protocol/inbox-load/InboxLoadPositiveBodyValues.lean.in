@@ -1,0 +1,90 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadLibrary
+import SandboxModel.Lifecycle.Protocol.InboxLoadWitnessValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+noncomputable section
+
+abbrev validation := InboxValidation.inboxView saved terminal renewal unload
+abbrev budget := fun config => Result.ok (budgetValue config)
+
+theorem normal_represented : DecodedStringsRepresentable normalEffects := by
+  intro state input inbox after equation
+  simp only [normalEffects, effects, Result.ok.injEq, Prod.mk.injEq,
+    core.result.Result.Ok.injEq] at equation
+  rcases equation with ⟨same, _⟩
+  rw [← same]
+  exact InboxValidation.Values.fixture_representable
+
+theorem normal_budget : budgetValue InboxValidation.Values.normal.config = 286720#u64 := by
+  apply UScalar.eq_of_val_eq
+  rw [budget_value_exact]
+  decide
+
+theorem validated_normal (trace : Trace) :
+    validatedView normalEffects validation budget InboxValidation.Values.normal 286720#u64 trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ policyTrace) := by
+  have checked := InboxValidation.Values.normal_model_accepted saved terminal renewal unload
+  simp only [validatedView, budget, normal_budget, bind_tc_ok, ne_eq, not_true_eq_false, ↓reduceIte,
+    validation, checked]
+  exact final_policy_accepts InboxValidation.Values.normal (by decide) trace
+
+def afterEncoding (inbox : Inbox) : Trace := [Event.encodedInbox inbox] ++ policyTrace
+
+theorem canonical_normal (trace : Trace) :
+    canonicalView normalEffects validation budget InboxValidation.Values.normal bytes 286720#u64 trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ afterEncoding InboxValidation.Values.normal) := by
+  simp only [canonicalView, normalEffects, effects, attempt, bind_tc_ok]
+  change (do
+    let different ← alloc.vec.partial_eq.PartialEqVec.ne core.cmp.PartialEqU8 bytes bytes
+    if different then corrupt (trace ++ [Event.encodedInbox InboxValidation.Values.normal])
+    else
+      validatedView normalEffects validation budget InboxValidation.Values.normal 286720#u64
+        (trace ++ [Event.encodedInbox InboxValidation.Values.normal])) = _
+  rw [InboxLoadLibrary.vec_ne]
+  simp only [ne_eq, not_true_eq_false, decide_false, bind_tc_ok, Bool.false_eq_true, ↓reduceIte]
+  simpa only [afterEncoding, List.append_assoc] using
+    validated_normal (trace ++ [Event.encodedInbox InboxValidation.Values.normal])
+
+def afterDigest (inbox : Inbox) : Trace := [Event.digested bytes.val] ++ afterEncoding inbox
+
+theorem digest_normal (trace : Trace) :
+    digestView normalEffects validation budget InboxValidation.Values.normal bytes storedDigest 286720#u64 trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ afterDigest InboxValidation.Values.normal) := by
+  simp only [digestView, normalEffects, effects, bind_tc_ok]
+  change (if digest.val ≠ storedDigest.val then corrupt (trace ++ [Event.digested bytes.val])
+    else canonicalView normalEffects validation budget InboxValidation.Values.normal bytes 286720#u64
+      (trace ++ [Event.digested bytes.val])) = _
+  have same : digest.val = storedDigest.val := rfl
+  simp only [same, ne_eq, not_true_eq_false, ↓reduceIte]
+  simpa only [afterDigest, List.append_assoc] using canonical_normal (trace ++ [Event.digested bytes.val])
+
+def bodyTrace (inbox : Inbox) : Trace :=
+  [.bodyQuery bodyStatement, .decodedInbox bytes.val] ++ afterDigest inbox
+
+theorem body_normal (trace : Trace) :
+    bodyView normalEffects validation budget 286720#u64 trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ bodyTrace InboxValidation.Values.normal) := by
+  simp only [bodyView, normalEffects, effects, attempt, bind_tc_ok]
+  change digestView normalEffects validation budget InboxValidation.Values.normal bytes storedDigest 286720#u64
+    (trace ++ [.bodyQuery bodyStatement] ++ [.decodedInbox bytes.val]) = _
+  rw [digest_normal]
+  apply congrArg (fun finalTrace : Trace =>
+    (Result.ok (.Ok (some InboxValidation.Values.normal), finalTrace) : Outcome Trace))
+  exact (List.append_assoc (trace ++ [Event.bodyQuery bodyStatement])
+    [Event.decodedInbox bytes.val] (afterDigest InboxValidation.Values.normal)).trans
+    (List.append_assoc trace [Event.bodyQuery bodyStatement]
+      ([Event.decodedInbox bytes.val] ++ afterDigest InboxValidation.Values.normal))
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.normal_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.normal_budget
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.validated_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.canonical_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.digest_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.body_normal

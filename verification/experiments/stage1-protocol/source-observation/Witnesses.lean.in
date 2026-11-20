@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.SourceObservation.Core
+import SandboxModel.Lifecycle.Protocol.SourceObservation.Examples
+open Aeneas Aeneas.Std SandproofSourceObservationRust
+namespace SandboxModel.Stage1Protocol.SourceObservation
+open Values
+theorem normal_actual : proof_source_observation_matches value requirement = .ok true := by
+  simpa [normal_expected] using full_observation_contract value requirement
+theorem binding_actual : proof_source_observation_matches badBinding requirement = .ok false := by
+  simpa [binding_expected] using full_observation_contract badBinding requirement
+theorem start_actual : proof_source_observation_matches badStart requirement = .ok false := by
+  simpa [start_expected] using full_observation_contract badStart requirement
+theorem boot_actual : proof_source_observation_matches badBoot requirement = .ok false := by
+  simpa [boot_expected] using full_observation_contract badBoot requirement
+theorem large_actual : proof_source_observation_matches tooLarge requirement = .ok false := by
+  simpa [large_expected] using full_observation_contract tooLarge requirement
+theorem digests_are_unchecked : proof_source_observation_matches changedDigests requirement = .ok true := by
+  simpa [digest_expected] using full_observation_contract changedDigests requirement
+theorem boundary_actual : proof_source_observation_matches boundary requirement = .ok true := by
+  simpa [boundary_expected] using full_observation_contract boundary requirement
+theorem hash_fields_independent (value : Observation) (requirement : Requirement)
+    (executable kernel : sandproof_protocol.lifecycle.digest.ContentDigest) :
+    proof_source_observation_matches
+      { value with executable_sha256 := executable, kernel_sha256 := kernel } requirement =
+      proof_source_observation_matches value requirement := by
+  change capture.source.RawSourceObservation.matches _ _ = capture.source.RawSourceObservation.matches _ _
+  simp only [matches_exact, Expected, Accepts]
+  rfl
+end SandboxModel.Stage1Protocol.SourceObservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.normal_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.binding_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.start_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.boot_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.large_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.digests_are_unchecked
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.boundary_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.hash_fields_independent

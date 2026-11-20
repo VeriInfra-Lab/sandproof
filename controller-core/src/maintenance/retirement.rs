@@ -322,6 +322,8 @@ fn external_dependencies_closed(
         && foreign_resource_links_closed(world, sandbox, workspace, ids)
         && foreign_logical_dependencies_closed(world, sandbox, workspace, ids)
         && foreign_stop_coverages_closed(world, sandbox)
+        && foreign_capture_ends_closed(world, sandbox, workspace, ids)
+        && foreign_capture_drains_closed(world, sandbox, workspace, ids)
         && foreign_effect_dependencies_closed(world, sandbox, workspace, ids)
         && foreign_effect_keys_closed(world, sandbox, workspace, ids)
         && foreign_inflight_dependencies_closed(world, sandbox, workspace, ids)
@@ -456,6 +458,55 @@ fn foreign_logical_dependencies_closed(
     true
 }
 
+fn end_references(
+    receipt: crate::capture::CaptureWorkEndReceipt,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
+    receipt
+        .end
+        .seal()
+        .is_some_and(|seal| seal.workspace == workspace || ids.snapshots.contains(&seal.snapshot))
+}
+fn foreign_capture_ends_closed(
+    world: &World,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
+    !world.logical_effects.entries().iter().any(|(id,logical)| {
+        id.command.sandbox() != sandbox && matches!(logical.result,
+            Some(LogicalEffectResult::RetiredByCaptureEnd {end_receipt,..}) if end_references(end_receipt,workspace,ids))
+    }) && !world.effects.entries().iter().any(|(id,status)| {
+        id.command().sandbox() != sandbox && matches!(status,
+            EffectStatus::RetiredByCaptureEnd(receipt) if end_references(*receipt,workspace,ids))
+    })
+}
+
+fn drain_references(
+    coverage: crate::capture::drain::CaptureDrainCoverage,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
+    coverage.identity.key.sandbox == sandbox
+        || coverage.stop.operation.sandbox == sandbox
+        || ids.vms.contains(&coverage.identity.vm)
+        || coverage.end_receipt.seal.workspace == workspace
+        || ids.snapshots.contains(&coverage.end_receipt.seal.snapshot)
+}
+fn foreign_capture_drains_closed(
+    world: &World,
+    sandbox: SandboxId,
+    workspace: FsId,
+    ids: &OwnedIds,
+) -> bool {
+    !world.logical_effects.entries().iter().any(|(id,logical)|id.command.sandbox() != sandbox
+        && matches!(logical.result,Some(LogicalEffectResult::RetiredByCaptureDrain {coverage,..}) if drain_references(coverage,sandbox,workspace,ids)))
+        && !world.effects.entries().iter().any(|(id,status)|id.command().sandbox() != sandbox
+            && matches!(status,EffectStatus::RetiredByCaptureDrain(coverage) if drain_references(*coverage,sandbox,workspace,ids)))
+}
+
 fn foreign_stop_coverages_closed(world: &World, sandbox: SandboxId) -> bool {
     if world.effects.entries().iter().any(|(id, status)| id.command().sandbox() != sandbox
         && matches!(status, EffectStatus::RetiredByStop(coverage) if coverage.operation.sandbox == sandbox)) {
@@ -564,8 +615,9 @@ fn check_historical_ledgers(
         if !terminal_ledger(*key, ledger) || ledger.operation.epoch > record.epoch {
             return Err(RetirementReject::LedgerMismatch);
         }
-        if matches!(ledger.input, OperationInput::Resume { .. })
-            || matches!(ledger.result, Some(OperationResult::Paused(_)))
+        if (matches!(ledger.input, OperationInput::Resume { .. })
+            || matches!(ledger.result, Some(OperationResult::Paused(_))))
+            && !crate::checkpoint::valid_snapshot_retirement_history(world, sandbox)
         {
             return Err(RetirementReject::SnapshotHistoryUnsupported);
         }
@@ -581,7 +633,8 @@ fn check_historical_ledgers(
                 && *network == record.policy
                 && *file_policy == record.file_policy => {}
             (OperationKind::Pause, OperationInput::Pause { .. })
-            | (OperationKind::Kill, OperationInput::Kill { .. }) => {}
+            | (OperationKind::Kill, OperationInput::Kill { .. })
+            | (OperationKind::Resume, OperationInput::Resume { .. }) => {}
             _ => return Err(RetirementReject::LedgerMismatch),
         }
         let plan = world
@@ -602,7 +655,9 @@ fn check_plan_ledgers(world: &World, sandbox: SandboxId) -> Result<(), Retiremen
             if plan.key != *key || world.operations.get(key).is_none() {
                 return Err(RetirementReject::LedgerMismatch);
             }
-            if plan.restore_from.is_some() || plan.target_snapshot.is_some() {
+            if (plan.restore_from.is_some() || plan.target_snapshot.is_some())
+                && !crate::checkpoint::valid_snapshot_retirement_history(world, sandbox)
+            {
                 return Err(RetirementReject::SnapshotHistoryUnsupported);
             }
         }
@@ -616,10 +671,12 @@ fn check_resources(
     record: &SandboxRecord,
     ids: &OwnedIds,
 ) -> Result<(), RetirementReject> {
-    if record.durable_snapshot.is_some()
+    if (record.durable_snapshot.is_some()
         || record.restore_from.is_some()
         || !ids.snapshots.is_empty()
-        || !world.resource_index(sandbox).snapshots.is_empty()
+        || !world.resource_index(sandbox).snapshots.is_empty())
+        && (world.sandbox_record(sandbox) != Some(record)
+            || !crate::checkpoint::valid_snapshot_retirement_history(world, sandbox))
     {
         return Err(RetirementReject::SnapshotHistoryUnsupported);
     }
@@ -827,9 +884,12 @@ fn origin_bound(world: &World, command: &Command, logical: &LogicalEffectRecord)
                         return false;
                     }
                 }
-                Command::ActivateVm { generation, vm, .. }
-                | Command::FreezeVm { generation, vm, .. } => {
-                    if !matches_start(*generation, *vm, None) {
+                Command::ActivateVm { generation, vm, .. } => {
+                    if !matches_start(*generation, *vm, None)
+                        && !crate::capture::continuation::activation_belongs_to_continuation(
+                            plan, command,
+                        )
+                    {
                         return false;
                     }
                 }
@@ -844,10 +904,14 @@ fn origin_bound(world: &World, command: &Command, logical: &LogicalEffectRecord)
                     }
                 }
                 Command::InstallFence { .. } => {}
-                Command::SealSnapshot { .. }
-                | Command::CommitSnapshot { .. }
-                | Command::CleanupVm { .. }
-                | Command::CleanupSlot { .. } => return false,
+                Command::FreezeVm { .. }
+                | Command::SealSnapshot { .. }
+                | Command::CommitSnapshot { .. } => {
+                    if !crate::checkpoint::valid_snapshot_retirement_history(world, sandbox) {
+                        return false;
+                    }
+                }
+                Command::CleanupVm { .. } | Command::CleanupSlot { .. } => return false,
             }
         }
     }
@@ -896,13 +960,13 @@ fn command_bound(
             (world.vms.get(vm).is_none() || vm_matches(vm, *generation))
                 && (world.net_slots.get(slot).is_none()
                     || slot_matches(slot, *generation, Some(*vm)))
-                && !matches!(
+                && (!matches!(
                     command,
                     Command::PrepareVm {
                         source: Some(_),
                         ..
                     }
-                )
+                ) || crate::checkpoint::valid_snapshot_retirement_history(world, sandbox))
         }
         Command::ConfigureNetwork {
             generation,
@@ -925,7 +989,9 @@ fn command_bound(
         Command::CleanupSlot {
             generation, slot, ..
         } => slot_matches(slot, *generation, None),
-        Command::SealSnapshot { .. } | Command::CommitSnapshot { .. } => false,
+        Command::SealSnapshot { .. } | Command::CommitSnapshot { .. } => {
+            crate::checkpoint::valid_snapshot_retirement_history(world, sandbox)
+        }
     }
 }
 
@@ -976,7 +1042,8 @@ fn obsolete_committed(world: &World, id: &EffectId, logical: &LogicalEffectRecor
             // Current attempt, no result and queue membership were checked
             // above. The same terminal guard forbids all future issuance;
             // unlike Dispatched work this committed action has no host effect.
-            return crate::effect::startup_dispatch_revoked(world, id.command());
+            return crate::effect::startup_dispatch_revoked(world, id.command())
+                || crate::capture::continuation::capture_dispatch_permanently_revoked(world, id);
         }
         Err(_) => return false,
     };
@@ -1037,6 +1104,9 @@ fn check_logical_effects(
             return Err(RetirementReject::LedgerMismatch);
         }
         let result_matches = match (logical.result, status) {
+            (Some(LogicalEffectResult::ReleasedExecution(_)), _) => {
+                crate::maintenance::released_execution::discharged(world, &id)
+            }
             (
                 None,
                 EffectStatus::Committed | EffectStatus::Acknowledged(EffectOutcome::Failed(_)),
@@ -1056,6 +1126,25 @@ fn check_logical_effects(
                 attempt == id.attempt
                     && coverage == stored
                     && retired_stop_valid(world, &id, coverage)
+            }
+            (
+                Some(LogicalEffectResult::RetiredByCaptureEnd {
+                    attempt,
+                    end_receipt,
+                }),
+                EffectStatus::RetiredByCaptureEnd(stored),
+            ) => {
+                attempt == id.attempt
+                    && end_receipt == stored
+                    && crate::capture::continuation::retired_capture_end_valid(world, &id, stored)
+            }
+            (
+                Some(LogicalEffectResult::RetiredByCaptureDrain { attempt, coverage }),
+                EffectStatus::RetiredByCaptureDrain(stored),
+            ) => {
+                attempt == id.attempt
+                    && coverage == stored
+                    && crate::capture::drain::retired_capture_drain_valid(world, &id, stored)
             }
             (_, EffectStatus::Dispatched | EffectStatus::OutcomeUnknown) => {
                 return Err(RetirementReject::UnresolvedEffects);
@@ -1088,6 +1177,9 @@ fn check_effect_attempts(world: &World, sandbox: SandboxId) -> Result<(), Retire
         if !world.effect_keys.contains(id) || id.attempt > logical.current_attempt {
             return Err(RetirementReject::LedgerMismatch);
         }
+        if crate::maintenance::released_execution::discharged(world, id) {
+            continue;
+        }
         match status {
             EffectStatus::Acknowledged(_) => {
                 // A successful prepare/abort must have materialized its exact
@@ -1101,6 +1193,11 @@ fn check_effect_attempts(world: &World, sandbox: SandboxId) -> Result<(), Retire
                 }
             }
             EffectStatus::RetiredByStop(coverage) if retired_stop_valid(world, id, *coverage) => {}
+            EffectStatus::RetiredByCaptureEnd(receipt)
+                if crate::capture::continuation::retired_capture_end_valid(world, id, *receipt) => {
+            }
+            EffectStatus::RetiredByCaptureDrain(coverage)
+                if crate::capture::drain::retired_capture_drain_valid(world, id, *coverage) => {}
             EffectStatus::Committed if obsolete_committed(world, id, logical) => {}
             EffectStatus::Dispatched | EffectStatus::OutcomeUnknown => {
                 return Err(RetirementReject::UnresolvedEffects);
@@ -1234,19 +1331,20 @@ pub fn validate_terminal_cleanup(
     }
     check_resources(world, sandbox, record, &ids)?;
     check_effects(world, sandbox, record)?;
-    if world.worker_fences.get(&sandbox)
-        != Some(&WorkerFence {
-            epoch: record.epoch,
-            terminal: true,
-        })
-        || !successful_command(
-            world,
-            &Command::InstallFence {
-                sandbox,
+    if !crate::maintenance::released_execution::terminal_closed(world, sandbox)
+        && (world.worker_fences.get(&sandbox)
+            != Some(&WorkerFence {
                 epoch: record.epoch,
                 terminal: true,
-            },
-        )
+            })
+            || !successful_command(
+                world,
+                &Command::InstallFence {
+                    sandbox,
+                    epoch: record.epoch,
+                    terminal: true,
+                },
+            ))
     {
         return Err(RetirementReject::NotTerminal);
     }

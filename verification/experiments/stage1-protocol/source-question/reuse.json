@@ -1,0 +1,19 @@
+{
+  "source_base": "9c50da7cc9391518514f14405e6c779e5c5cbe2c",
+  "new_mathematical_statements": 0,
+  "original_candidate_readback_sha256": "8bfa3f66fc95ca7a3f1404e3135c1f997bba15274a1e6f0e96c007ea107faef4",
+  "original_candidate_source_sha256": "2e6240692a5ab39b05276cdb171ce13672354de797e2c28e65d1702c39b73130",
+  "retained_original_namespace": "SandboxModel.Stage1Protocol.SourceQuestion.Candidate",
+  "templates": {
+    "NegativeLimits.lean.in": "64033dac2d040e866a0ae50bd034cb682aecfd107657a7d9f49c0fb0f2a4019b",
+    "NegativeResource.lean.in": "6573f38901620b40ccfd0000223afe1799e75aac41bec794c232a590609ab955",
+    "Examples.lean.in": "774ebac7da43b0ff46fb8c6b60f746ada9102161bbcc55fbbb34a4fc6ae28753",
+    "Witnesses.lean.in": "83d07106cb91caa1ab86e031504d23602db68ca93e5550da15396cc4aa9e4dc5",
+    "NegativeBinding.lean.in": "d46f59dbe7a10f65ea8a6f8cf1cc99cbe423954ae9164a02a89972cb2a4b0790",
+    "Spec.lean.in": "20300440e0b1e03fe1afb13e743975a391556b8a8379a18d48b7ce6a99b9066b",
+    "Core.lean.in": "4d5cc9655fde1d928cfae2f881e99957a907aae23c27012c1a362e3c94a5ab91",
+    "Cloning.lean.in": "c3f6854f965334dfd15ef2d9f9c3498390efb778dc9e31a28f46289581560708",
+    "Values.lean.in": "e40c6897129e4b0646bcb236e2abbcc02be599eb568d40dc2889429fdc6d26f0"
+  },
+  "unchanged_external_model_sha256": "ad7a31eb50413692a19770f4ef0cf4989f028217c7847cb921fafd22ccaca9b0"
+}

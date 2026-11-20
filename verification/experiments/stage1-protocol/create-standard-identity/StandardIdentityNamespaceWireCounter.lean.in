@@ -1,0 +1,50 @@
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentity
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentityValues
+import SandboxModel.Lifecycle.Protocol.StandardIdentityDelegateFixture
+
+open Aeneas Aeneas.Std SandproofStage1CreateAttachmentRust
+namespace SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter
+open CreateFixedIdentity
+
+theorem helper_normal_unchanged :
+    sandproof_controller_service.controller.identity.sandbox_id Values.normal 2#u64 =
+      .ok (.Ok "sb-normal-2") := by
+  simpa only [Values.normal_expected] using identity_complete Values.normal "normal" 2#u64
+    Values.normal_represented Values.normal_output_representable
+
+theorem actual_namespace_lost (effects : Effects) :
+    call effects Values.normal 2#u64 = .ok (.Ok "sb--2", effects) := by
+  have helper := identity_complete (SandproofStage1CreateAttachmentRust.toStr "") "" 2#u64
+    (SandboxModel.Foundations.literal_string_bytes_refines "" _)
+    (by change 5 ≤ Usize.max; scalar_tac)
+  unfold call sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.sandbox_id
+  rw [helper]
+  simp only [bind_tc_ok]
+  rfl
+
+theorem still_accepts_empty_zero (effects : Effects) :
+    call effects Values.empty 0#u64 = .ok (.Ok "sb--0", effects) := by
+  have helper := identity_complete (SandproofStage1CreateAttachmentRust.toStr "") "" 0#u64
+    (SandboxModel.Foundations.literal_string_bytes_refines "" _)
+    (by change 5 ≤ Usize.max; scalar_tac)
+  unfold call sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.sandbox_id
+  rw [helper]
+  simp only [bind_tc_ok]
+  rfl
+
+theorem same_full_contract_rejected :
+    ¬ FullStandardIdentityContract call := by
+  intro law
+  have promised := law (Fixture.normalEffects Fixture.selectedWorld Fixture.observingConnection) Values.normal "normal" 2#u64
+    Values.normal_represented Values.normal_output_representable
+  rw [actual_namespace_lost, Values.normal_expected] at promised
+  have equality := Result.ok_injective promised
+  have reply := congrArg Prod.fst equality
+  injection reply with text
+  exact (by decide : ("sb--2" : String) ≠ "sb-normal-2") text
+
+end SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.helper_normal_unchanged
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.actual_namespace_lost
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.still_accepts_empty_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.same_full_contract_rejected

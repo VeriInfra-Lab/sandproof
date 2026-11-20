@@ -1,0 +1,77 @@
+import SandboxModel.Lifecycle.Protocol.StandardDigestCore
+import SandboxModel.Lifecycle.Protocol.InboxLoadStandardBlobDigestDomain
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.StandardDigestBridge
+open StandardBlobNormalContext
+
+/-- Entire original one-field receiver, sharing the canonical connection value.
+This is a value representation, not a physical transaction/heap assertion. -/
+def fromBlob (state : StandardBlob.Context) : StandardDigest.Context := ⟨state.connection⟩
+def toBlob (state : StandardDigest.Context) : StandardBlob.Context := ⟨state.connection⟩
+
+theorem original_context_roundtrip (state : StandardBlob.Context) :
+    toBlob (fromBlob state) = state := by cases state; rfl
+theorem digest_context_roundtrip (state : StandardDigest.Context) :
+    fromBlob (toBlob state) = state := by cases state; rfl
+
+def digest (state : NormalContext) (bytes : Slice U8) :
+    Result (Array U8 32#usize × NormalContext) := do
+  let (hash, _) ← StandardDigest.actual (fromBlob state.val) bytes
+  .ok (hash, state)
+
+def reference (state : NormalContext) (bytes : Slice U8) :
+    Result (Array U8 32#usize × NormalContext) :=
+  .ok (DigestByteBridge.referenceOutput bytes, state)
+
+theorem digest_normal (state : NormalContext) (bytes : Slice U8)
+    (normal : bytes.val.length < 2^61) : digest state bytes = reference state bytes := by
+  unfold digest
+  rw [StandardDigest.actual_refines _ bytes normal]
+  simp only [StandardDigest.expected, bind_tc_ok]
+  rfl
+
+def forget (run : Result (Array U8 32#usize × NormalContext)) :
+    Result (Array U8 32#usize × StandardDigest.Context) := do
+  let (hash, after) ← run
+  .ok (hash, fromBlob after.val)
+
+theorem projected_actual_digest (state : NormalContext) (bytes : Slice U8)
+    (normal : bytes.val.length < 2^61) :
+    forget (digest state bytes) = StandardDigest.actual (fromBlob state.val) bytes := by
+  rw [digest_normal state bytes normal, StandardDigest.actual_refines _ bytes normal]
+  simp only [forget, reference, StandardDigest.expected, bind_tc_ok, uncurry_apply_pair]
+
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec
+
+def withBoth (io : InboxLoadEffects NormalContext) : InboxLoadEffects NormalContext :=
+  InboxLoadStandardBlobDigestDomain.withStandardRead { io with digest := digest }
+
+theorem actual_digest_agrees (io : InboxLoadEffects NormalContext) (state : NormalContext)
+    (bytes : Slice U8) (normal : bytes.val.length < 2^61) :
+    (withBoth io).digest state bytes = reference state bytes :=
+  digest_normal state bytes normal
+
+theorem actual_load_reference_digest_congr {R T N U B : Type}
+    (saved : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.native_retirement.RetirementEncoding R)
+    (terminal : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.TerminalEncoding T)
+    (renewal : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation.RenewalEncoding N)
+    (unload : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.unload_resolution.UnloadEncoding U)
+    (graphic : SandproofStage1RequestRust.sandproof_controller_service.capture.GraphicBytes B)
+    (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects NormalContext)
+    (represented : InboxLoad.DecodedStringsRepresentable (withBoth io)) (state : NormalContext) :
+    load_using saved terminal renewal unload graphic (withBoth io) state =
+      load_using saved terminal renewal unload graphic
+        (InboxLoadBlobDigestDomain.withDigest (withBoth io) reference) state := by
+  exact InboxLoadStandardBlobDigestDomain.actual_load_normal_digest_congr saved terminal renewal unload
+    graphic graphicLaw { io with digest := digest } represented reference state
+    (actual_digest_agrees io)
+
+end SandboxModel.Stage1Protocol.StandardDigestBridge
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestBridge.original_context_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestBridge.digest_context_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestBridge.digest_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestBridge.projected_actual_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestBridge.actual_digest_agrees
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestBridge.actual_load_reference_digest_congr

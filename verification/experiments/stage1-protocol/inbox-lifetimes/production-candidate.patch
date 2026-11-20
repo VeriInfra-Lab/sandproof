@@ -1,0 +1,18 @@
+--- a/controller-service/src/controller/lifecycle_inbox/renewal_confirmation.rs
++++ b/controller-service/src/controller/lifecycle_inbox/renewal_confirmation.rs
+@@ -141,6 +141,15 @@
+     if initial > lifetime.max_deadline_ms {
+         return Err(JournalError::CorruptStore);
+     }
++    validate_applied_lifetimes(session, lifetime, start, initial)
++}
++
++fn validate_applied_lifetimes(
++    session: &Session,
++    lifetime: crate::Lifetime,
++    start: i64,
++    initial: i64,
++) -> Result<(), JournalError> {
+     let mut prior_end = Some(initial);
+     let mut prior_version = 0;
+     let mut last_applied = None;

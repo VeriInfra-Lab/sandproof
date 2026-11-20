@@ -1,0 +1,72 @@
+import SandboxModel.Lifecycle.Protocol.InboxSummaryQueries
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxValidation
+noncomputable section
+open scoped Classical
+
+theorem one_session_refines {R T N U : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (inbox : Inbox) (index : Usize) (session : Session) (context : AuthenticatedCenterContext) :
+    Inbox.validate_one_session saved terminal renewal unload inbox index session context =
+      sessionView saved terminal renewal.encode unload.encode inbox index session context := by
+  unfold Inbox.validate_one_session sessionView
+  rw [SessionShape.validate_shape_spec]
+  apply congrArg (fun continuation => Bind.bind
+    (SessionShape.validateView saved terminal inbox index session) continuation)
+  funext shaped
+  cases shaped with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok value =>
+    cases value
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+    rw [InboxRenewal.validate_session_spec]
+    apply congrArg (fun continuation => Bind.bind (InboxRenewal.validateView renewal.encode session) continuation)
+    funext renewed
+    cases renewed with
+    | Err error =>
+      simp [
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok value =>
+      cases value
+      simp only [ bind_tc_ok]
+      rw [← entry_order_refines unload inbox session context]
+      simp only [bind_assoc_eq]
+      apply congrArg (fun continuation => Bind.bind
+        (Inbox.validate_entry_order_using unload inbox session context) continuation)
+      funext ordered
+      cases ordered with
+      | Err error =>
+        simp [observeSummary,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | Ok value =>
+        rcases value with ⟨maximum, kinds⟩
+        simp only [observeSummary,  bind_tc_ok]
+        rw [InboxLineage.candidate_validate_contract]
+        cases lineage : InboxLineage.expectedResult session with
+        | Err error =>
+          simp [
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | Ok value =>
+          cases value
+          simp only [ bind_tc_ok]
+          simp [array_read kinds 2#usize (by decide), array_read kinds 0#usize (by decide),
+            summary_owner_option, destroy_at_maximum_spec, SummaryFields, rejected,
+            arraySummary, core.option.Option.is_some, UScalar.eq_equiv]
+          cases localState : session.local <;> cases terminalFlag : session.terminal <;> simp
+          all_goals split_ifs <;> simp_all
+          all_goals aesop
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.one_session_refines

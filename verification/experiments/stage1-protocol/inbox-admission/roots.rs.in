@@ -1,0 +1,9 @@
+// Extraction-only full-input forwarding root; no production algorithm is replaced.
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_authenticated(
+    inbox: &Inbox,
+    intent: &AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+) -> Result<(), JournalError> {
+    super::authenticated(inbox, intent, context)
+}

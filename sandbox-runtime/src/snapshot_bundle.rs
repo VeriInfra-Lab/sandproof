@@ -1,7 +1,7 @@
 //! Read-only reopening of an original published bundle, not restore authority.
 use super::{
-    FileStamp, SnapshotArtifact, SnapshotFileMeasurement, SnapshotStore, accepts, file_facts,
-    invalid, key_name, matches_entry, os_error,
+    FileStamp, SnapshotArtifact, SnapshotFileMeasurement, SnapshotStore, accepts, clone_whole_file,
+    file_facts, invalid, key_name, matches_entry, os_error,
 };
 use crate::RuntimeError;
 use rustix::fs::{self, Mode, OFlags};
@@ -10,7 +10,7 @@ use std::{
     ffi::OsStr,
     fs::File,
     io::{Read, Seek, SeekFrom},
-    os::unix::fs::MetadataExt,
+    os::unix::fs::{MetadataExt, PermissionsExt},
 };
 
 const NAMES: [&str; 4] = ["manifest.json", "state.bin", "memory.bin", "disk-0.img"];
@@ -23,23 +23,44 @@ pub struct BundleReadLimits {
     pub disk_bytes: u64,
 }
 
-struct OriginalFile {
-    file: File,
-    stamp: FileStamp,
-    measurement: SnapshotFileMeasurement,
+pub(super) struct OriginalFile {
+    pub(super) file: File,
+    pub(super) stamp: FileStamp,
+    pub(super) measurement: SnapshotFileMeasurement,
+}
+
+/// One recently verified bundle per protected store. No file descriptors or
+/// durable authority are retained. Reopening the deployment starts empty.
+#[derive(Clone)]
+pub(crate) struct BundleMeasurements {
+    pub(super) directory_key: [u8; 32],
+    pub(super) files: Vec<(FileStamp, SnapshotFileMeasurement)>,
+}
+
+impl BundleMeasurements {
+    fn find(
+        &self,
+        artifact: SnapshotArtifact,
+        stamp: &FileStamp,
+    ) -> Option<SnapshotFileMeasurement> {
+        self.files
+            .iter()
+            .find(|(previous, measurement)| previous == stamp && measurement.artifact == artifact)
+            .map(|(_, measurement)| measurement.clone())
+    }
 }
 
 /// Existing bytes checked through retained original descriptors. This value
 /// does not prove capture provenance, database registration, pin or stop rights.
 pub struct SnapshotBundle {
-    parent: File,
-    directory: File,
-    directory_key: [u8; 32],
-    owner: u32,
-    manifest_file: File,
-    manifest_stamp: FileStamp,
+    pub(super) parent: File,
+    pub(super) directory: File,
+    pub(super) directory_key: [u8; 32],
+    pub(super) owner: u32,
+    pub(super) manifest_file: File,
+    pub(super) manifest_stamp: FileStamp,
     manifest: Vec<u8>,
-    files: Vec<OriginalFile>,
+    pub(super) files: Vec<OriginalFile>,
 }
 
 fn names_only(directory: &File) -> Result<(), RuntimeError> {
@@ -61,7 +82,7 @@ fn names_only(directory: &File) -> Result<(), RuntimeError> {
     Ok(())
 }
 
-fn original_file(
+pub(super) fn original_file(
     directory: &File,
     name: &str,
     owner: u32,
@@ -128,6 +149,30 @@ impl SnapshotStore {
         directory_key: [u8; 32],
         limits: BundleReadLimits,
     ) -> Result<SnapshotBundle, RuntimeError> {
+        self.open_bundle_measuring(directory_key, limits, measure)
+    }
+
+    fn open_bundle_measuring(
+        &self,
+        directory_key: [u8; 32],
+        limits: BundleReadLimits,
+        mut measure_file: impl FnMut(
+            &mut File,
+            SnapshotArtifact,
+        )
+            -> Result<(SnapshotFileMeasurement, FileStamp), RuntimeError>,
+    ) -> Result<SnapshotBundle, RuntimeError> {
+        // One verification owns the cache until all checks finish. Consume the
+        // previous entry first: every error leaves it invalid, and an older
+        // concurrent open cannot reinstall a result after another open failed.
+        // This store-local lock is never the controller's application lock.
+        let mut cache = self
+            .verified_bundle
+            .lock()
+            .map_err(|_| invalid("bundle verification cache unavailable"))?;
+        let cached = cache
+            .take()
+            .filter(|cached| cached.directory_key == directory_key);
         let name = key_name("capture-", &directory_key);
         let directory = File::from(
             fs::openat(
@@ -170,7 +215,12 @@ impl SnapshotStore {
             (SnapshotArtifact::Disk(0), limits.disk_bytes),
         ] {
             let mut file = original_file(&directory, &artifact.relative_path(), self.owner, limit)?;
-            let (measurement, stamp) = measure(&mut file, artifact)?;
+            let stamp = FileStamp::from_metadata(&file.metadata()?);
+            let (measurement, stamp) = match cached.as_ref().and_then(|c| c.find(artifact, &stamp))
+            {
+                Some(measurement) => (measurement, stamp),
+                None => measure_file(&mut file, artifact)?,
+            };
             files.push(OriginalFile {
                 file,
                 stamp,
@@ -188,6 +238,14 @@ impl SnapshotStore {
             files,
         };
         opened.verify_unchanged()?;
+        *cache = Some(BundleMeasurements {
+            directory_key,
+            files: opened
+                .files
+                .iter()
+                .map(|entry| (entry.stamp.clone(), entry.measurement.clone()))
+                .collect(),
+        });
         Ok(opened)
     }
 }
@@ -211,6 +269,67 @@ impl SnapshotBundle {
             .iter()
             .map(|entry| entry.measurement.clone())
             .collect()
+    }
+
+    /// Clone an original sealed artifact into one fresh private jail inode.
+    /// Source ownership/mode never changes. The caller has already reserved
+    /// the full logical write budget and keeps its loader/backing responsibility until
+    /// exact process exit and explicit cleanup, including on any error here.
+    /// # Errors
+    /// Existing destinations, unsupported cloning, changed sources or hash mismatches
+    /// preserve the partial destination; they never release source usage.
+    pub(crate) fn clone_for_restore(
+        &self,
+        destination_root: &File,
+        artifact: SnapshotArtifact,
+        uid: u32,
+        gid: u32,
+    ) -> Result<(), RuntimeError> {
+        self.verify_unchanged()?;
+        let original = self
+            .files
+            .iter()
+            .find(|file| file.measurement.artifact == artifact)
+            .ok_or_else(|| invalid("missing restore artifact"))?;
+        let name = match artifact {
+            SnapshotArtifact::State => "restore-state.bin",
+            SnapshotArtifact::Memory => "restore-memory.bin",
+            SnapshotArtifact::Disk(0) => "rootfs.ext4",
+            SnapshotArtifact::Disk(_) => return Err(invalid("unsupported restore disk")),
+        };
+        let destination = File::from(
+            fs::openat(
+                destination_root,
+                name,
+                OFlags::CREATE | OFlags::EXCL | OFlags::RDWR | OFlags::NOFOLLOW | OFlags::CLOEXEC,
+                Mode::RUSR | Mode::WUSR,
+            )
+            .map_err(os_error)?,
+        );
+        clone_whole_file(&original.file, &destination)?;
+        // FICLONE copies the exact verified source FD into this fresh private
+        // inode. Its successful content guarantee and unchanged source stamps
+        // carry the original digest to the clone before guest access begins.
+        if destination.metadata()?.len() != original.measurement.length {
+            return Err(invalid("restore clone length differs"));
+        }
+        self.verify_unchanged()?;
+        fs::fchown(
+            &destination,
+            Some(rustix::process::Uid::from_raw(uid)),
+            Some(rustix::process::Gid::from_raw(gid)),
+        )
+        .map_err(os_error)?;
+        let mode = if artifact == SnapshotArtifact::Disk(0) {
+            0o600
+        } else {
+            0o400
+        };
+        destination.set_permissions(std::fs::Permissions::from_mode(mode))?;
+        destination.sync_all()?;
+        matches_entry(destination_root, OsStr::new(name), &destination)?;
+        destination_root.sync_all()?;
+        Ok(())
     }
 
     /// Check the same original entries after node binding validation. Immutable

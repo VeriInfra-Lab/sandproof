@@ -135,7 +135,7 @@ fn vm_has_stop_receipt(
     false
 }
 
-fn indexed_stops_succeeded(world: &World, sandbox: SandboxId) -> bool {
+pub(crate) fn indexed_stops_succeeded(world: &World, sandbox: SandboxId) -> bool {
     let index = world.resource_index(sandbox);
     let mut cursor = 0;
     while cursor < index.vms.len() {
@@ -627,21 +627,23 @@ pub fn handle_publish_destroyed(
     if !record.terminal {
         return Err(PublicationReject::TerminalMismatch);
     }
-    if world.worker_fences.get(&sandbox)
-        != Some(&WorkerFence {
+    if !crate::maintenance::released_execution::terminal_closed(world, sandbox) {
+        if world.worker_fences.get(&sandbox)
+            != Some(&WorkerFence {
+                epoch: record.epoch,
+                terminal: true,
+            })
+        {
+            return Err(PublicationReject::FenceNotInstalled);
+        }
+        let fence = Command::InstallFence {
+            sandbox,
             epoch: record.epoch,
             terminal: true,
-        })
-    {
-        return Err(PublicationReject::FenceNotInstalled);
-    }
-    let fence = Command::InstallFence {
-        sandbox,
-        epoch: record.epoch,
-        terminal: true,
-    };
-    if !effect_succeeded_check(world, &fence) {
-        return Err(PublicationReject::PrerequisiteNotSucceeded);
+        };
+        if !effect_succeeded_check(world, &fence) {
+            return Err(PublicationReject::PrerequisiteNotSucceeded);
+        }
     }
     if !indexed_vms_closed(world, sandbox) {
         return Err(PublicationReject::ResourcesNotClosed);

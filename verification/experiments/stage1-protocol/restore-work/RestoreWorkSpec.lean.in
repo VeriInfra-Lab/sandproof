@@ -1,0 +1,35 @@
+import SandproofRestoreWork.Types
+open Aeneas Aeneas.Std SandproofRestoreWorkRust
+namespace SandboxModel.Stage1Protocol.RestoreWork
+open controller.lifecycle_inbox.source_work
+abbrev Request := capture.restore.RestoreWorkRequest
+abbrev Action := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+abbrev Digest := sandproof_protocol.lifecycle.digest.ContentDigest
+
+/-- Representation of all original returned fields, without attesting a commit. -/
+def assembled (record : SourceWorkRecord) (claim : restore.RestoreClaim)
+    (captured : full.CaptureWork) (digest : Digest) (action : Action) : Request := {
+  intent := claim.intent, source := record.work.requirement,
+  committed := { work := captured.full, manifest_digest := digest, seal_action := action },
+  operation := claim.local.operation, generation := claim.generation }
+
+/-- Exact first refusal and complete output on the original decoded record. -/
+def expected (record : SourceWorkRecord) : core.result.Result Request JournalError :=
+  match record.restore with
+  | none => .Err .Conflict
+  | some claim => match record.capture with
+    | none => .Err .CorruptStore
+    | some captured =>
+      if claim.material_use then
+        match captured.completed with
+        | none => .Err .CorruptStore
+        | some digest => match captured.action with
+          | none => .Err .CorruptStore
+          | some action => .Ok (assembled record claim captured digest action)
+      else .Err .UnresolvedAction
+
+def FullWorkContract (producer : SourceWorkRecord →
+    Result (core.result.Result Request JournalError)) : Prop :=
+  ∀ record, producer record = .ok (expected record)
+
+end SandboxModel.Stage1Protocol.RestoreWork

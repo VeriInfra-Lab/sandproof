@@ -138,7 +138,7 @@ fn integer_overflow_panics() {
         self.assertLess(commands.index(build), commands.index(tests))
         for check in ('bash scripts/python-entry.sh tools/check_docs.py', cargo + 'fmt --all -- --check',
                       cargo + 'clippy --workspace --all-targets --locked -- -D warnings',
-                      cargo + 'test --workspace --all-targets --locked',
+                      cargo + 'test --workspace --all-targets --locked --no-fail-fast',
                       cargo + 'test --workspace --doc --locked'):
             self.assertIn(check, commands)
         preflight = 'bash scripts/python-entry.sh tools/check_function_tests.py --mode "$check_mode" --preflight-only'

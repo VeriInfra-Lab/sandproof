@@ -1,0 +1,72 @@
+import SandboxModel.Lifecycle.Protocol.InboxLineageSupport
+import SandboxModel.Lifecycle.Protocol.InboxLineageValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxLineage.WrongCapture
+open Values
+
+theorem actual_return : repeatedCapture.validate_execution_lineage = .ok (.Ok ()) := by
+  let values := alloc.vec.Vec.deref repeatedCapture.entries
+  have body0 : Session.validate_execution_lineage_loop.body (some 2#u64) (cursor values 0) (none) (none) 0#u64 =
+      .ok (.cont (cursor values 1, some 1#u64, some (entry create (some 30#u64)), 0#u64)) := by
+    unfold Session.validate_execution_lineage_loop.body
+    rw [next_some values 0 (by decide)]
+    simp only [bind_tc_ok]
+    have selected : values.val[0] = entry create (some 30#u64) := by rfl
+    rw [selected]
+    simp [entry, create, EnvelopeValues.intent]
+  have body1 : Session.validate_execution_lineage_loop.body (some 2#u64) (cursor values 1) (some 1#u64) (some (entry create (some 30#u64))) 0#u64 =
+      .ok (.cont (cursor values 2, some 1#u64, some (entry unload none), 1#u64)) := by
+    unfold Session.validate_execution_lineage_loop.body
+    rw [next_some values 1 (by decide)]
+    simp only [bind_tc_ok]
+    have selected : values.val[1] = entry unload none := by rfl
+    rw [selected]
+    simp [entry, unload, follow, create, EnvelopeValues.intent, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, sandproof_protocol.lifecycle.identity.CaptureId.get, sandproof_protocol.internal.PositiveCounter.get]
+  have body2 : Session.validate_execution_lineage_loop.body (some 2#u64) (cursor values 2) (some 1#u64) (some (entry unload none)) 1#u64 =
+      .ok (.cont (cursor values 3, some 2#u64, some (entry (resume 2#u64) (some 31#u64)), 1#u64)) := by
+    unfold Session.validate_execution_lineage_loop.body
+    rw [next_some values 2 (by decide)]
+    simp only [bind_tc_ok]
+    have selected : values.val[2] = entry (resume 2#u64) (some 31#u64) := by rfl
+    rw [selected]
+    have successor : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+    simp [entry, resume, follow, create, EnvelopeValues.intent, core.cmp.PartialEq.ne.trait_default,
+      core.cmp.PartialEq.ne.default, successor, priorMatches, unload]
+  have body3 : Session.validate_execution_lineage_loop.body (some 2#u64) (cursor values 3) (some 2#u64) (some (entry (resume 2#u64) (some 31#u64))) 1#u64 =
+      .ok (.cont (cursor values 4, some 2#u64, some (entry (nextUnload 1#u64) none), 1#u64)) := by
+    unfold Session.validate_execution_lineage_loop.body
+    rw [next_some values 3 (by decide)]
+    simp only [bind_tc_ok]
+    have selected : values.val[3] = entry (nextUnload 1#u64) none := by rfl
+    rw [selected]
+    simp [entry, nextUnload, follow, create, EnvelopeValues.intent, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, sandproof_protocol.lifecycle.identity.CaptureId.get, sandproof_protocol.internal.PositiveCounter.get]
+  have body4 : Session.validate_execution_lineage_loop.body (some 2#u64) (cursor values 4) (some 2#u64) (some (entry (nextUnload 1#u64) none)) 1#u64 =
+      .ok (.done (.Ok ())) := by
+    unfold Session.validate_execution_lineage_loop.body
+    rw [next_none values 4 (by decide)]
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default]
+  have completed : Session.validate_execution_lineage_loop (cursor values 0) (some 2#u64) none none 0#u64 = .ok (.Ok ()) := by
+    let body : LoopState → Result (ControlFlow LoopState Return) := fun value =>
+      Session.validate_execution_lineage_loop.body (some 2#u64) value.1 value.2.1 value.2.2.1 value.2.2.2
+    change loop body (cursor values 0, none, none, 0#u64) = _
+    rw [loop_continue body (cursor values 0, none, none, 0#u64) (cursor values 1, some 1#u64, some (entry create (some 30#u64)), 0#u64) body0]
+    rw [loop_continue body (cursor values 1, some 1#u64, some (entry create (some 30#u64)), 0#u64) (cursor values 2, some 1#u64, some (entry unload none), 1#u64) body1]
+    rw [loop_continue body (cursor values 2, some 1#u64, some (entry unload none), 1#u64) (cursor values 3, some 2#u64, some (entry (resume 2#u64) (some 31#u64)), 1#u64) body2]
+    rw [loop_continue body (cursor values 3, some 2#u64, some (entry (resume 2#u64) (some 31#u64)), 1#u64) (cursor values 4, some 2#u64, some (entry (nextUnload 1#u64) none), 1#u64) body3]
+    exact loop_done body (cursor values 4, some 2#u64, some (entry (nextUnload 1#u64) none), 1#u64) _ body4
+  simpa [Session.validate_execution_lineage,
+    SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter,
+    core.slice.Slice.iter, bind_tc_ok, cursor, values, repeatedCapture, session] using completed
+
+theorem rejects_same_full_contract : ¬ FullLineageContract Session.validate_execution_lineage := by
+  intro contract
+  have required := contract repeatedCapture
+  rw [actual_return, expected_outcomes.2.2.2.2.2.1] at required
+  cases (Result.ok_injective required)
+
+end SandboxModel.Stage1Protocol.InboxLineage.WrongCapture
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.WrongCapture.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.WrongCapture.rejects_same_full_contract

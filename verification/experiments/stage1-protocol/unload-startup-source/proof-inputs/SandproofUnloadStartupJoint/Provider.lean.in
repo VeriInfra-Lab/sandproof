@@ -1,0 +1,589 @@
+import SandproofUnloadStartupJoint.Funs
+
+open Aeneas Aeneas.Std Result
+namespace SandproofUnloadStartupJoint
+variable [Representations] [Operations]
+set_option linter.unusedSimpArgs false
+set_option linter.unusedSectionVars false
+open controller.internal_inbox.model (InternalLocalBinding)
+open controller.lifecycle_inbox.readiness.snapshot (expected_commands accept_startup_row startup_command_index)
+open sandbox_controller_core.model (World SandboxRecord OperationPlan OperationLedgerRecord
+  OperationKey OperationKind Command EffectId EffectOrigin LogicalEffectRecord)
+open sandbox_controller_core.ids (VmId NetSlotId)
+open sandproof_protocol (WorkAction WorkReceipt ResourceRef WorkOutcome)
+
+abbrev Action := WorkAction EffectId
+abbrev Slots := Slice (Option (Action × alloc.vec.Vec U8))
+
+def startupKey (binding : InternalLocalBinding) : OperationKey :=
+  { sandbox := binding.sandbox, operation := binding.operation }
+
+def startupPrepare (binding : InternalLocalBinding) (plan : OperationPlan)
+    (vm : VmId) (slot : NetSlotId) : Command :=
+  .PrepareVm binding.sandbox plan.epoch plan.generation vm slot plan.restore_from
+
+theorem actual_expected_prepare
+    (world : World) (binding : InternalLocalBinding) (record : SandboxRecord)
+    (plan : OperationPlan) (ledger : OperationLedgerRecord) (vm : VmId) (slot : NetSlotId)
+    (commands : alloc.vec.Vec Command)
+    (recordRead : World.sandbox_record world binding.sandbox = .ok (some record))
+    (planRead : World.operation_plan world (startupKey binding) = .ok (some plan))
+    (ledgerRead : World.operation_record world (startupKey binding) = .ok (some ledger))
+    (vmRead : record.current_vm = some vm) (slotRead : record.net_slot = some slot)
+    (sealed : plan.sealed = true)
+    (vmEq : sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq vm vm = .ok true)
+    (slotEq : sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq slot slot = .ok true)
+    (planVm : plan.vm = some vm) (planSlot : plan.slot = some slot)
+    (epoch : plan.epoch = record.epoch) (generation : plan.generation = record.generation)
+    (create : ledger.operation.kind = .Create) (source : plan.restore_from = none)
+    (clone : sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone record.policy =
+      .ok record.policy)
+    (returned : expected_commands world binding = .ok (.Ok commands)) :
+    commands.val[1]? = some (startupPrepare binding plan vm slot) := by
+  unfold startupKey at planRead ledgerRead
+  have actual := returned
+  simp only [expected_commands, recordRead, planRead, ledgerRead,
+    bind_tc_ok, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    vmRead, slotRead, sealed, if_true, planVm, planSlot,
+    core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    core.option.Option.Insts.CoreCmpPartialEqOption,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq, vmEq, slotEq,
+    sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId,
+    sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId,
+    Bool.not_true, bne_self_eq_false, Bool.false_eq_true, if_false, ne_eq, epoch, generation,
+    core.option.Option.is_none_or,
+    controller.lifecycle_inbox.readiness.snapshot.expected_commands.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedOperationLedgerRecordBool,
+    controller.lifecycle_inbox.readiness.snapshot.expected_commands.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedOperationLedgerRecordBool.call_once,
+    create, source, core.option.Option.is_some, clone, lift, not_true_eq_false] at actual
+  simp only [decide_false, Bool.false_eq_true, if_false, Option.isSome_none, Result.ok.injEq] at actual
+  injection actual with eq
+  rw [← eq]
+  simp only [startupPrepare, epoch, generation, source]
+  rfl
+
+def rowAction (bytes : alloc.vec.Vec U8) :
+    Result (core.result.Result Action serde_json.error.Error) :=
+  serde_json.de.from_slice
+    (sandproof_protocol.WorkAction.Insts.Serde_coreDeDeserialize
+      sandbox_controller_core.model.EffectId.Insts.Serde_coreDeDeserialize) bytes.deref
+
+def rowReceipt {E : Type} (serde : serde_core.de.DeserializeOwned E)
+    (bytes : alloc.vec.Vec U8) :
+    Result (core.result.Result (WorkReceipt E) serde_json.error.Error) :=
+  serde_json.de.from_slice
+    (sandproof_protocol.WorkReceipt.Insts.Serde_coreDeDeserialize serde.DeserializeInst) bytes.deref
+
+theorem actual_unmatched_row {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (world : World) (ns : Str)
+    (binding : InternalLocalBinding) (commands : Slice Command) (plan : OperationPlan)
+    (found : Slots) (action : Action) (actionBytes receiptBytes : alloc.vec.Vec U8)
+    (command : Command)
+    (decoded : rowAction actionBytes = .ok (.Ok action))
+    (commandRead : EffectId.command action.command = .ok command)
+    (missing : startup_command_index commands command = .ok none) :
+    accept_startup_row host serde (.Ok (actionBytes, receiptBytes)) world ns binding commands plan found =
+      .ok (.Ok (), found) := by
+  unfold rowAction at decoded
+  simp [accept_startup_row, core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok,
+    decoded, commandRead, missing]
+
+theorem actual_old_attempt {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (world : World) (ns : Str)
+    (binding : InternalLocalBinding) (commands : Slice Command) (plan : OperationPlan)
+    (found : Slots) (action : Action) (actionBytes receiptBytes : alloc.vec.Vec U8)
+    (index : Usize) (command : Command) (logical : LogicalEffectRecord)
+    (decoded : rowAction actionBytes = .ok (.Ok action))
+    (commandRead : EffectId.command action.command = .ok command)
+    (selected : startup_command_index commands command = .ok (some index))
+    (effect : World.logical_effect world action.command.logical = .ok (some logical))
+    (stale : logical.current_attempt ≠ action.command.attempt) :
+    accept_startup_row host serde (.Ok (actionBytes, receiptBytes)) world ns binding commands plan found =
+      .ok (.Ok (), found) := by
+  have staleVal : logical.current_attempt.val ≠ action.command.attempt.val :=
+    fun eq => stale (UScalar.eq_of_val_eq eq)
+  unfold rowAction at decoded
+  simp [accept_startup_row, core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok,
+    decoded, commandRead, selected, effect, core.option.Option.ok_or, staleVal]
+
+structure CheckedRow {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (world : World) (ns : Str)
+    (binding : InternalLocalBinding) (commands : Slice Command) (plan : OperationPlan)
+    (actionBytes receiptBytes : alloc.vec.Vec U8) (action : Action)
+    (index : Usize) (command : Command) (resource : ResourceRef) (receipt : WorkReceipt E) where
+  logical : LogicalEffectRecord
+  owner : sandproof_protocol.TenantId
+  sandbox : sandproof_protocol.SandboxId
+  operation : sandproof_protocol.OperationId
+  evidence : E
+  decoded : rowAction actionBytes = .ok (.Ok action)
+  selected : startup_command_index commands command = .ok (some index)
+  effect : World.logical_effect world action.command.logical = .ok (some logical)
+  attempt : logical.current_attempt = action.command.attempt
+  origin :
+    core.cmp.PartialEq.ne.trait_default
+      sandbox_controller_core.model.EffectOrigin.Insts.CoreCmpPartialEqEffectOrigin
+      logical.origin (.Operation (startupKey binding)) = .ok false
+  commandRead : EffectId.command action.command = .ok command
+  succeeded : sandbox_controller_core.effect.effect_succeeded_check world command = .ok true
+  ownerRead : controller.identity.owner_id binding.owner = .ok (.Ok owner)
+  ownerEq :
+    core.cmp.PartialEq.ne.trait_default sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId
+      action.identity.owner owner = .ok false
+  sandboxRead : controller.identity.sandbox_id ns binding.sandbox = .ok (.Ok sandbox)
+  sandboxEq :
+    core.cmp.PartialEq.ne.trait_default sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId
+      action.identity.sandbox sandbox = .ok false
+  operationRead : controller.identity.operation_id ns (startupKey binding) = .ok (.Ok operation)
+  operationEq :
+    core.cmp.PartialEq.ne.trait_default sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId
+      action.identity.operation operation = .ok false
+  epoch : action.identity.epoch = plan.epoch
+  generation : action.identity.generation = plan.generation
+  identityAttempt : action.identity.attempt = action.command.attempt
+  resourceRead : controller.identity.resource ns command = .ok (.Ok resource)
+  resourceEq :
+    core.cmp.PartialEq.ne.trait_default sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef
+      action.identity.resource resource = .ok false
+  receiptDecoded : rowReceipt serde receiptBytes = .ok (.Ok receipt)
+  receiptValidated :
+    sandproof_protocol.WorkReceipt.validate_for host.sandproof_protocolResourceEvidenceInst
+      receipt action = .ok (.Ok ())
+  observed : receipt.outcome = .ObservedSuccess evidence
+  validates : host.validates evidence command = .ok true
+
+theorem actual_checked_row {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (world : World) (ns : Str)
+    (binding : InternalLocalBinding) (commands : Slice Command) (plan : OperationPlan)
+    (found : Slots) (action : Action) (actionBytes receiptBytes : alloc.vec.Vec U8)
+    (index : Usize) (command : Command) (resource : ResourceRef) (receipt : WorkReceipt E)
+    (checked : CheckedRow host serde world ns binding commands plan actionBytes receiptBytes
+      action index command resource receipt) (old : Option (Action × alloc.vec.Vec U8))
+    (read : found.index_usize index = .ok old) :
+    accept_startup_row host serde (.Ok (actionBytes, receiptBytes)) world ns binding commands plan found =
+      (match old with
+      | some _ => .ok (.Err .CorruptStore, found)
+      | none => do
+        let after ← found.update index (some (action, receiptBytes))
+        .ok (.Ok (), after)) := by
+  have back : found.index_mut_usize index = .ok (old, Slice.set found index) := by
+    simp only [Slice.index_mut_usize, read, bind_tc_ok]
+  have inRange : index.val < found.val.length := by
+    simp only [Slice.index_usize] at read
+    cases h : found.val[index.val]? <;> simp_all
+    exact List.getElem?_eq_some_iff.mp h |>.1
+  have restore : found.set index old = found := by
+    have exactOld : found.val[index.val] = old := by
+      simpa [Slice.index_usize, List.getElem?_eq_getElem inRange] using read
+    simp [← exactOld, Slice.update_index_eq _ _ _ inRange]
+  have decoded := checked.decoded
+  have selected := checked.selected
+  have origin := checked.origin
+  have operationRead := checked.operationRead
+  have receiptDecoded := checked.receiptDecoded
+  unfold rowAction at decoded
+  unfold startupKey at origin operationRead
+  unfold rowReceipt at receiptDecoded
+  simp [accept_startup_row, core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok,
+    decoded, checked.commandRead, selected,
+    checked.effect, core.option.Option.ok_or, checked.attempt, bne_self_eq_false, ne_eq, not_true_eq_false, if_false,
+    origin, Bool.false_eq_true, checked.commandRead, checked.succeeded,
+    if_true, checked.ownerRead, checked.ownerEq, checked.sandboxRead, checked.sandboxEq,
+    operationRead, checked.operationEq, checked.epoch, checked.generation,
+    checked.identityAttempt, checked.resourceRead, checked.resourceEq,
+    receiptDecoded, checked.receiptValidated, checked.observed, checked.validates,
+    read, back, restore]
+  cases old <;> rfl
+
+
+private theorem normalBind {A B : Type} (action : Result A)
+    (next : A → Result B) (output : B)
+    (returned : (do let value ← action; next value) = .ok output) :
+    ∃ value, action = .ok value ∧ next value = .ok output := by
+  exact Result.cases
+    (motive := fun action =>
+      (do let value ← action; next value) = .ok output →
+        ∃ value, action = .ok value ∧ next value = .ok output)
+    action
+    (fun value returned => ⟨value, rfl, by simpa only [bind_tc_ok] using returned⟩)
+    (fun effect continuation returned => by simp only [bind_tc_vis, vis_not_ok] at returned)
+    (fun returned => by simp only [bind_tc_div, div_not_ok] at returned)
+    returned
+
+private theorem normalBindPair {A B C : Type} (action : Result (A × B))
+    (next : (A × B) → Result C) (output : C)
+    (returned : (do let value ← action; next value) = .ok output) :
+    ∃ a b, action = .ok (a,b) ∧ next (a,b) = .ok output := by
+  obtain ⟨⟨a,b⟩, call, tail⟩ := normalBind action next output returned
+  exact ⟨a,b,call,tail⟩
+
+private theorem rejectIsNotOk {A E S : Type} (error : E) (value : A) (s t : S)
+    (impossible : (Result.ok (core.result.Result.Err error, s) :
+      Result (core.result.Result A E × S)) = .ok (.Ok value, t)) :
+    False := by
+  have different := congrArg Prod.fst (Result.ok_injective impossible)
+  cases different
+
+/-- The original row-to-slot observation, before specializing to slot 1. -/
+def Inserted {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (world : World) (ns : Str)
+    (binding : InternalLocalBinding) (commands : Slice Command) (plan : OperationPlan)
+    (row : core.result.Result (alloc.vec.Vec U8 × alloc.vec.Vec U8) rusqlite.error.Error)
+    (before after : Slots) : Prop :=
+  ∃ actionBytes receiptBytes action index command resource receipt,
+    row = .Ok (actionBytes, receiptBytes) ∧
+    Nonempty (CheckedRow host serde world ns binding commands plan actionBytes receiptBytes
+      action index command resource receipt) ∧
+    before.val[index.val]? = some none ∧
+    after = before.set index (some (action, receiptBytes))
+
+private theorem readSlot (slots : Slots) (index : Usize) (value : Option (Action × alloc.vec.Vec U8))
+    (read : slots.index_usize index = .ok value) :
+    slots.val[index.val]? = some value := by
+  simp only [Slice.index_usize] at read
+  cases h : slots.val[index.val]? <;> simp_all
+
+/-- Invert the actual normal callback. Every reject path is excluded by the
+   actual Rust Ok result, and unchanged success retains the old whole slice. -/
+theorem actual_row_unchanged_or_inserted {E : Type}
+    (host : host_contract.HostEvidence E) (serde : serde_core.de.DeserializeOwned E)
+    (world : World) (ns : Str) (binding : InternalLocalBinding)
+    (commands : Slice Command) (plan : OperationPlan)
+    (row : core.result.Result (alloc.vec.Vec U8 × alloc.vec.Vec U8) rusqlite.error.Error)
+    (before after : Slots)
+    (returned : accept_startup_row host serde row world ns binding commands plan before =
+      .ok (.Ok (), after)) :
+    after = before ∨ Inserted host serde world ns binding commands plan row before after := by
+  simp only [accept_startup_row, core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok] at returned
+  cases row with
+  | Err err =>
+    simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+    obtain ⟨converted, convertedCall, tail⟩ := normalBind
+      (do let value ← JournalErrorFromSqlite.from err; .ok (core.result.Result.Err value)) _ _ returned
+    obtain ⟨error, _, impossible⟩ := normalBind (JournalErrorFromSqlite.from err) _ _ convertedCall
+    have convertedError := Result.ok_injective impossible
+    rw [← convertedError] at tail
+    exact False.elim (rejectIsNotOk error () before after tail)
+  | Ok pair =>
+    rcases pair with ⟨actionBytes, receiptBytes⟩
+    dsimp only at returned
+    simp only [bind_tc_ok] at returned
+    obtain ⟨decoded, decode, returned⟩ := normalBind _ _ _ returned
+    cases decoded with
+    | Err err =>
+      simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+      obtain ⟨converted, convertedCall, tail⟩ := normalBind
+        (do let value ← JournalErrorFromJson.from err; .ok (core.result.Result.Err value)) _ _ returned
+      obtain ⟨error, _, impossible⟩ := normalBind (JournalErrorFromJson.from err) _ _ convertedCall
+      have convertedError := Result.ok_injective impossible
+      rw [← convertedError] at tail
+      exact False.elim (rejectIsNotOk error () before after tail)
+    | Ok action =>
+      let command : Command := action.command.logical.command
+      have commandRead : EffectId.command action.command = .ok command := rfl
+      simp only [bind_tc_ok, commandRead] at returned
+      obtain ⟨idx, selected, returned⟩ := normalBind
+        (startup_command_index commands command) _ _ returned
+      cases idx with
+      | none =>
+        exact Or.inl (congrArg Prod.snd (Result.ok_injective returned)).symm
+      | some index =>
+        obtain ⟨looked, effect, returned⟩ := normalBind _ _ _ returned
+        cases looked with
+        | none =>
+          simp [core.option.Option.ok_or,
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+        | some logical =>
+          simp only [core.option.Option.ok_or, bind_tc_ok] at returned
+          by_cases stale : (logical.current_attempt != action.command.attempt) = true
+          · rw [if_pos stale] at returned
+            exact Or.inl (congrArg Prod.snd (Result.ok_injective returned)).symm
+          rw [if_neg stale] at returned
+          obtain ⟨wrong, origin, returned⟩ := normalBind _ _ _ returned
+          cases wrong <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+          case true => exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+          obtain ⟨succeeded, succeededRead, returned⟩ := normalBind
+            (sandbox_controller_core.effect.effect_succeeded_check world command) _ _ returned
+          cases succeeded <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+          case false => exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+          obtain ⟨ownerReply, ownerRead, returned⟩ := normalBind _ _ _ returned
+          cases ownerReply with
+          | Err error =>
+            simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+          | Ok owner =>
+            simp only [bind_tc_ok] at returned
+            obtain ⟨badOwner, ownerEq, returned⟩ := normalBind _ _ _ returned
+            cases badOwner <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+            case true => exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+            obtain ⟨sandboxReply, sandboxRead, returned⟩ := normalBind _ _ _ returned
+            cases sandboxReply with
+            | Err error =>
+              simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+            | Ok sandbox =>
+              simp only [bind_tc_ok] at returned
+              obtain ⟨badSandbox, sandboxEq, returned⟩ := normalBind _ _ _ returned
+              cases badSandbox <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+              case true => exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+              obtain ⟨operationReply, operationRead, returned⟩ := normalBind _ _ _ returned
+              cases operationReply with
+              | Err error =>
+                simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+              | Ok operation =>
+                simp only [bind_tc_ok] at returned
+                obtain ⟨badOperation, operationEq, returned⟩ := normalBind _ _ _ returned
+                cases badOperation <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+                case true => exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+                by_cases epoch : action.identity.epoch = plan.epoch
+                swap
+                · have test : (action.identity.epoch != plan.epoch) = true := by simp [epoch]
+                  rw [if_pos test] at returned
+                  exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+                by_cases generation : action.identity.generation = plan.generation
+                swap
+                · have test : (action.identity.generation != plan.generation) = true := by simp [generation]
+                  rw [if_neg (by simp [epoch]), if_pos test] at returned
+                  exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+                by_cases attempt : action.identity.attempt = action.command.attempt
+                swap
+                · have test : (action.identity.attempt != action.command.attempt) = true := by simp [attempt]
+                  rw [if_neg (by simp [epoch]), if_neg (by simp [generation]), if_pos test] at returned
+                  exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+                rw [if_neg (by simp [epoch]), if_neg (by simp [generation]), if_neg (by simp [attempt])] at returned
+                obtain ⟨resourceReply, resourceRead, returned⟩ := normalBind _ _ _ returned
+                cases resourceReply with
+                | Err error =>
+                  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+                | Ok resource =>
+                  simp only [bind_tc_ok] at returned
+                  obtain ⟨badResource, resourceEq, returned⟩ := normalBind _ _ _ returned
+                  cases badResource <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+                  case true => exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+                  obtain ⟨receiptReply, receiptDecoded, returned⟩ := normalBind _ _ _ returned
+                  cases receiptReply with
+                  | Err err =>
+                    simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+                    obtain ⟨converted, convertedCall, tail⟩ := normalBind
+                      (do let value ← JournalErrorFromJson.from err; .ok (core.result.Result.Err value)) _ _ returned
+                    obtain ⟨error, _, impossible⟩ := normalBind (JournalErrorFromJson.from err) _ _ convertedCall
+                    have convertedError := Result.ok_injective impossible
+                    rw [← convertedError] at tail
+                    exact False.elim (rejectIsNotOk error () before after tail)
+                  | Ok receipt =>
+                    simp only [bind_tc_ok] at returned
+                    obtain ⟨valid, receiptValidated, returned⟩ := normalBind _ _ _ returned
+                    cases valid with
+                    | Err err =>
+                      simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+                      obtain ⟨converted, convertedCall, tail⟩ := normalBind
+                        (do let value ← JournalError.Insts.CoreConvertFromContractError.from err; .ok (core.result.Result.Err value)) _ _ returned
+                      obtain ⟨error, _, impossible⟩ := normalBind (JournalError.Insts.CoreConvertFromContractError.from err) _ _ convertedCall
+                      have convertedError := Result.ok_injective impossible
+                      rw [← convertedError] at tail
+                      exact False.elim (rejectIsNotOk error () before after tail)
+                    | Ok passed =>
+                      cases passed
+                      simp only [bind_tc_ok] at returned
+                      cases observed : receipt.outcome with
+                      | DefinitiveFailure _ _ _ =>
+                        rw [observed] at returned
+                        exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+                      | Unknown _ _ =>
+                        rw [observed] at returned
+                        exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+                      | ObservedSuccess evidence =>
+                        rw [observed] at returned
+                        obtain ⟨validates, evidenceValid, returned⟩ := normalBind _ _ _ returned
+                        cases validates <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+                        case false => exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+                        obtain ⟨old, read, returned⟩ := normalBind _ _ _ returned
+                        cases old with
+                        | some _ =>
+                          simp only [core.option.Option.is_some, if_true] at returned
+                          exact False.elim (rejectIsNotOk JournalError.CorruptStore () before after returned)
+                        | none =>
+                          simp only [core.option.Option.is_some, Bool.false_eq_true, if_false] at returned
+                          have slot := readSlot before index none read
+                          have inRange : index.val < before.val.length :=
+                            (List.getElem?_eq_some_iff.mp slot).1
+                          obtain ⟨old, putBack, indexed, returned⟩ := normalBindPair _ _ _ returned
+                          have expectedBack : before.index_mut_usize index =
+                              .ok (none, Slice.set before index) := by
+                            simp [Slice.index_mut_usize, read]
+                          rw [expectedBack] at indexed
+                          obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Result.ok_injective indexed)
+                          have restore : before.set index none = before := by
+                            have exactOld : before.val[index.val] = none := by
+                              simpa [List.getElem?_eq_getElem inRange] using slot
+                            rw [← exactOld]
+                            exact Slice.update_index_eq _ _ _ inRange
+                          change (do
+                            let stored ← (before.set index none).update index (some (action, receiptBytes))
+                            Result.ok (core.result.Result.Ok (), stored)) =
+                              Result.ok (core.result.Result.Ok (), after) at returned
+                          rw [restore] at returned
+                          obtain ⟨stored, update, done⟩ := normalBind _ _ _ returned
+                          have shape : stored = before.set index (some (action,receiptBytes)) := by
+                            simp only [Slice.update, slot, Slice.set, Slice.setAtNat,
+                              Result.ok.injEq] at update ⊢
+                            exact update.symm
+                          have same : stored = after := congrArg Prod.snd (Result.ok_injective done)
+                          refine Or.inr ⟨actionBytes, receiptBytes, action, index, command, resource,
+                            receipt, rfl, ⟨?_⟩, slot, same.symm.trans shape⟩
+                          exact ⟨logical, owner, sandbox, operation, evidence, decode,
+                            selected, effect, UScalar.eq_of_val_eq (by simpa using stale), origin, commandRead,
+                            succeededRead, ownerRead, ownerEq, sandboxRead, sandboxEq, operationRead,
+                            operationEq, epoch, generation, attempt, resourceRead, resourceEq,
+                            receiptDecoded, receiptValidated, observed, evidenceValid⟩
+
+
+def SecondRowFact {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (world : World) (ns : Str)
+    (binding : InternalLocalBinding) (commands : Slice Command) (plan : OperationPlan)
+    (row : core.result.Result (alloc.vec.Vec U8 × alloc.vec.Vec U8) rusqlite.error.Error)
+    (pair : Action × alloc.vec.Vec U8) : Prop :=
+  ∃ actionBytes index command resource receipt,
+    row = .Ok (actionBytes, pair.2) ∧ index.val = 1 ∧
+    Nonempty (CheckedRow host serde world ns binding commands plan actionBytes pair.2
+      pair.1 index command resource receipt)
+
+theorem actual_row_second_slot {E : Type}
+    (host : host_contract.HostEvidence E) (serde : serde_core.de.DeserializeOwned E)
+    (world : World) (ns : Str) (binding : InternalLocalBinding)
+    (commands : Slice Command) (plan : OperationPlan)
+    (row : core.result.Result (alloc.vec.Vec U8 × alloc.vec.Vec U8) rusqlite.error.Error)
+    (before after : Slots)
+    (returned : accept_startup_row host serde row world ns binding commands plan before =
+      .ok (.Ok (), after)) :
+    after.val[1]? = before.val[1]? ∨
+      ∃ pair, before.val[1]? = some none ∧ after.val[1]? = some (some pair) ∧
+        SecondRowFact host serde world ns binding commands plan row pair := by
+  rcases actual_row_unchanged_or_inserted host serde world ns binding commands plan row before after returned
+    with unchanged | ⟨actionBytes, receiptBytes, action, index, command, resource, receipt,
+      rowBytes, checked, empty, stored⟩
+  · exact Or.inl (congrArg (fun slots : Slots => slots.val[1]?) unchanged)
+  by_cases i : index.val = 1
+  · right
+    refine ⟨(action, receiptBytes), by simpa only [i] using empty, ?_,
+      actionBytes, index, command, resource, receipt, rowBytes, i, checked⟩
+    have bound : 1 < before.val.length := by
+      simpa only [i] using (List.getElem?_eq_some_iff.mp empty).1
+    simp [stored, Slice.set, Slice.setAtNat, i, List.getElem?_set, bound]
+  · left
+    simp [stored, Slice.set, Slice.setAtNat, List.getElem?_set, i, Ne.symm i]
+
+
+private theorem actualIndexRead {T : Type} (commands : Slice T) (index : Usize) (value : T)
+    (read : commands.index_usize index = .ok value) :
+    commands.val[index.val]? = some value := by
+  simp only [Slice.index_usize] at read
+  cases h : commands.val[index.val]? <;> simp_all
+
+theorem actual_selector_second_comparison
+    (commands : Slice Command) (command : Command) (index : Usize)
+    (atSecond : index.val = 1)
+    (returned : startup_command_index commands command = .ok (some index)) :
+    ∃ expected, commands.val[1]? = some expected ∧
+      sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq expected command =
+        .ok true := by
+  have notOther (other : Usize) (ne : other.val ≠ 1)
+      (impossible : Result.ok (some other) = .ok (some index)) : False := by
+    have eq := Option.some.inj (Result.ok_injective impossible)
+    exact ne ((congrArg (fun i : Usize => i.val) eq).trans atSecond)
+  unfold startup_command_index at returned
+  dsimp only at returned
+  split at returned
+  · cases (Result.ok_injective returned)
+  obtain ⟨first, _, returned⟩ := normalBind _ _ _ returned
+  obtain ⟨hit, _, returned⟩ := normalBind _ _ _ returned
+  cases hit <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+  case true => exact False.elim (notOther 0#usize (by decide) returned)
+  obtain ⟨second, read, returned⟩ := normalBind _ _ _ returned
+  obtain ⟨hit, compared, returned⟩ := normalBind _ _ _ returned
+  cases hit <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+  case true =>
+    exact ⟨second, actualIndexRead commands 1#usize second read, compared⟩
+  obtain ⟨_, _, returned⟩ := normalBind _ _ _ returned
+  obtain ⟨hit, _, returned⟩ := normalBind _ _ _ returned
+  cases hit <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+  case true => exact False.elim (notOther 2#usize (by decide) returned)
+  obtain ⟨_, _, returned⟩ := normalBind _ _ _ returned
+  obtain ⟨hit, _, returned⟩ := normalBind _ _ _ returned
+  cases hit <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+  case true => exact False.elim (notOther 3#usize (by decide) returned)
+  obtain ⟨_, _, returned⟩ := normalBind _ _ _ returned
+  obtain ⟨hit, _, returned⟩ := normalBind _ _ _ returned
+  cases hit <;> simp only [Bool.false_eq_true, if_false, if_true] at returned
+  · cases (Result.ok_injective returned)
+  · exact False.elim (notOther 4#usize (by decide) returned)
+
+
+/-- In the current original-Create branch no restore source is present.
+    All fields of the actual PrepareVm comparison must agree. -/
+theorem actual_prepare_none_equal (sandbox : sandbox_controller_core.ids.SandboxId)
+    (epoch generation : U64) (vm : VmId) (slot : NetSlotId) (other : Command)
+    (matched : sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq
+      (.PrepareVm sandbox epoch generation vm slot none) other = .ok true) :
+    other = .PrepareVm sandbox epoch generation vm slot none := by
+  cases other <;>
+    simp_all [sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq,
+      sandbox_controller_core.model.Command.read_discriminant]
+  case PrepareVm s e g v n restore =>
+    cases restore <;>
+      simp_all [sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+        sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq,
+        sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq,
+        core.option.Option.Insts.CoreCmpPartialEqOption.eq, lift]
+    repeat' (split at matched <;> simp_all)
+    exact (UScalar.eq_of_val_eq matched).symm
+
+theorem actual_resource_ne_false_equal (left right : ResourceRef)
+    (checked : core.cmp.PartialEq.ne.trait_default
+      sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef left right =
+        .ok false) : left = right := by
+  rcases left with ⟨leftKind, leftId⟩
+  rcases right with ⟨rightKind, rightId⟩
+  cases leftKind <;> cases rightKind <;>
+    simp_all [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef,
+      sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq,
+      sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq,
+      sandproof_protocol.ResourceKind.read_discriminant,
+      sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq,
+      alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem actual_second_row_prepare_resource {E : Type}
+    (host : host_contract.HostEvidence E) (serde : serde_core.de.DeserializeOwned E)
+    (world : World) (ns : Str) (binding : InternalLocalBinding)
+    (commands : Slice Command) (plan : OperationPlan) (vm : VmId) (slot : NetSlotId)
+    (row : core.result.Result (alloc.vec.Vec U8 × alloc.vec.Vec U8) rusqlite.error.Error)
+    (pair : Action × alloc.vec.Vec U8) (source : plan.restore_from = none)
+    (matchedSlot : commands.val[1]? = some (startupPrepare binding plan vm slot))
+    (fact : SecondRowFact host serde world ns binding commands plan row pair) :
+    ∃ actionBytes receipt,
+      row = .Ok (actionBytes, pair.2) ∧
+      rowAction actionBytes = .ok (.Ok pair.1) ∧
+      EffectId.command pair.1.command = .ok (startupPrepare binding plan vm slot) ∧
+      controller.identity.resource ns (startupPrepare binding plan vm slot) =
+        .ok (.Ok pair.1.identity.resource) ∧
+      rowReceipt serde pair.2 = .ok (.Ok receipt) ∧
+      sandproof_protocol.WorkReceipt.validate_for host.sandproof_protocolResourceEvidenceInst
+        receipt pair.1 = .ok (.Ok ()) := by
+  rcases fact with ⟨actionBytes, index, command, resource, receipt, bytes, idx, ⟨checked⟩⟩
+  obtain ⟨selected, atPosition, compared⟩ :=
+    actual_selector_second_comparison commands command index idx checked.selected
+  have selectedPrepare := Option.some.inj (atPosition.symm.trans matchedSlot)
+  rw [selectedPrepare] at compared
+  simp only [startupPrepare, source] at compared
+  have isPrepare : command = startupPrepare binding plan vm slot := by
+    simpa only [startupPrepare, source] using actual_prepare_none_equal _ _ _ _ _ _ compared
+  have sameResource := actual_resource_ne_false_equal _ _ checked.resourceEq
+  exact ⟨actionBytes, receipt, bytes, checked.decoded, isPrepare ▸ checked.commandRead,
+    by simpa only [isPrepare, sameResource] using checked.resourceRead,
+    checked.receiptDecoded, checked.receiptValidated⟩
+
+end SandproofUnloadStartupJoint
+
+#print axioms SandproofUnloadStartupJoint.actual_expected_prepare
+#print axioms SandproofUnloadStartupJoint.actual_row_second_slot
+#print axioms SandproofUnloadStartupJoint.actual_checked_row
+
+#print axioms SandproofUnloadStartupJoint.actual_second_row_prepare_resource

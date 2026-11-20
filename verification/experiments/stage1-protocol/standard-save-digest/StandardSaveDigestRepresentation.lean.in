@@ -1,0 +1,21 @@
+import SandboxModel.Lifecycle.Protocol.StandardSaveDigestModel
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.StandardSaveDigest
+
+theorem save_context_roundtrip (self : SaveContext) :
+    saveFromCommon (saveToCommon self) = self := by cases self; rfl
+
+theorem common_save_context_roundtrip (self : StandardDigest.Context) :
+    saveToCommon (saveFromCommon self) = self := by cases self; rfl
+
+theorem read_context_roundtrip (self : ReadContext) :
+    readFromCommon (readToCommon self) = self := by cases self; rfl
+
+theorem common_read_context_roundtrip (self : StandardDigest.Context) :
+    readToCommon (readFromCommon self) = self := by cases self; rfl
+
+end SandboxModel.Stage1Protocol.StandardSaveDigest
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.save_context_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.common_save_context_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.read_context_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSaveDigest.common_read_context_roundtrip

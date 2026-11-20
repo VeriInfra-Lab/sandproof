@@ -1,0 +1,75 @@
+import SandproofPauseRequest.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofPauseRequestRust
+namespace SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning
+
+@[simp] theorem string_clone (value : String) :
+    alloc.string.String.Insts.CoreCloneClone.clone value = .ok value := rfl
+
+@[simp] theorem SandboxId_clone (value : sandproof_protocol.SandboxId) :
+    sandproof_protocol.SandboxId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.SandboxId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem SessionId_clone (value : sandproof_protocol.lifecycle.identity.SessionId) :
+    sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem ResourceId_clone (value : sandproof_protocol.ResourceId) :
+    sandproof_protocol.ResourceId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.ResourceId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem ExpectedSession_clone (value : sandproof_protocol.lifecycle.identity.ExpectedSession) :
+    sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem RequestSequence_clone (value : sandproof_protocol.lifecycle.identity.RequestSequence) :
+    sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem RequestWindowId_clone (value : sandproof_protocol.lifecycle.identity.RequestWindowId) :
+    sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem DeploymentId_clone (value : sandproof_protocol.DeploymentId) :
+    sandproof_protocol.DeploymentId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.DeploymentId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem TenantId_clone (value : sandproof_protocol.TenantId) :
+    sandproof_protocol.TenantId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.TenantId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem OperationKey_clone (value : sandproof_protocol.lifecycle.identity.OperationKey) :
+    sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCloneClone.clone]
+
+@[simp] theorem NodeId_clone (value : sandproof_protocol.NodeId) :
+    sandproof_protocol.NodeId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.NodeId.Insts.CoreCloneClone.clone]
+
+@[simp] theorem PositiveCounter_clone (value : sandproof_protocol.internal.PositiveCounter) :
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreCloneClone.clone value = .ok value := by
+  rfl
+
+@[simp] theorem NodeIdentity_clone (value : sandproof_protocol.internal.NodeIdentity) :
+    sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone]
+
+@[simp] theorem OperationBinding_clone (value : sandproof_protocol.lifecycle.identity.OperationBinding) :
+    sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCloneClone.clone, lift]
+
+end SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.string_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.SandboxId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.SessionId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.ResourceId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.ExpectedSession_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.RequestSequence_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.RequestWindowId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.DeploymentId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.TenantId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.OperationKey_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.NodeId_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.PositiveCounter_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.NodeIdentity_clone
+#audit_controller_proof SandboxModel.Stage1Protocol.PauseRequest.ProtocolCloning.OperationBinding_clone

@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.InboxLifetimes
+import SandboxModel.Lifecycle.Protocol.InboxLifetimesValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+namespace SandboxModel.Stage1Protocol.InboxLifetimes
+open Values
+
+theorem normal_witnesses :
+    validate_lifetimes (applied 110#i64 200#i64) (lifetime 200#i64) = .ok (.Ok ()) ∧
+    validate_lifetimes gap (lifetime 400#i64) = .ok (.Ok ()) ∧
+    validate_lifetimes unapplied (lifetime 200#i64) = .ok (.Ok ()) ∧
+    validate_lifetimes created (lifetime (-1)#i64) = .ok (.Ok ()) := by
+  constructor
+  · rw [candidate_validate_contract, expected_outcomes.1]; rfl
+  constructor
+  · rw [candidate_validate_contract, expected_outcomes.2.2.1]; rfl
+  constructor
+  · rw [candidate_validate_contract, expected_outcomes.2.2.2.2.1]; rfl
+  · rw [candidate_validate_contract, expected_outcomes.2.2.2.2.2]; rfl
+
+theorem changed_field_rejections :
+    validate_lifetimes (applied 111#i64 200#i64) (lifetime 200#i64) = .ok (.Err .CorruptStore) ∧
+    validate_lifetimes (applied 110#i64 200#i64) (lifetime 201#i64) = .ok (.Err .CorruptStore) := by
+  constructor
+  · rw [candidate_validate_contract, expected_outcomes.2.1]; rfl
+  · rw [candidate_validate_contract, expected_outcomes.2.2.2.1]; rfl
+
+end SandboxModel.Stage1Protocol.InboxLifetimes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.normal_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.changed_field_rejections

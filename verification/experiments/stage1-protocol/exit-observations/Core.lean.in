@@ -1,0 +1,78 @@
+import SandboxModel.Lifecycle.Protocol.ExitObservations.Spec
+import SandboxModel.Lifecycle.Protocol.ExitObservations.Equality
+open Aeneas Aeneas.Std SandproofExitObservationsRust
+namespace SandboxModel.Stage1Protocol.ExitObservations
+open controller.lifecycle_inbox.source_work.restore
+theorem direct_refines (candidate : Direct) (observed : DirectObservation) :
+    exit.RestoreExitCandidate.matches candidate observed = .ok ((by classical exact decide (DirectMatches candidate observed))) := by
+  classical
+  simp [exit.RestoreExitCandidate.matches,DirectMatches,action_eq,digest_eq,string_eq,
+    capture.restore.RestoreWorkRequest.impl.source,ok_and]
+
+theorem before_refines (candidate : Before) (observed : DirectObservation) :
+    continued_exit.BeforeAdmissionExitCandidate.matches candidate observed = .ok ((by classical exact decide (BeforeMatches candidate observed))) := by
+  classical
+  simp [continued_exit.BeforeAdmissionExitCandidate.matches,BeforeMatches,action_eq,digest_eq,process_eq,ok_and]
+
+theorem continued_refines (candidate : Continued) (observed : ContinuedObservation) :
+    continued_exit.ContinuedExitCandidate.matches candidate observed = .ok ((by classical exact decide (ContinuedMatches candidate observed))) := by
+  classical
+  simp [continued_exit.ContinuedExitCandidate.matches,ContinuedMatches,action_eq,digest_eq,process_eq,
+    capture.continuation.OriginalContinueWorkRequest.impl.source,ok_and]
+
+theorem all_refine : FullExitMatchContract exit.RestoreExitCandidate.matches
+    continued_exit.BeforeAdmissionExitCandidate.matches continued_exit.ContinuedExitCandidate.matches :=
+  ⟨direct_refines,before_refines,continued_refines⟩
+
+theorem direct_accepts_iff (c : Direct) (o : DirectObservation) :
+    exit.RestoreExitCandidate.matches c o = .ok true ↔ DirectMatches c o := by
+  rw [direct_refines]; simp
+
+theorem before_accepts_iff (c : Before) (o : DirectObservation) :
+    continued_exit.BeforeAdmissionExitCandidate.matches c o = .ok true ↔ BeforeMatches c o := by
+  rw [before_refines]; simp
+
+theorem continued_accepts_iff (c : Continued) (o : ContinuedObservation) :
+    continued_exit.ContinuedExitCandidate.matches c o = .ok true ↔ ContinuedMatches c o := by
+  rw [continued_refines]; simp
+
+
+theorem direct_refuses_iff (c : Direct) (o : DirectObservation) :
+    exit.RestoreExitCandidate.matches c o = .ok false ↔ ¬ DirectMatches c o := by
+  rw [direct_refines]; simp
+
+theorem direct_total (c : Direct) (o : DirectObservation) :
+    ∃ result, exit.RestoreExitCandidate.matches c o = .ok result :=
+  ⟨_,direct_refines c o⟩
+
+theorem before_refuses_iff (c : Before) (o : DirectObservation) :
+    continued_exit.BeforeAdmissionExitCandidate.matches c o = .ok false ↔ ¬ BeforeMatches c o := by
+  rw [before_refines]; simp
+
+theorem before_total (c : Before) (o : DirectObservation) :
+    ∃ result, continued_exit.BeforeAdmissionExitCandidate.matches c o = .ok result :=
+  ⟨_,before_refines c o⟩
+
+theorem continued_refuses_iff (c : Continued) (o : ContinuedObservation) :
+    continued_exit.ContinuedExitCandidate.matches c o = .ok false ↔ ¬ ContinuedMatches c o := by
+  rw [continued_refines]; simp
+
+theorem continued_total (c : Continued) (o : ContinuedObservation) :
+    ∃ result, continued_exit.ContinuedExitCandidate.matches c o = .ok result :=
+  ⟨_,continued_refines c o⟩
+
+end SandboxModel.Stage1Protocol.ExitObservations
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.direct_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.before_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.continued_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.all_refine
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.direct_accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.before_accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.continued_accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.direct_refuses_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.direct_total
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.before_refuses_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.before_total
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.continued_refuses_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.continued_total

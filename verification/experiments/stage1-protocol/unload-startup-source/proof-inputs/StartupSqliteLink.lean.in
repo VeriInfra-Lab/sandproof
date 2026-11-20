@@ -1,0 +1,94 @@
+import SandproofUnloadStartupJoint.Funs
+import OriginalSourceSqliteOps
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+
+namespace StartupSqliteLink
+
+
+/-- Select the very same library carriers as #770; preserve all other
+    representations, especially World and the Rust business IDs. -/
+@[reducible]
+def sqliteRepresentations (base : SandproofUnloadStartupJoint.Representations) : SandproofUnloadStartupJoint.Representations :=
+  { base with
+    ty2 := SandproofSqliteSession.SqlError
+    ty3 := SandproofSqliteSession.Connection
+    ty4 := SandproofSqliteSession.Statement
+    ty5 := SandproofOriginalSourceRowsRust.rusqlite.types.to_sql.ToSqlOutput
+    ty6 := SandproofSqliteSession.IssuedMappedCursor
+    ty7 := SandproofSqliteSession.IssuedRow
+    ty8 := SandproofOriginalSourceRowsRust.rusqlite.types.value_ref.ValueRef
+    ty9 := SandproofLoadBlobRust.rusqlite.types.from_sql.FromSqlError
+    ty10 := SandproofOriginalSourceRowsRust.rusqlite.transaction.Transaction }
+
+/-- Only adapt the four generated library dictionaries by their exact methods.
+    The sealed parents have no fields. All ten implementation bodies are #770. -/
+@[reducible]
+def bindSqlite (base : SandproofUnloadStartupJoint.Representations) (ops : @SandproofUnloadStartupJoint.Operations (sqliteRepresentations base)) :
+    @SandproofUnloadStartupJoint.Operations (sqliteRepresentations base) :=
+  letI : SandproofUnloadStartupJoint.Representations := sqliteRepresentations base
+  { ops with
+    op6 := SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.prepare
+    op7 := fun dict => SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.bindArray1 ⟨dict.to_sql⟩
+    op8 := SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.mappedNext
+    op9 := fun idx convert => SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.rowGet ⟨⟨⟩, idx.idx⟩ ⟨convert.column_result⟩
+    op10 := SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.index
+    op11 := fun params mapper => SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.queryMap ⟨⟨⟩, params.__bind_in⟩ mapper
+    op12 := SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.transactionDeref
+    op13 := SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.blobColumn
+    op14 := fun dict => SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.sharedToSql ⟨dict.to_sql⟩
+    op15 := SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.strToSql
+    op49 := fun error => .ok (@SandproofUnloadStartupJoint.JournalError.Sqlite (sqliteRepresentations base) error) }
+
+def startupSql : Str := Aeneas.Std.toStr
+  "SELECT action_json,receipt_json FROM outbox WHERE sandbox_id=?1 AND dispatch_state='receipted' ORDER BY id"
+  (by rw [U32.max_eq]; decide)
+
+/-- One physical-source condition, specialized to the original transaction
+    and the original public sandbox text. No business row or successful
+    callback is asserted. -/
+def StartupNormalText (tx : SandproofOriginalSourceRowsRust.rusqlite.transaction.Transaction) (text : Str) : Prop :=
+  ∀ (after : SandproofSqliteSession.RowStatement),
+    tx.conn.current.single.canonical.prepare startupSql = .ok (.Ok 1) →
+    tx.conn.current.bindFirst startupSql
+      (SandproofLoadBlobRust.issuedReadStatement tx.conn.current.single startupSql 1)
+      (.Text text) = .ok (.Ok (), after) →
+    SandproofSqliteSession.SameIssuedMetadata
+      (SandproofLoadBlobRust.issuedReadStatement tx.conn.current.single startupSql 1) after ∧
+    after.canonical.arguments = [.text text] ∧
+    tx.conn.current.scans { sql := startupSql, arguments := [.text text] }
+      (tx.conn.current.issueScan startupSql after [.Text text]) ∧
+    (∀ (n : Nat) (row : SandproofSqliteSession.Row),
+      (tx.conn.current.issueScan startupSql after [.Text text]).observe n =
+        .ok (.Ok (some row)) →
+      SandproofSqliteSession.SameIssuedMetadata row.statement after ∧
+      row.statement.canonical.arguments = after.canonical.arguments)
+
+theorem startup_normal_text_of_A4 (tx : SandproofOriginalSourceRowsRust.rusqlite.transaction.Transaction) (text : Str)
+    (a4 : SandproofSqliteSession.NormalTextScanBinding tx.conn.current) :
+    StartupNormalText tx text := by
+  intro after prepare bound
+  exact a4 startupSql text 1 after prepare rfl bound
+
+theorem original_transaction_deref (base : SandproofUnloadStartupJoint.Representations)
+    (ops : @SandproofUnloadStartupJoint.Operations (sqliteRepresentations base))
+    (tx : SandproofOriginalSourceRowsRust.rusqlite.transaction.Transaction) :
+    @SandproofUnloadStartupJoint.Operations.op12 (sqliteRepresentations base) (bindSqlite base ops) tx = .ok tx.conn := rfl
+
+theorem original_blob_column (base : SandproofUnloadStartupJoint.Representations)
+    (ops : @SandproofUnloadStartupJoint.Operations (sqliteRepresentations base)) (bytes : Slice U8) :
+    @SandproofUnloadStartupJoint.Operations.op13 (sqliteRepresentations base) (bindSqlite base ops) (.Blob bytes) = .ok (.Ok ⟨bytes⟩) := rfl
+
+theorem original_sqlite_error (base : SandproofUnloadStartupJoint.Representations)
+    (ops : @SandproofUnloadStartupJoint.Operations (sqliteRepresentations base)) (error : SandproofSqliteSession.SqlError) :
+    @SandproofUnloadStartupJoint.Operations.op49 (sqliteRepresentations base) (bindSqlite base ops) error =
+      .ok (@SandproofUnloadStartupJoint.JournalError.Sqlite (sqliteRepresentations base) error) := rfl
+
+end StartupSqliteLink
+
+#audit_controller_proof StartupSqliteLink.startup_normal_text_of_A4
+#audit_controller_proof StartupSqliteLink.original_transaction_deref
+#audit_controller_proof StartupSqliteLink.original_blob_column
+
+#audit_controller_proof StartupSqliteLink.original_sqlite_error

@@ -1,0 +1,26 @@
+use super::super::create_attachment_deadline;
+use crate::JournalError;
+
+#[test]
+fn deadline_preserves_accepted_boundary_values() {
+    for value in [0, 1, 9_223_372_036_854_775_806, 9_223_372_036_854_775_807] {
+        let converted = create_attachment_deadline(value).unwrap();
+        assert_eq!(u64::try_from(converted).unwrap(), value);
+    }
+}
+
+#[test]
+fn deadline_rejects_first_overflow_as_input_error() {
+    assert!(matches!(
+        create_attachment_deadline(9_223_372_036_854_775_808),
+        Err(JournalError::UnsupportedInput)
+    ));
+}
+
+#[test]
+fn deadline_rejects_unsigned_max_as_input_error() {
+    assert!(matches!(
+        create_attachment_deadline(u64::MAX),
+        Err(JournalError::UnsupportedInput)
+    ));
+}

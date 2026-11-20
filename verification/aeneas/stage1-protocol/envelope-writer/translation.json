@@ -1,0 +1,474 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_envelope_writer_check",
+  "functions": [
+    {
+      "def_id": 39,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_controller_service::{impl core::convert::From<serde_json::error::Error> for sandproof_controller_service::JournalError}::from",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/lib.rs",
+        "begin_line": 237,
+        "end_line": 237
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 35,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.template_registry.evidence.write_bounded.closure.Insts.CoreOpsFunctionFnOnceTupleClause0_ReserveErrorError.call_once",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_controller_service::template_registry::evidence::write_bounded::{impl core::ops::function::FnOnce<(Clause0_ReserveError,), core::io::error::Error> for sandproof_controller_service::template_registry::evidence::write_bounded::{closure}<B, Clause0_ReserveError>}::call_once",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
+        "begin_line": 92,
+        "end_line": 92
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.template_registry.evidence.write_bounded",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_controller_service::template_registry::evidence::write_bounded",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
+        "begin_line": 76,
+        "end_line": 79
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 24,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.template_registry.evidence.finish_bounded",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_controller_service::template_registry::evidence::finish_bounded",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
+        "begin_line": 101,
+        "end_line": 104
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 25,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.template_registry.evidence.encode_bounded_using",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_controller_service::template_registry::evidence::encode_bounded_using",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
+        "begin_line": 130,
+        "end_line": 133
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 26,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_internal.server.proof_json_response_result",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_internal::server::proof_json_response_result",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-internal/src/server.rs",
+        "begin_line": 542,
+        "end_line": 544
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofBoundedWriterRust.candidate.write_entry",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_envelope_writer_check::candidate::write_entry",
+      "is_local": true,
+      "source": { "file": "roots.rs.in", "begin_line": 29, "end_line": 34 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofBoundedWriterRust.candidate.finish_entry",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_envelope_writer_check::candidate::finish_entry",
+      "is_local": true,
+      "source": { "file": "roots.rs.in", "begin_line": 36, "end_line": 41 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 13,
+      "lean_name": "SandproofBoundedWriterRust.candidate.encode_entry",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_envelope_writer_check::candidate::encode_entry",
+      "is_local": true,
+      "source": { "file": "roots.rs.in", "begin_line": 43, "end_line": 49 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 14,
+      "lean_name": "SandproofBoundedWriterRust.candidate.response_entry",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_envelope_writer_check::candidate::response_entry",
+      "is_local": true,
+      "source": { "file": "roots.rs.in", "begin_line": 51, "end_line": 55 },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 4,
+      "lean_name": "core.io.error.Error",
+      "lean_file": "SandproofBoundedWriter/TypesExternal_Template.lean",
+      "rust_name": "core::io::error::Error",
+      "is_local": false,
+      "source": {
+        "file": "/rustc/library/core/src/io/error.rs",
+        "begin_line": 87,
+        "end_line": 87
+      }
+    },
+    {
+      "def_id": 5,
+      "lean_name": "serde_json.error.Error",
+      "lean_file": "SandproofBoundedWriter/TypesExternal_Template.lean",
+      "rust_name": "serde_json::error::Error",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde_json-1.0.142/src/error.rs",
+        "begin_line": 17,
+        "end_line": 17
+      }
+    },
+    {
+      "def_id": 16,
+      "lean_name": "sandproof_protocol.ContractError",
+      "lean_file": "SandproofBoundedWriter/TypesExternal_Template.lean",
+      "rust_name": "sandproof_protocol::ContractError",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-protocol/src/lib.rs",
+        "begin_line": 35,
+        "end_line": 35
+      }
+    },
+    {
+      "def_id": 26,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.auxiliary.AuxiliaryReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::auxiliary::AuxiliaryReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/auxiliary.rs",
+        "begin_line": 26,
+        "end_line": 26
+      }
+    },
+    {
+      "def_id": 28,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.capture.continuation.CaptureReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::capture::continuation::CaptureReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/capture/continuation.rs",
+        "begin_line": 132,
+        "end_line": 132
+      }
+    },
+    {
+      "def_id": 24,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.worker.WorkerReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::worker::WorkerReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/worker.rs",
+        "begin_line": 67,
+        "end_line": 67
+      }
+    },
+    {
+      "def_id": 23,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.scheduler.SchedulerReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::scheduler::SchedulerReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/scheduler.rs",
+        "begin_line": 20,
+        "end_line": 20
+      }
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.request.Reject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::request::Reject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/request.rs",
+        "begin_line": 13,
+        "end_line": 13
+      }
+    },
+    {
+      "def_id": 27,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.recovery_monitor.RuntimeReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::recovery_monitor::RuntimeReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/recovery_monitor.rs",
+        "begin_line": 23,
+        "end_line": 23
+      }
+    },
+    {
+      "def_id": 25,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.publication.PublicationReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::publication::PublicationReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/publication.rs",
+        "begin_line": 27,
+        "end_line": 27
+      }
+    },
+    {
+      "def_id": 31,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.maintenance.windows.WindowReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::windows::WindowReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/maintenance/windows.rs",
+        "begin_line": 319,
+        "end_line": 319
+      }
+    },
+    {
+      "def_id": 30,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.maintenance.slots.SlotReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::slots::SlotReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/maintenance/slots.rs",
+        "begin_line": 65,
+        "end_line": 65
+      }
+    },
+    {
+      "def_id": 29,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.maintenance.retirement.RetirementReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::retirement::RetirementReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/maintenance/retirement.rs",
+        "begin_line": 67,
+        "end_line": 67
+      }
+    },
+    {
+      "def_id": 20,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.maintenance.MaintenanceReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::maintenance::MaintenanceReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/maintenance.rs",
+        "begin_line": 69,
+        "end_line": 69
+      }
+    },
+    {
+      "def_id": 22,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.effect.EffectReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::effect::EffectReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/effect.rs",
+        "begin_line": 21,
+        "end_line": 21
+      }
+    },
+    {
+      "def_id": 18,
+      "lean_name": "SandproofBoundedWriterRust.sandbox_controller_core.controller.ControllerReject",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandbox_controller_core::controller::ControllerReject",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/controller.rs",
+        "begin_line": 46,
+        "end_line": 46
+      }
+    },
+    {
+      "def_id": 17,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.CrashPoint",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandproof_controller_service::CrashPoint",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/lib.rs",
+        "begin_line": 78,
+        "end_line": 78
+      }
+    },
+    {
+      "def_id": 8,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.JournalError",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandproof_controller_service::JournalError",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/lib.rs",
+        "begin_line": 103,
+        "end_line": 103
+      }
+    },
+    {
+      "def_id": 2,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.template_registry.evidence.BoundedWriter",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandproof_controller_service::template_registry::evidence::BoundedWriter",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
+        "begin_line": 58,
+        "end_line": 58
+      }
+    },
+    {
+      "def_id": 15,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.template_registry.evidence.write_bounded.closure",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandproof_controller_service::template_registry::evidence::write_bounded::{closure}",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
+        "begin_line": 92,
+        "end_line": 92
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [
+    {
+      "def_id": 4,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.template_registry.evidence.BoundedBuffer",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandproof_controller_service::template_registry::evidence::BoundedBuffer",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
+        "begin_line": 16,
+        "end_line": 16
+      }
+    },
+    {
+      "def_id": 6,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.template_registry.evidence.BoundedSerialize",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandproof_controller_service::template_registry::evidence::BoundedSerialize",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
+        "begin_line": 113,
+        "end_line": 113
+      }
+    },
+    {
+      "def_id": 7,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_internal.server.ProofJsonResponseBuilder",
+      "lean_file": "SandproofBoundedWriter/Types.lean",
+      "rust_name": "sandproof_internal::server::ProofJsonResponseBuilder",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/sandbox-internal/src/server.rs",
+        "begin_line": 512,
+        "end_line": 512
+      }
+    }
+  ],
+  "trait_impls": [
+    {
+      "def_id": 13,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromError",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_controller_service::{impl core::convert::From<serde_json::error::Error> for sandproof_controller_service::JournalError}",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/lib.rs",
+        "begin_line": 236,
+        "end_line": 236
+      },
+      "impl_trait_def_id": 9,
+      "impl_trait_rust_name": "core::convert::From",
+      "impl_trait_is_builtin": true
+    },
+    {
+      "def_id": 8,
+      "lean_name": "SandproofBoundedWriterRust.sandproof_controller_service.template_registry.evidence.write_bounded.closure.Insts.CoreOpsFunctionFnOnceTupleClause0_ReserveErrorError",
+      "lean_file": "SandproofBoundedWriter/Funs.lean",
+      "rust_name": "sandproof_controller_service::template_registry::evidence::write_bounded::{impl core::ops::function::FnOnce<(Clause0_ReserveError,), core::io::error::Error> for sandproof_controller_service::template_registry::evidence::write_bounded::{closure}<B, Clause0_ReserveError>}",
+      "is_local": false,
+      "source": {
+        "file": "/home/zn/u333-5tuoxof8/std-mutex-source/controller-service/src/template_registry/evidence.rs",
+        "begin_line": 92,
+        "end_line": 92
+      },
+      "impl_trait_def_id": 8,
+      "impl_trait_rust_name": "core::ops::function::FnOnce",
+      "impl_trait_is_builtin": true
+    }
+  ]
+}

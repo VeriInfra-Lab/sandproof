@@ -1,0 +1,134 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadLibrary
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+
+namespace SandboxModel.Stage1Protocol.InboxLoad
+noncomputable section
+
+theorem validated_view_congr {E : Type} (io : InboxLoadEffects E)
+    (validate₁ validate₂ : Inbox → Check)
+    (budget₁ budget₂ : LifecycleInboxConfig → Result U64)
+    (inbox : Inbox) (reserve : U64) (state : E)
+    (validationSame : validate₁ inbox = validate₂ inbox)
+    (budgetSame : budget₁ inbox.config = budget₂ inbox.config) :
+    validatedView io validate₁ budget₁ inbox reserve state =
+      validatedView io validate₂ budget₂ inbox reserve state := by
+  simp only [validatedView, budgetSame, validationSame]
+
+theorem canonical_view_congr {E : Type} (io : InboxLoadEffects E)
+    (validate₁ validate₂ : Inbox → Check)
+    (budget₁ budget₂ : LifecycleInboxConfig → Result U64)
+    (inbox : Inbox) (bytes : alloc.vec.Vec U8) (reserve : U64) (state : E)
+    (validationSame : validate₁ inbox = validate₂ inbox)
+    (budgetSame : budget₁ inbox.config = budget₂ inbox.config) :
+    canonicalView io validate₁ budget₁ inbox bytes reserve state =
+      canonicalView io validate₂ budget₂ inbox bytes reserve state := by
+  unfold canonicalView
+  apply congrArg (attempt (io.encode_inbox state inbox))
+  funext encoded after
+  apply continue_congr (alloc.vec.partial_eq.PartialEqVec.ne core.cmp.PartialEqU8 encoded bytes)
+  intro different
+  cases different with
+  | true => rfl
+  | false =>
+    exact validated_view_congr io validate₁ validate₂ budget₁ budget₂
+      inbox reserve after validationSame budgetSame
+
+theorem digest_view_congr {E : Type} (io : InboxLoadEffects E)
+    (validate₁ validate₂ : Inbox → Check)
+    (budget₁ budget₂ : LifecycleInboxConfig → Result U64)
+    (inbox : Inbox) (bytes sha : alloc.vec.Vec U8) (reserve : U64) (state : E)
+    (validationSame : validate₁ inbox = validate₂ inbox)
+    (budgetSame : budget₁ inbox.config = budget₂ inbox.config) :
+    digestView io validate₁ budget₁ inbox bytes sha reserve state =
+      digestView io validate₂ budget₂ inbox bytes sha reserve state := by
+  unfold digestView
+  apply pair_continue_congr (io.digest state (alloc.vec.Vec.deref bytes))
+  intro digest after
+  apply guard_congr
+  exact canonical_view_congr io validate₁ validate₂ budget₁ budget₂
+    inbox bytes reserve after validationSame budgetSame
+
+theorem body_view_congr {E : Type} (io : InboxLoadEffects E)
+    (represented : DecodedStringsRepresentable io)
+    (validate₁ validate₂ : Inbox → Check)
+    (budget₁ budget₂ : LifecycleInboxConfig → Result U64)
+    (validationSame : ∀ inbox, ConfigValidation.Representable inbox.config →
+      validate₁ inbox = validate₂ inbox)
+    (budgetSame : ∀ config, budget₁ config = budget₂ config)
+    (reserve : U64) (state : E) :
+    bodyView io validate₁ budget₁ reserve state = bodyView io validate₂ budget₂ reserve state := by
+  change attempt (io.query_bytes_pair state bodyStatement)
+    (fun pair after => Bind.bind (m := Result) (io.decode_inbox after (alloc.vec.Vec.deref pair.1))
+      (fun returned => match returned.1 with
+        | .Ok inbox => digestView io validate₁ budget₁ inbox pair.1 pair.2 reserve returned.2
+        | .Err _ => corrupt returned.2)) =
+    attempt (io.query_bytes_pair state bodyStatement)
+    (fun pair after => Bind.bind (m := Result) (io.decode_inbox after (alloc.vec.Vec.deref pair.1))
+      (fun returned => match returned.1 with
+        | .Ok inbox => digestView io validate₂ budget₂ inbox pair.1 pair.2 reserve returned.2
+        | .Err _ => corrupt returned.2))
+  exact congrArg (attempt (io.query_bytes_pair state bodyStatement))
+    (funext fun pair => funext fun after =>
+      decode_continue_congr io represented after (alloc.vec.Vec.deref pair.1)
+        (fun returned => match returned.1 with
+          | .Ok inbox => digestView io validate₁ budget₁ inbox pair.1 pair.2 reserve returned.2
+          | .Err _ => corrupt returned.2)
+        (fun returned => match returned.1 with
+          | .Ok inbox => digestView io validate₂ budget₂ inbox pair.1 pair.2 reserve returned.2
+          | .Err _ => corrupt returned.2)
+        (fun _ _ => rfl)
+        (fun inbox afterDecode bounded =>
+          digest_view_congr io validate₁ validate₂ budget₁ budget₂ inbox pair.1 pair.2 reserve
+            afterDecode (validationSame inbox bounded) (budgetSame inbox.config)))
+
+theorem load_view_congr {E : Type} (io : InboxLoadEffects E)
+    (represented : DecodedStringsRepresentable io)
+    (validate₁ validate₂ : Inbox → Check)
+    (budget₁ budget₂ : LifecycleInboxConfig → Result U64)
+    (validationSame : ∀ inbox, ConfigValidation.Representable inbox.config →
+      validate₁ inbox = validate₂ inbox)
+    (budgetSame : ∀ config, budget₁ config = budget₂ config) (state : E) :
+    loadView io validate₁ budget₁ state = loadView io validate₂ budget₂ state := by
+  have bodies : bodyView io validate₁ budget₁ = bodyView io validate₂ budget₂ := by
+    funext reserve after
+    exact body_view_congr io represented validate₁ validate₂ budget₁ budget₂
+      validationSame budgetSame reserve after
+  have limits : limitsView io validate₁ budget₁ = limitsView io validate₂ budget₂ := by
+    funext capacity length reserve after
+    unfold limitsView
+    rw [bodies]
+  have capacities : capacityView io validate₁ budget₁ = capacityView io validate₂ budget₂ := by
+    funext after
+    unfold capacityView
+    rw [limits]
+  have current : currentView io validate₁ budget₁ = currentView io validate₂ budget₂ := by
+    funext after
+    unfold currentView
+    rw [capacities]
+  unfold loadView
+  rw [current]
+
+-- All business validation reuses the existing decoded-value specification.
+-- Effect providers remain arbitrary: this says neither that SQL/JSON/SHA is
+-- implemented correctly nor that a returned value has been durably accepted.
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.validated_view_congr
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.canonical_view_congr
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.digest_view_congr
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.body_view_congr
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.load_view_congr

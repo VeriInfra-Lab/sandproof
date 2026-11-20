@@ -37,13 +37,14 @@ fn deadline(connection: &rusqlite::Connection, sandbox: &str) -> i64 {
 }
 
 fn restore_host(sessions: &[SandboxSession], stops: Arc<AtomicUsize>) -> FakeHost {
-    let mut host = FakeHost {
+    let host = FakeHost {
         stop_calls: Some(stops),
         ..FakeHost::default()
     };
     for (index, session) in sessions.iter().enumerate() {
         host.put_secret(
             core::SandboxId(u64::try_from(index + 1).unwrap()),
+            1, // These fixtures reopen the original Create generation without Resume.
             &session.envd_access_token,
         )
         .unwrap();

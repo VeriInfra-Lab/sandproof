@@ -1,0 +1,26 @@
+import SandboxModel.Lifecycle.Protocol.StandardIdentityDelegate
+import SandboxModel.Lifecycle.Protocol.StandardIdentityDelegateFixture
+open Aeneas Aeneas.Std SandproofStage1CreateAttachmentRust
+namespace SandboxModel.Stage1Protocol.StandardIdentityDelegate.Witnesses
+open CreateFixedIdentity Fixture
+
+theorem normal_complete_context :
+    call (normalEffects selectedWorld observingConnection) Values.normal 2#u64 =
+      .ok (.Ok "sb-normal-2", normalEffects selectedWorld observingConnection) :=
+  normal_full_value_and_context _
+
+theorem maximum_number_complete_context (effects : Effects) :
+    call effects Values.empty 18446744073709551615#u64 =
+      .ok (.Ok "sb--18446744073709551615", effects) := by
+  exact standard_identity_complete effects Values.empty "" 18446744073709551615#u64 rfl
+    (by change 24 ≤ Usize.max; scalar_tac)
+
+theorem invalid_namespace_keeps_complete_context (effects : Effects) :
+    call effects Values.invalid 2#u64 = .ok (.Err (.Contract .InvalidIdentifier), effects) := by
+  simpa only [Values.invalid_expected] using standard_identity_complete effects
+    Values.invalid "bad space" 2#u64 rfl (by change 14 ≤ Usize.max; scalar_tac)
+
+end SandboxModel.Stage1Protocol.StandardIdentityDelegate.Witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.Witnesses.normal_complete_context
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.Witnesses.maximum_number_complete_context
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.Witnesses.invalid_namespace_keeps_complete_context

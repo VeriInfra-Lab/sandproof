@@ -1,0 +1,50 @@
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Trace
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Examples
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Inhabited
+open Aeneas Aeneas.Std SandproofSourcePreservationRust
+namespace SandboxModel.Stage1Protocol.SourcePreservation
+open controller.lifecycle_inbox.source_work.retirement Values
+noncomputable section
+
+theorem normal_actual (seed : Record) :
+    preserves_saved_facts (base seed) (settled seed) = .ok true := by
+  rw [preserves_exact, normal_expected]
+
+theorem growth_actual (seed : Record) :
+    preserves_saved_facts (empty seed) (base seed) = .ok true := by
+  rw [preserves_exact, growth_expected]
+
+theorem producer_rejected (seed : Record) :
+    preserves_saved_facts (base seed) (dropProducer seed) = .ok false := by
+  rw [preserves_exact, producer_expected]
+
+theorem consumer_rejected (seed : Record) :
+    preserves_saved_facts (base seed) (dropConsumer seed) = .ok false := by
+  rw [preserves_exact, consumer_expected]
+
+theorem changed_plan_rejected (seed : Record) :
+    preserves_saved_facts (base seed) (changedPlan seed) = .ok false := by
+  rw [preserves_exact, plan_expected]
+
+theorem settled_regression_rejected (seed : Record) :
+    preserves_saved_facts (settled seed) (base seed) = .ok false := by
+  rw [preserves_exact, settled_expected]
+
+/-- A nonempty qualified value history starts with present original facts.
+No physical source-row/transaction/recovery identity is asserted by this path. -/
+theorem qualified_path_exists : ∃ before after : Record,
+    before.material_release.producer = some witness ∧
+    before.retirement = some (.Retiring Values.plan) ∧
+    Relation.ReflTransGen (fun a b => preserves_saved_facts a b = .ok true) before after ∧
+    after.retirement = some (.Settled Values.plan settlement) := by
+  refine ⟨base default, settled default, rfl, rfl, ?_, rfl⟩
+  exact .tail (.tail .refl ((accepts_iff _ _).mpr (preserves_refl _))) (normal_actual _)
+end
+end SandboxModel.Stage1Protocol.SourcePreservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.normal_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.growth_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.producer_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.consumer_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.changed_plan_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.settled_regression_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.qualified_path_exists

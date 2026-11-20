@@ -1,0 +1,55 @@
+import SandboxModel.Lifecycle.Protocol.ShapeProofs
+import SandboxModel.Lifecycle.Protocol.ShapeBoundaryValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.SessionShape
+noncomputable section
+open scoped Classical
+
+theorem normal_witnesses :
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small Values.inbox 0#usize Values.normal = .ok (.Ok ()) ∧
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small Values.inbox 0#usize Values.stopped = .ok (.Ok ()) ∧
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small Values.inbox 0#usize Values.refused = .ok (.Ok ()) ∧
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small Values.observed 0#usize Values.physical = .ok (.Ok ()) := by
+  simpa only [validate_shape_spec] using Values.model_normal_witnesses
+
+theorem omitted_field_rejections :
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small Values.shadowed 0#usize Values.normal = corrupt ∧
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small Values.conflicted 1#usize Values.physical = corrupt ∧
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small Values.inbox 0#usize Values.wrongRefusal = corrupt ∧
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small Values.inbox 0#usize Values.wrongLast = corrupt := by
+  simp only [validate_shape_spec]
+  exact ⟨Values.model_first_lane_rejection, Values.model_physical_conflict,
+    Values.model_refusal_rejection, Values.model_last_intent_rejection⟩
+
+theorem terminal_size_boundary :
+    Inbox.validate_session_shape_using Values.savedEncoding (Values.terminalEncoding 8192 (by decide))
+      Values.inbox 0#usize Values.stopped = .ok (.Ok ()) ∧
+    Inbox.validate_session_shape_using Values.savedEncoding (Values.terminalEncoding 8193 (by decide))
+      Values.inbox 0#usize Values.stopped = corrupt := by
+  simpa only [validate_shape_spec] using Values.model_terminal_size_boundary
+
+theorem encoding_error_order :
+    Inbox.validate_session_shape_using SavedRetirement.Values.intentError Values.terminalError
+      Values.inbox 0#usize Values.invalidSlot = .ok (.Err (.Json ⟨7⟩)) ∧
+    Inbox.validate_session_shape_using Values.savedEncoding Values.terminalError
+      Values.inbox 0#usize Values.stopped = .ok (.Err (.Json ⟨9⟩)) := by
+  simp only [validate_shape_spec]
+  exact ⟨Values.model_saved_error_precedes_slot, Values.model_terminal_error⟩
+
+theorem prior_prefix_only :
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small
+      { Values.inbox with sessions := Values.vector [Values.normal] (by decide) } 0#usize Values.normal = .ok (.Ok ()) ∧
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small
+      { Values.inbox with sessions := Values.vector [Values.normal] (by decide) } 1#usize Values.normal = corrupt := by
+  simpa only [validate_shape_spec] using Values.model_prior_prefix_only
+
+end
+end SandboxModel.Stage1Protocol.SessionShape
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.normal_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.omitted_field_rejections
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.terminal_size_boundary
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.encoding_error_order
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.prior_prefix_only

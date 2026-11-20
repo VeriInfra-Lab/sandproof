@@ -1,0 +1,319 @@
+{
+  "schema": 1,
+  "source_base": "9c50da7cc9391518514f14405e6c779e5c5cbe2c",
+  "contract": "SandboxModel.Stage1Protocol.SourceObservation.FullObservationContract",
+  "domain": "All ordinary decoded RawSourceObservation/Requirement values; guard only, not Config.valid, JSON parsing, authorization, SHA or physical/transaction facts",
+  "inputs": {
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
+    "controller-core/Cargo.toml": "bfe39b44a5bbcd38f44ec479443a7456c2c7d2cdf85b8678259f343f25865656",
+    "controller-core/src/capture.rs": "cfe090e04654b40de4b26ee751aa83e1333806b0eaf9e0f2df656f4874c4fe54",
+    "controller-core/src/capture/continuation.rs": "1712667f5e6aef2748a7635035bb655f9903046bf8ac785547b1ee123c4585b6",
+    "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
+    "controller-core/src/lib.rs": "2a260eede2d65205ba650e745ec718450cd5f99b0a0a26e4d092206ea4f9950c",
+    "controller-core/src/maintenance.rs": "3b4b60b60bce6a7203b6fcf5735ac58183841afe68811897a6201af131a17808",
+    "controller-core/src/maintenance/slots.rs": "688d594565e4ebb584795b4f22b84e1eda20f089ebc8e809e8881a388a823114",
+    "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
+    "controller-service/Cargo.toml": "f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d",
+    "controller-service/src/capture.rs": "85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272",
+    "controller-service/src/capture/launch.rs": "bf1a05088f5096f9049c2cb210967ea593616f259953012a45464fe5c1f23bb6",
+    "controller-service/src/capture/source.rs": "862c749de515fbe35595b6f00043455935d9581e22ae10554f639579c1833fbc",
+    "controller-service/src/capture/terminated.rs": "11a566f0224f4cce4669e4ce932b9736396238867aa89f9614c9848c7c069245",
+    "controller-service/src/capture/work.rs": "fa09c2f565602f0ace3351652aa4d5fc0ed8aafe361b9b864d8f981f78248dcc",
+    "controller-service/src/controller/admission.rs": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1",
+    "controller-service/src/controller/checkpoint.rs": "f86709d33690765c3c283085387c146e69b515dcf02dd1206f9b09235640cede",
+    "controller-service/src/controller/internal_inbox.rs": "8d5cd81b597add57f37cf129cca27c0c6ce2bbc29d2a9a1e9f405278d1a84a8e",
+    "controller-service/src/controller/internal_inbox/model.rs": "4d6629825e1289b285851ae47eaf2b38172ffd59e66b20b1b9678fa8a1a1f649",
+    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/lifecycle_inbox/readiness.rs": "0f278a2c97a6a7c37a8d6c6e0fc4516a71775254845bcde5995a074d7f15ae6a",
+    "controller-service/src/controller/lifecycle_inbox/source_work.rs": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a",
+    "controller-service/src/controller/lifecycle_inbox/source_work/full.rs": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26",
+    "controller-service/src/controller/lifecycle_inbox/source_work/full/drain.rs": "58cdbef3069b780198864e56789181bdc2a1333a29fd7bedc4eb70a8c14209a9",
+    "controller-service/src/controller/lifecycle_inbox/source_work/full/end.rs": "b61304ae2a3fa645b5b0cf47043892f59e34ef4e14efea76b59dc3823b75c51e",
+    "controller-service/src/controller/lifecycle_inbox/source_work/restore.rs": "3bc21d0f6e354de0718a254ec0cf9dd73389d3afc7e906aeb1fb880d32f046be",
+    "controller-service/src/controller/lifecycle_inbox/source_work/retirement.rs": "adae46047f72df39496e9d8e1f32619c7b74a85ae2b9a8a48a8407021457a3c3",
+    "controller-service/src/controller/lifecycle_inbox/source_work/tests.rs": "77c06c23da0d136e07be206ea2df71a2182697490805a2b2b19cbef6cc28d0bb",
+    "controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement.rs": "82bc3ecec50fc8c2cd928d350bce1faade4101b2ed35ef538d722ebd098136d3",
+    "controller-service/src/controller/mod.rs": "3108ade2ef3bc126f469094170db9d058f6a729fe4923c38cc7f414fa1f507ca",
+    "controller-service/src/host_contract.rs": "423dfff6ff8ab44056981898a5dcedd5f1e5dc069b011243f7f4ddc8648a3f0a",
+    "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
+    "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",
+    "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
+    "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
+    "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+    "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+    "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
+    "sandbox-protocol/src/lifecycle/manifest.rs": "d7f826cef35e639a725e842a464d518bbc49fce633a54aba2cf0551db22630e3",
+    "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07"
+  },
+  "providers": {
+    "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+    "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
+    "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
+    "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
+    "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
+    "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
+    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+    "tools/proof_batch.py": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869",
+    "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+    "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
+    "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "docs/formal/dependencies.md": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec"
+  },
+  "templates": {
+    "verification/experiments/stage1-protocol/source-observation/Core.lean.in": "96ade38e1b224bc969ea24ac04742084a211abd5dae95039e60b6352a3fe1a1e",
+    "verification/experiments/stage1-protocol/source-observation/Equality.lean.in": "4d5a61725fc291f5cb0c193db310480a0f7bfc55f40ac031d4bab771acadb602",
+    "verification/experiments/stage1-protocol/source-observation/Examples.lean.in": "f33588f85e065962c6e6fd42f14e5afe41850d1e853420059dbdd0c50fd3d7a7",
+    "verification/experiments/stage1-protocol/source-observation/FunsExternal.lean.in": "fb5233cb01bd6c8190c500c207d3e14ef7c366b27f3e564a3b9fdc58e3fa2155",
+    "verification/experiments/stage1-protocol/source-observation/NegativeBinding.lean.in": "4b4d6a749d733870e4870d91c12ab8198efe59a3ac108b8964ffdf30ce2c2deb",
+    "verification/experiments/stage1-protocol/source-observation/NegativeConfig.lean.in": "d47ece1ef388f9e3d1083e6e4b2102d6841423fa54f5d86d55bf6a6b71a7ed08",
+    "verification/experiments/stage1-protocol/source-observation/NegativePid.lean.in": "c054ac08d18dbdf11dbe2e8706bd6a481a5f580ace4c5cfd4dd204f132bceca4",
+    "verification/experiments/stage1-protocol/source-observation/SourceEquality.lean.in": "3982fa7d9ea807e11da62abc9e1d4a7cc0b1faa3a181cec048ee59a84e9d80ef",
+    "verification/experiments/stage1-protocol/source-observation/Spec.lean.in": "a9575d7add4ec3cc0e1535f6175bee18aaff91beb2ba1add2eee56f9537f180a",
+    "verification/experiments/stage1-protocol/source-observation/Values.lean.in": "b726acf49b893c19970a7a1ff3a7ee94312842fcbdf56a8dffa14f3c2c5fb03c",
+    "verification/experiments/stage1-protocol/source-observation/Witnesses.lean.in": "7d41099f26845d63ce756d21d32894abda392934e5ee89182274d46dc9d9cc49",
+    "verification/experiments/stage1-protocol/source-observation/native-tests.rs.in": "ea8bba409427ce6db5aa604a07223053b677f2381a6533cf4c86bfb2c16188d8",
+    "verification/experiments/stage1-protocol/source-observation/probe.rs.in": "1636cca5af0ffad6b88576291aa516cfc2ce7495f710fef6f3b78705cf125f70"
+  },
+  "drivers": {
+    "verification/experiments/stage1-protocol/source-observation/formal.py": "f2fe11a0f3a9015226bb62af333c5905e3a56f712e2a6a7eb5398d11ae8dcd2e",
+    "verification/experiments/stage1-protocol/source-observation/native.py": "cf982a9f953963ec0550bb7015f6c7a7f81de0837bdd271e8c1b464a33f4c74e",
+    "verification/experiments/stage1-protocol/source-observation/mutations.json": "a9381926389b36ce37127c01e9888aaa3f45c16de654f0c19655a3d9a18cc61a"
+  },
+  "views": {
+    "correct": [
+      "Spec",
+      "Equality",
+      "SourceEquality",
+      "Core",
+      "Values",
+      "Examples",
+      "Witnesses"
+    ],
+    "skip-binding": [
+      "Spec",
+      "Equality",
+      "SourceEquality",
+      "Values",
+      "Examples",
+      "NegativeBinding"
+    ],
+    "pid-only": [
+      "Spec",
+      "Equality",
+      "Values",
+      "Examples",
+      "NegativePid"
+    ],
+    "oversize-config": [
+      "Spec",
+      "Equality",
+      "SourceEquality",
+      "Values",
+      "Examples",
+      "NegativeConfig"
+    ]
+  },
+  "function_counts": {
+    "correct": 32,
+    "skip-binding": 29,
+    "pid-only": 31,
+    "oversize-config": 30
+  },
+  "generated": {
+    "correct": {
+      "Types.lean": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4",
+      "Funs.lean": "460a2c314843b87eeb638f6b710cdfc9be65dd06d8dbea92557ee4c9f82d165b"
+    },
+    "skip-binding": {
+      "Types.lean": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4",
+      "Funs.lean": "2aae05e2f0c83d67e5440a318d88f075de4d9ed636ba41c4140a72f02844ee65"
+    },
+    "pid-only": {
+      "Types.lean": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4",
+      "Funs.lean": "0a72c46fe22c2860bfa71e249ec5bd74b419b48d0d138a72e6203960a076f4aa"
+    },
+    "oversize-config": {
+      "Types.lean": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4",
+      "Funs.lean": "8a865f83c97459a6066b5d459fb602a6c7673bf00cb68ba70dbac2bc367aeddd"
+    }
+  },
+  "files": {
+    "correct": [
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Core.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Equality.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Examples.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/SourceEquality.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Spec.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Values.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Witnesses.lean",
+      "SandboxModel/ProofAuditCommand.lean",
+      "verification/aeneas/stage1-protocol/source-observation/correct/SandproofSourceObservation/Funs.lean",
+      "verification/aeneas/stage1-protocol/source-observation/correct/SandproofSourceObservation/FunsExternal.lean",
+      "verification/aeneas/stage1-protocol/source-observation/correct/SandproofSourceObservation/Types.lean"
+    ],
+    "skip-binding": [
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Equality.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Examples.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/NegativeBinding.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/SourceEquality.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Spec.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Values.lean",
+      "SandboxModel/ProofAuditCommand.lean",
+      "verification/aeneas/stage1-protocol/source-observation/skip-binding/SandproofSourceObservation/Funs.lean",
+      "verification/aeneas/stage1-protocol/source-observation/skip-binding/SandproofSourceObservation/FunsExternal.lean",
+      "verification/aeneas/stage1-protocol/source-observation/skip-binding/SandproofSourceObservation/Types.lean"
+    ],
+    "pid-only": [
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Equality.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Examples.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/NegativePid.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Spec.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Values.lean",
+      "SandboxModel/ProofAuditCommand.lean",
+      "verification/aeneas/stage1-protocol/source-observation/pid-only/SandproofSourceObservation/Funs.lean",
+      "verification/aeneas/stage1-protocol/source-observation/pid-only/SandproofSourceObservation/FunsExternal.lean",
+      "verification/aeneas/stage1-protocol/source-observation/pid-only/SandproofSourceObservation/Types.lean"
+    ],
+    "oversize-config": [
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Equality.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Examples.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/NegativeConfig.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/SourceEquality.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Spec.lean",
+      "SandboxModel/Lifecycle/Protocol/SourceObservation/Values.lean",
+      "SandboxModel/ProofAuditCommand.lean",
+      "verification/aeneas/stage1-protocol/source-observation/oversize-config/SandproofSourceObservation/Funs.lean",
+      "verification/aeneas/stage1-protocol/source-observation/oversize-config/SandproofSourceObservation/FunsExternal.lean",
+      "verification/aeneas/stage1-protocol/source-observation/oversize-config/SandproofSourceObservation/Types.lean"
+    ]
+  },
+  "audits": {
+    "correct": [
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.array_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.bytes_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.length_cast",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.ok_and",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.ok_not_and",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.resource_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.source_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.wire_resource_id_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.wire_resource_kind_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Values.different_digest",
+      "SandboxModel.Stage1Protocol.SourceObservation.accepts_iff",
+      "SandboxModel.Stage1Protocol.SourceObservation.binding_actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.binding_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.boot_actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.boot_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.boundary_actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.boundary_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.digest_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.digests_are_unchecked",
+      "SandboxModel.Stage1Protocol.SourceObservation.full_observation_contract",
+      "SandboxModel.Stage1Protocol.SourceObservation.hash_fields_independent",
+      "SandboxModel.Stage1Protocol.SourceObservation.large_actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.large_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.matches_exact",
+      "SandboxModel.Stage1Protocol.SourceObservation.normal_actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.normal_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.rejects_iff",
+      "SandboxModel.Stage1Protocol.SourceObservation.start_actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.start_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.total"
+    ],
+    "skip-binding": [
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.array_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.bytes_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.length_cast",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.ok_and",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.ok_not_and",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.resource_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.source_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.wire_resource_id_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.wire_resource_kind_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativeBinding.actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativeBinding.bad_actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativeBinding.rejects_same_full_contract",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativeBinding.shared_normal",
+      "SandboxModel.Stage1Protocol.SourceObservation.Values.different_digest",
+      "SandboxModel.Stage1Protocol.SourceObservation.binding_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.boot_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.boundary_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.digest_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.large_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.normal_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.start_expected"
+    ],
+    "pid-only": [
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.array_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.bytes_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.length_cast",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.ok_and",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.ok_not_and",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.resource_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.wire_resource_id_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.wire_resource_kind_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativePid.actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativePid.bad_actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativePid.rejects_same_full_contract",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativePid.shared_normal",
+      "SandboxModel.Stage1Protocol.SourceObservation.Values.different_digest",
+      "SandboxModel.Stage1Protocol.SourceObservation.binding_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.boot_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.boundary_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.digest_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.large_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.normal_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.start_expected"
+    ],
+    "oversize-config": [
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.array_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.bytes_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.length_cast",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.ok_and",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.ok_not_and",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.resource_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.source_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.wire_resource_id_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.Equality.wire_resource_kind_eq",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativeConfig.actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativeConfig.bad_actual",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativeConfig.rejects_same_full_contract",
+      "SandboxModel.Stage1Protocol.SourceObservation.NegativeConfig.shared_normal",
+      "SandboxModel.Stage1Protocol.SourceObservation.Values.different_digest",
+      "SandboxModel.Stage1Protocol.SourceObservation.binding_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.boot_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.boundary_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.digest_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.large_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.normal_expected",
+      "SandboxModel.Stage1Protocol.SourceObservation.start_expected"
+    ]
+  },
+  "reviewed_source_rebinding": {
+    "review_sha256": "330b4f8bc76cea07d7e8fb54383a84363391a1c4f04bff2cadc7a6909a21b2b2",
+    "production_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+    "original_execution_retagged": false,
+    "unchanged_consumed_behavior": "actual source-observation guard and compared requirement/observation layouts unchanged. It does not establish JSON parsing, Config.valid, SHA computation, physical truth or current authority.",
+    "source_changes": {
+      "inputs:controller-service/src/controller/admission.rs": {
+        "original": "66dcc0ff0961e44add84fc816b675d7fbba1026ea277de39c8e96c3855a95432",
+        "current": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1"
+      },
+      "inputs:controller-service/src/controller/lifecycle_inbox.rs": {
+        "original": "1049cbf776478b7ef73c7d8dda56cb3a60c6fc59ba18639d0816a4ce1118bfaa",
+        "current": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29"
+      },
+      "inputs:controller-service/src/controller/lifecycle_inbox/source_work.rs": {
+        "original": "cd4467d35a3ca7fa785f7acdcaa804e758a6f1236bfafc5d5cc417001d7c984e",
+        "current": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a"
+      },
+      "inputs:controller-service/src/controller/lifecycle_inbox/source_work/full.rs": {
+        "original": "6c85eb5880b84e5830dfc84e304edbc856ea5bd8cb3d645d9f54b8cbc3f29c5f",
+        "current": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26"
+      }
+    }
+  }
+}

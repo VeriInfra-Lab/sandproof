@@ -1,0 +1,127 @@
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateDeadlineCast
+
+abbrev ErrorKind := SandproofStage1RequestRust.core.num.error.IntErrorKind
+abbrev RustResult := core.result.Result I64 ErrorKind
+abbrev run : U64 → Result RustResult :=
+  SandproofStage1RequestRust.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from
+
+def InRange (value : U64) : Prop := (value.val : Int) ≤ I64.max
+
+-- The relation states the mathematical value and the exact actual overflow kind.
+-- It is about numeric conversion, not accepted Create, SQL or durable state.
+def Correct (value : U64) : RustResult → Prop
+  | .Ok output => output.val = (value.val : Int)
+  | .Err error => error = SandproofStage1RequestRust.core.num.error.IntErrorKind.PosOverflow ∧ I64.max < (value.val : Int)
+
+def FullCastContract (convert : U64 → Result RustResult) : Prop :=
+  ∀ value, convert value ⦃ result => Correct value result ⦄
+
+theorem full_contract : FullCastContract run := by
+  intro value
+  unfold run SandproofStage1RequestRust.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from
+  split
+  · rename_i overflow
+    apply WP.spec.ret
+    exact ⟨rfl, by scalar_tac⟩
+  · rename_i inside
+    have bound : (value.val : Int) ≤ I64.max := by scalar_tac
+    have casted := UScalar.hcast_inBounds_spec .I64 value (by simpa only [IScalar.max_IScalarTy_I64_eq] using bound)
+    have same : (UScalar.hcast .I64 value).val = (value.val : Int) := by
+      simpa only [lift, WP.spec_ok] using casted
+    simp only [lift, bind_tc_ok]
+    apply WP.spec.ret
+    exact same
+
+theorem normal_result (value : U64) : ∃ result, run value = .ok result := by
+  obtain ⟨result, returned, _⟩ := WP.spec_imp_exists (full_contract value)
+  exact ⟨result, returned⟩
+
+theorem returned_value (value : U64) (output : I64)
+    (returned : run value = .ok (.Ok output)) : output.val = (value.val : Int) := by
+  have correct := full_contract value
+  rw [returned] at correct
+  simpa only [WP.spec_ok, Correct] using correct
+
+theorem accepts_iff (value : U64) :
+    (∃ output, run value = .ok (.Ok output)) ↔ InRange value := by
+  constructor
+  · intro ⟨output, returned⟩
+    have same := returned_value value output returned
+    have bounded : output.val ≤ I64.max := by scalar_tac
+    unfold InRange
+    omega
+  · intro inside
+    obtain ⟨result, returned, correct⟩ := WP.spec_imp_exists (full_contract value)
+    cases result with
+    | Ok output => exact ⟨output, returned⟩
+    | Err error =>
+      simp only [Correct] at correct
+      unfold InRange at inside
+      omega
+
+theorem overflow_exact (value : U64) (outside : I64.max < (value.val : Int)) :
+    run value = .ok (.Err SandproofStage1RequestRust.core.num.error.IntErrorKind.PosOverflow) := by
+  obtain ⟨result, returned, correct⟩ := WP.spec_imp_exists (full_contract value)
+  cases result with
+  | Ok output =>
+    simp only [Correct] at correct
+    have bounded : output.val ≤ I64.max := by scalar_tac
+    omega
+  | Err error =>
+    simp only [Correct] at correct
+    rw [correct.1] at returned
+    exact returned
+
+theorem rejects_iff (value : U64) :
+    run value = .ok (.Err SandproofStage1RequestRust.core.num.error.IntErrorKind.PosOverflow) ↔ I64.max < (value.val : Int) := by
+  constructor
+  · intro returned
+    have correct := full_contract value
+    rw [returned] at correct
+    simp only [WP.spec_ok, Correct] at correct
+    exact correct.2
+  · exact overflow_exact value
+
+theorem forwarding_root_complete :
+    FullCastContract SandproofStage1RequestRust.proof_deadline_cast := by
+  simpa only [FullCastContract, SandproofStage1RequestRust.proof_deadline_cast, run] using full_contract
+
+theorem zero_accepted : run 0#u64 = .ok (.Ok 0#i64) := by
+  obtain ⟨output, returned⟩ := (accepts_iff 0#u64).2 (by unfold InRange; scalar_tac)
+  have same : output = 0#i64 := IScalar.eq_of_val_eq (by
+    have := returned_value 0#u64 output returned
+    scalar_tac)
+  simpa only [same] using returned
+
+theorem largest_accepted : run 9223372036854775807#u64 = .ok (.Ok 9223372036854775807#i64) := by
+  obtain ⟨output, returned⟩ := (accepts_iff 9223372036854775807#u64).2 (by unfold InRange; scalar_tac)
+  have same : output = 9223372036854775807#i64 := IScalar.eq_of_val_eq (by
+    have := returned_value 9223372036854775807#u64 output returned
+    scalar_tac)
+  simpa only [same] using returned
+
+theorem first_overflow_rejected : run 9223372036854775808#u64 =
+    .ok (.Err SandproofStage1RequestRust.core.num.error.IntErrorKind.PosOverflow) := by
+  apply overflow_exact
+  scalar_tac
+
+theorem unsigned_max_rejected : run 18446744073709551615#u64 =
+    .ok (.Err SandproofStage1RequestRust.core.num.error.IntErrorKind.PosOverflow) := by
+  apply overflow_exact
+  scalar_tac
+
+end SandboxModel.Stage1Protocol.CreateDeadlineCast
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineCast.full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineCast.normal_result
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineCast.returned_value
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineCast.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineCast.overflow_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineCast.rejects_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineCast.forwarding_root_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineCast.zero_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineCast.largest_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineCast.first_overflow_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateDeadlineCast.unsigned_max_rejected

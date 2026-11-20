@@ -1,0 +1,16 @@
+{
+  "kind": "same-parent-library-name-original-Save-two-call-delegate",
+  "baseline": "f71640945d65ea95daa04d40df6d7777cd86e804",
+  "source": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+  "original_sha256": "61b4f44dd7a7bae76dfd4f5a005d0ebd1ad730d6b72145a24e3fb94c94f22b41",
+  "parent_package": "standard-digest",
+  "parent_naming_interface": "lifecycle_inbox::sha256::digest",
+  "production_adopted": true,
+  "receiver_fields": [
+    "connection"
+  ],
+  "direct_original": "Sha256::digest(bytes).into()",
+  "complete_delegate_bytes_preserved": true,
+  "adopted_source_sha256": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
+  "adopted_leaf_sha256": "1f35c7329d944bef62fd395f073f1776a76a466fef673811314d281e6cfd758e"
+}

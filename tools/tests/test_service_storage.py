@@ -7,6 +7,7 @@ from pathlib import Path
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -28,6 +29,29 @@ class ServiceStorageTests(unittest.TestCase):
         path.write_bytes(content)
         path.chmod(0o600)
         return path
+
+    def test_volume_peak_survives_run_error_and_later_reclamation(self):
+        observed = threading.Event()
+        frees = iter((90, 70))
+
+        def sample(_fd):
+            free = next(frees, 85)
+            if free == 70:
+                observed.set()
+            return SimpleNamespace(f_blocks=100, f_bfree=free, f_frsize=4096)
+
+        with patch.object(storage.os, 'fstatvfs', side_effect=sample):
+            with self.assertRaisesRegex(RuntimeError, 'original trial error'):
+                with storage.observe_volume_storage(self.root, commit='a' * 40):
+                    self.assertTrue(observed.wait(2))
+                    raise RuntimeError('original trial error')
+        report = json.loads((self.root / 'volume-storage.json').read_text())
+        self.assertEqual(report['candidate'], 'a' * 40)
+        self.assertEqual(report['baseline_used_bytes'], 10 * 4096)
+        self.assertEqual(report['sampled_peak_used_bytes'], 30 * 4096)
+        self.assertEqual(report['sampled_peak_increase_bytes'], 20 * 4096)
+        self.assertEqual(report['final_used_bytes'], 15 * 4096)
+        self.assertEqual(report['failed_samples'], 0)
 
     def test_aof_base_incremental_and_rewrite_temp_are_all_charged_before_replacement(self):
         sampler = storage.ServiceStoragePeaks([self.record])

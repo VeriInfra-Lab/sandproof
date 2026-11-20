@@ -1,0 +1,24 @@
+import SandboxModel.Lifecycle.Protocol.InboxCompositionValues
+import SandboxModel.Lifecycle.Protocol.InboxCompositionProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxValidation.Values
+noncomputable section
+
+variable (saved : sandproof_controller_service.controller.lifecycle_inbox.native_retirement.RetirementEncoding Unit)
+    (terminal : TerminalEncoding Unit) (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+
+theorem normal_accepted : runInbox saved terminal renewal unload normal = .ok (.Ok ()) := by
+  rw [full_inbox_contract saved terminal renewal unload normal fixture_representable]
+  exact normal_model_accepted saved terminal renewal unload
+
+theorem recorded_accepted : runInbox saved terminal renewal unload recorded = .ok (.Ok ()) := by
+  rw [full_inbox_contract saved terminal renewal unload recorded fixture_representable]
+  exact recorded_model_accepted saved terminal renewal unload
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.normal_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.recorded_accepted

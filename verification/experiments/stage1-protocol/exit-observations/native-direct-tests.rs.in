@@ -1,0 +1,121 @@
+// Same full matching assertions on actual original SQLite candidate fixtures.
+
+#[test]
+fn proof_exit_observations_direct_normal() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, request, work, action) = candidate(&path, true);
+    let qualified = journal
+        .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
+        .unwrap()
+        .expect("original committed activation qualifies the direct exit question");
+    let observed = exit(&action, &work);
+    assert!(qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_direct_identity() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, request, work, action) = candidate(&path, true);
+    let qualified = journal
+        .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
+        .unwrap()
+        .expect("original committed activation qualifies the direct exit question");
+    let mut observed = exit(&action, &work);
+    assert!(qualified.matches(&observed));
+    observed.action.identity.generation ^= 1;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_direct_effect_attempt() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, request, work, action) = candidate(&path, true);
+    let qualified = journal
+        .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
+        .unwrap()
+        .expect("original committed activation qualifies the direct exit question");
+    let mut observed = exit(&action, &work);
+    assert!(qualified.matches(&observed));
+    observed.action.command.attempt ^= 1;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_direct_digest() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, request, work, action) = candidate(&path, true);
+    let qualified = journal
+        .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
+        .unwrap()
+        .expect("original committed activation qualifies the direct exit question");
+    let mut observed = exit(&action, &work);
+    assert!(qualified.matches(&observed));
+    let mut bytes = *observed.work_binding.as_bytes();
+    bytes[31] ^= 1;
+    observed.work_binding = sandproof_protocol::lifecycle::ContentDigest::from_sha256(bytes);
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_direct_pid() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, request, work, action) = candidate(&path, true);
+    let qualified = journal
+        .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
+        .unwrap()
+        .expect("original committed activation qualifies the direct exit question");
+    let mut observed = exit(&action, &work);
+    assert!(qualified.matches(&observed));
+    observed.process.pid = 0;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_direct_ticks() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, request, work, action) = candidate(&path, true);
+    let qualified = journal
+        .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
+        .unwrap()
+        .expect("original committed activation qualifies the direct exit question");
+    let mut observed = exit(&action, &work);
+    assert!(qualified.matches(&observed));
+    observed.process.start_time_ticks = 0;
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_direct_boot() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, request, work, action) = candidate(&path, true);
+    let qualified = journal
+        .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
+        .unwrap()
+        .expect("original committed activation qualifies the direct exit question");
+    let mut observed = exit(&action, &work);
+    assert!(qualified.matches(&observed));
+    observed.process.boot_id.push_str("-changed");
+    assert!(!qualified.matches(&observed));
+}
+
+#[test]
+fn proof_exit_observations_direct_positive_process_is_value_only() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (journal, request, work, action) = candidate(&path, true);
+    let qualified = journal
+        .lifecycle_restore_exit_candidate(&request, &v3::context(), 10)
+        .unwrap()
+        .expect("original committed activation qualifies the direct exit question");
+    let mut observed = exit(&action, &work);
+    observed.process.pid = 1;
+    observed.process.start_time_ticks = 1;
+    assert!(qualified.matches(&observed));
+}

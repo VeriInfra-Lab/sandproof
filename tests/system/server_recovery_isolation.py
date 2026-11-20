@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import sqlite3
@@ -58,10 +59,10 @@ def exercise(args: argparse.Namespace) -> None:
     root = Path(tempfile.mkdtemp(prefix="si-", dir=parent))
     namespace = secrets.token_hex(8)
     names = [f"vm-{namespace}-{index}" for index in range(2)]
-    if len(os.fsencode(root / "jails" / args.firecracker.name / names[1] / "root/api.socket")) >= 108:
+    if len(os.fsencode(root / "p/v" / args.firecracker.name / names[1] / "root/api.socket")) >= 108:
         root.rmdir()
         raise RuntimeError("test path too long for Firecracker socket")
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     kernel, rootfs = (root / name for name in ("vmlinux", "rootfs.ext4"))
     for source, destination in ((args.kernel, kernel), (args.rootfs, rootfs)):
@@ -74,7 +75,7 @@ def exercise(args: argparse.Namespace) -> None:
     values = {
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)), "firecracker": str(args.firecracker.resolve(strict=True)),
-        "chroot_base": str(root / "jails"), "kernel": str(kernel), "rootfs": str(rootfs),
+        "chroot_base": str(root / "p/v"), "kernel": str(kernel), "rootfs": str(rootfs),
         "uid_base": args.uid_base, "vcpu_count": 1, "memory_mib": 512,
         "file_policy_digest": 1,
         "max_active_global": 2, "max_active_per_tenant": 2,
@@ -101,9 +102,9 @@ def exercise(args: argparse.Namespace) -> None:
                                  {"templateID": "base", "allow_internet_access": False})
             assert status == 201, (status, body)
             sandbox_ids.append(json.loads(body)["sandboxID"])
-        claims = [json.loads((root / "jails/.claims" / name / "record.json").read_text())
+        claims = [json.loads((original_chroot(root) / ".claims" / name / "record.json").read_text())
                   for name in names]
-        network_inodes = [json.loads((root / "jails/.claims" / name / "network.json").read_text())
+        network_inodes = [json.loads((original_chroot(root) / ".claims" / name / "network.json").read_text())
                           ["namespace_inode"] for name in names]
         assert all(process_start_ticks(saved["pid"]) == saved["start_time_ticks"] for saved in claims)
         services.processes.stop("host-0")
@@ -148,7 +149,7 @@ def exercise(args: argparse.Namespace) -> None:
         assert states[1]["phase"] == "Revoking"
         assert terminal_cleanup_confirmed(database, native_ids[1])
         assert process_start_ticks(claims[1]["pid"]) != claims[1]["start_time_ticks"]
-        assert not (root / "jails" / args.firecracker.name / names[1]).exists()
+        assert not (original_chroot(root) / args.firecracker.name / names[1]).exists()
         assert not Path("/run/netns", names[1]).exists()
         assert "startup recovery left 1 sandboxes unresolved (1 after host or receipt errors)" in log.read_text()
         assert fetch(opener, base_url, "GET", f"/sandboxes/{sandbox_ids[0]}", key)[0] == 404
@@ -160,7 +161,7 @@ def exercise(args: argparse.Namespace) -> None:
                  20, "original stopped VM reconciliation")
         for name, saved in zip(names, claims):
             assert process_start_ticks(saved["pid"]) != saved["start_time_ticks"]
-            assert not (root / "jails" / args.firecracker.name / name).exists()
+            assert not (original_chroot(root) / args.firecracker.name / name).exists()
             assert not Path("/run/netns", name).exists()
             if args.cgroup_parent is not None:
                 assert not (args.cgroup_parent / name).exists()

@@ -1,0 +1,38 @@
+import SandboxModel.Lifecycle.Protocol.StandardBlobObserve
+import SandboxModel.Lifecycle.Protocol.StandardBlobCore
+import SandboxModel.Lifecycle.Protocol.StandardBlobValues
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.StandardBlob
+noncomputable section
+open Values
+
+theorem common_normal :
+    actual normal sql = .ok (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.leftBytes), normal) := by
+  rw [standard_refines, expected_normal]
+
+theorem distinct_complete :
+    actual distinct sql = .ok (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.rightBytes), distinct) := by
+  rw [standard_refines, expected_distinct]
+
+theorem first_error_kept : actual bothErrors sql = .ok (.Err (.Sqlite ⟨11⟩), bothErrors) := by
+  rw [standard_refines, expected_first_error]
+
+theorem prepare_error_kept : actual prepareRejected sql = .ok (.Err (.Sqlite ⟨61⟩), prepareRejected) := by
+  rw [standard_refines, expected_prepare_error]
+
+theorem count_error_kept : actual countRejected sql = .ok (.Err (.Sqlite ⟨31⟩), countRejected) := by
+  rw [standard_refines, expected_count_error]
+
+theorem row_error_kept : actual rowRejected sql = .ok (.Err (.Sqlite ⟨71⟩), rowRejected) := by
+  rw [standard_refines, expected_row_error]
+
+end
+end SandboxModel.Stage1Protocol.StandardBlob
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.common_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.distinct_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.first_error_kept
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.prepare_error_kept
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.count_error_kept
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.row_error_kept

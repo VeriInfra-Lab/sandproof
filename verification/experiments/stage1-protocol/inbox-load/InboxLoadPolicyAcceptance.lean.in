@@ -1,0 +1,95 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadPositiveFullValues
+import SandboxModel.Lifecycle.Protocol.InboxCompositionProofs
+import SandboxModel.Lifecycle.Protocol.InboxLoadDigestLibrary
+import SandboxModel.Lifecycle.Protocol.InboxLoadPolicyThreeValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+noncomputable section
+
+
+theorem actual_wrong_policy_accepts (trace : Trace) :
+    load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic wrongPolicyEffects trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ completeTrace InboxValidation.Values.normal) := by
+  have existsDifferent : existsStatement ≠ internalStatement := by
+    unfold existsStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have sourceDifferent : sourceStatement ≠ internalStatement := by
+    unfold sourceStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have versionDifferent : versionStatement ≠ InboxLoadConfig.formatStatement := by
+    unfold versionStatement InboxLoadConfig.formatStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have existsReturns (state : Trace) : wrongPolicyEffects.query_bool state existsStatement =
+      .ok (.Ok true, state ++ [Event.boolQuery existsStatement]) := by
+    simp [wrongPolicyEffects, effects, existsDifferent]
+  have sourceReturns (state : Trace) : wrongPolicyEffects.query_bool state sourceStatement =
+      .ok (.Ok true, state ++ [Event.boolQuery sourceStatement]) := by
+    simp [wrongPolicyEffects, effects, sourceDifferent]
+  have versionReturns (state : Trace) : wrongPolicyEffects.checkpointconfigReadConfigEffectsInst.query_i64 state versionStatement =
+      .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, state ++ [Event.integerQuery versionStatement]) := by
+    simp [wrongPolicyEffects, effects, policyEffects, versionDifferent]
+  have internalReturns (state : Trace) : wrongPolicyEffects.query_bool state internalStatement =
+      .ok (.Ok false, state ++ [Event.boolQuery internalStatement]) := by
+    simp [wrongPolicyEffects, effects]
+  have capacityReturns (state : Trace) : InboxLoadConfig.capacityReadView wrongPolicyEffects.checkpointconfigReadConfigEffectsInst state =
+      .ok (.Ok (some InboxLoadConfig.LifecycleValues.capacity), state ++ policyTrace) := policy_three_capacity_read state
+  have policyReturns (state : Trace) : InboxLoadConfig.readFullView wrongPolicyEffects.checkpointconfigReadConfigEffectsInst state =
+      .ok (.Ok (some policyThree), state ++ policyTrace) := policy_three_read state
+  have lengthsReturn (state : Trace) : wrongPolicyEffects.query_i64_pair state lengthsStatement =
+      .ok (.Ok (2#i64, 286720#i64), state ++ [Event.lengthQuery lengthsStatement]) := rfl
+  have bodyReturns (state : Trace) : wrongPolicyEffects.query_bytes_pair state bodyStatement =
+      .ok (.Ok (bytes, storedDigest), state ++ [Event.bodyQuery bodyStatement]) := rfl
+  have decodeReturns (state : Trace) : wrongPolicyEffects.decode_inbox state (alloc.vec.Vec.deref bytes) =
+      .ok (.Ok InboxValidation.Values.normal, state ++ [Event.decodedInbox bytes.val]) := rfl
+  have digestReturns (state : Trace) : wrongPolicyEffects.digest state (alloc.vec.Vec.deref bytes) =
+      .ok (digest, state ++ [Event.digested bytes.val]) := rfl
+  have encodingReturns (state : Trace) : wrongPolicyEffects.encode_inbox state InboxValidation.Values.normal =
+      .ok (.Ok bytes, state ++ [Event.encodedInbox InboxValidation.Values.normal]) := rfl
+  have required : LifecycleInboxConfig.required_bytes InboxValidation.Values.normal.config = .ok 286720#u64 := by
+    simpa only [normal_budget] using budget_refines InboxValidation.Values.normal.config
+  have checked : Inbox.validate_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic InboxValidation.Values.normal = .ok (.Ok ()) := by
+    rw [InboxValidation.inbox_refines saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract
+      InboxValidation.Values.normal InboxValidation.Values.fixture_representable]
+    exact InboxValidation.Values.normal_model_accepted saved terminal renewal unload
+  have firstMul : (16#u64 * 1024#u64 : Result U64) = .ok sixteenKiB := rfl
+  have secondMul : (sixteenKiB * 1024#u64 : Result U64) = .ok maximumBytes := rfl
+  simp only [existsStatement] at existsReturns
+  simp only [sourceStatement] at sourceReturns
+  simp only [versionStatement] at versionReturns
+  simp only [internalStatement] at internalReturns
+  simp only [lengthsStatement] at lengthsReturn
+  simp only [bodyStatement] at bodyReturns
+  simp only [load_using, branch_bind, optional_bind, decode_map_bind,
+    InboxLoadConfig.capacity_read_refines, controller.checkpoint.config_using,
+    InboxLoadConfig.read_full_refines, existsReturns, versionReturns, sourceReturns,
+    internalReturns, capacityReturns, policyReturns, lengthsReturn, bodyReturns,
+    firstMul, secondMul, lift, bind_tc_ok, InboxLoadLibrary.digest_ne, InboxLoadLibrary.vec_ne,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    core.convert.FromSame.from]
+  simp [LIFECYCLE_STORE_FORMAT_VERSION, core.num.I64.cast_unsigned,
+    completeTrace, List.append_assoc]
+  have currentLiteral : ((23#64)#iscalar : I64).val = 23 := by decide
+  have reserveValue : ((286720#64)#uscalar : U64).val = 286720 := by decide
+  have lengthValue : ((2#64)#uscalar : U64).val = 2 := by decide
+  have capacityValue : InboxLoadConfig.LifecycleValues.capacity.max_sql_value_bytes.val = 4194304 := by decide
+  have maximumValue : maximumBytes.val = 16777216 := by decide
+  have sessionFits : ¬ policyThree.max_operations_per_sandbox.val <
+      InboxValidation.Values.normal.config.max_sessions.val := by decide
+  split <;> simp_all [IScalar.eq_equiv, existsStatement, versionStatement,
+    sourceStatement, internalStatement, lengthsStatement, bodyStatement, List.append_assoc,
+    storedDigest, bytes, SessionShape.Values.vector]
+
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.actual_wrong_policy_accepts

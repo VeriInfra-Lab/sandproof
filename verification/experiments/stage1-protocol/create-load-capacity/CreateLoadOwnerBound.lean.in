@@ -1,0 +1,49 @@
+import SandboxModel.Lifecycle.Protocol.CreateLoadCapacityModel
+import SandboxModel.Lifecycle.Protocol.InboxLoadSuccess
+import SandboxModel.Lifecycle.Protocol.CreateInstallSelection
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.CreateLoadCapacity
+noncomputable section
+open InboxLoad
+
+theorem actual_load_owner_limit {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io)
+    (state after : E) (inbox : Inbox)
+    (returned : load_using saved terminal renewal unload graphic io state = .ok (.Ok (some inbox), after)) :
+    OwnerLimit inbox := by
+  exact validation_owner_limit saved terminal renewal.encode unload.encode inbox
+    (InboxLoad.successful_load_requires_validation saved terminal renewal unload graphic graphicLaw
+      io represented inbox state after returned)
+
+theorem actual_loaded_selected_install {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io)
+    (state after : E) (inbox : Inbox)
+    (loaded : load_using saved terminal renewal unload graphic io state = .ok (.Ok (some inbox), after))
+    (intent : AcceptedLifecycleIntent) (s e : Usize) (deadline : U64) (binding : InternalLocalBinding)
+    (selected : CreateSelection.run inbox intent = .ok (.Ok (s, e, deadline))) :
+    ∃ (session : Session) (entry : Entry),
+      inbox.sessions.val[s.val]? = some session ∧ session.entries.val[e.val]? = some entry ∧
+      entry.intent = intent ∧ CreateInstall.run inbox s e binding ⦃ result =>
+        CreateInstall.Installed inbox s e session entry binding result ⦄ := by
+  exact CreateInstall.selected_install inbox intent s e deadline binding selected
+    (actual_load_owner_limit saved terminal renewal unload graphic graphicLaw io represented state after inbox loaded)
+
+end
+end SandboxModel.Stage1Protocol.CreateLoadCapacity
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.actual_load_owner_limit
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.actual_loaded_selected_install

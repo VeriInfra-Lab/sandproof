@@ -1,0 +1,27 @@
+import SandboxModel.Lifecycle.Protocol.InboxEntryProofs
+import SandboxModel.Lifecycle.Protocol.InboxEntryValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.InboxEntry
+open Values
+
+theorem normal_witnesses :
+    run encode (inboxFor createEntry) (sessionFor createEntry) createEntry EnvelopeValues.context = .ok (.Ok 0#usize) ∧
+    run encode (inboxFor unloadEntry) (sessionFor unloadEntry) unloadEntry EnvelopeValues.context = .ok (.Ok 1#usize) ∧
+    run encode (inboxFor destroyEntry) (sessionFor destroyEntry) destroyEntry EnvelopeValues.context = .ok (.Ok 2#usize) ∧
+    run encode (inboxFor renewEntry) (sessionFor renewEntry) renewEntry EnvelopeValues.context = .ok (.Ok 3#usize) ∧
+    run encode (inboxFor resumeGap) (sessionFor resumeGap) resumeGap EnvelopeValues.context = .ok (.Ok 4#usize) := by
+  simp only [run, entry_kind_refines]
+  exact ⟨expected_outcomes.1, expected_outcomes.2.1, expected_outcomes.2.2.1,
+    expected_outcomes.2.2.2.1, expected_outcomes.2.2.2.2.1⟩
+
+theorem field_omission_witnesses :
+    run encode duplicated (sessionFor createEntry) createEntry EnvelopeValues.context = .ok corrupt ∧
+    run encode distinctKeys (sessionFor createEntry) createEntry EnvelopeValues.context = .ok (.Ok 0#usize) ∧
+    run encode (inboxFor wrongMaximum) (sessionFor wrongMaximum) wrongMaximum EnvelopeValues.context = .ok corrupt := by
+  simp only [run, entry_kind_refines]
+  exact expected_outcomes.2.2.2.2.2
+
+end SandboxModel.Stage1Protocol.InboxEntry
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.normal_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxEntry.field_omission_witnesses

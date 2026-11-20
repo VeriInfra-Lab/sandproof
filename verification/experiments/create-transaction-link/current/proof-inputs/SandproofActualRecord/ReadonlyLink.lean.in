@@ -1,0 +1,114 @@
+import SandproofActualRecord.Types
+import SandproofStandardRecord.Funs
+import SandproofStage1Request.Funs
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofActualRecordRust
+
+noncomputable section
+
+def core.option.Option.is_some_and {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) (option : Option T) (state : F) : Result Bool :=
+  SandproofStandardRecordRust.core.option.Option.is_some_and callback option state
+
+def core.option.Option.map {T U F : Type}
+    (callback : core.ops.function.FnOnce F T U) (option : Option T) (state : F) : Result (Option U) :=
+  match option with
+  | none => .ok none
+  | some value => do
+      let mapped ← callback.call_once state value
+      .ok (some mapped)
+
+def core.option.Option.and_then {T U F : Type}
+    (callback : core.ops.function.FnOnce F T (Option U)) (option : Option T) (state : F) : Result (Option U) :=
+  match option with
+  | none => .ok none
+  | some value => callback.call_once state value
+
+def core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.any
+    {T F : Type} (callback : core.ops.function.FnMut F T Bool)
+    (iter : core.slice.iter.Iter T) (state : F) : Result (Bool × core.slice.iter.Iter T) :=
+  SandproofStandardRecordRust.core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.any
+    callback iter state
+
+def sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+    (left right : sandbox_controller_core.ids.SandboxId) : Result Bool :=
+  SandproofStage1RequestRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq
+    left right
+
+abbrev HostSlotPhase := sandbox_controller_core.maintenance.slots.HostSlotPhase
+abbrev SourceHostSlotPhase := SandproofStandardRecordRust.sandbox_controller_core.maintenance.slots.HostSlotPhase
+abbrev HostSlot := sandbox_controller_core.maintenance.slots.HostSlotRecord
+abbrev SourceHostSlot := SandproofStandardRecordRust.sandbox_controller_core.maintenance.slots.HostSlotRecord
+
+def hostSlotPhaseToSource : HostSlotPhase → SourceHostSlotPhase
+  | .Occupied => .Occupied
+  | .Releasing => .Releasing
+  | .Free => .Free
+
+def hostSlotPhaseFromSource : SourceHostSlotPhase → HostSlotPhase
+  | .Occupied => .Occupied
+  | .Releasing => .Releasing
+  | .Free => .Free
+
+def sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase.eq
+    (left right : HostSlotPhase) : Result Bool :=
+  SandproofStandardRecordRust.sandbox_controller_core.maintenance.slots.HostSlotPhase.Insts.CoreCmpPartialEqHostSlotPhase.eq
+    (hostSlotPhaseToSource left) (hostSlotPhaseToSource right)
+
+def hostSlotFromSource (slot : SourceHostSlot) : HostSlot where
+  binding := ⟨slot.binding.owner, slot.binding.sandbox, slot.binding.generation,
+    slot.binding.vm, slot.binding.network⟩
+  phase := hostSlotPhaseFromSource slot.phase
+
+private def mapSlice {α β : Type} (f : α → β) (slice : Slice α) : Slice β :=
+  Slice.from (slice.val.map f) (by simpa only [List.length_map] using slice.property)
+
+def sandbox_controller_core.maintenance.World.maintenance_state
+    (world : sandbox_controller_core.model.World) :
+    Result (Option sandbox_controller_core.maintenance.MaintenanceState) :=
+  .ok world.maintenance
+
+def sandbox_controller_core.maintenance.MaintenanceState.host_slots
+    (state : sandbox_controller_core.maintenance.MaintenanceState) :
+    Result (Slice (sandbox_controller_core.maintenance.slots.HostSlotId × HostSlot)) := do
+  let slots ← SandproofStandardRecordRust.sandbox_controller_core.maintenance.MaintenanceState.host_slots state
+  .ok (mapSlice (fun entry => (entry.1, hostSlotFromSource entry.2)) slots)
+
+abbrev OldOperation := SandproofStage1RequestRust.sandbox_controller_core.model.Operation
+abbrev OldSandbox := SandproofStage1RequestRust.sandbox_controller_core.model.SandboxRecord
+
+def operationFromSource (operation : OldOperation) : sandbox_controller_core.model.Operation :=
+  ⟨operation.id, operation.epoch, operation.kind, operation.status⟩
+
+def sandboxFromSource (record : OldSandbox) : sandbox_controller_core.model.SandboxRecord where
+  owner := record.owner
+  phase := record.phase
+  terminal := record.terminal
+  epoch := record.epoch
+  generation := record.generation
+  current_vm := record.current_vm
+  workspace := record.workspace
+  workspace_access := record.workspace_access
+  file_policy := record.file_policy
+  durable_snapshot := record.durable_snapshot
+  restore_from := record.restore_from
+  net_slot := record.net_slot
+  policy := record.policy
+  desired := record.desired
+  effective := record.effective
+  current_operation := record.current_operation.map operationFromSource
+
+def sandbox_controller_core.model.World.sandbox_record
+    (world : sandbox_controller_core.model.World) (id : sandbox_controller_core.ids.SandboxId) :
+    Result (Option sandbox_controller_core.model.SandboxRecord) := do
+  let stored ← SandproofStandardRecordRust.sandbox_controller_core.store.Store.get
+    SandproofStage1RequestRust.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId
+    ⟨world.sandboxes.entries⟩ id
+  .ok (stored.map sandboxFromSource)
+
+end
+
+end SandproofActualRecordRust

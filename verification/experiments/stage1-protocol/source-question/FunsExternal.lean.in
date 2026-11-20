@@ -1,0 +1,8 @@
+import Aeneas
+import SandproofSourceQuestion.Types
+open Aeneas Aeneas.Std
+namespace SandproofSourceQuestionRust
+-- Same registered ordinary-value String clone body as restore-work.
+@[simp, rust_fun "alloc::string::{core::clone::Clone<alloc::string::String>}::clone"]
+def alloc.string.String.Insts.CoreCloneClone.clone (value : String) : Result String := .ok value
+end SandproofSourceQuestionRust

@@ -1,0 +1,102 @@
+import SandproofUnloadContinuedReady.Funs
+import ContinuedDriverAgreement
+
+open Aeneas Aeneas.Std
+open SandproofUnloadContinuedReady
+
+namespace SandboxModel.Stage1Protocol.ContinuedActualRows
+open SandproofUnloadContinuedReady.controller.lifecycle_inbox.source_work.full.continuation
+open SandproofUnloadContinuedReady.sandbox_controller_core
+
+variable [Representations] [Operations]
+
+abbrev ContinueId := sandbox_controller_core.capture.continuation.OriginalContinueIdentity
+abbrev Sources := controller.lifecycle_inbox.source_work.codec.Sources
+abbrev Question := capture.continuation.OriginalContinueWorkRequest
+abbrev Action := sandproof_protocol.WorkAction model.EffectId
+abbrev Bytes := alloc.vec.Vec U8
+abbrev ScanState := Option (Question × Action × Bytes)
+abbrev Mapper {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) := controller.lifecycle_inbox.source_work.full.continuation.ready_records.closure.Insts.CoreOpsFunctionFnMutTupleSharedRowResultPairVecU8VecU8Error host serde
+abbrev Handler {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) := controller.lifecycle_inbox.source_work.full.continuation.ready_records.closure_1.Insts.CoreOpsFunctionFnMutPairResultPairVecU8VecU8ErrorOptionTupleOriginalContinueWorkRequestWorkActionEffectIdVecU8PairResultTupleJournalErrorOptionTupleOriginalContinueWorkRequestWorkActionEffectIdVecU8 host serde
+
+def continuedSql : Str := SandproofUnloadContinuedReady.toStr
+  "SELECT action_json,receipt_json FROM outbox WHERE operation_id=?1 AND dispatch_state='receipted' ORDER BY id"
+
+abbrev RowIterator {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) :=
+  rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError (Mapper host serde)
+
+abbrev OperationTextParameter :=
+  ArrayT1.Insts.RusqliteParamsParams
+    (Shared0T.Insts.RusqliteTypesTo_sqlToSql Str.Insts.RusqliteTypesTo_sqlToSql)
+
+structure CallerReads {E : Type}
+    (host : host_contract.HostEvidence E) (serde : serde_core.de.DeserializeOwned E)
+    (connection : rusqlite.Connection) (world : model.World) (ns : Str)
+    (localValue : controller.internal_inbox.model.InternalLocalBinding)
+    (native : controller.lifecycle_inbox.readiness.NativeCreateSnapshot) where
+  identity : ContinueId
+  sources : Sources
+  index : Usize
+  retained : controller.lifecycle_inbox.source_work.SourceWorkRecord
+  question : Question
+  statement : rusqlite.statement.Statement
+  operation : sandproof_protocol.OperationId
+  parameter : Str
+  cursor : rusqlite.row.MappedRows Unit
+  boundStatement : rusqlite.statement.Statement
+  historical : historical_identity world localValue native = .ok (some identity)
+  loaded : controller.lifecycle_inbox.source_work.codec.load connection = .ok (.Ok (some sources))
+  selected : ready_records_loop identity sources 0#usize =
+    .ok (identity, sources.config, sources.node, sources.max_sessions, sources.records, index)
+  recordRead : core.slice.Slice.get
+    (core.slice.index.SliceIndexUsizeSlice controller.lifecycle_inbox.source_work.SourceWorkRecord)
+    sources.records.deref index = .ok (some retained)
+  sameLocal : controller.internal_inbox.model.InternalLocalBinding.Insts.CoreCmpPartialEqInternalLocalBinding.eq
+    retained.work.anchor.local localValue = .ok true
+  workRead : work retained world = .ok (.Ok (some question))
+  prepared : rusqlite.Connection.prepare connection continuedSql = .ok (.Ok statement)
+  identifier : controller.identity.operation_id ns identity.key = .ok (.Ok operation)
+  text : sandproof_protocol.OperationId.as_str operation = .ok parameter
+  query : rusqlite.statement.Statement.query_map OperationTextParameter (Mapper host serde)
+    statement (Array.make 1#usize [parameter]) () = .ok (.Ok cursor, boundStatement)
+
+theorem actual_v6_caller_uses_original_driver_on_issued_cursor {E : Type}
+    {host : host_contract.HostEvidence E} {serde : serde_core.de.DeserializeOwned E}
+    {connection : rusqlite.Connection} {world : model.World} {ns : Str}
+    {localValue : controller.internal_inbox.model.InternalLocalBinding}
+    {native : controller.lifecycle_inbox.readiness.NativeCreateSnapshot}
+    (reads : CallerReads host serde connection world ns localValue native)
+    (reply : core.result.Result Unit JournalError) (found : ScanState)
+    (scanned : SandboxModel.Stage1Protocol.OriginalRowsDriver.run (RowIterator host serde) (Handler host serde)
+      reads.cursor none (reads.identity, reads.sources, world, ns, reads.question) = .ok (reply, found)) :
+    ready_records host serde connection world ns localValue native =
+      match reply, found with
+      | .Err error, _ => .ok (.Err error)
+      | .Ok (), none => .ok (.Err .UnresolvedAction)
+      | .Ok (), some value => .ok (.Ok (some value)) := by
+  have actualScanned : scan_continued_rows (RowIterator host serde) (Handler host serde)
+      reads.cursor none (reads.identity, reads.sources, world, ns, reads.question) = .ok (reply, found) := by
+    rw [SandboxModel.Stage1Protocol.ContinuedDriverAgreement.actual_run_is_original]
+    exact scanned
+  have prepared := reads.prepared
+  change rusqlite.Connection.prepare connection (SandproofUnloadContinuedReady.toStr
+    "SELECT action_json,receipt_json FROM outbox WHERE operation_id=?1 AND dispatch_state='receipted' ORDER BY id") =
+      .ok (.Ok reads.statement) at prepared
+  have src : controller.lifecycle_inbox.source_work.codec.Sources.mk reads.sources.config
+      reads.sources.node reads.sources.max_sessions reads.sources.records = reads.sources := by
+    cases reads.sources <;> rfl
+  cases reply <;> cases found <;>
+    simp [ready_records, reads.historical, reads.loaded, reads.selected, reads.recordRead,
+      core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or,
+      core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      reads.sameLocal, reads.workRead, prepared, reads.identifier, reads.text, reads.query, src, actualScanned,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      core.option.Option.map,
+      P.Insts.CoreOpsFunctionFnOnceTupleTOption.call_once, core.option.Option.Some.constructor]
+
+end SandboxModel.Stage1Protocol.ContinuedActualRows
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuedActualRows.actual_v6_caller_uses_original_driver_on_issued_cursor

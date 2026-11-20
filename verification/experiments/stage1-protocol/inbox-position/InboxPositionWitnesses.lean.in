@@ -1,0 +1,81 @@
+import SandboxModel.Lifecycle.Protocol.InboxPosition
+import SandboxModel.Lifecycle.Protocol.InboxAppendWitnesses
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxPosition
+open InboxRecord InboxState
+
+theorem fresh_create_query :
+    ∃ (out : RecordReturn) (index : Usize),
+      InboxRecord.Values.emptyInbox.record InboxRecord.Values.createIntent = .ok out ∧
+      out.1 = .Ok (index, 0#usize) ∧
+      out.2.state index 0#usize = .ok (workState
+        (freshSession InboxRecord.Values.createIntent false (some 1#u64))
+        (pendingEntry InboxRecord.Values.createIntent)) := by
+  obtain ⟨out, recorded, post⟩ := WP.spec_imp_exists normal_create_records_complete
+  obtain ⟨index, position, success, _frame, contents⟩ := post
+  have sb : index.val < out.2.sessions.val.length := by simp [contents, position]
+  have eb : (0#usize).val < out.2.sessions.val[index.val].entries.val.length := by
+    simp [contents, position, freshSession, freshEntries]
+  refine ⟨out, index, recorded, success, ?_⟩
+  simpa [contents, position, freshSession, freshEntries] using
+    state_contract out.2 index 0#usize sb eb
+
+theorem existing_unload_query :
+    ∃ (out : RecordReturn) (entries : alloc.vec.Vec Entry) (index : Usize),
+      (InboxAppend.Values.withSession InboxAppend.Values.runningSession).record InboxAppend.Values.unload = .ok out ∧
+      entries.val = InboxAppend.Values.runningSession.entries.val ++ [pendingEntry InboxAppend.Values.unload] ∧
+      out.1 = .Ok (0#usize, index) ∧
+      out.2.state 0#usize index = .ok (workState
+        (InboxAppend.appendedSession InboxAppend.Values.runningSession InboxAppend.Values.unload false entries)
+        (pendingEntry InboxAppend.Values.unload)) := by
+  obtain ⟨out, recorded, post⟩ := WP.spec_imp_exists InboxAppend.normal_unload_records_complete
+  obtain ⟨entries, index, contents, position, same⟩ := post
+  have sb : (0#usize).val < out.2.sessions.val.length := by
+    simp [same, InboxAppend.replaceSession, InboxAppend.Values.withSession, InboxLookup.Witness.singleton]
+  have eb : index.val < out.2.sessions.val[0].entries.val.length := by
+    simp [same, InboxAppend.replaceSession, InboxAppend.Values.withSession, InboxLookup.Witness.singleton,
+      InboxAppend.appendedSession, contents, position]
+  refine ⟨out, entries, index, recorded, contents, by simp [same], ?_⟩
+  have query := state_contract out.2 0#usize index sb eb
+  simpa [same, InboxAppend.replaceSession, InboxAppend.Values.withSession, InboxLookup.Witness.singleton,
+    InboxAppend.appendedSession, contents, position] using query
+
+theorem retained_create_query :
+    (InboxAppend.Values.withSession InboxAppend.Values.afterUnload).record InboxRecord.Values.createIntent =
+      .ok (.Ok (0#usize, 0#usize), InboxAppend.Values.withSession InboxAppend.Values.afterUnload) ∧
+    (InboxAppend.Values.withSession InboxAppend.Values.afterUnload).state 0#usize 0#usize =
+      .ok (workState InboxAppend.Values.afterUnload InboxAppend.Values.createEntry) := by
+  have found : InboxLookup.inboxSpec InboxRecord.Values.createIntent
+      (InboxAppend.Values.withSession InboxAppend.Values.afterUnload).sessions.val 0 = .found 0 0 := by
+    classical
+    simp [InboxAppend.Values.withSession, InboxLookup.Witness.singleton, InboxAppend.Values.afterUnload,
+      InboxAppend.Values.createEntry, pendingEntry, InboxLookup.inboxSpec, InboxLookup.entrySpec]
+  obtain ⟨s, e, spos, epos, recorded⟩ := record_retained_replay _ _ _ _ found
+  have s0 : s = 0#usize := UScalar.eq_of_val_eq spos
+  have e0 : e = 0#usize := UScalar.eq_of_val_eq epos
+  subst s
+  subst e
+  refine ⟨recorded, ?_⟩
+  have sb : (0#usize).val < (InboxAppend.Values.withSession InboxAppend.Values.afterUnload).sessions.val.length := by
+    simp [InboxAppend.Values.withSession, InboxLookup.Witness.singleton]
+  have eb : (0#usize).val <
+      (InboxAppend.Values.withSession InboxAppend.Values.afterUnload).sessions.val[0].entries.val.length := by
+    simp [InboxAppend.Values.withSession, InboxLookup.Witness.singleton, InboxAppend.Values.afterUnload]
+  simpa [InboxAppend.Values.withSession, InboxLookup.Witness.singleton, InboxAppend.Values.afterUnload] using
+    state_contract (InboxAppend.Values.withSession InboxAppend.Values.afterUnload) 0#usize 0#usize sb eb
+
+theorem witness_flags :
+    (workState (freshSession InboxRecord.Values.createIntent false (some 1#u64))
+      (pendingEntry InboxRecord.Values.createIntent)).current = true ∧
+    (workState InboxAppend.Values.afterUnload InboxAppend.Values.createEntry).current = false ∧
+    (workState InboxAppend.Values.afterUnload InboxAppend.Values.createEntry).local_operation = some 30#u64 := by
+  decide
+
+end SandboxModel.Stage1Protocol.InboxPosition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.fresh_create_query
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.existing_unload_query
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.retained_create_query
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.witness_flags

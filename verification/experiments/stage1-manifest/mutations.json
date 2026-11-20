@@ -1,0 +1,42 @@
+[
+  {
+    "name": "skip-disk-id",
+    "source": "sandbox-protocol/src/lifecycle/manifest.rs",
+    "old": "if *drive_id != drive.drive_id {",
+    "new": "if *drive_id != drive.drive_id && false {",
+    "profile": "manifest",
+    "test": "wrong_disk_id_is_rejected",
+    "target": "manifest_checks",
+    "test_source": "sandbox-protocol/tests/manifest_checks.rs"
+  },
+  {
+    "name": "wrapping-manifest-length",
+    "source": "sandbox-protocol/src/lifecycle/manifest.rs",
+    "old": "current\n                    .checked_add(length)\n                    .ok_or(ManifestError::LengthOverflow)",
+    "new": "Ok(current.wrapping_add(length))",
+    "profile": "manifest",
+    "test": "sum_never_wraps",
+    "target": "manifest_checks",
+    "test_source": "sandbox-protocol/tests/manifest_checks.rs"
+  },
+  {
+    "name": "skip-file-count",
+    "old": "if self.files.len() != 2 + profile.writable_drives.len() {",
+    "new": "if self.files.len() != 2 + profile.writable_drives.len() && false {",
+    "test": "missing_disk_is_rejected",
+    "source": "sandbox-protocol/src/lifecycle/manifest.rs",
+    "profile": "manifest",
+    "target": "manifest_checks",
+    "test_source": "sandbox-protocol/tests/manifest_checks.rs"
+  },
+  {
+    "name": "skip-file-path",
+    "old": "if file.relative_path != expected_path {",
+    "new": "if file.relative_path != expected_path && false {",
+    "test": "wrong_disk_path_is_rejected",
+    "source": "sandbox-protocol/src/lifecycle/manifest.rs",
+    "profile": "manifest",
+    "target": "manifest_checks",
+    "test_source": "sandbox-protocol/tests/manifest_checks.rs"
+  }
+]

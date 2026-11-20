@@ -1,30 +1,9 @@
 //! Real original Redis block/CAS, including dropped commit replies and reopen.
 use super::*;
-use sandproof_center_core::{CreateParameters, LifecycleSubmission, LifecycleWindow, SessionPhase};
-use sandproof_protocol::lifecycle::{CenterIdentity, OperationKey};
+use sandproof_center_core::SessionPhase;
 
 fn configured() -> CenterState {
-    // Two registered owners in the original bounded center registration.
-    let mut value = serde_json::to_value(center_state()).unwrap();
-    let mut second = value["tenants"][0].clone();
-    second["tenant"] = "2".into();
-    value["tenants"].as_array_mut().unwrap().push(second);
-    let state: CenterState = serde_json::from_value(value).unwrap();
-    state
-        .enable_lifecycle(
-            CenterIdentity {
-                deployment: deployment(),
-                center: "center".try_into().unwrap(),
-            },
-            ["1", "2"]
-                .into_iter()
-                .map(|owner| LifecycleWindow {
-                    owner: owner.try_into().unwrap(),
-                    window: 9.try_into().unwrap(),
-                })
-                .collect(),
-        )
-        .unwrap()
+    center_state()
 }
 fn input(owner: &str) -> LifecycleSubmission {
     let create = lifecycle_fixture::binding();
@@ -95,7 +74,6 @@ fn lifecycle_same_cas_reopen_retains_both_owners_original_requests_and_unload() 
         original_state.reserved(None, None),
         Some(lifecycle_fixture::resources(2))
     );
-    assert!(authority.dispatch_batch().unwrap().is_empty());
     assert_eq!(
         authority.lifecycle_dispatch_batch().unwrap(),
         vec![accepted.clone(), b]
@@ -121,7 +99,7 @@ fn lifecycle_same_cas_reopen_retains_both_owners_original_requests_and_unload() 
             .unwrap(),
         accepted
     );
-    assert_eq!(authority.state().unwrap().identity_frontiers(), (2, 2));
+    assert_eq!(authority.state().unwrap().identity_frontiers(), (2, 3));
     assert!(
         authority
             .query_lifecycle(&"2".try_into().unwrap(), &a.request.binding.session)
@@ -203,7 +181,7 @@ fn lifecycle_changed_full_input_never_commits_and_corrupt_or_missing_block_never
 }
 
 // Controlled input to the V3 save contract, not physical-host evidence.
-fn observed(
+pub(super) fn observed(
     intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
 ) -> sandproof_protocol::lifecycle::CreateObservation {
     use sandproof_protocol::lifecycle::{

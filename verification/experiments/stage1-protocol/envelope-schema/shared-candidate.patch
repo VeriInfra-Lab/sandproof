@@ -1,0 +1,5 @@
+--- a/SandboxModel/Boundaries/JsonRequest/Encoding.lean
++++ b/SandboxModel/Boundaries/JsonRequest/Encoding.lean
+@@ -11,0 +12,2 @@
++  | signed (value : Int)
++  | boolean (value : Bool)

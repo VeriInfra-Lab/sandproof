@@ -1,0 +1,24 @@
+--- a/docs/formal/03-protocol-inbox.md
++++ b/docs/formal/03-protocol-inbox.md
+@@ -195,3 +195,5 @@
+ 公共 SQL 定义、完整生成错误／值载体和原字节数学继续复用；数组不得套用五元组提前
+ 计数条件。该值／错误切片不闭合标准实例的对象／guard、同一事务、物理行效果、提交
+ 未知、重启或字节／认证链；采用后的当前生成体、普通与正式共享验收仍分别取得。
++
++SourceWork::pause_request 的同步值投影保留唯一真实实现。局部 capture 变量可以改名以避开固定生成器的模块名遮蔽；完整 Unload 原 binding、wire source/capture 与 requirement 的字段对应复用 [Pause 请求包](../../verification/experiments/stage1-protocol/pause-request/README.md) 的同一合同，非 Unload 仍为 Conflict。该方法不运行 PauseWorkRequest::valid；实际 SourceWork 的当前请求/字节/摘要/存储来源及调用者/结果仍需另外连接。
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2214,3 +2214,5 @@
+ 此前完整入口检出的两次失败均保留：一次为字节LLBC嵌入的整份验证文件测试文本过期，按完整字段重新生成后增加提前源码身份检查；另一次为两个旧检查器私有夹具漏复制新公共依赖，19项在原断言前缺文件。修复只补13行夹具依赖和六份摘要，19个测试方法AST、全部检查器及原输入集合未变，最终完整套件中的19项均通过。没有放宽断言、安全检查或AST准入，也未改变生产Rust、Charon/Aeneas、工具版本或清理`.lake`。
+
+ 原opt-in/特权忽略项未计为已运行；完整VM、部署TLS/网络、授权/存储/宿主效果、真实排空及系统完成性未由本批验收。本项提供代表性完整请求的有条件接入，不关闭T1/T2的其它使用点、T0–T8或整个V0，T9继续排除。
++
++基于 9c50da7c 的 Pause 请求包采用 SourceWork::pause_request 两行局部变量改名，并对实际采用源接回原 FullPauseContract、克隆引理及正反见证。只覆盖任意已解码 SourceWork 的完整 Unload 投影和其它操作的 Conflict；不验证来源、有效性、授权、持久接受或物理事实。精确输入、复用摘要及待验收范围见 [组件](../verification/experiments/stage1-protocol/pause-request/README.md)。ning 普通/正式原生和公共共享验收单列，旧名称失败、旧候选结果及原执行身份保持。
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -969,3 +969,5 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++Pause 请求值投影复用 A6 普通 String 克隆和既有错误值载体，原 operation binding、node、resource、process 的自有 Clone 均由真实生成体和已复用的逐字段引理连接。String/普通值合同不提供当前意图、授权、收件持久化或资源事实；未给标准编码、SHA 或整个事务添加可信假设。

@@ -3,7 +3,13 @@
 use super::*;
 use sandproof_center_service::LifecyclePolicy;
 use sandproof_protocol::lifecycle::{CreateParameters, PublicCreateRequest, PublicSessionPhase};
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::{
+    net::SocketAddrV4,
+    sync::atomic::{AtomicUsize, Ordering},
+};
+
+#[path = "lifecycle_window_replay.rs"]
+mod expired_window;
 
 fn policy() -> LifecyclePolicy {
     LifecyclePolicy {
@@ -39,12 +45,26 @@ pub(super) fn request() -> PublicCreateRequest {
     }
 }
 pub(super) fn setup(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBusinessAuthority {
+    setup_with_operation_limit(
+        fixture,
+        proxy.address,
+        envelope().center.bounds().operations_per_sandbox,
+    )
+}
+
+pub(super) fn setup_with_operation_limit(
+    fixture: &Engine,
+    address: SocketAddrV4,
+    operations_per_sandbox: u16,
+) -> SharedBusinessAuthority {
     let mut state = envelope();
+    let mut bounds = state.center.bounds().clone();
+    bounds.operations_per_sandbox = operations_per_sandbox;
     // A registered second owner exercises cross-tenant refusal, independently
     // of the earlier rejection of an unregistered request-window domain.
     state.center = CenterState::new(
         state.center.deployment().clone(),
-        state.center.bounds().clone(),
+        bounds,
         state.center.nodes().to_vec(),
         ["8", "9"]
             .into_iter()
@@ -64,7 +84,7 @@ pub(super) fn setup(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBu
     )
     .unwrap();
     let (ledger, _) = RedisLedger::initialize(
-        engine::endpoint(proxy.address),
+        engine::endpoint(address),
         Engine::config(state.required_block_bytes()),
         fixture.lease(),
         &state,
@@ -97,7 +117,7 @@ pub(super) fn setup(fixture: &Engine, proxy: &reply_loss::ReplyLoss) -> SharedBu
 // compare the complete durable representation and assert all five actual
 // RegistryMetadata fields are present; neither type has a serde skip/custom
 // serializer. Also independently check the original protected registration.
-fn assert_same_business_state(
+pub(super) fn assert_same_business_state(
     actual: &BusinessEnvelope<RegistryMetadata>,
     expected: &BusinessEnvelope<RegistryMetadata>,
 ) {
@@ -257,9 +277,9 @@ fn unknown_public_commit_fences_query_then_recovers_original_key_and_deadline() 
     assert_eq!(create.startup_deadline_ms, 1100);
 }
 
-const OWNER_KEY: &str = "lifecycle-http-owner-fixture-only-key-0001";
+pub(super) const OWNER_KEY: &str = "lifecycle-http-owner-fixture-only-key-0001";
 const OTHER_KEY: &str = "lifecycle-http-other-fixture-only-key-0002";
-fn public_credentials() -> Vec<sandproof_api::ApiCredential> {
+pub(super) fn public_credentials() -> Vec<sandproof_api::ApiCredential> {
     vec![
         sandproof_api::ApiCredential {
             tenant: "8".into(),
@@ -271,7 +291,7 @@ fn public_credentials() -> Vec<sandproof_api::ApiCredential> {
         },
     ]
 }
-async fn send_public(
+pub(super) async fn send_public(
     router: &axum::Router,
     method: &str,
     path: &str,
@@ -296,7 +316,9 @@ async fn send_public(
         .await
         .unwrap()
 }
-async fn read_public<T: serde::de::DeserializeOwned>(response: axum::response::Response) -> T {
+pub(super) async fn read_public<T: serde::de::DeserializeOwned>(
+    response: axum::response::Response,
+) -> T {
     serde_json::from_slice(
         &axum::body::to_bytes(response.into_body(), 4096)
             .await

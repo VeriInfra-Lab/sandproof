@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "kind": "fixed-production-json-original-evidence",
+  "original_kind": "json-current-writer-affected-proof",
+  "files": {
+    "actual-files/actual-service.stdout": "80a660cbc6c235fe7c4bf4206dd3a52f044565d806f5e3a57d86d40f6831fcc1",
+    "actual-files/kernel-0.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actual-files/kernel-1.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actual-files/kernel-2.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actual-files/kernel-3.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actual-files/kernel-4.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actual-files/kernel-5.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actual-files/kernel-6.log": "750474e58a0fad0a300872bc6dbdd69899a54a70692605a1be2a161d86105791",
+    "actual-files/kernel-7.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "actual-files/kernel-8.log": "67b824fd3de39969637d71ed3b5ef79fb40c7f183f8a5238b1df8696bfbd421c",
+    "actual-files/kernel-9.log": "ceb78951fdc88e0ef469123bd97187ddec6edf32c97bed4cb765d1c6e567516d",
+    "actual-files/physical-files/requests.jsonl": "59ab44801246012338ece1eeb966ee6e19808b8db8187a112b52b01a457be5c9",
+    "actual-files/physical-files/service.log": "169c8860ecc3fc914e1c0d5720e6ed5bd51a8e90d65d2aef74ccf6f50e53c55c",
+    "build-writer.log": "94faaa0e936384cb5b275a4b8776c81c54d84ad1436ca09384260a2482ef2569",
+    "result.json": "70a85e8761550315a5c27f9d2dc436e1f24c4058c2af99d37c3de309bcfa858c"
+  },
+  "physical_files": [
+    "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/Types.lean",
+    "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/Funs.lean",
+    "SandboxModel/Boundaries/BoundedWriter/Contract.lean",
+    "SandboxModel/Boundaries/BoundedWriter/Examples.lean",
+    "SandboxModel/Boundaries/BoundedWriter/Library.lean",
+    "SandboxModel/Boundaries/BoundedWriter/Refinement.lean",
+    "SandboxModel/Lifecycle/Protocol/EnvelopeWriter.lean",
+    "SandboxModel/Lifecycle/Protocol/EnvelopeWriterContract.lean",
+    "SandboxModel/Lifecycle/Protocol/EnvelopeWriterWitnesses.lean",
+    "SandboxModel/Lifecycle/Protocol/ProductionEnvelope.lean"
+  ],
+  "revision": {
+    "sources_sha256": "bb1a1d1851bc49785c359cd1504d4bf10dc1457f6eed45f97a632047d7c1cc07",
+    "toolchain": "leanprover/lean4:v4.31.0",
+    "lakefile_sha256": "d412ef1b101500eb529639ca37421f8c292b2b259984083f95ab8136db255e5c",
+    "manifest_sha256": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
+    "server_version": "0.30.0",
+    "client_version": "0.13.2",
+    "mcp_version": "2.0.0"
+  },
+  "note": "Original physical/kernel/service evidence only; current-source admission and the finite batch are separate."
+}

@@ -158,7 +158,7 @@ fn uncertain_prepare_without_launch(
     let mut journal = test_journal(config);
     admit_for_test(config, &mut journal, worker, test_create_request(config));
     worker
-        .put_secret(core::SandboxId(1), &test_token())
+        .put_secret(core::SandboxId(1), 1, &test_token())
         .unwrap();
     let result = finish_admitted_create(
         &mut journal,
@@ -314,7 +314,7 @@ fn create_and_kill_use_real_host_receipts() {
     let sandbox = core::SandboxId(1);
     let request = test_create_request(&config);
     admit_for_test(&config, &mut journal, &worker, request);
-    worker.put_secret(sandbox, &token).unwrap();
+    worker.put_secret(sandbox, 1, &token).unwrap();
     let lost = finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
         let receipt = worker.execute(action)?;
         if matches!(receipt.outcome, WorkOutcome::ObservedSuccess(_)) {
@@ -576,7 +576,9 @@ fn repeated_stop_and_cleanup_preserve_another_live_vm() {
         request.workspace = core::FsId(number);
         request.operation = core::OperationId(number);
         admit_for_test(&config, &mut journal, &worker, request.clone());
-        worker.put_secret(request.sandbox, &test_token()).unwrap();
+        worker
+            .put_secret(request.sandbox, 1, &test_token())
+            .unwrap();
         let running = finish_admitted_create(
             &mut journal,
             request.sandbox,
@@ -609,17 +611,7 @@ fn repeated_stop_and_cleanup_preserve_another_live_vm() {
         .find(|slot| slot.sandbox == survivor)
         .unwrap();
     let assert_survivor = |worker: &LinuxWorker| {
-        let after = worker
-            .inventory()
-            .unwrap()
-            .slots
-            .into_iter()
-            .find(|slot| slot.sandbox == survivor)
-            .unwrap();
-        assert_eq!(after.process, before.process);
-        assert_eq!(after.network_inode, before.network_inode);
-        assert_eq!(after.disk_inode, before.disk_inode);
-        assert_eq!(after.cgroup_inode, before.cgroup_inode);
+        assert_live_slot_unchanged(worker, &before);
         // Rechecks the live VMM identity and an authenticated envd file read.
         assert_eq!(worker.observe_action(&activation).unwrap(), ready);
     };
@@ -668,6 +660,20 @@ fn repeated_stop_and_cleanup_preserve_another_live_vm() {
     )
     .unwrap();
     assert_two_cleaned_slots(&worker);
+}
+
+fn assert_live_slot_unchanged(worker: &LinuxWorker, before: &sandproof_node::ObservedSlot) {
+    let after = worker
+        .inventory()
+        .unwrap()
+        .slots
+        .into_iter()
+        .find(|slot| slot.sandbox == before.sandbox)
+        .unwrap();
+    assert_eq!(after.process, before.process);
+    assert_eq!(after.network_inode, before.network_inode);
+    assert_eq!(after.disk_inode, before.disk_inode);
+    assert_eq!(after.cgroup_inode, before.cgroup_inode);
 }
 
 fn assert_two_cleaned_slots(worker: &LinuxWorker) {
@@ -773,7 +779,7 @@ fn worker_termination_reconciles_prepare_and_stop(
     let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     admit_for_test(&config, &mut journal, &worker, test_create_request(&config));
-    worker.put_secret(sandbox, &test_token()).unwrap();
+    worker.put_secret(sandbox, 1, &test_token()).unwrap();
     let create_key = core::OperationKey {
         sandbox,
         operation: core::OperationId(1),
@@ -1008,7 +1014,7 @@ fn real_worker_sigkill_before_opening_fence_resumes_one_create() {
     let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     admit_for_test(&config, &mut journal, &worker, test_create_request(&config));
-    worker.put_secret(sandbox, &test_token()).unwrap();
+    worker.put_secret(sandbox, 1, &test_token()).unwrap();
     drop(journal);
     drop(worker);
     spawn_exit_child("open_fence_before_host", TEST_NAME, true);
@@ -1088,7 +1094,7 @@ fn real_worker_sigkill_reconciles_partial_cleanup() {
     let worker = LinuxWorker::new(config.clone()).unwrap();
     let mut journal = test_journal(&config);
     admit_for_test(&config, &mut journal, &worker, test_create_request(&config));
-    worker.put_secret(sandbox, &test_token()).unwrap();
+    worker.put_secret(sandbox, 1, &test_token()).unwrap();
     let running =
         finish_admitted_create(&mut journal, sandbox, core::OperationId(1), &mut |action| {
             worker.execute(action)

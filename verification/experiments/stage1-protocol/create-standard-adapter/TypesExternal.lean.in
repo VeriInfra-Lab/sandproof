@@ -1,0 +1,24 @@
+import SandproofSqliteStatements.TypesExternal
+
+/-! Finite library observations for the one ordinary World read interval.
+The cell is the before-borrow observation, and Ref is the issued live guard.
+This is not a shared heap or a cross-call snapshot. Normal RefCell borrowing,
+guard validity and release are explicit fixed-library conformance conditions.
+No resource/custom Drop, callback, mutation, panic unwind or crash is modelled.
+The target is x86_64; the borrow counter has the real signed-isize range. -/
+namespace SandproofStandardCreateRust
+abbrev rusqlite.Connection := SandproofSqliteStatementsRust.rusqlite.Connection
+
+structure WorldReadCell (T : Type) where
+  object : Nat
+  value : T
+  beforeBorrowCount : Int
+
+structure WorldReadGuard (T : Type) where
+  object : Nat
+  value : T
+  activeBorrowCount : Int
+
+abbrev core.cell.RefCell := WorldReadCell
+abbrev core.cell.Ref := WorldReadGuard
+end SandproofStandardCreateRust

@@ -1,0 +1,54 @@
+import SandboxModel.Lifecycle.Protocol.OwnerMappingModel
+import SandproofStage1OwnerMapping.OrdDefaultBinding
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.OwnerMapping
+theorem max_run (left right : U64) :
+    SandproofStage1OwnerMappingRust.core.cmp.Ord.max.default
+      Aeneas.Std.core.cmp.OrdU64 left right = .ok (if right < left then left else right) := by
+  simp [SandproofStage1OwnerMappingRust.core.cmp.Ord.max.default,
+    Aeneas.Std.core.cmp.Ord.max.default, Aeneas.Std.core.cmp.Ord.max_body,
+    core.cmp.impls.PartialOrdU64.lt]
+  split <;> rfl
+
+theorem max_result (left right : U64) :
+    ∃ value, SandproofStage1OwnerMappingRust.core.cmp.Ord.max.default
+      Aeneas.Std.core.cmp.OrdU64 left right = .ok value ∧
+      value.val = max left.val right.val := by
+  rw [max_run]
+  split
+  · refine ⟨left, rfl, ?_⟩
+    scalar_tac
+  · refine ⟨right, rfl, ?_⟩
+    scalar_tac
+
+theorem next_counter (x : Usize) (bound : x.val + 1 ≤ Usize.max) :
+    ∃ next : Usize, ((x + 1#usize) : Result Usize) = .ok next ∧ next.val = x.val + 1 := by
+  obtain ⟨next, equation, post⟩ := (WP.spec_equiv_exists _ _).mp
+    (Usize.add_bv_spec (x := x) (y := 1#usize) (by simpa using bound))
+  exact ⟨next, equation, by simpa using post.1⟩
+
+theorem allocation_checked (highest : U64) :
+    core.option.Option.ok_or (U64.checked_add highest 1#u64) sandproof_controller_service.JournalError.IdentifierExhausted =
+      .ok (allocation highest.val) := by
+  have spec := U64.checked_add_bv_spec highest 1#u64
+  cases added : U64.checked_add highest 1#u64 with
+  | none =>
+    simp only [added] at spec
+    have exhausted : ¬ highest.val < U64.max := by scalar_tac
+    simp [core.option.Option.ok_or, allocation, exhausted]
+  | some next =>
+    simp only [added] at spec
+    have safe : highest.val < U64.max := by scalar_tac
+    have nextVal : next.val = highest.val + 1 := by simpa using spec.2.1
+    have same : next = U64.ofNatCore (highest.val + 1) (by scalar_tac) := by
+      apply UScalar.eq_of_val_eq
+      exact nextVal
+    simp [core.option.Option.ok_or, allocation, safe, same]
+
+end SandboxModel.Stage1Protocol.OwnerMapping
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.max_run
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.max_result
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.next_counter
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.allocation_checked

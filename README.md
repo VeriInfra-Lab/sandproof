@@ -14,13 +14,13 @@ The first stage focuses on three connected problems:
 
 The system retains a real center-to-host network path: one active center writer with authoritative Redis, and one fixed Linux/KVM host with SQLite, supporting multiple users and sessions. The center owns global authorization, bindings, reservations, and intent; the host owns local control, persistence, physical execution, and precise cleanup. Redis, SQLite, files, and the VMM do not share an atomic transaction.
 
-The [project plan (#1)](https://github.com/VeriInfra-Lab/sandproof/issues/1) and [stage1 blueprint](docs/project-blueprint.md) define the current scope. The new V0–V9 work is tracked in #632–#641, linked from the project plan. Delivery requires a working system, conditional proofs for the designated Rust implementation, and reproducible experiments covering state continuity, failures, and resources.
+The [project plan (#1)](https://github.com/VeriInfra-Lab/sandproof/issues/1) and [first-stage blueprint](docs/project-blueprint.md) define the current scope. The new V0–V9 work is tracked in #632–#641, linked from the project plan. Delivery requires a working system, conditional proofs for the designated Rust implementation, and reproducible experiments covering state continuity, failures, and resources.
 
 ## Goals and implementation status
 
-Existing center/host components, cold boot and cleanup, core E2B compatibility, the template pipeline, gateways, and shared proofs provide the foundation. **The new stateful lifecycle is being implemented and verified incrementally. The complete create → unload → management-process restart → resume → destroy path cannot yet be described as accepted or proved.** Pause/Resume types in a pure core, isolated component tests, and historical proofs do not establish acceptance of the actual product path.
+The production path includes create, full unload, management-process restart, same-host resume, and destroy with recovery-material reclamation. Recorded revisions have passed the normal two-session/two-cycle real-machine scenario and selected failure scenarios. **These engineering results do not establish complete formal verification or acceptance of every failure interleaving.** Exact revisions, remaining obligations, and proof applicability are maintained only in [proof coverage](docs/proof-coverage.md#current-status).
 
-This branch includes the current Stage1 design and committed implementation candidate. The lifecycle is incomplete and the full acceptance gates have not passed. This is a team development baseline, not a deployment release; exact proof applicability is recorded in [proof coverage](docs/proof-coverage.md).
+This is the integration development baseline, not a deployment release. Historical core proofs and component tests apply only to their recorded inputs and assumptions.
 
 The first stage requires full snapshots on the same host and loading a restored VM in a paused state. Suspension and restoration must not reset the session's total lifetime. New lifecycle operations require an operation key known to the client before its first send. Existing SDK create calls without a key do not automatically acquire safe retry semantics, and existing TCP/vsock connections are not guaranteed to survive restoration.
 

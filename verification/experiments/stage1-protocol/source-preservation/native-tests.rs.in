@@ -1,0 +1,192 @@
+// Actual original SQLite material transitions with controlled Host evidence.
+// The pure guard accepts decoded values; equality here does not attest files,
+// a live VM, authorization or an already durable external observation.
+fn proof_saved_facts_fixture(
+    path: &std::path::Path,
+) -> (ControllerJournal, SourceWorkRecord, SourceWorkRecord) {
+    let (mut journal, first, resume) = running_successor(path);
+    let second = capture_next(&mut journal, &resume, 2);
+    finish_full_component(&mut journal, &second);
+    release_current(&mut journal, &second);
+    let question = questions(&journal, &first).remove(0);
+    let permit = journal
+        .prepare_lifecycle_material_retirement(&question, b"fixed source plan", &mut NeverCrash)
+        .unwrap();
+    let retiring = saved(&journal, &first.work);
+    journal
+        .settle_lifecycle_material_retirement(&question, &receipt(&permit), &mut NeverCrash)
+        .unwrap();
+    let settled = saved(&journal, &first.work);
+    (journal, retiring, settled)
+}
+
+fn proof_saved_facts_change(
+    record: &SourceWorkRecord,
+    change: impl FnOnce(&mut serde_json::Value),
+) -> SourceWorkRecord {
+    let mut value = json(record);
+    change(&mut value);
+    serde_json::from_value(value).unwrap()
+}
+
+#[test]
+fn proof_saved_facts_new_facts() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, retiring, _) = proof_saved_facts_fixture(&dir.path().join("db"));
+    let empty = proof_saved_facts_change(&retiring, |value| {
+        value["material_release"]["producer"] = serde_json::Value::Null;
+        value["material_release"]["consumer"] = serde_json::Value::Null;
+        value["retirement"] = serde_json::Value::Null;
+    });
+    assert!(retirement::preserves_saved_facts(&empty, &retiring));
+}
+
+#[test]
+fn proof_saved_facts_retiring_replay() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, retiring, _) = proof_saved_facts_fixture(&dir.path().join("db"));
+    assert!(retirement::preserves_saved_facts(
+        &retiring,
+        &retiring.clone()
+    ));
+}
+
+#[test]
+fn proof_saved_facts_retiring_to_settled() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, retiring, settled) = proof_saved_facts_fixture(&dir.path().join("db"));
+    assert!(retirement::preserves_saved_facts(&retiring, &settled));
+}
+
+#[test]
+fn proof_saved_facts_settled_replay() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, _, settled) = proof_saved_facts_fixture(&dir.path().join("db"));
+    assert!(retirement::preserves_saved_facts(
+        &settled,
+        &settled.clone()
+    ));
+}
+
+#[test]
+fn proof_saved_facts_producer_drop() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, retiring, _) = proof_saved_facts_fixture(&dir.path().join("db"));
+    let changed = proof_saved_facts_change(&retiring, |value| {
+        value["material_release"]["producer"] = serde_json::Value::Null;
+    });
+    assert!(!retirement::preserves_saved_facts(&retiring, &changed));
+}
+
+#[test]
+fn proof_saved_facts_consumer_drop() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, retiring, _) = proof_saved_facts_fixture(&dir.path().join("db"));
+    let changed = proof_saved_facts_change(&retiring, |value| {
+        value["material_release"]["consumer"] = serde_json::Value::Null;
+    });
+    assert!(!retirement::preserves_saved_facts(&retiring, &changed));
+}
+
+#[test]
+fn proof_saved_facts_producer_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, retiring, _) = proof_saved_facts_fixture(&dir.path().join("db"));
+    let changed = proof_saved_facts_change(&retiring, |value| {
+        let sequence = value["material_release"]["producer"]["input_sequence"]
+            .as_u64()
+            .unwrap();
+        value["material_release"]["producer"]["input_sequence"] =
+            serde_json::json!(sequence.checked_add(1).unwrap());
+    });
+    assert!(!retirement::preserves_saved_facts(&retiring, &changed));
+}
+
+#[test]
+fn proof_saved_facts_consumer_changed() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, retiring, _) = proof_saved_facts_fixture(&dir.path().join("db"));
+    let changed = proof_saved_facts_change(&retiring, |value| {
+        let sequence = value["material_release"]["consumer"]["input_sequence"]
+            .as_u64()
+            .unwrap();
+        value["material_release"]["consumer"]["input_sequence"] =
+            serde_json::json!(sequence.checked_add(1).unwrap());
+    });
+    assert!(!retirement::preserves_saved_facts(&retiring, &changed));
+}
+
+#[test]
+fn proof_saved_facts_plan_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, retiring, _) = proof_saved_facts_fixture(&dir.path().join("db"));
+    let changed = proof_saved_facts_change(&retiring, |value| {
+        let bytes = value["retirement"]["plan"]["bytes"].as_array_mut().unwrap();
+        let last = bytes.last_mut().unwrap();
+        *last = serde_json::json!(last.as_u64().unwrap() ^ 1);
+    });
+    assert!(!retirement::preserves_saved_facts(&retiring, &changed));
+}
+
+#[test]
+fn proof_saved_facts_plan_closure() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, retiring, _) = proof_saved_facts_fixture(&dir.path().join("db"));
+    let changed = proof_saved_facts_change(&retiring, |value| {
+        let digest = value["retirement"]["plan"]["closure"]["release_binding"]
+            .as_array_mut()
+            .unwrap();
+        digest[31] = serde_json::json!(digest[31].as_u64().unwrap() ^ 1);
+    });
+    assert!(!retirement::preserves_saved_facts(&retiring, &changed));
+}
+
+#[test]
+fn proof_saved_facts_settled_regression() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, _, settled) = proof_saved_facts_fixture(&dir.path().join("db"));
+    let changed = proof_saved_facts_change(&settled, |value| {
+        value["retirement"] = serde_json::json!({
+            "state": "retiring",
+            "plan": value["retirement"]["plan"].clone(),
+        });
+    });
+    assert!(!retirement::preserves_saved_facts(&settled, &changed));
+}
+
+#[test]
+fn proof_saved_facts_settled_changed_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, _, settled) = proof_saved_facts_fixture(&dir.path().join("db"));
+    let changed = proof_saved_facts_change(&settled, |value| {
+        let bytes = value["retirement"]["settlement"]["released_material_bytes"]
+            .as_u64()
+            .unwrap();
+        value["retirement"]["settlement"]["released_material_bytes"] =
+            serde_json::json!(bytes.checked_add(1).unwrap());
+    });
+    assert!(!retirement::preserves_saved_facts(&settled, &changed));
+}
+
+#[test]
+fn proof_saved_facts_codec_settled_regression() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, _, settled) = proof_saved_facts_fixture(&dir.path().join("db"));
+    let mut sources = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let record = sources
+        .records
+        .iter_mut()
+        .find(|record| record.work == settled.work)
+        .unwrap();
+    *record = proof_saved_facts_change(record, |value| {
+        value["retirement"] = serde_json::json!({
+            "state": "retiring",
+            "plan": value["retirement"]["plan"].clone(),
+        });
+    });
+    assert!(matches!(
+        codec::save(&journal.journal.connection, &sources, sources.max_sessions),
+        Err(JournalError::Conflict)
+    ));
+    assert_eq!(saved(&journal, &settled.work), settled);
+}

@@ -1,0 +1,60 @@
+//! Transparent call-throughs; the candidate module is private to prepared copies.
+use sandproof_controller_service::{JournalError, template_registry::evidence::encode_bounded};
+use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, RecordedLifecycleIntent};
+
+pub fn accepted_bounded(
+    value: &AcceptedLifecycleIntent,
+    limit: usize,
+) -> Result<Vec<u8>, JournalError> {
+    encode_bounded(value, limit)
+}
+
+pub fn recorded_bounded(
+    value: &RecordedLifecycleIntent,
+    limit: usize,
+) -> Result<Vec<u8>, JournalError> {
+    encode_bounded(value, limit)
+}
+
+#[cfg(feature = "candidate")]
+pub mod candidate {
+    use sandproof_controller_service::{
+        JournalError,
+        template_registry::evidence::{
+            BoundedBuffer, BoundedSerialize, BoundedWriter, encode_bounded_using, finish_bounded,
+            write_bounded,
+        },
+    };
+
+    pub fn write_entry<B: BoundedBuffer>(
+        writer: &mut BoundedWriter<B>,
+        bytes: &[u8],
+    ) -> std::io::Result<usize> {
+        write_bounded(writer, bytes)
+    }
+
+    pub fn finish_entry<B: BoundedBuffer>(
+        writer: BoundedWriter<B>,
+        result: Result<(), serde_json::Error>,
+    ) -> Result<Vec<u8>, JournalError> {
+        finish_bounded(writer, result)
+    }
+
+    pub fn encode_entry<B, T, S>(value: &T, limit: usize) -> Result<Vec<u8>, JournalError>
+    where
+        B: BoundedBuffer,
+        S: BoundedSerialize<BoundedWriter<B>, T>,
+    {
+        encode_bounded_using::<B, T, S>(value, limit)
+    }
+
+    pub fn response_entry<P: sandproof_internal::ProofJsonResponseBuilder>(
+        result: Result<Vec<u8>, JournalError>,
+    ) -> P::Response {
+        sandproof_internal::proof_json_response_result::<P>(result)
+    }
+}
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;

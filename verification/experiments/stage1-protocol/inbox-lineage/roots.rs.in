@@ -1,0 +1,4 @@
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+pub(super) fn proof_execution_lineage(session: &Session) -> Result<(), JournalError> {
+    session.validate_execution_lineage()
+}

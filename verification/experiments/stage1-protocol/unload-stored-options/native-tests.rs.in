@@ -1,0 +1,74 @@
+
+#[cfg(test)]
+mod proof_create_options {
+    use super::{AdmissionError, CreateOptions};
+    use crate::templates::TemplateBinding;
+    use std::collections::BTreeMap;
+
+    fn one(key: &str, value: &str) -> BTreeMap<String, String> {
+        BTreeMap::from([(key.into(), value.into())])
+    }
+
+    fn invalid(options: &CreateOptions) {
+        assert!(matches!(
+            options.encoded(),
+            Err(AdmissionError::InvalidCreateOptions)
+        ));
+    }
+
+    #[test]
+    fn actual_create_options_keeps_template_and_full_encoding() {
+        let template: TemplateBinding = serde_json::from_value(serde_json::json!({
+            "template_id": "guest",
+            "revision": "r1",
+            "owner": 9,
+            "kernel": {"path": "/vm/kernel", "sha256": "a".repeat(64), "size_bytes": 1},
+            "rootfs": {"path": "/vm/rootfs", "sha256": "b".repeat(64), "size_bytes": 4096},
+            "resources": {
+                "cpu_count": 1, "memory_mib": 128, "disk_bytes": 4096,
+                "host_memory_bytes": 135_270_400
+            },
+            "envd_version": "1"
+        }))
+        .unwrap();
+        assert!(template.is_valid());
+        let mut options = CreateOptions {
+            env_vars: BTreeMap::from([("z".into(), "a=b".into()), ("a＝".into(), "值".into())]),
+            metadata: one("role=worker", "x\n\"y"),
+            networking: Some(super::CreateNetworking {
+                allow_internet_access: Some(false),
+                network: Some(super::CreateNetwork {
+                    allow_public_traffic: None,
+                    allow_out: Some(vec!["192.0.2.1".into()]),
+                    deny_out: None,
+                }),
+            }),
+            template: Some(template),
+        };
+        let actual = options.encoded().unwrap();
+        assert!(actual.starts_with("{\"env_vars\":{\"a＝\":\"值\",\"z\":\"a=b\"},\"metadata\":{\"role=worker\":".as_bytes()));
+        assert_eq!(actual, serde_json::to_vec(&options).unwrap());
+        assert_eq!(serde_json::from_slice::<CreateOptions>(&actual).unwrap(), options);
+        options.template.as_mut().unwrap().envd_version.clear();
+        invalid(&options);
+    }
+
+    #[test]
+    fn actual_create_options_enforces_field_rules_and_byte_limit() {
+        for (key, value) in [("", "v"), ("a=b", "v"), ("a\0b", "v"), ("valid", "v\0")] {
+            invalid(&CreateOptions { env_vars: one(key, value), ..CreateOptions::default() });
+        }
+        for (key, value) in [("", "v"), ("a\0b", "v"), ("valid", "v\0")] {
+            invalid(&CreateOptions { metadata: one(key, value), ..CreateOptions::default() });
+        }
+        let mut exact = CreateOptions {
+            metadata: one("text", ""),
+            ..CreateOptions::default()
+        };
+        let value_bytes = CreateOptions::MAX_ENCODED_BYTES - exact.encoded().unwrap().len();
+        exact.metadata.insert("text".into(), "x".repeat(value_bytes));
+        assert_eq!(exact.encoded().unwrap().len(), CreateOptions::MAX_ENCODED_BYTES);
+        exact.metadata.get_mut("text").unwrap().push('x');
+        invalid(&exact);
+    }
+}

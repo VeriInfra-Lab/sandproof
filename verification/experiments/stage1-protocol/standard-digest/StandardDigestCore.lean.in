@@ -1,0 +1,27 @@
+import SandboxModel.Lifecycle.Protocol.StandardDigestLibrary
+open Aeneas Aeneas.Std SandproofStandardDigestRust
+namespace SandboxModel.Stage1Protocol.StandardDigest
+
+
+theorem actual_refines (self : Context) (bytes : Slice U8)
+    (normal : bytes.val.length < 2^61) : actual self bytes = expected self bytes := by
+  simp only [actual, expected,
+    controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest,
+    library_normal bytes normal, bind_tc_ok]
+
+theorem full_digest_contract : FullDigestContract actual := by
+  intro self bytes normal
+  exact actual_refines self bytes normal
+
+theorem complete_returned_value (self after : Context) (bytes : Slice U8)
+    (normal : bytes.val.length < 2^61) (hash : Array U8 32#usize)
+    (returned : actual self bytes = .ok (hash, after)) :
+    hash = DigestByteBridge.referenceOutput bytes ∧ after = self := by
+  rw [actual_refines self bytes normal] at returned
+  have same := Result.ok_injective returned
+  exact ⟨(congrArg Prod.fst same).symm, (congrArg Prod.snd same).symm⟩
+
+end SandboxModel.Stage1Protocol.StandardDigest
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigest.actual_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigest.full_digest_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigest.complete_returned_value

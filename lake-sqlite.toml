@@ -6,6 +6,10 @@ defaultTargets = ["SandboxModel"]
 name = "SandboxModel"
 
 [[lean_lib]]
+name = "CaptureCaller"
+srcDir = "verification/aeneas/capture-handoff/caller"
+
+[[lean_lib]]
 name = "SandproofFoundations"
 srcDir = "verification/aeneas/foundations"
 

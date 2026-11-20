@@ -34,6 +34,7 @@ async fn run(command: cli::Command) -> Result<(), Box<dyn std::error::Error>> {
     match command {
         Command::Initialize(path) => linux::host_entry::initialize(&path),
         Command::ProvisionBootstrap(path) => linux::host_entry::provision_bootstrap(&path),
+        Command::ProvisionCaptureLayout(path) => linux::host_entry::provision_capture_layout(&path),
         Command::Serve(path) => linux::host_entry::serve(&path).await,
         Command::Audit(path) => linux::host_entry::audit(&path),
         Command::ObserveCenter(path) => linux::host_entry::observe_center(&path).await,

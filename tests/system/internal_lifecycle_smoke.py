@@ -30,7 +30,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(Path(__file__).parent))
 from tools.check_kvm_host import trusted_path, source_revision, device
 from tools.system_acceptance import digest, json_file, write_once
-from _complete_runtime import complete_runtime, provision_runtime, _envelope
+from _complete_runtime import activation_budget, complete_runtime, provision_runtime, _envelope
 from _resource_evidence import record_resource_identity
 from sdk_c02_acceptance import assert_no_exact_resources, processes_in_uid_range
 
@@ -80,7 +80,7 @@ def prepare(args, installed, root, shared):
     uid_base = installed["uid_base"]
     if processes_in_uid_range(uid_base, uid_base + 1):
         raise RuntimeError("test physical UID range already occupied")
-    for name in ("db", "state", "jails", "tls", "resource-evidence"):
+    for name in ("db", "state", "p", "tls", "resource-evidence"):
         (root / name).mkdir(mode=0o700)
     disk = rootfs.stat().st_size
     shape = fixture["resources"]
@@ -88,14 +88,14 @@ def prepare(args, installed, root, shared):
     host_memory = (memory + 256) * 1024**2
     settings = complete_runtime({
         "namespace": namespace, "database": str(root / "db/controller.db"),
-        "node_state_dir": str(root / "state"), "chroot_base": str(root / "jails"),
+        "node_state_dir": str(root / "state"), "chroot_base": str(root / "p/v"),
         "kernel": str(kernel), "rootfs": str(rootfs), "firecracker": str(fc), "jailer": str(jailer),
         "uid_base": uid_base, "max_active_global": 1, "max_active_per_tenant": 1,
         "max_disk_bytes_global": disk * 2, "max_disk_bytes_per_tenant": disk,
         "cleanup_reserve_bytes": disk, "file_policy_digest": 1,
-    }, slots=1)
+    }, slots=1, inbox_sessions=1)
     peak, _ = _envelope(settings["bounded_host"]["physical_storage"])
-    if peak * 2 > 200 * 1024**3:
+    if activation_budget(settings['bounded_host']['physical_storage'])['required_bytes'] > 200 * 1024**3:
         raise RuntimeError("minimum smoke exceeds approved total 200 GiB free-space ceiling")
     provision_runtime(settings)
     bounded = {**settings["bounded_host"], "max_data_routes_per_slot": 4,
@@ -138,7 +138,7 @@ def prepare(args, installed, root, shared):
         raise RuntimeError("independent test ports required")
     config = {
         "node": {"namespace": namespace, "state_dir": str(root / "state"), "jailer": str(jailer),
-                 "firecracker": str(fc), "chroot_base": str(root / "jails"), "kernel": str(kernel),
+                 "firecracker": str(fc), "chroot_base": str(root / "p/v"), "kernel": str(kernel),
                  "rootfs": str(rootfs), "bounded_host": bounded, "vcpu_count": cpu, "memory_mib": memory,
                  "host_resources": {"cgroup_parent": installed["cgroup_parent"], "memory_max_bytes": host_memory},
                  "file_policy_digest": 1},

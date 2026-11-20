@@ -1,7 +1,7 @@
 import SandproofStage1Request.Types
 import SandboxModel.Foundations.Model
 
-/-! Independent guard predicates and ordered errors. No generated function is imported.
+/-! Protocol 4 guard predicates and ordered errors. No generated function is imported.
 Create validity reuses the existing foundations model; this is not authorization. -/
 
 open Aeneas Aeneas.Std SandproofStage1RequestRust
@@ -29,7 +29,7 @@ def operationOK (operation : LifecycleOperation) : Prop :=
   | .Unload _ _ | .Renew _ _ _ | .Destroy => True
 
 def headersOK (request : LifecycleRequest) (node : NodeIdentity) : Prop :=
-  request.binding.protocol_version.val = 3 ∧ request.binding.node = node ∧
+  request.binding.protocol_version.val = 4 ∧ request.binding.node = node ∧
     request.binding.key.deployment = request.binding.node.deployment_id
 
 def ValidRequest (request : LifecycleRequest) (node : NodeIdentity) : Prop :=
@@ -38,9 +38,9 @@ def ValidRequest (request : LifecycleRequest) (node : NodeIdentity) : Prop :=
 
 def FirstError (request : LifecycleRequest) (node : NodeIdentity) (error : ValidationError) : Prop :=
   match error with
-  | .UnsupportedVersion => request.binding.protocol_version.val ≠ 3
-  | .ForeignNode => request.binding.protocol_version.val = 3 ∧ request.binding.node ≠ node
-  | .ForeignDeployment => request.binding.protocol_version.val = 3 ∧ request.binding.node = node ∧
+  | .UnsupportedVersion => request.binding.protocol_version.val ≠ 4
+  | .ForeignNode => request.binding.protocol_version.val = 4 ∧ request.binding.node ≠ node
+  | .ForeignDeployment => request.binding.protocol_version.val = 4 ∧ request.binding.node = node ∧
       request.binding.key.deployment ≠ request.binding.node.deployment_id
   | .InvalidExpectation => headersOK request node ∧
       ¬ expectationOK request.operation request.binding.expected
@@ -58,7 +58,7 @@ def FirstError (request : LifecycleRequest) (node : NodeIdentity) (error : Valid
 noncomputable def expectedResult (request : LifecycleRequest) (node : NodeIdentity) :
     core.result.Result Unit ValidationError := by
   classical
-  exact if request.binding.protocol_version.val ≠ 3 then .Err .UnsupportedVersion
+  exact if request.binding.protocol_version.val ≠ 4 then .Err .UnsupportedVersion
     else if request.binding.node ≠ node then .Err .ForeignNode
     else if request.binding.key.deployment ≠ request.binding.node.deployment_id then .Err .ForeignDeployment
     else if ¬ expectationOK request.operation request.binding.expected then .Err .InvalidExpectation
@@ -90,6 +90,24 @@ def ValidEnvelope (intent : AcceptedLifecycleIntent) (context : AuthenticatedCen
   intent.center.deployment = context.expected_node.deployment_id ∧
   ValidRequest intent.request context.expected_node ∧
   retentionOK intent.retention ∧ versionOK intent
+
+/-- Prefix conditions distinguish the first rejection from a later invalid field. -/
+def FirstAcceptedError (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (error : AcceptedIntentError) : Prop :=
+  match error with
+  | .ForeignCenter => intent.center ≠ context.center
+  | .ForeignDeployment => intent.center = context.center ∧
+      intent.center.deployment ≠ context.expected_node.deployment_id
+  | .Request error => intent.center = context.center ∧
+      intent.center.deployment = context.expected_node.deployment_id ∧
+      FirstError intent.request context.expected_node error
+  | .InvalidRetention => intent.center = context.center ∧
+      intent.center.deployment = context.expected_node.deployment_id ∧
+      ValidRequest intent.request context.expected_node ∧ ¬ retentionOK intent.retention
+  | .InvalidAcceptedVersion => intent.center = context.center ∧
+      intent.center.deployment = context.expected_node.deployment_id ∧
+      ValidRequest intent.request context.expected_node ∧
+      retentionOK intent.retention ∧ ¬ versionOK intent
 
 noncomputable def expectedAccepted (intent : AcceptedLifecycleIntent)
     (context : AuthenticatedCenterContext) : core.result.Result Unit AcceptedIntentError := by

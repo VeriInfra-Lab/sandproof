@@ -1,0 +1,118 @@
+import SandboxModel.Lifecycle.Protocol.NativeCompletionModel
+import SandboxModel.Lifecycle.Protocol.NativeCompletionValues
+
+open Aeneas Aeneas.Std SandproofNativeReadinessRust
+open sandbox_controller_core
+namespace SandboxModel.Stage1Protocol.NativeReadiness
+open scoped Classical
+noncomputable section
+
+theorem owner_ne (one two : ids.TenantId) :
+    core.cmp.PartialEq.ne.trait_default ids.TenantId.Insts.CoreCmpPartialEqTenantId
+      one two = .ok (decide (one ≠ two)) := by
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq, UScalar.eq_equiv]
+
+theorem phase_ne_running (phase : Phase) :
+    core.cmp.PartialEq.ne.trait_default model.Phase.Insts.CoreCmpPartialEqPhase
+      phase .Running = .ok (decide (phase ≠ .Running)) := by
+  cases phase <;> simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    model.Phase.Insts.CoreCmpPartialEqPhase.eq, model.Phase.read_discriminant]
+
+theorem kind_eq_create (kind : Kind) :
+    model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq kind .Create =
+      .ok (decide (kind = .Create)) := by
+  cases kind <;> simp [model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq,
+    model.OperationKind.read_discriminant]
+
+theorem status_eq_succeeded (status : Status) :
+    model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus.eq status .Succeeded =
+      .ok (decide (status = .Succeeded)) := by
+  cases status <;> simp [model.OperationStatus.Insts.CoreCmpPartialEqOperationStatus.eq,
+    model.OperationStatus.read_discriminant]
+
+theorem result_if (condition : Prop) [Decidable condition] (yes no : Bool) :
+    (if condition then Result.ok yes else Result.ok no) =
+      Result.ok (if condition then yes else no) := by
+  split <;> rfl
+
+theorem option_not_none {T : Type} (value : Option T) :
+    (!decide (value = none)) = value.isSome := by
+  cases value <;> simp
+
+theorem completion_refines (snapshot : Snapshot) (binding : LocalBinding) :
+    run snapshot binding = .ok (decide (CompletedOriginal snapshot binding)) := by
+  simp only [run,
+    sandproof_controller_service.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.has_completed_original_execution,
+    owner_ne, phase_ne_running,
+    ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq,
+    alloc.vec.Vec.is_empty, SandproofFoundationsRust.alloc.vec.Vec.is_empty]
+  cases current : snapshot.current_operation with
+  | none => simp [CompletedOriginal, current]
+  | some operation =>
+    cases kind : operation.kind <;>
+      simp [CompletedOriginal, current, kind, model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq,
+        model.OperationKind.read_discriminant, status_eq_succeeded, result_if,
+        UScalar.eq_equiv, option_not_none]
+
+
+theorem full_contract : FullCompletionContract run := completion_refines
+
+theorem accepts_iff (snapshot : Snapshot) (binding : LocalBinding) :
+    run snapshot binding = .ok true ↔ CompletedOriginal snapshot binding := by
+  rw [completion_refines]
+  simp
+
+theorem lifetime_ignored (snapshot : Snapshot) (binding : LocalBinding)
+    (lifetime : Option sandproof_controller_service.controller.admission.Lifetime) :
+    run {snapshot with lifetime := lifetime} binding = run snapshot binding := by
+  simp only [completion_refines, CompletedOriginal]
+  rfl
+
+theorem sandbox_binding_ignored (snapshot : Snapshot) (binding : LocalBinding)
+    (sandbox : sandbox_controller_core.ids.SandboxId) :
+    run snapshot {binding with sandbox := sandbox} = run snapshot binding := by
+  simp only [completion_refines, CompletedOriginal]
+  rfl
+
+theorem present_vm_identity_ignored (snapshot : Snapshot) (binding : LocalBinding)
+    (one two : sandbox_controller_core.ids.VmId) :
+    run {snapshot with current_vm := some one} binding =
+      run {snapshot with current_vm := some two} binding := by
+  simp only [completion_refines, CompletedOriginal, Option.isSome_some]
+
+
+theorem normal_create_and_resume :
+    run sampleCreate sampleBinding = .ok true ∧ run sampleResume sampleBinding = .ok true := by
+  simp [completion_refines, CompletedOriginal, sampleCreate, sampleResume,
+    sampleBinding, sampleOperation]
+
+theorem field_omission_rejections :
+    ∀ snapshot ∈ rejectedSnapshots, run snapshot sampleBinding = .ok false := by
+  intro snapshot member
+  simp only [rejectedSnapshots, List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  all_goals simp [completion_refines, CompletedOriginal, sampleCreate, sampleResume,
+    pendingSnapshot, sampleBinding, sampleOperation, uncertainEffect]
+
+theorem missing_lifetime_is_not_a_failure :
+    sampleCreate.lifetime = none ∧ run sampleCreate sampleBinding = .ok true :=
+  ⟨rfl, normal_create_and_resume.1⟩
+
+end
+end SandboxModel.Stage1Protocol.NativeReadiness
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.phase_ne_running
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.kind_eq_create
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.status_eq_succeeded
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.completion_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.owner_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.option_not_none
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.result_if
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.lifetime_ignored
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.sandbox_binding_ignored
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.present_vm_identity_ignored
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.normal_create_and_resume
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.field_omission_rejections
+#audit_controller_proof SandboxModel.Stage1Protocol.NativeReadiness.missing_lifetime_is_not_a_failure

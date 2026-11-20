@@ -1,0 +1,50 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorModel
+import SandboxModel.Lifecycle.Protocol.OwnerMappingValues
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values
+open OwnerMapping OwnerMapping.Values
+
+def limit : U64 := U64.ofNatCore U64.max (by scalar_tac)
+
+theorem empty_expected : expected (noOwners 0#u64) emptyWorld 1#u64 = .Ok 1#u64 := by
+  change allocation 0 = _
+  exact allocation_known 0 1#u64 (by scalar_tac) (by scalar_tac)
+
+theorem excluded_largest_expected : expected (noOwners 5#u64) worldTriple 2#u64 = .Ok 18#u64 := by
+  change allocation 17 = _
+  exact allocation_known 17 18#u64 (by scalar_tac) (by scalar_tac)
+
+theorem absent_exclusion_expected : expected (noOwners 5#u64) worldTriple 9#u64 = .Ok 41#u64 := by
+  change allocation 40 = _
+  exact allocation_known 40 41#u64 (by scalar_tac) (by scalar_tac)
+
+theorem high_water_expected : expected (noOwners 64#u64) worldTriple 2#u64 = .Ok 65#u64 := by
+  change allocation 64 = _
+  exact allocation_known 64 65#u64 (by scalar_tac) (by scalar_tac)
+
+theorem excluded_maximum_expected : expected (noOwners 5#u64) worldMaximum 1#u64 = .Ok 6#u64 := by
+  change allocation 5 = _
+  exact allocation_known 5 6#u64 (by scalar_tac) (by scalar_tac)
+
+theorem other_maximum_expected : expected (noOwners 5#u64) worldMaximum 2#u64 = .Err .IdentifierExhausted := by
+  change allocation (max 5 limit.val) = _
+  rw [Nat.max_eq_right (by unfold limit; scalar_tac : 5 ≤ limit.val)]
+  have at_max : limit.val = U64.max := by unfold limit; scalar_tac
+  rw [at_max]
+  simp [allocation]
+
+theorem high_water_exhausted_expected : expected (noOwners limit) emptyWorld 1#u64 = .Err .IdentifierExhausted := by
+  change allocation limit.val = _
+  have at_max : limit.val = U64.max := by unfold limit; scalar_tac
+  rw [at_max]
+  simp [allocation]
+
+end SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.empty_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_largest_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.absent_exclusion_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.excluded_maximum_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.other_maximum_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.Values.high_water_exhausted_expected

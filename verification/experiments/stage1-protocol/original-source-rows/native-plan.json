@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "kind": "original-source-rows-native-registration-candidate",
+  "label": "stage1-original-source-rows",
+  "source_commit": "10037e47c3f78f258eba4683c5b8db2eeab7e7e6",
+  "source_tree": "e1da4ed15500da0b4d6e37aa1deba84b233f1d4c",
+  "cases": [
+    {
+      "filter": "controller::capture::tests::original_source_is_read_from_real_committed_receipts_after_checkpoint_reopen",
+      "target": "lib",
+      "exact": true,
+      "count": 1
+    },
+    {
+      "filter": "controller::capture::tests::missing_legacy_source_and_conflicting_process_or_boot_never_become_capture_source",
+      "target": "lib",
+      "exact": true,
+      "count": 1
+    },
+    {
+      "filter": "controller::capture::tests::source_observation_does_not_authorize_another_sandbox",
+      "target": "lib",
+      "exact": true,
+      "count": 1
+    },
+    {
+      "filter": "controller::capture::tests::owned_agreement_preserves_prefix_on_invalid_and_conflicting_observation",
+      "target": "lib",
+      "exact": true,
+      "count": 1
+    },
+    {
+      "filter": "controller::capture::tests::row_sql_error_preserves_both_prior_observations",
+      "target": "lib",
+      "exact": true,
+      "count": 1
+    },
+    {
+      "filter": "controller::capture::tests::real_row_driver_stops_at_first_bad_receipt_before_later_bad_action",
+      "target": "lib",
+      "exact": true,
+      "count": 1
+    },
+    {
+      "filter": "controller::lifecycle_inbox::source_work::tests::proof_source_flow_original_request_reaches_same_source_question",
+      "target": "lib",
+      "exact": true,
+      "count": 1
+    },
+    {
+      "filter": "controller::capture::tests::generic_original_row_driver_keeps_order_prefix_and_stops_before_next",
+      "target": "lib",
+      "exact": true,
+      "count": 1
+    },
+    {
+      "filter": "controller::capture::tests::explicit_row_codec_keeps_full_bytes_state_short_circuit_and_standard_result",
+      "target": "lib",
+      "exact": true,
+      "count": 1
+    }
+  ],
+  "original_execution_complete": true,
+  "shared_native_receipt_available": false,
+  "original_result_sha256": "cfa24fac0d196465c6082c9cf4efea5d21743de7942f0638940694e741575750",
+  "reference_producer": "original-native/native-preflight-inner.py",
+  "producer_portable": false,
+  "ordinary_test_host": "ning",
+  "new_executions": 0,
+  "required_before_registration": [
+    "A performs the first public native admission once after unified candidate stabilizes, using existing native suite and receipt machinery",
+    "Keep original private native9 evidence unchanged and do not represent it as the public run",
+    "No new negative run is required by the historical success-schema normalization; C runs no additional test or proof"
+  ]
+}

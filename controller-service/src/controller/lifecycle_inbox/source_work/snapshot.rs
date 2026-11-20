@@ -10,7 +10,10 @@ use crate::capture::HostEpochObservation;
 use crate::controller::{admission, capture, checkpoint, data_credentials};
 use rusqlite::{Connection, Transaction};
 use sandbox_controller_core::{self as core, source_observation::SourceObservationGuard};
-use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, LifecycleOperation};
+use sandproof_protocol::{
+    ActionIdentity, WorkAction,
+    lifecycle::{AcceptedLifecycleIntent, ContentDigest, LifecycleOperation},
+};
 
 #[derive(Clone, Copy)]
 pub(super) struct CurrentSource<'a> {
@@ -55,6 +58,10 @@ fn live_native(
             .is_some_and(|started| started <= now_ms && started <= lifetime.startup_deadline_ms)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "keep the audited startup read and validation order together with the generated proof target"
+)]
 pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     tx: &Transaction<'_>,
     namespace: &str,
@@ -71,11 +78,12 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     let (s, e) = inbox.find(intent)?.ok_or(JournalError::Conflict)?;
     let session = &inbox.sessions[s];
     let state = inbox.state(s, e);
-    if !state.current
-        || state.terminal
-        || !matches!(intent.request.operation, LifecycleOperation::Unload { .. })
-    {
+    if !state.current || state.terminal || session.entries[e].unload_resolution.is_some() {
         return Err(JournalError::Conflict);
+    }
+    match intent.request.operation {
+        LifecycleOperation::Unload { .. } => {}
+        _ => return Err(JournalError::Conflict),
     }
     let bootstrap = inbox
         .host_epoch_observation
@@ -85,23 +93,32 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
         return Err(JournalError::UnresolvedAction);
     }
     let local = state.local.ok_or(JournalError::UnresolvedAction)?;
-    let create = session
-        .entries
-        .iter()
-        .find(|entry| {
-            matches!(
-                entry.intent.request.operation,
-                LifecycleOperation::Create { .. }
-            )
-        })
+    let execution_origin = session
+        .current_execution_origin()
         .ok_or(JournalError::CorruptStore)?
         .intent
         .clone();
-    let view = base_snapshot(tx, namespace, world, &create, &inbox.config.context())?.view;
+    let view = base_snapshot(
+        tx,
+        namespace,
+        world,
+        &execution_origin,
+        &inbox.config.context(),
+    )?
+    .view;
     let native = view.native.ok_or(JournalError::CorruptStore)?;
-    if !native.has_completed_original_create(local)
-        || view.historical_result != Some(core::OperationResult::Running(native.generation))
-    {
+    let continued = if native.has_completed_original_execution(local) {
+        None
+    } else {
+        super::full::continued_ready_records::<E>(tx, world, namespace, local, &native)?
+    };
+    if !native.has_completed_original_execution(local) {
+        match &continued {
+            Some(_) => {}
+            None => return Err(JournalError::UnresolvedAction),
+        }
+    }
+    if view.historical_result != Some(core::OperationResult::Running(native.generation)) {
         return Err(JournalError::UnresolvedAction);
     }
     if !live_native(
@@ -113,14 +130,25 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     ) {
         return Err(JournalError::UnresolvedAction);
     }
-    let source = capture::original_source::<E>(tx, namespace, world, local.sandbox)?;
+    let source = match &continued {
+        Some((work, ..)) => work.source().source.clone(),
+        None => capture::original_source::<E>(tx, namespace, world, local.sandbox)?,
+    };
     if source.boot_id != bootstrap.registration.boot_id
         || source.pid == 0
         || source.start_time_ticks == 0
     {
         return Err(JournalError::InvalidHostEvidence);
     }
-    let (actions, receipts) = startup_records::<E>(tx, namespace, world, local)?;
+    let (mut actions, mut receipts) = startup_records::<E>(tx, namespace, world, local)?;
+    let continued_from = match continued {
+        Some((work, action, receipt)) => {
+            actions.push(action);
+            receipts.push(receipt);
+            Some(work.identity())
+        }
+        None => None,
+    };
     let options = admission::read_create_options(tx, namespace, local.sandbox)
         .map_err(|_| JournalError::CorruptStore)?;
     let credential = data_credentials::snapshot(tx, world, namespace, local.sandbox, true)?
@@ -130,29 +158,74 @@ pub(super) fn current<E: HostEvidence + DeserializeOwned>(
     }
     let anchor = SourceAnchor {
         request: intent.clone(),
-        create,
+        execution_origin,
         local,
         native,
+        continued_from,
         node: inbox.config.node.clone(),
         host_bootstrap: bootstrap.registration.clone(),
         source: source.clone(),
-        options_sha256: digest(&serde_json::to_vec(&options)?),
+        options_sha256: digest(&encode_source_options(&options)?),
         credential,
-        original_actions: actions.iter().map(|a| a.identity.clone()).collect(),
-        original_receipts: receipts.iter().map(|r| digest(r)).collect(),
+        original_actions: original_action_identities(&actions),
+        original_receipts: original_receipt_digests(&receipts),
     };
+    question(anchor, limits)
+}
+
+fn original_action_identities(actions: &[WorkAction<core::EffectId>]) -> Vec<ActionIdentity> {
+    let mut identities = Vec::new();
+    let mut index = 0;
+    while index < actions.len() {
+        identities.push(actions[index].identity.clone());
+        index += 1;
+    }
+    identities
+}
+
+fn original_receipt_digests(receipts: &[Vec<u8>]) -> Vec<ContentDigest> {
+    let mut digests = Vec::new();
+    let mut index = 0;
+    while index < receipts.len() {
+        digests.push(digest(&receipts[index]));
+        index += 1;
+    }
+    digests
+}
+
+fn question(
+    anchor: SourceAnchor,
+    limits: &SourceObservationConfig,
+) -> Result<SourceWork, JournalError> {
+    let work_binding = digest(&encode_source_anchor(&anchor)?);
+    Ok(question_from_binding(anchor, limits, work_binding))
+}
+
+fn encode_source_options(options: &admission::CreateOptions) -> serde_json::Result<Vec<u8>> {
+    serde_json::to_vec(options)
+}
+
+fn encode_source_anchor(anchor: &SourceAnchor) -> serde_json::Result<Vec<u8>> {
+    serde_json::to_vec(anchor)
+}
+
+fn question_from_binding(
+    anchor: SourceAnchor,
+    limits: &SourceObservationConfig,
+    work_binding: sandproof_protocol::lifecycle::ContentDigest,
+) -> SourceWork {
     let requirement = SourceObservationRequirement {
-        work_binding: digest(&serde_json::to_vec(&anchor)?),
-        node: inbox.config.node.clone(),
-        host_bootstrap: bootstrap.registration.clone(),
-        resource: actions[1].identity.resource.clone(),
-        source,
+        work_binding,
+        node: anchor.node.clone(),
+        host_bootstrap: anchor.host_bootstrap.clone(),
+        resource: anchor.original_actions[1].resource.clone(),
+        source: anchor.source.clone(),
         limits: limits.clone(),
     };
-    Ok(SourceWork {
+    SourceWork {
         anchor,
         requirement,
-    })
+    }
 }
 
 pub(super) fn validate_record(
@@ -170,20 +243,26 @@ pub(super) fn validate_record(
         .map_err(|_| JournalError::CorruptStore)?
         .ok_or(JournalError::CorruptStore)?;
     let session = &inbox.sessions[s];
+    validate_execution_origin(world, inbox, anchor, s)?;
     if !matches!(
         anchor.request.request.operation,
         LifecycleOperation::Unload { .. }
-    ) || session.local != Some(anchor.local)
-        || inbox
-            .find(&anchor.create)
-            .map_err(|_| JournalError::CorruptStore)?
-            .is_none()
-        || anchor.create.request.binding.session != session.id
+    ) || session.local.is_none_or(|local| {
+        local.sandbox != anchor.local.sandbox || local.owner != anchor.local.owner
+    }) || inbox
+        .find(&anchor.execution_origin)
+        .map_err(|_| JournalError::CorruptStore)?
+        .is_none()
+        || anchor.execution_origin.request.binding.session != session.id
         || !matches!(
-            anchor.create.request.operation,
-            LifecycleOperation::Create { .. }
+            anchor.execution_origin.request.operation,
+            LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }
         )
-        || !anchor.native.has_completed_original_create(anchor.local)
+        || if let Some(identity) = anchor.continued_from {
+            super::full::continued_identity(world, anchor.local, &anchor.native) != Some(identity)
+        } else {
+            !anchor.native.has_completed_original_execution(anchor.local)
+        }
         || req.limits != *config
         || req.node != inbox.config.node
         || anchor.node != req.node
@@ -195,8 +274,13 @@ pub(super) fn validate_record(
         || req.source.pid == 0
         || req.source.start_time_ticks == 0
         || req.work_binding != digest(&serde_json::to_vec(anchor)?)
-        || anchor.original_actions.len() != 5
-        || anchor.original_receipts.len() != 5
+        || anchor.original_actions.len()
+            != if anchor.continued_from.is_some() {
+                6
+            } else {
+                5
+            }
+        || anchor.original_receipts.len() != anchor.original_actions.len()
         || req.resource != anchor.original_actions[1].resource
         || serde_json::to_vec(work)?.len() as u64 > u64::from(config.max_work_bytes)
         || record.observation.as_ref().is_some_and(|o| !o.matches(req))
@@ -205,7 +289,7 @@ pub(super) fn validate_record(
     }
     if let Some(current) = world.sandbox_record(anchor.local.sandbox) {
         if current.owner != anchor.local.owner
-            || current.generation != anchor.native.generation
+            || current.generation < anchor.native.generation
             || world
                 .operation_record(core::OperationKey {
                     sandbox: anchor.local.sandbox,
@@ -232,23 +316,93 @@ pub(super) fn validate_record(
     if req.resource != expected_resource {
         return Err(JournalError::CorruptStore);
     }
-    for action in &anchor.original_actions {
+    validate_original_actions(world, &namespace, anchor)
+}
+
+fn validate_original_actions(
+    world: &core::World,
+    namespace: &str,
+    anchor: &SourceAnchor,
+) -> Result<(), JournalError> {
+    let origin_key = core::OperationKey {
+        sandbox: anchor.local.sandbox,
+        operation: anchor.local.operation,
+    };
+    let origin_plan = world
+        .operation_plan(origin_key)
+        .ok_or(JournalError::CorruptStore)?;
+    for (index, action) in anchor.original_actions.iter().enumerate() {
+        let (key, epoch) = if index == 5 {
+            let continued = anchor.continued_from.ok_or(JournalError::CorruptStore)?;
+            (continued.key, continued.epoch)
+        } else {
+            (origin_key, origin_plan.epoch)
+        };
         if action.owner != crate::controller::identity::owner_id(anchor.local.owner)?
             || action.sandbox
-                != crate::controller::identity::sandbox_id(&namespace, anchor.local.sandbox)?
-            || action.operation
-                != crate::controller::identity::operation_id(
-                    &namespace,
-                    core::OperationKey {
-                        sandbox: anchor.local.sandbox,
-                        operation: anchor.local.operation,
-                    },
-                )?
-            || action.epoch != anchor.native.epoch
+                != crate::controller::identity::sandbox_id(namespace, anchor.local.sandbox)?
+            || action.operation != crate::controller::identity::operation_id(namespace, key)?
+            || action.epoch != epoch
             || action.generation != anchor.native.generation
         {
             return Err(JournalError::CorruptStore);
         }
+    }
+    Ok(())
+}
+
+fn source_origin_epoch_matches(
+    world: &core::World,
+    anchor: &SourceAnchor,
+    origin_plan: &core::OperationPlan,
+) -> bool {
+    match anchor.continued_from {
+        Some(identity) => {
+            super::full::continued_identity(world, anchor.local, &anchor.native) == Some(identity)
+        }
+        None => origin_plan.epoch == anchor.native.epoch,
+    }
+}
+
+fn validate_execution_origin(
+    world: &core::World,
+    inbox: &Inbox,
+    anchor: &SourceAnchor,
+    session: usize,
+) -> Result<(), JournalError> {
+    let (origin_session, origin_entry) = inbox
+        .find(&anchor.execution_origin)
+        .map_err(|_| JournalError::CorruptStore)?
+        .ok_or(JournalError::CorruptStore)?;
+    if origin_session != session
+        || inbox.sessions[session].entries[origin_entry].local_operation
+            != Some(anchor.local.operation)
+    {
+        return Err(JournalError::CorruptStore);
+    }
+    let origin_key = core::OperationKey {
+        sandbox: anchor.local.sandbox,
+        operation: anchor.local.operation,
+    };
+    let origin_plan = world
+        .operation_plan(origin_key)
+        .ok_or(JournalError::CorruptStore)?;
+    let origin_row = world
+        .operation_record(origin_key)
+        .ok_or(JournalError::CorruptStore)?;
+    let origin_kind = match anchor.execution_origin.request.operation {
+        LifecycleOperation::Create { .. } => core::OperationKind::Create,
+        LifecycleOperation::Resume { .. } => core::OperationKind::Resume,
+        _ => return Err(JournalError::CorruptStore),
+    };
+    let epoch_matches = source_origin_epoch_matches(world, anchor, origin_plan);
+    if origin_row.operation.kind != origin_kind
+        || origin_plan.generation != anchor.native.generation
+        || !epoch_matches
+        || origin_plan.vm != anchor.native.current_vm
+        || (origin_kind == core::OperationKind::Create) != origin_plan.restore_from.is_none()
+    {
+        return Err(JournalError::CorruptStore);
     }
     Ok(())
 }

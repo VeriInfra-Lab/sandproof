@@ -1,0 +1,62 @@
+import SandboxModel.Lifecycle.Protocol.RestoreWork.WitnessValues
+import SandboxModel.Lifecycle.Protocol.RestoreWork.Cloning
+open Aeneas Aeneas.Std SandproofRestoreWorkRust
+namespace SandboxModel.Stage1Protocol.RestoreWork.Witnesses
+open controller.lifecycle_inbox.source_work
+
+def digest : Digest := Array.make 32#usize [0#u8,1#u8,2#u8,3#u8,4#u8,5#u8,6#u8,7#u8,8#u8,9#u8,10#u8,11#u8,12#u8,13#u8,14#u8,15#u8,16#u8,17#u8,18#u8,19#u8,20#u8,21#u8,22#u8,23#u8,24#u8,25#u8,26#u8,27#u8,28#u8,29#u8,30#u8,31#u8] (by decide)
+def node : sandproof_protocol.internal.NodeIdentity := ⟨"deployment", "node", 2#u64⟩
+def intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent := {
+  request := {
+    binding := {
+      protocol_version := 4#u16, node := node, session := "session",
+      key := ⟨"deployment", "owner", 3#u64, 6#u64⟩, expected := .Version 11#u64 },
+    operation := .Resume 2#u64 4#u64 3#u64 digest },
+  accepted_version := 12#u64, center := ⟨"deployment", "center"⟩,
+  retention := ⟨7#u16, 17#u64⟩ }
+def process : capture.SourceProcessIdentity := ⟨1234#u32, 5678#u64, "fixture-boot"⟩
+def resource : sandproof_protocol.ResourceRef := ⟨.Vm, "vm"⟩
+def fullWork : capture.work.FullCaptureWorkRequest := { (default : capture.work.FullCaptureWorkRequest) with
+  pause := { (default : capture.work.PauseWorkRequest) with
+    node := node, source := process, source_resource := resource,
+    source_work_binding := digest },
+  state_bytes := 31#u64, memory_bytes := 37#u64, disk_bytes := 41#u64,
+  api_timeout_ms := 1000#u64, worker_timeout_ms := 2000#u64 }
+def action : Action := { (default : Action) with identity := {
+  protocol_version := 4#u16, owner := "owner", sandbox := "session",
+  operation := "capture-operation", epoch := 3#u64, generation := 36#u64,
+  logical_action := "seal-action", attempt := 1#u64, resource := resource } }
+def sourceWork : SourceWork := { (default : SourceWork) with requirement := { (default : capture.source.SourceObservationRequirement) with
+  work_binding := digest, node := node, source := process, resource := resource,
+  host_bootstrap := ⟨1#u16, "fixture-boot", digest⟩ } }
+def claim (material : Bool) (generation : U64) : restore.RestoreClaim := {
+  intent := intent, «local» := ⟨13#u64, 11#u64, 19#u64⟩,
+  generation := generation, material_use := material, activation := none }
+def captured : full.CaptureWork := { (default : full.CaptureWork) with
+  operation := 17#u64, reserved_material_bytes := 100#u64, full := fullWork,
+  action := some action, completed := some digest }
+def record (material : Bool) (generation : U64) : SourceWorkRecord := {
+  work := sourceWork, observation := none, capture := some captured,
+  restore := some (claim material generation), retirement := none,
+  material_release := ⟨none, none⟩ }
+def normal : SourceWorkRecord := record true 37#u64
+def completeOutput (material : Bool) (generation : U64) : Request :=
+  assembled (record material generation) (claim material generation) captured digest action
+
+/-- Fixed integer fact for the shared normal witness, not the general contract. -/
+@[simp] theorem normal_generation_bits : lift (37#u64 &&& 255#u64) = .ok (37#u64) := by rfl
+
+/-- A normal decoded-value input, without a reachability or resource claim. -/
+theorem normal_expected : expected normal = .Ok (completeOutput true 37#u64) := by rfl
+
+/-- The same whole-value normal witness is used in every actual Rust view. -/
+theorem normal_actual : restore.work normal = .ok (.Ok (completeOutput true 37#u64)) := by
+  simp [restore.work, normal, record, claim, captured, completeOutput, assembled,
+    capture.CommittedCaptureExpectation.after_commit,
+    capture.restore.RestoreWorkRequest.from_claim, core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+end SandboxModel.Stage1Protocol.RestoreWork.Witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.Witnesses.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.Witnesses.normal_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.Witnesses.normal_generation_bits

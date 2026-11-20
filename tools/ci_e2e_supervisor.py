@@ -27,9 +27,11 @@ from tools.ci_runner_supervisor import atomic_json
 from tools.system_acceptance import json_file, write_once
 from tools.check_kvm_host import trusted_path
 from tools.bounded_acceptance import prepared_ci_physical_profile
+from tools.capture_acceptance import bind_settings as bind_capture_settings, validate_profile as validate_capture_profile
 from tools import ci_e2e_artifacts as service_artifacts
 from tools.ci_redis import check_material as redis_material
 from tools.service_cgroup import service_identity
+from tools.runtime_acceptance_budget import PREPARED_CI_MAX_ACTIVATION_BYTES
 
 PREFIX = '/repos/' + REPOSITORY + '/'
 REPO = 'https://github.com/' + REPOSITORY + '.git'
@@ -74,8 +76,14 @@ def validate_host_inputs(config):
     metadata = staging.stat()
     if not staging.is_dir() or metadata.st_uid != os.geteuid() or metadata.st_mode & 0o777 != 0o711:
         raise ValueError('independent protected traversable service staging parent required')
-    for flag in ('policy_template', 'budget_profile'):
+    for flag in ('policy_template', 'budget_profile', 'capture_profile'):
+        if flag not in config:
+            raise ValueError('explicit approved deployment input required: ' + flag)
         private_path(config[flag])
+    if (type(config.get('physical_inode_budget')) is not int
+            or not 0 < config['physical_inode_budget'] <= 2**32-1):
+        raise ValueError('explicit bounded complete filesystem inode provision required')
+    captures = validate_capture_profile(json_file(Path(config['capture_profile'])), len(host_roles))
     for path, expected in config['host_assets'].items():
         artifact = trusted_path(Path(path))
         from tools.system_acceptance import digest as file_digest
@@ -85,15 +93,22 @@ def validate_host_inputs(config):
         raise ValueError('distinct node TLS leaves required for runtime and builder')
     prepared = config.get('source_kind') == 'prepared-ci'
     required = tls_paths | {config[k] for k in ('kernel', 'rootfs', 'firecracker', 'jailer',
-                                    'policy_template', 'budget_profile')}
+                                    'policy_template', 'budget_profile', 'capture_profile')}
+    required.update(host['material_project'][tool]['path']
+                    for host in captures for tool in ('chattr', 'lsattr'))
+    for host in captures:
+        for name in ('chattr', 'lsattr'):
+            tool = host['material_project'][name]
+            if config['host_assets'].get(tool['path']) != bytes(tool['sha256']).hex():
+                raise ValueError('capture project tool differs from approved host asset')
     if prepared:
         if not config.get('ci_fixtures'):
             raise ValueError('prepackaged CI fixture manifest required')
         private_path(config['ci_fixtures'])
         required.add(config['ci_fixtures'])
         ceiling = config.get('prepared_ci_disk_budget_bytes')
-        if type(ceiling) is not int or not 0 < ceiling <= 200 * 1024**3:
-            raise ValueError('explicit prepared CI total disk ceiling at most 200 GiB required')
+        if type(ceiling) is not int or not 0 < ceiling <= PREPARED_CI_MAX_ACTIVATION_BYTES:
+            raise ValueError('explicit prepared CI total disk ceiling at most 384 GiB required')
     else:
         if config.get('ci_fixtures') is not None:
             raise ValueError('CI fixtures require the explicit prepared-ci mode')
@@ -455,20 +470,38 @@ class Supervisor:
                 or file_digest(trusted_path(Path(config['stale_probe']))) != stale_sha):
             raise ValueError('same-candidate stale action probe missing or changed')
         root=private_path(config['scratch_parent'],directory=True)/uuid.uuid4().hex[:8]
+        capture_file=self.capture_settings(root, [root], 'dk')
         command=[str(checkout/'benchmarks/.venv/bin/python'),str(entry)]
         for flag in ('center','host','redis_material','tls_material','service_staging_parent',
                      'center_uid','center_gid','redis_uid','redis_gid','jailer','firecracker',
                      'kernel','rootfs','uid_base','scratch_parent','cgroup_parent','service_cgroup_parent'):
             command.extend(['--'+flag.replace('_','-'),str(config[flag])])
         command.extend(['--candidate-manifest',self.state['candidate_manifest'],
+            '--capture-settings',str(capture_file),
+            '--physical-inodes',str(config['physical_inode_budget']),
             '--run-root',str(root),'--run-identity',self.state['id'],
             '--service-cgroup-record',str(root/'service-cgroup.json'),
             '--stale-probe',config['stale_probe'],'--stale-probe-sha256',stale_sha,
             '--service-profile',config['budget_profile'], '--rounds',str(config['dk_rounds']),
             '--checkpoint-tail-inputs',str(config['dk_checkpoint_tail_inputs'])])
+        if config.get('source_kind') == 'prepared-ci':
+            command.extend(['--activation-ceiling-bytes',str(config['prepared_ci_disk_budget_bytes'])])
+        from tools.ci_e2e_prepare import check_candidate_arguments
+        check_candidate_arguments(command, config)
         self.state['dk'].update(root=str(root),command=command,checkout=str(checkout),
             deadline_seconds=7200,unit=UNIT_PREFIX+uuid.uuid4().hex+'.service',phase='launching')
         self.save()  # A lost launch acknowledgement never permits another group.
+
+    def capture_settings(self, root, pools, label):
+        """Persist fresh per-run paths/identity with unchanged approved limits."""
+        profile=json_file(private_path(self.config['capture_profile']),limit=65536)
+        count=1 if self.config.get('source_kind')=='prepared-ci' else 2
+        hosts=validate_capture_profile(profile,count)
+        # DK uses the runtime pool only; its approved project is unchanged.
+        settings=bind_capture_settings(dict(schema_version=1,hosts=hosts[:len(pools)]),pools)
+        output=self.root/(self.state['id']+'-'+label+'-capture.json')
+        write_once(output,settings)
+        return output
 
     def observe_dk(self):
         """Require real six-case/role/cleanup evidence; no old-chain fallback."""
@@ -542,6 +575,8 @@ class Supervisor:
         checkout = Path(config['checkout'])
         root = private_path(config['scratch_parent'], directory=True) / uuid.uuid4().hex[:8]
         namespaces = [uuid.uuid4().hex[:16], uuid.uuid4().hex[:16]]
+        pool_count=1 if config.get('source_kind')=='prepared-ci' else 2
+        capture_file=self.capture_settings(root,[root/str(index) for index in range(pool_count)],str(index))
         policy = instantiate_policy(json_file(Path(config['policy_template'])), root, namespaces,
                                     job_count=len(batch['names']))
         if self.state.get('window_helper_sha256'):
@@ -560,6 +595,8 @@ class Supervisor:
                      'uid_base', 'budget_profile'):
             args.extend(['--' + flag.replace('_', '-'), str(config[flag])])
         args.extend(['--candidate-manifest', self.state['candidate_manifest'],
+                     '--capture-settings',str(capture_file),
+                     '--physical-inodes',str(config['physical_inode_budget']),
                      '--run-identity', self.state['id'],
                      '--service-cgroup-record',str(root/'service-cgroup.json')])
         if config.get('source_kind') == 'prepared-ci':
@@ -580,6 +617,8 @@ class Supervisor:
             args.extend(['--docker-hub-mirror', config['docker_hub_mirror']])
         for name in batch['names']:
             args.extend(['--task', name])
+        from tools.ci_e2e_prepare import check_candidate_arguments
+        check_candidate_arguments(args, config)
         batch.update(root=str(root), command=args, checkout=str(checkout),
             services=service_artifacts.public_identity(manifest),
             deadline_seconds=int(sum(sum(self.state['task_inputs'][name]['requirements'][key]

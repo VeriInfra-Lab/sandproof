@@ -1,0 +1,71 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.RequestEquality
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch.Containers
+
+theorem option_eq_of {T : Type} (dictionary : core.cmp.PartialEq T T)
+    (lawful : ∀ a b, dictionary.eq a b = .ok (by classical exact decide (a = b)))
+    (left right : Option T) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq dictionary left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left <;> cases right <;>
+    simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq, lawful]
+
+/-- Exact original callback order; callback failure/effects are not turned into a Bool. -/
+theorem pair_control_flow {U T : Type}
+    (first : core.cmp.PartialEq U U) (second : core.cmp.PartialEq T T)
+    (left right : U × T) :
+    Pair.Insts.CoreCmpPartialEqPair.eq first second left right =
+      (do let keep ← first.eq left.1 right.1
+          if keep then second.eq left.2 right.2 else .ok false) := by
+  cases left; cases right; rfl
+
+theorem pair_eq_of {U T : Type}
+    (first : core.cmp.PartialEq U U) (second : core.cmp.PartialEq T T)
+    (first_law : ∀ a b, first.eq a b = .ok (by classical exact decide (a = b)))
+    (second_law : ∀ a b, second.eq a b = .ok (by classical exact decide (a = b)))
+    (left right : U × T) :
+    Pair.Insts.CoreCmpPartialEqPair.eq first second left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left with
+  | mk a b =>
+    cases right with
+    | mk c d =>
+      by_cases first_equal : a = c <;>
+        simp [Pair.Insts.CoreCmpPartialEqPair.eq, first_law, second_law, first_equal]
+
+theorem list_pairs_eq {T : Type} [DecidableEq T]
+    (left right : List T) (lengths : left.length = right.length) :
+    List.allM (fun pair : T × T => (.ok (decide (pair.1 = pair.2)) : Result Bool))
+      (List.zip left right) = .ok (decide (left = right)) := by
+  induction left generalizing right with
+  | nil => cases right <;> simp_all [pure]
+  | cons first rest ih =>
+    cases right with
+    | nil => simp at lengths
+    | cons other tail =>
+      have tail_lengths : rest.length = tail.length := by simpa using lengths
+      by_cases same : first = other <;> simp [pure, ih tail tail_lengths, same]
+
+theorem vec_eq_of {T : Type} (dictionary : core.cmp.PartialEq T T)
+    (lawful : ∀ a b, dictionary.eq a b = .ok (by classical exact decide (a = b)))
+    (left right : alloc.vec.Vec T) :
+    alloc.vec.partial_eq.PartialEqVec.eq dictionary left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  by_cases lengths : left.length = right.length
+  · simp [alloc.vec.partial_eq.PartialEqVec.eq, lengths, lawful,
+      list_pairs_eq left.val right.val lengths, ← alloc.vec.Vec.eq_iff]
+  · have different : left ≠ right := by
+      intro equal
+      subst right
+      exact lengths rfl
+    simp [alloc.vec.partial_eq.PartialEqVec.eq, lengths, different]
+
+end SandboxModel.Stage1Protocol.SourceWorkMatch.Containers
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Containers.option_eq_of
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Containers.pair_control_flow
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Containers.pair_eq_of
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Containers.list_pairs_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Containers.vec_eq_of

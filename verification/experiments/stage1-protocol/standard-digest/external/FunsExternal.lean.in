@@ -1,0 +1,12 @@
+import SandproofStandardDigest.Types
+import SandboxModel.Lifecycle.Protocol.DigestByteBridge
+open Aeneas Aeneas.Std
+namespace SandproofStandardDigestRust
+/- Candidate finite A9/A6/B4 model for exactly the two original library calls.
+Source/MIR binding, source adoption and library conformance remain separate.
+Domain-exterior panic is unspecified; this is not a library implementation proof. -/
+@[rust_fun "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest"]
+def controller.lifecycle_inbox.sha256.digest (bytes : Slice U8) : Result (Array U8 32#usize) :=
+  if bytes.val.length < 2^61 then .ok (SandboxModel.Stage1Protocol.DigestByteBridge.referenceOutput bytes)
+  else .fail .panic
+end SandproofStandardDigestRust

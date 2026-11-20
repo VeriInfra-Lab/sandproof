@@ -1,0 +1,113 @@
+import SandproofActualRecord.IOOwnerTransport
+import SandproofStage1Request.Funs
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofActualRecordRust
+
+noncomputable section
+
+open IOOwnerTransport
+
+open controller.lifecycle_inbox.recording
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_i64
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (statement : Str) :
+    Result (core.result.Result (Std.I64) JournalError × Holder D) :=
+  liftReply self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_i64
+      (codecToSource codec) (toSource self) statement)
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_bytes
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (statement : Str) :
+    Result (core.result.Result (alloc.vec.Vec Std.U8) JournalError × Holder D) :=
+  liftReply self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_bytes
+      (codecToSource codec) (toSource self) statement)
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.decode_maintenance
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (bytes : Slice Std.U8) :
+    Result (core.result.Result (controller.checkpoint.config.MaintenanceConfig) JournalError × Holder D) :=
+  liftReply self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.decode_maintenance
+      (codecToSource codec) (toSource self) bytes)
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bool
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (statement : Str) :
+    Result (core.result.Result (Bool) JournalError × Holder D) :=
+  liftReply self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bool
+      (codecToSource codec) (toSource self) statement)
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_i64_pair
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (statement : Str) :
+    Result (core.result.Result ((Std.I64 × Std.I64)) JournalError × Holder D) :=
+  liftReply self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_i64_pair
+      (codecToSource codec) (toSource self) statement)
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (statement : Str) :
+    Result (core.result.Result ((alloc.vec.Vec Std.U8 × alloc.vec.Vec Std.U8)) JournalError × Holder D) :=
+  liftReply self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
+      (codecToSource codec) (toSource self) statement)
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.decode_inbox
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (bytes : Slice Std.U8) :
+    Result (core.result.Result (controller.lifecycle_inbox.model.Inbox) JournalError × Holder D) :=
+  liftReply self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.decode_inbox
+      (codecToSource codec) (toSource self) bytes)
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.encode_inbox
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (inbox : controller.lifecycle_inbox.model.Inbox) :
+    Result (core.result.Result (alloc.vec.Vec Std.U8) JournalError × Holder D) :=
+  liftReply self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.encode_inbox
+      (codecToSource codec) (toSource self) inbox)
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (bytes : Slice Std.U8) :
+    Result ((Array Std.U8 32#usize) × Holder D) :=
+  liftValue self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest
+      (codecToSource codec) (toSource self) bytes)
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.encode
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (inbox : controller.lifecycle_inbox.model.Inbox) :
+    Result (core.result.Result (alloc.vec.Vec Std.U8) JournalError × Holder D) :=
+  liftReply self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.encode
+      (codecToSource codec) (toSource self) inbox)
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (bytes : Slice Std.U8) :
+    Result ((Array Std.U8 32#usize) × Holder D) :=
+  liftValue self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest
+      (codecToSource codec) (toSource self) bytes)
+
+def controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update
+    {D : Type} (codec : RecordCodec D) (self : Holder D)
+    (statement : Str) (bytes digest : Slice Std.U8) :
+    Result (core.result.Result (Std.Usize) JournalError × Holder D) :=
+  liftReply self
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update
+      (codecToSource codec) (toSource self) statement bytes digest)
+
+end
+
+end SandproofActualRecordRust

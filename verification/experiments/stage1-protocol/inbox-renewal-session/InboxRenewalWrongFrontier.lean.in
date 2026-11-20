@@ -1,0 +1,32 @@
+import SandboxModel.Lifecycle.Protocol.InboxRenewalNegativeSupport
+import SandboxModel.Lifecycle.Protocol.InboxRenewalValues
+import SandboxModel.Lifecycle.Protocol.InboxRenewalCheckpoint
+import SandboxModel.Lifecycle.Protocol.InboxRenewalContains
+import SandboxModel.Lifecycle.Protocol.InboxRenewalUnapplied
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+namespace SandboxModel.Stage1Protocol.InboxRenewal.WrongFrontier
+open Values
+
+theorem actual_return : run encode retained = .ok (.Ok ()) := by
+  apply accepts_given_actual_checks encode retained (confirmation 4#u64 3#u64) rfl
+    confirmation_shapes.2 bytes rfl (by simp [bytes]) (by rfl)
+  · rw [checkpoint_spec]
+    simp [checkpointInvalid, checkpointMatches, entryInvalid, retained, base, entry,
+      confirmation, RenewalValues.exactResult, RenewalValues.intent]
+  · simp [core.option.Option.is_some_and, SandproofFoundationsRust.core.option.Option.is_some_and,
+      validate_session_using.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once,
+      contains_version_spec, containsVersion, retained, base, entry, confirmation]
+  · rw [unapplied_sdk_spec]
+    simp [retained, base, entry, unappliedSdk]
+
+theorem rejects_same_full_contract : ¬ FullRenewalSessionContract run := by
+  intro contract
+  have required := contract encode retained
+  rw [actual_return, expected_outcomes.2.2.1] at required
+  cases Result.ok_injective required
+
+end SandboxModel.Stage1Protocol.InboxRenewal.WrongFrontier
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.WrongFrontier.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.WrongFrontier.rejects_same_full_contract

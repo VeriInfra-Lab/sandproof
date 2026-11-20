@@ -1,0 +1,11 @@
+import SandboxModel.Lifecycle.Protocol.SourceOrigin.Core
+import SandboxModel.Lifecycle.Protocol.SourceOrigin.Examples
+open Aeneas Aeneas.Std SandproofSourceOriginRust
+namespace SandboxModel.Stage1Protocol.SourceOrigin.Witnesses
+theorem normal_accepted : run Values.world Values.inbox Values.anchor 0#usize = .ok (.Ok ()) := by
+  rw [actual, Examples.normal_expected]
+theorem accepted_input_exists : ∃ world inbox anchor session, run world inbox anchor session = .ok (.Ok ()) :=
+  ⟨Values.world, Values.inbox, Values.anchor, 0#usize, normal_accepted⟩
+end SandboxModel.Stage1Protocol.SourceOrigin.Witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.Witnesses.normal_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.Witnesses.accepted_input_exists

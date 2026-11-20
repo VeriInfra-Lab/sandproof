@@ -1,4 +1,4 @@
-"""Pinned, operator-prepared materials for a small, network-disabled CI gate.
+"""Pinned, operator-prepared templates for CI and original Harbor runs.
 
 This is not a template builder or original-environment benchmark acceptance.
 The trusted preparer adds only platform bootstrap and fixed scoring dependencies.
@@ -154,15 +154,15 @@ def _startup(value):
     return canonical(value)
 
 
-def guest_preflight_command():
+def guest_preflight_command(*, require_verifier=True):
     """Caller must run this in the newly created guest, before phase uploads."""
     return '\n'.join(['set -eu', *[
         'if test -e ' + shlex.quote(path) + ' || test -L ' + shlex.quote(path) + '; then exit 1; fi'
-        for path in FORBIDDEN_PATHS], 'test -x ' + shlex.quote(PYTHON)])
+        for path in FORBIDDEN_PATHS], *(['test -x ' + shlex.quote(PYTHON)] if require_verifier else [])])
 
 
 @dataclass(frozen=True)
-class CIFixture:
+class PreparedFixture:
     name: str
     files_sha256: str
     reference: str
@@ -178,6 +178,7 @@ class CIFixture:
     _rootfs_identity: tuple
     _resources: bytes
     _startup: bytes
+    source_kind: str
 
     @property
     def resources(self):
@@ -199,15 +200,19 @@ class CIFixture:
         return self.evidence()
 
     def evidence(self):
-        return dict(mode='prepared-ci', fixture_sha256=self.fixture_sha256, name=self.name,
+        original = self.source_kind == 'prepared-original'
+        verifier = {} if original else dict(verifier_python=PYTHON,
+            verifier_requirements_sha256=REQUIREMENTS_SHA256)
+        return dict(mode=self.source_kind, fixture_sha256=self.fixture_sha256, name=self.name,
                     files_sha256=self.files_sha256, original_oci=dict(reference=self.reference, digest=self.digest),
                     kernel_sha256=self.kernel_sha256, rootfs_sha256=self.rootfs_sha256,
                     resources=self.resources, startup_sha256=hashlib.sha256(self._startup).hexdigest(),
-                    verifier_python=PYTHON, verifier_requirements_sha256=REQUIREMENTS_SHA256,
                     required_absent_paths=list(FORBIDDEN_PATHS), guest_preflight='required_not_run',
-                    public_network=False, original_environment=False, original_verifier=False,
-                    original_oracle_verifier=False, original_test_assertions=True, original_oracle=True,
-                    scope='prepared small CI fixtures; not generic-template or original-environment acceptance')
+                    public_network=original, original_environment=original, original_verifier=original,
+                    original_oracle_verifier=original, original_test_assertions=True, original_oracle=True,
+                    scope=('prepared original template' if original else
+                           'prepared small CI fixtures; not generic-template or original-environment acceptance'),
+                    **verifier)
 
     def template_descriptor(self):
         self.verify_artifacts()
@@ -216,7 +221,8 @@ class CIFixture:
                        rootfs_sha256=self.rootfs_sha256, startup=self.startup)
         # tpl- is reserved for the durable publication registry. Prepared CI
         # is a static operator binding and must not masquerade as a publication.
-        identity = 'ci-' + hashlib.sha256(canonical(binding)).hexdigest()[:32]
+        prefix = 'prebuilt-' if self.source_kind == 'prepared-original' else 'ci-'
+        identity = prefix + hashlib.sha256(canonical(binding)).hexdigest()[:32]
         return dict(template_id=identity, revision='r1', owner=1,
                     kernel=dict(path=str(self.kernel), sha256=self.kernel_sha256, size_bytes=self._kernel_identity[2]),
                     rootfs=dict(path=str(self.rootfs), sha256=self.rootfs_sha256, size_bytes=self._rootfs_identity[2]),
@@ -226,36 +232,43 @@ class CIFixture:
                     envd_version='0.9.0', startup=self.startup)
 
     def guest_preflight_command(self):
-        return guest_preflight_command()
+        return guest_preflight_command(require_verifier=self.source_kind == 'prepared-ci')
 
 
 def load_ci_fixtures(path, expected_sha256, lock, selected_names):
-    """Validate an externally pinned private manifest, returning selected fixtures.
+    """Validate a private CI manifest, returning only the selected fixtures."""
+    return load_prepared_fixtures(path, expected_sha256, lock, selected_names, source_kind='prepared-ci')
 
-    The full manifest contains exactly two fixture identities; one-item subsets
-    are allowed for serial batches. It cannot authorize a different task/version,
-    public networking, altered original task files, or an arbitrary verifier.
-    """
+
+def load_prepared_fixtures(path, expected_sha256, lock, selected_names, *, source_kind):
+    """Validate one pinned manifest, using only the approved dataset and scoring mode."""
     try:
-        return _load_ci_fixtures(path, expected_sha256, lock, selected_names)
+        return _load_prepared_fixtures(path, expected_sha256, lock, selected_names, source_kind)
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise InvalidInput('CI fixture material is unavailable or malformed: ' + type(error).__name__) from error
+        raise InvalidInput('prepared fixture material is unavailable or malformed: ' + type(error).__name__) from error
 
 
-def _load_ci_fixtures(path, expected_sha256, lock, selected_names):
+def _load_prepared_fixtures(path, expected_sha256, lock, selected_names, source_kind):
+    supported = {'prepared-ci': 'terminal-bench@2.0', 'prepared-original': 'terminal-bench@2.1'}
+    if supported.get(source_kind) != lock.get('dataset') or source_kind not in supported:
+        raise InvalidInput('prepared template source does not match the locked dataset')
+    original = source_kind == 'prepared-original'
     expected_sha256 = _hash(expected_sha256, 'manifest')
     observed, manifest_identity, data = _read(path, private=True, maximum=MAX_MANIFEST_BYTES)
     if observed != expected_sha256:
         raise InvalidInput('CI fixture manifest differs from the operator pin')
     manifest = json.loads(data, object_pairs_hook=_unique_json)
-    _keys(manifest, ('schema_version', 'dataset', 'source_commit', 'verifier_python',
-                     'verifier_requirements_sha256', 'fixtures'), 'manifest')
+    fields = ('schema_version', 'dataset', 'source_commit', 'fixtures')
+    _keys(manifest, fields + (('verifier',) if original else
+                             ('verifier_python', 'verifier_requirements_sha256')), 'manifest')
+    verifier_matches = (manifest['verifier'] == 'original' if original else
+                        manifest['verifier_python'] == PYTHON
+                        and manifest['verifier_requirements_sha256'] == REQUIREMENTS_SHA256)
     pin = pin_for(lock)
     if (type(manifest['schema_version']) is not int or manifest['schema_version'] != 1
             or manifest['dataset'] != lock['dataset'] or manifest['source_commit'] != pin.commit
             or lock.get('source') != dict(repository=pin.repository, commit=pin.commit)
-            or manifest['verifier_python'] != PYTHON
-            or manifest['verifier_requirements_sha256'] != REQUIREMENTS_SHA256):
+            or not verifier_matches):
         raise InvalidInput('CI fixture manifest differs from the fixed dataset/verifier')
     if (not isinstance(selected_names, (tuple, list)) or not selected_names
             or any(not isinstance(n, str) for n in selected_names)
@@ -265,8 +278,8 @@ def _load_ci_fixtures(path, expected_sha256, lock, selected_names):
     if len(entries) != len(lock['tasks']):
         raise InvalidInput('duplicate frozen CI fixture task identity')
     fixtures = manifest['fixtures']
-    if not isinstance(fixtures, list) or len(fixtures) != 2:
-        raise InvalidInput('the small CI fixture manifest requires exactly two entries')
+    if not isinstance(fixtures, list) or not fixtures or (not original and len(fixtures) != 2):
+        raise InvalidInput('prepared manifest requires entries, exactly two for the CI gate')
     selected = {}
     names = set()
     for row in fixtures:
@@ -312,9 +325,9 @@ def _load_ci_fixtures(path, expected_sha256, lock, selected_names):
         if (kernel_hash != row['kernel']['sha256'] or rootfs_hash != row['rootfs']['sha256']
                 or rootfs_identity[2] != shape['disk_mib'] * MIB):
             raise InvalidInput('CI fixture artifact digest or total disk size differs')
-        selected[name] = CIFixture(name, row['files_sha256'], image['reference'], image['digest'],
+        selected[name] = PreparedFixture(name, row['files_sha256'], image['reference'], image['digest'],
             kernel, kernel_hash, rootfs, rootfs_hash, expected_sha256, Path(path), manifest_identity,
-            kernel_identity, rootfs_identity, canonical(shape), startup)
+            kernel_identity, rootfs_identity, canonical(shape), startup, source_kind)
     if set(selected_names) != set(selected):
         raise InvalidInput('selected CI task lacks an approved fixture')
     return {name: selected[name] for name in selected_names}

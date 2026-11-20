@@ -1,0 +1,53 @@
+import SandboxModel.Lifecycle.Protocol.InboxCompositionModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+namespace SandboxModel.Stage1Protocol.InboxSave
+noncomputable section
+
+abbrev Outcome (E : Type) := Result ((core.result.Result Unit JournalError) × E)
+
+def statement : Str :=
+  SandproofStage1RequestRust.toStr "UPDATE controller_lifecycle_inbox SET state_json=?1,sha256=?2 WHERE id=1"
+
+-- The complete effect state is passed between the three calls. An error does not
+-- erase the state returned by a call that has already happened.
+def encodeAndSave {E : Type} (io : InboxSaveEffects E) (inbox : Inbox) (state : E) : Outcome E := do
+  let (encoded, afterEncode) ← io.encode state inbox
+  match encoded with
+  | .Err error => .ok (.Err error, afterEncode)
+  | .Ok bytes =>
+    if bytes.val.length > ConfigBudget.bytes inbox.config then
+      .ok (.Err .MaintenanceCapacity, afterEncode)
+    else do
+      let (digest, afterDigest) ← io.digest afterEncode (alloc.vec.Vec.deref bytes)
+      let (updated, afterUpdate) ← io.update afterDigest statement
+        (alloc.vec.Vec.deref bytes) (Array.to_slice digest)
+      match updated with
+      | .Err error => .ok (.Err error, afterUpdate)
+      | .Ok count =>
+        .ok (if count.val = 1 then .Ok () else .Err .CorruptStore, afterUpdate)
+
+def saveView {R T E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : InboxSaveEffects E) (inbox : Inbox) (state : E) : Outcome E := do
+  let validated ← InboxValidation.inboxView saved terminal renewal unload inbox
+  match validated with
+  | .Err error => .ok (.Err error, state)
+  | .Ok () => encodeAndSave io inbox state
+
+-- Shared by correct and wrong Rust. This states value/call/state correspondence,
+-- not standard codec correctness, independent authentication or durable commit.
+def FullSaveContract {E : Type}
+    (run : RetirementEncoding Unit → TerminalEncoding Unit → InboxRenewal.Encoding →
+      UnloadResolution.Encoding → InboxSaveEffects E → Inbox → E → Outcome E) : Prop :=
+  ∀ saved terminal renewal unload io inbox state,
+    ConfigValidation.Representable inbox.config →
+    run saved terminal renewal unload io inbox state =
+      saveView saved terminal renewal unload io inbox state
+
+end
+end SandboxModel.Stage1Protocol.InboxSave

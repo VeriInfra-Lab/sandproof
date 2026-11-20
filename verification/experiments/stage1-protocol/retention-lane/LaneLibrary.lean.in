@@ -1,0 +1,109 @@
+import SandboxModel.Lifecycle.Protocol.LaneModel
+import SandboxModel.Lifecycle.Protocol.TerminalProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.internal sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.RetentionLane
+noncomputable section
+open scoped Classical
+
+def run (encode : Encoding) (lane : LifecycleRetentionLane)
+    (context : AuthenticatedCenterContext) : Result Bool :=
+  LifecycleRetentionLane.valid_using (E := Unit) ⟨encode⟩ lane context
+
+
+theorem option_and_then_exact {T U F : Type}
+    (callback : core.ops.function.FnOnce F T (Option U)) (value : Option T) (state : F) :
+    core.option.Option.and_then callback value state =
+      match value with | none => .ok none | some x => callback.call_once state x := by
+  cases value <;> rfl
+
+theorem next_spec {E : Type} (encoding : TerminalEncoding E) (floor : U64) :
+    core.option.Option.and_then
+      (LifecycleRetentionLane.valid_using.closure.Insts.CoreOpsFunctionFnOnceTupleU64OptionRetentionWindowId
+        encoding) (U64.checked_add floor 1#u64) () = .ok (successor floor) := by
+  have hs := U64.checked_add_bv_spec floor 1#u64
+  cases checked : U64.checked_add floor 1#u64 with
+  | none => simp [core.option.Option.and_then, checked, successor]
+  | some next =>
+    simp only [checked] at hs
+    have positive : next ≠ 0#u64 := by scalar_tac
+    simp [core.option.Option.and_then, checked, successor,
+      LifecycleRetentionLane.valid_using.closure.Insts.CoreOpsFunctionFnOnceTupleU64OptionRetentionWindowId.call_once,
+      RetentionWindowId.Insts.CoreConvertTryFromU64InternalError.try_from,
+      PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from,
+      core.result.Result.ok, SandproofFoundationsRust.core.result.Result.ok, positive]
+
+theorem successor_values (floor : U64) :
+    (successor floor).map (fun n => n.val) = SandboxModel.Foundations.nextCounter floor.val := by
+  have hs := U64.checked_add_bv_spec floor 1#u64
+  cases checked : U64.checked_add floor 1#u64 <;>
+    simp only [checked] at hs <;>
+    simp [successor, checked, SandboxModel.Foundations.nextCounter, SandboxModel.Foundations.maxCounter]
+  all_goals scalar_tac
+
+theorem window_option_ne (left right : Option RetentionWindowId) :
+    core.cmp.PartialEq.ne.trait_default
+      (core.option.Option.Insts.CoreCmpPartialEqOption
+        RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId) left right =
+      .ok (decide (left ≠ right)) := by
+  cases left <;> cases right <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+      RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId.eq,
+      PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq]
+  all_goals scalar_tac
+
+theorem status_cleaned (status : TerminalStatus) :
+    TerminalStatus.Insts.CoreCmpPartialEqTerminalStatus.eq status .Cleaned =
+      .ok (decide (status = .Cleaned)) := by
+  cases status <;> simp [TerminalStatus.Insts.CoreCmpPartialEqTerminalStatus.eq,
+    TerminalStatus.read_discriminant]
+
+theorem terminal_full (last : TerminalLifecycleObservation) (request : AcceptedLifecycleIntent) :
+    TerminalLifecycleObservation.matches_request last request =
+      .ok (decide (Terminal.Matches last request)) := by
+  simpa [terminal_matches, Terminal.expected] using Terminal.terminal_refines last request
+
+theorem terminal_body (last : TerminalLifecycleObservation) :
+    TerminalLifecycleObservation.matches_request last last.request =
+      .ok (decide (Terminal.Matches last last.request)) := by
+  simpa [terminal_matches, Terminal.expected] using Terminal.terminal_refines last last.request
+
+theorem envelope_body (intent : AcceptedLifecycleIntent) (context : AuthenticatedCenterContext) :
+    AcceptedLifecycleIntent.validate intent context = .ok (Validation.expectedAccepted intent context) := by
+  exact Validation.envelope_refines intent context
+
+theorem envelope_ok (intent : AcceptedLifecycleIntent) (context : AuthenticatedCenterContext) :
+    core.result.Result.is_ok (Validation.expectedAccepted intent context) =
+      .ok (decide (Validation.ValidEnvelope intent context)) := by
+  have accepted := Validation.expectedAccepted_success_iff intent context
+  cases returned : Validation.expectedAccepted intent context with
+  | Ok value =>
+    cases value
+    have valid : Validation.ValidEnvelope intent context := accepted.mp returned
+    simp [core.result.Result.is_ok, valid]
+  | Err error =>
+    have invalid : ¬ Validation.ValidEnvelope intent context := by
+      intro valid
+      have ok := accepted.mpr valid
+      rw [returned] at ok
+      cases ok
+    simp [core.result.Result.is_ok, invalid]
+
+
+end
+end SandboxModel.Stage1Protocol.RetentionLane
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.option_and_then_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.next_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.successor_values
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.window_option_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.status_cleaned
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.terminal_body
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.envelope_body
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.envelope_ok
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RetentionLane.terminal_full

@@ -1,0 +1,68 @@
+import SandproofLifecycleSql.Types
+import SandproofLifecycleSql.SqliteCommonBinding
+import SandproofLifecycleSql.FiniteStringBinding
+import SandproofLifecycleSql.LiteralBytesBinding
+
+/-! Finite plain two-value whole-execute adapter candidate. All common SQL
+values, statement/connection observations, logical encoding and the whole
+prepare/bind/run summary are reused. The new handler below is only a logical
+input descriptor for the actual pure built-in array iterator and fixed plain
+ToSql dictionary; it is not a runtime binding-success or standalone Statement
+contract. Connection.run retains fallible raw binding, the actual post-prefix
+parameter-count check and step/reset outcome. No early count check is added.
+Conformance with fixed rusqlite at this two-value usepoint is an explicit A4
+condition. No arbitrary stateful ToSql/iterator or unsupported value claim. -/
+open Aeneas Aeneas.Std
+namespace SandproofLifecycleSqlRust
+
+abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSqliteStatementsRust.toStr text bounded
+
+abbrev core.str.Str.is_empty := SandproofFoundationsRust.core.str.Str.is_empty
+
+def core.str.Str.as_bytes (value : Str) : Result (Slice U8) := .ok value
+abbrev alloc.string.String.as_bytes :=
+  SandproofSqliteStatementsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+
+-- This projection is used only after the real, pure ToSqlOutput dictionary.
+-- Full Null/Real/Blob/Owned carriers remain in generated Types; this usepoint
+-- constructs only borrowed integer and complete text values.
+def observedPlainParameter (value : rusqlite.types.to_sql.ToSqlOutput) :
+    Result SandproofSqliteStatementsRust.SqlValue :=
+  match value with
+  | .Borrowed (.Integer number) => .ok (.integer number)
+  | .Borrowed (.Text text) => .ok (.text text)
+  | _ => .fail .panic
+
+def observedPlainReply (action : Result
+    (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error)) :
+    Result (core.result.Result SandproofSqliteStatementsRust.SqlValue rusqlite.error.Error) := do
+  let reply ← action
+  match reply with
+  | .Err error => .ok (.Err error)
+  | .Ok value =>
+      let projected ← observedPlainParameter value
+      .ok (.Ok projected)
+
+def rusqlite.statement.Statement.bind_parameters
+    {P Item Iter : Type}
+    (into : core.iter.traits.collect.IntoIterator P Item Iter)
+    (encode : rusqlite.types.to_sql.ToSql Item)
+    (statement : rusqlite.statement.Statement) (parameters : P) := do
+  let initial ← into.into_iter parameters
+  let (first, next) ← into.iteratorInst.next initial
+  let (second, last) ← into.iteratorInst.next next
+  let (ended, _) ← into.iteratorInst.next last
+  match first, second, ended with
+  | some left, some right, none =>
+      SandproofSqliteStatementsRust.bindValues
+        [observedPlainReply (encode.to_sql left), observedPlainReply (encode.to_sql right)] statement
+  | _, _, _ => .fail .panic
+
+def rusqlite.Connection.execute {P : Type} (dictionary : rusqlite.params.Params P)
+    (connection : rusqlite.Connection) (statement : Str) (parameters : P) :=
+  SandproofSqliteStatementsRust.rusqlite.Connection.execute
+    dictionary connection statement parameters
+
+end SandproofLifecycleSqlRust

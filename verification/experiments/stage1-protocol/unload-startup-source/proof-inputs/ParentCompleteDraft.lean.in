@@ -1,0 +1,63 @@
+import ParentSuccess
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+variable [Representations] [ParentCalls]
+
+/-- The conditions at the two already generated functions are separate:
+    the read chain must produce the complete original anchor, then the
+    exact anchor bytes are hashed and copied into the original requirement. -/
+theorem actual_first_full_work {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : rusqlite.transaction.Transaction}
+    {namespaceId : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx namespaceId intent now input)
+    (encodedAnchor : alloc.vec.Vec U8) (binding : Binding) (startupAction : Action)
+    (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))
+    (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)
+    (slot : reads.actionIdentities.val[1]? = some startupAction)
+    (cloneResource : ParentCalls.cloneResource startupAction.resource = .ok startupAction.resource)
+    (cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits) :
+    controller.lifecycle_inbox.source_work.snapshot.current host serde tx namespaceId intent now
+      input = .ok (.Ok (workFor reads.expected input.limits binding startupAction)) := by
+  rw [actual_current_reaches_exact_question reads]
+  exact question_keeps_full_anchor reads.expected input.limits encodedAnchor binding
+    startupAction encode digest reads.cloneNode reads.cloneRegistration slot cloneResource
+    reads.cloneSource cloneLimits
+
+omit [ParentCalls] in
+theorem returned_work_preserves_request_origin_and_resource
+    (request origin : Intent) (localValue : Local) (native : Native)
+    (inbox : controller.lifecycle_inbox.model.Inbox) (host : HostEpoch) (source : Process)
+    (optionsDigest : Binding) (credential : Credential)
+    (actions : alloc.vec.Vec Action) (receipts : alloc.vec.Vec Binding)
+    (limits : Limits) (binding : Binding) (startupAction : Action)
+    (value : Work)
+    (observed : value = workFor
+      (anchorFor request origin localValue native inbox host source optionsDigest credential actions receipts)
+      limits binding startupAction) :
+    value.anchor.request = request ∧
+    value.anchor.execution_origin = origin ∧
+    value.anchor.«local» = localValue ∧
+    value.anchor.native = native ∧
+    value.anchor.continued_from = none ∧
+    value.anchor.node = inbox.config.node ∧
+    value.anchor.host_bootstrap = host.registration ∧
+    value.anchor.source = source ∧
+    value.anchor.options_sha256 = optionsDigest ∧
+    value.anchor.credential = credential ∧
+    value.anchor.original_actions = actions ∧
+    value.anchor.original_receipts = receipts ∧
+    value.requirement.work_binding = binding ∧
+    value.requirement.node = inbox.config.node ∧
+    value.requirement.host_bootstrap = host.registration ∧
+    value.requirement.resource = startupAction.resource ∧
+    value.requirement.source = source ∧
+    value.requirement.limits = limits := by
+  subst value
+  simp [workFor, anchorFor]
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.actual_first_full_work
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.returned_work_preserves_request_origin_and_resource

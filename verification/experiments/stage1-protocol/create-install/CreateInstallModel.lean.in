@@ -1,0 +1,43 @@
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateInstall
+noncomputable section
+open scoped Classical
+
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.create_attachment_install
+
+def HasOwner (inbox : Inbox) (owner : sandproof_protocol.TenantId) : Prop :=
+  ∃ row ∈ inbox.owners.val, row.external = owner
+
+def ownerRow (session : Session) (binding : InternalLocalBinding) : Owner :=
+  { external := session.owner, «local» := binding.owner }
+
+def sessionAfter (session : Session) (e : Usize) (entry : Entry)
+    (binding : InternalLocalBinding) : Session :=
+  { session with
+    «local» := (some binding),
+    entries := session.entries.set e { entry with local_operation := (some binding.operation) } }
+
+/-- Whole value equality frames every inbox/session/entry field and both unselected vectors. -/
+def Installed (inbox : Inbox) (s e : Usize) (session : Session) (entry : Entry)
+    (binding : InternalLocalBinding) (result : Inbox) : Prop :=
+  ∃ owners : alloc.vec.Vec Owner,
+    owners.val = (if HasOwner inbox session.owner then inbox.owners.val
+      else inbox.owners.val ++ [ownerRow session binding]) ∧
+    result = { inbox with
+      owner_high_water := if HasOwner inbox session.owner then inbox.owner_high_water else binding.owner,
+      owners := owners,
+      sessions := inbox.sessions.set s (sessionAfter session e entry binding) }
+
+def FullInstallContract (implementation : Inbox → Usize → Usize → InternalLocalBinding → Result Inbox) : Prop :=
+  ∀ inbox s e binding, ∀ sessionBound : s.val < inbox.sessions.val.length,
+    ∀ entryBound : e.val < inbox.sessions.val[s.val].entries.val.length,
+    (¬ HasOwner inbox inbox.sessions.val[s.val].owner → inbox.owners.val.length < Usize.max) →
+    implementation inbox s e binding ⦃ result =>
+      Installed inbox s e inbox.sessions.val[s.val] inbox.sessions.val[s.val].entries.val[e.val] binding result ⦄
+
+end
+end SandboxModel.Stage1Protocol.CreateInstall

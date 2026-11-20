@@ -1,0 +1,80 @@
+{
+  "integration_base": "9b82954c68c85bb9c95831865fed7a278d455cb5",
+  "integration_base_tree": "b9b44be860841507c97463ff0e1ffa0c05b49225",
+  "rust": {
+    "parent_file_sha256": "aa886d2cb586fa1e142bf3f6875f671634bd3b2de136e4bc2a3e89cf2c3bb288",
+    "parent_extracted_file_sha256": "aa28520438fd9706b04e40083e430491c0aa0c2f4e9f3597cdbcaee5df4f7ca0",
+    "parent_difference": "Only the scoped Clippy expect attribute. Removing it restores the exact captured source.",
+    "startup_file_sha256": "9f2c465608ce4366cb7ee907443ff1eb8c6f05249379937e4537c8e9c4808f20",
+    "expanded_native_test_file_sha256": "0f0d5c5da2b4f2485659861e1a1935dc9e8d8196dfb83c1c3f9a5f20e8121675"
+  },
+  "msra": {
+    "parent_llbc_sha256": "c4b4ba5a124c84c6d16c1b30e32c8c02f2b65613b707de43976d375d2f053b90",
+    "startup_joint_llbc_sha256": "107c221e848ee57b4d36e2dc136516bab204e06350f3aa5a2ed902156f13d2cd",
+    "startup_joint_originals_sha256": "6166d99a798280f05f41fa86ea7f1372ae7c68f10568085e6212cdfd2fb083c1",
+    "parent_projection_resume_log_sha256": "875a2bf597df27469cd4dfbaa0678f46f1728d380d5e678f90ae1d08fabeeca2",
+    "actual_call_static_audit": {
+      "rust_symbol": "sandproof_controller_service.controller.lifecycle_inbox.readiness.snapshot.startup_records",
+      "parent_current_llbc_id": 11,
+      "parent_opaque_callee_llbc_id": 40,
+      "joint_concrete_callee_llbc_id": 11,
+      "parent_llbc_statement_ids": [
+        5465,
+        31841,
+        58859,
+        85235,
+        113088,
+        139464,
+        166482,
+        192858
+      ],
+      "parent_generated_call_count": 4,
+      "argument_origins": [
+        "tx",
+        "namespace",
+        "current.world",
+        "selected state.local"
+      ],
+      "same_E_trait_dictionaries": [
+        "sandproof_controller_service.host_contract.HostEvidence",
+        "serde_core.de.DeserializeOwned"
+      ],
+      "parent_abbrev_field": "readOriginalStartupRecords",
+      "parent_llbc_sha256": "c4b4ba5a124c84c6d16c1b30e32c8c02f2b65613b707de43976d375d2f053b90",
+      "joint_llbc_sha256": "107c221e848ee57b4d36e2dc136516bab204e06350f3aa5a2ed902156f13d2cd",
+      "native_final_startup_function_sha256": "5c5bdf06e12a309cfbcf85c0ddc84597d27d5ab5e58569e2ab9ccd901c3d1e43"
+    },
+    "actual_call_bound_audit_sha256": "a6398f875c4a68e83333d492f2d1a33e43ddbfc6aaa2fa29bd68005262b22283",
+    "startup_parent_bound_audit_sha256": "20339a45f97fb4dadc1792eb41fbf9979b35afedc20a1deb6ebed86af43a6c5b",
+    "startup_parent_bound_olean_sha256": "8e9c12ca81a17f44ecce12e9ed41a9613ed03cd5f8d2ef58789156bca8210a06",
+    "standard_dependencies": [
+      "propext",
+      "Classical.choice",
+      "Quot.sound"
+    ],
+    "StartupSqliteLink": {
+      "source_sha256": "a722d79907f193a4444058641153953d1cf52733f733086a49beaf4b7e86cd09",
+      "audit_log_sha256": "6015aa3773a7d3720be210f85f7af6946e71a86ccb702ea3cbb7147d965943d9",
+      "olean_sha256": "5b18708bb70a92c440c64d99e067c2cc882eb23e2a3682a7fbf6e3b7b07847bd",
+      "audits": 4
+    },
+    "StartupEvidenceLink": {
+      "source_sha256": "ba95461a0396e65bd4798e0f3412900f1e0e4ef6749b1c73663c4515c702dd7e",
+      "audit_log_sha256": "f267714512f2bb1576d13d5c883f1891f761a0a200094a1ad66c2ea1ce270b91",
+      "olean_sha256": "21c95e72e1a53336c9b5360386bd4de8b752a01ddc156e826383d9d51d55f6d8",
+      "audits": 3
+    },
+    "StartupProviderParent": {
+      "source_sha256": "ea10ff6e3b1051ae1eed4b08b6d20054c0f142dbdb23cd0d56d430362f4a3877",
+      "audit_log_sha256": "7bdb39e06a72138549b7c3a0aaa80de16292485fc43a6ffd756573f5bb2b8b16",
+      "olean_sha256": "45c01c969c537fab3f2eaa56b6d4c3eacac14438e77ed6397673f0f7373dfbb1",
+      "audits": 1
+    },
+    "sqlite_private_types_source_sha256": "a8afbfc69adda27f6014cc0921ac4b86ceb36e1ca52cccdb8bb0194172bec8e9"
+  },
+  "ning": {
+    "latest_lint_and_exact_test_originals_sha256": "c01ab6f3697fd5f78dc6e69f4fa7ebdf2ca94c06dac651bb0cb30d7821c22f9b",
+    "previous_affected_regressions_originals_sha256": "d17a3f7c2ab94f4936c6b57d572fddcc71e29fd16d2209e02cb2dadd5a73a8d6",
+    "reuse_scope": "Exact independent source/receipt fixture and strict Clippy on final Rust. Four affected regressions on identical executable bodies before the scoped Clippy attribute. No whole native suite execution for this batch."
+  }
+}

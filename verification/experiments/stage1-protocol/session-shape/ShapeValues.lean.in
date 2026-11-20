@@ -1,0 +1,100 @@
+import SandboxModel.Lifecycle.Protocol.ShapeModel
+import SandboxModel.Lifecycle.Protocol.SavedValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.SessionShape.Values
+noncomputable section
+open scoped Classical
+
+abbrev createIntent := SavedRetirement.Values.createIntent
+abbrev destroyIntent := SavedRetirement.Values.destroyIntent
+abbrev savedEncoding := SavedRetirement.Values.small
+
+def vector (values : List α) (bound : values.length ≤ 8) : alloc.vec.Vec α :=
+  alloc.vec.Vec.from values (by scalar_tac)
+def entry (intent : AcceptedLifecycleIntent) : Entry := ⟨intent, none, none, none, none⟩
+def normal : Session := {
+  SavedRetirement.Values.normal with
+  current_version := 1#u64, terminal := false, incarnation := none, «local» := none,
+  entries := vector [entry createIntent] (by decide), native_retirement := none }
+def stopped : Session := {
+  normal with
+  current_version := 2#u64, terminal := true,
+  entries := vector [entry createIntent, entry destroyIntent] (by decide),
+  confirmed_terminal := some ⟨destroyIntent, .Cleaned⟩ }
+def refused : Session := {
+  stopped with refusal := some .Capacity, confirmed_terminal := none }
+def lane : LifecycleRetentionLane := ⟨1#u16, 0#u64, some 1#u64, none⟩
+def inbox : Inbox := {
+  config := ⟨EnvelopeValues.center, EnvelopeValues.node, none, 2#u16, 4#u16, 1024#u32, 1024#u32, 1024#u32⟩,
+  host_epoch_observation := none, owner_high_water := 0#u64,
+  owners := vector [] (by decide), sessions := vector [] (by decide), lanes := vector [lane] (by decide) }
+def terminalEncoding (n : Nat) (bound : n ≤ 8193) : TerminalEncoding Unit :=
+  ⟨fun _ => .ok (.Ok (SavedRetirement.Values.bytes n bound))⟩
+def small := terminalEncoding 0 (by decide)
+def terminalError : TerminalEncoding Unit := ⟨fun _ => .ok (.Err ⟨9⟩)⟩
+def shadowed : Inbox := { inbox with lanes := vector [{ lane with current_window := none }, lane] (by decide) }
+def wrongRefusal : Session := {
+  refused with entries := vector [entry createIntent,
+    { entry destroyIntent with previous_effective_end_at_ms := some 1#i64 }] (by decide) }
+def foreignIntent : AcceptedLifecycleIntent := {
+  destroyIntent with center := { destroyIntent.center with center := "foreign" } }
+def wrongLast : Session := {
+  stopped with entries := vector [entry createIntent, entry foreignIntent] (by decide) }
+def physical : Session := { normal with «local» := some SavedRetirement.Values.binding }
+def observed : Inbox := { inbox with
+  host_epoch_observation := some ⟨EnvelopeValues.node, ⟨1#u16, "boot", Request.digest⟩⟩ }
+def previous : Session := {
+  physical with
+  id := "other", retention := ⟨2#u16, 1#u64⟩,
+  «local» := some { SavedRetirement.Values.binding with owner := 21#u64, operation := 31#u64 } }
+def conflicted : Inbox := { observed with sessions := vector [previous] (by decide) }
+def invalidSlot : Session := {
+  SavedRetirement.Values.normal with retention := ⟨0#u16, 1#u64⟩ }
+
+theorem normal_envelopes :
+    Validation.ValidEnvelope createIntent EnvelopeValues.context ∧
+    Validation.ValidEnvelope destroyIntent EnvelopeValues.context := SavedRetirement.Values.normal_envelopes
+
+theorem normal_prefixes : BeforePrior inbox normal ∧ BeforePrior inbox stopped ∧
+    BeforePrior inbox refused ∧ BeforePrior observed physical := by
+  simp [BeforePrior, FirstWindowMatches, inbox, observed, physical, normal, stopped, refused,
+    vector, lane, entry, SavedRetirement.Values.normal, SavedRetirement.Values.createIntent,
+    EnvelopeValues.intent]
+
+theorem terminal_fields : ConfirmedFields stopped ⟨destroyIntent, .Cleaned⟩ := by
+  have checked : U64.checked_add 1#u64 1#u64 = some 2#u64 := by decide
+  simp [ConfirmedFields, stopped, normal, vector, entry, Terminal.Matches,
+    SavedRetirement.Values.destroyIntent, SavedRetirement.Values.createIntent, EnvelopeValues.intent,
+    Validation.retentionOK, Validation.versionOK, checked]
+
+theorem refusal_fields : RefusalFields refused := by
+  simp [RefusalFields, refused, stopped, normal, vector, entry, IsCreate,
+    SavedRetirement.Values.destroyIntent, SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+
+theorem model_normal_witnesses :
+    validateView savedEncoding small inbox 0#usize normal = .ok (.Ok ()) ∧
+    validateView savedEncoding small inbox 0#usize stopped = .ok (.Ok ()) ∧
+    validateView savedEncoding small inbox 0#usize refused = .ok (.Ok ()) ∧
+    validateView savedEncoding small observed 0#usize physical = .ok (.Ok ()) := by
+  have before := normal_prefixes
+  have matching := terminal_fields.2.2.1
+  have refusal := refusal_fields
+  simp only [validateView, before.1, before.2.1, before.2.2.1, before.2.2.2,
+    refusal]
+  simp [SavedRetirement.validateView, small, terminalEncoding, SavedRetirement.Values.bytes_length,
+    inbox, observed, normal, stopped, refused, physical, vector, SavedRetirement.Values.normal,
+    checkConfirmed, ConfirmedFields, matching, entry, RefusalFields]
+
+end
+end SandboxModel.Stage1Protocol.SessionShape.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.normal_envelopes
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.normal_prefixes
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.terminal_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.refusal_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.Values.model_normal_witnesses

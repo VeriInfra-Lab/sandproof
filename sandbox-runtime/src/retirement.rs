@@ -626,6 +626,7 @@ mod tests {
 
     fn config(base: &Path) -> RuntimeConfig {
         RuntimeConfig {
+            guest_instance_id: "guest-instance".into(),
             console_policy: None,
             host_slot: Some(RuntimeHostSlot {
                 position: 0,

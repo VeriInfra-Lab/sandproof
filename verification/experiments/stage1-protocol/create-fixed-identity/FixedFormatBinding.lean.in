@@ -1,0 +1,55 @@
+import Aeneas
+import SandproofFoundations.FunsExternal
+
+/-! Finite V3 ID-format adapter candidate. The common Formatter, Display,
+Argument, Arguments, default String writer, lazy capture and u64 decimal
+rendering are the existing Foundations definitions. Only the actual fixed
+nine-byte/two-argument formatting program is new. The fixed-library agreement
+remains explicit. Only this concrete default-display program is covered; fixed-library agreement is a named dependency, not a theorem about the Std implementation. -/
+open Aeneas Aeneas.Std
+namespace SandproofStage1CreateAttachmentRust
+
+-- Delegate literals to the existing wrapper with a kernel-checked bound.
+-- This also avoids the backend's default native proof for the wrong view's "".
+abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofFoundationsRust.toStr text bounded
+
+abbrev core.fmt.Formatter := SandproofFoundationsRust.core.fmt.Formatter
+abbrev core.fmt.Error := SandproofFoundationsRust.core.fmt.Error
+abbrev core.fmt.Display := SandproofFoundationsRust.core.fmt.Display
+abbrev core.fmt.rt.Argument := SandproofFoundationsRust.core.fmt.rt.Argument
+abbrev core.fmt.Arguments := SandproofFoundationsRust.core.fmt.Arguments
+
+abbrev core.fmt.rt.Argument.new_display :=
+  @SandproofFoundationsRust.core.fmt.rt.Argument.new_display
+abbrev core.fmt.Arguments.new :=
+  @SandproofFoundationsRust.core.fmt.Arguments.new
+abbrev Shared0T.Insts.CoreFmtDisplay.fmt :=
+  @SandproofFoundationsRust.Shared0T.Insts.CoreFmtDisplay.fmt
+abbrev core.fmt.num.imp.DisplayU64.fmt :=
+  SandproofFoundationsRust.core.fmt.num.imp.DisplayU64.fmt
+
+-- The original default str Display call uses the same registered String sink.
+def Str.Insts.CoreFmtDisplay.fmt (value : Str) (state : core.fmt.Formatter) :=
+  SandproofFoundationsRust.core.fmt.Formatter.write_str state value
+
+-- Exactly the packed default-display program in original sandbox_id.
+def fixedSandboxPieces : List Nat := [3, 115, 98, 45, 192, 1, 45, 192, 0]
+
+-- No other program, sink, custom Display or allocation-success claim.
+def alloc.fmt.format (arguments : core.fmt.Arguments) : Result String := do
+  if arguments.bytecode.map (·.val) != fixedSandboxPieces then .fail .panic else
+  match arguments.arguments with
+  | [first, second] =>
+      let (firstResult, firstState) ← first.render ⟨"sb-"⟩
+      match firstResult with
+      | .Err _ => .fail .panic
+      | .Ok () =>
+          let (secondResult, rendered) ← second.render ⟨firstState.output ++ "-"⟩
+          match secondResult with
+          | .Err _ => .fail .panic
+          | .Ok () => .ok rendered.output
+  | _ => .fail .panic
+
+end SandproofStage1CreateAttachmentRust

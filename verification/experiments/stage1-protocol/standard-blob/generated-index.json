@@ -1,0 +1,129 @@
+{
+  "kind": "fixed-tool-current-unedited-generated-captures",
+  "base_commit": "9c50da7cc9391518514f14405e6c779e5c5cbe2c",
+  "bodies_edited": false,
+  "captures": {
+    "load-original": {
+      "ir_sha256": "cc648b6063adefaa5d1b1da239b0cac86e428aff57592fb0f62d93efd2314f9d",
+      "published": {},
+      "ir_value_sha256": "953b4c0c19bedfc810ec18db2da9c9abd79590f161e404f6f062e04c599e438b",
+      "captured_source_commit": "aff2c174498e57b06c213fade1d71dd98eea71f5",
+      "production_rust_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_capture_result_sha256": "5e76fa1f5c2b36029aa7a86d841e37554e624fb88b171243089a2c09b24481b7",
+      "original_capture_result_pointer": "/views/load-original/capture",
+      "formal_acceptance": false
+    },
+    "load-canonical": {
+      "ir_sha256": "03a8d2140ada9b72d437ca146fc0b67d3f399f555fc6b4351227394a4d9e969c",
+      "published": {
+        "SandproofStage1Request/Funs.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/load/SandproofStage1Request/Funs.lean",
+          "sha256": "9c9ca1a80f7ad3ab4769b061bfbca9a15339969c3300e43e935c994beeedba4f"
+        },
+        "SandproofStage1Request/Types.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/load/SandproofStage1Request/Types.lean",
+          "sha256": "d5b197e799749b1ecbbbc434b294f19eef99ebd29f36aba60cda843b38820762"
+        },
+        "translation.json": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/load/translation.json",
+          "sha256": "25e9502fb4ec535734fa73999ea7c3376924be18ea7df66f847071db1084bd5e"
+        }
+      },
+      "ir_value_sha256": "fb1825eb73ca4adc06cb5774eae199648e7c4a06ceb59c56bd67ad8b0de4e40d",
+      "captured_source_commit": "aff2c174498e57b06c213fade1d71dd98eea71f5",
+      "production_rust_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_capture_result_sha256": "5e76fa1f5c2b36029aa7a86d841e37554e624fb88b171243089a2c09b24481b7",
+      "original_capture_result_pointer": "/views/load-canonical/capture",
+      "formal_acceptance": false
+    },
+    "primitive": {
+      "ir_sha256": "46076cce0c5c5d62d52c6aa7407383c9bb9f208de01688fcc1175eed58770f96",
+      "published": {
+        "SandproofStage1Graphic/Funs.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/graphic/SandproofStage1Graphic/Funs.lean",
+          "sha256": "5c63d7730435a2345f308e3a6ec946c6b1c4317b07aafa287799718a077a9f43"
+        },
+        "SandproofStage1Graphic/Types.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/graphic/SandproofStage1Graphic/Types.lean",
+          "sha256": "ea140f926ac9f0ba9c45f0aa893826d3145dc23898b58265ef54278d495c19b6"
+        },
+        "translation.json": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/graphic/translation.json",
+          "sha256": "7bc2a58df7dbd60f5b85ce6836959a652051ac0b370fe4a71338ab4839ae14df"
+        }
+      },
+      "ir_value_sha256": "2ebaeb29e8936c3b8bee6840a133958811a7c2ac267d2ddf74fdd82269a5a008",
+      "captured_source_commit": "aff2c174498e57b06c213fade1d71dd98eea71f5",
+      "production_rust_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_capture_result_sha256": "5e76fa1f5c2b36029aa7a86d841e37554e624fb88b171243089a2c09b24481b7",
+      "original_capture_result_pointer": "/views/load-primitive/capture",
+      "formal_acceptance": false
+    },
+    "standard-actual": {
+      "ir_sha256": "dc34d97d82ec3a57b28fdd70bf456dd3627e307d6b8064b7d8c60c65233f488d",
+      "published": {
+        "SandproofLoadBlob/Funs.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/actual/SandproofLoadBlob/Funs.lean",
+          "sha256": "a47313ce3bd49f718835dc0d7c93d74da3d700ea8a6179ef5deb60c6d4a42d2f"
+        },
+        "SandproofLoadBlob/Types.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/actual/SandproofLoadBlob/Types.lean",
+          "sha256": "c3cb96746df45513a86fb3000828251db398251699884408c1d4d0c23956382e"
+        },
+        "translation.json": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/actual/translation.json",
+          "sha256": "c49ba9d9c83c6feab8807d47b835c821eed95144294af525a3c19bfc1f0abef7"
+        }
+      },
+      "ir_value_sha256": "67c3178b8ecb98fc5e0493524c18bf8dc39c239832422e0cf6531c5565164928",
+      "captured_source_commit": "aff2c174498e57b06c213fade1d71dd98eea71f5",
+      "original_capture_result_sha256": "42aaa08b2e03e5c90349f43ae42513441b66f79847657ae5ebdda842b62c7820",
+      "formal_acceptance": false,
+      "production_rust_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_capture_result_pointer": "/views/blob-actual/capture"
+    },
+    "standard-repeat-first": {
+      "ir_sha256": "194d3d6e0906ae0c7a4b031ae279e454417680e40af7401e82796a28a01da504",
+      "published": {
+        "SandproofLoadBlob/Funs.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/repeat-first/SandproofLoadBlob/Funs.lean",
+          "sha256": "72a53e6595a55d8152f8b1ed7af5592ddefe9b27c391cd9fc615e9b4abf571d9"
+        },
+        "SandproofLoadBlob/Types.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/repeat-first/SandproofLoadBlob/Types.lean",
+          "sha256": "c3cb96746df45513a86fb3000828251db398251699884408c1d4d0c23956382e"
+        },
+        "translation.json": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/repeat-first/translation.json",
+          "sha256": "f035ce69c342b966ded231118c54e47a1661a4536a358f0509032b151aa92043"
+        }
+      },
+      "ir_value_sha256": "6d3ea243999e9605232558e649a54954afb7a51f39d3944398e874a39974f40d",
+      "captured_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_capture_result_sha256": "5ab5f250b827a5af6781cb2c3c1ea7a03019b12e769a640f3e7330ab35595568",
+      "formal_acceptance": false
+    },
+    "standard-second-error-first": {
+      "ir_sha256": "b643af6f3bca698d5e99fd6b458fea5fe498af12a8048f7b69ced627a6e1411d",
+      "published": {
+        "SandproofLoadBlob/Funs.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/second-error-first/SandproofLoadBlob/Funs.lean",
+          "sha256": "3922df15fcbea00bbd60050d51cd34e909679f772c4422b657a9d38f52bcc72b"
+        },
+        "SandproofLoadBlob/Types.lean": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/second-error-first/SandproofLoadBlob/Types.lean",
+          "sha256": "c3cb96746df45513a86fb3000828251db398251699884408c1d4d0c23956382e"
+        },
+        "translation.json": {
+          "path": "verification/aeneas/stage1-protocol/standard-blob/second-error-first/translation.json",
+          "sha256": "a2f34eba46dc68b29138d9c9a29b4179c9ec9024a654767894774770c22524d6"
+        }
+      },
+      "ir_value_sha256": "5e15c1ef8ffd95b060c60b89a79269d98adf5c2835aa4b516da1e1966bfc52ff",
+      "captured_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+      "original_capture_result_sha256": "5ab5f250b827a5af6781cb2c3c1ea7a03019b12e769a640f3e7330ab35595568",
+      "formal_acceptance": false
+    }
+  },
+  "source_adopted": true
+}

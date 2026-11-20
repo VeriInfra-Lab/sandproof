@@ -1,0 +1,289 @@
+import SandproofUnloadStartupJoint.Types
+
+open Aeneas Aeneas.Std Result ControlFlow Error
+
+namespace SandproofUnloadStartupJoint
+
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool := .ok (decide (left = right))
+
+def sandbox_controller_core.model.EffectId.command
+    [Representations]
+    (self : sandbox_controller_core.model.EffectId) : Result sandbox_controller_core.model.Command
+    := do
+  ok self.logical.command
+
+def P.Insts.CoreOpsFunctionFnOnceTupleCaptureHandoffOptionOriginalContinuation.call_once
+    [Representations]
+    (f : sandbox_controller_core.capture.CaptureHandoff →
+      Result (Option sandbox_controller_core.capture.continuation.OriginalContinuation))
+    (x : sandbox_controller_core.capture.CaptureHandoff) :
+    Result (Option sandbox_controller_core.capture.continuation.OriginalContinuation) :=
+  f x
+
+def core.option.Option.is_some_and {T S : Type}
+    (f : core.ops.function.FnOnce S T Bool) (x : Option T) (s : S) : Result Bool :=
+  match x with
+  | none => .ok false
+  | some a => f.call_once s a
+
+def core.option.Option.is_none_or {T S : Type}
+    (f : core.ops.function.FnOnce S T Bool) (x : Option T) (s : S) : Result Bool :=
+  match x with
+  | none => .ok true
+  | some a => f.call_once s a
+
+def core.option.Option.and_then {T U F : Type}
+    (f : core.ops.function.FnOnce F T (Option U)) (x : Option T) (s : F) : Result (Option U) :=
+  match x with
+  | none => .ok none
+  | some a => f.call_once s a
+
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (d : core.cmp.PartialEq T T) (x y : Option T) : Result Bool :=
+  match x, y with
+  | none, none => .ok true
+  | some a, some b => d.eq a b
+  | _, _ => .ok false
+
+class Operations [Representations] where
+  op0 : Bool → Bool → Result Bool
+  op6 :
+  rusqlite.Connection → Str → Result (core.result.Result
+    rusqlite.statement.Statement rusqlite.error.Error)
+  op7 {T : Type} (typesto_sqlToSqlInst : rusqlite.types.to_sql.ToSql T) :
+  Array T 1#usize → rusqlite.statement.Statement → Result
+    ((core.result.Result Unit rusqlite.error.Error) ×
+    rusqlite.statement.Statement)
+  op8 {T : Type} {F : Type} (coreopsfunctionFnMutFTupleShared0RowResultTErrorInst :
+  core.ops.function.FnMut F rusqlite.row.Row (core.result.Result T
+  rusqlite.error.Error)) :
+  rusqlite.row.MappedRows F → Result ((Option (core.result.Result T
+    rusqlite.error.Error)) × (rusqlite.row.MappedRows F))
+  op9 {I : Type} {T : Type} (RowIndexInst : rusqlite.row.RowIndex I)
+  (typesfrom_sqlFromSqlInst : rusqlite.types.from_sql.FromSql T) :
+  rusqlite.row.Row → I → Result (core.result.Result T rusqlite.error.Error)
+  op10 :
+  Std.Usize → rusqlite.statement.Statement → Result (core.result.Result
+    Std.Usize rusqlite.error.Error)
+  op11 {T : Type} {P : Type} {F : Type} (paramsParamsInst : rusqlite.params.Params
+  P) (coreopsfunctionFnMutFTupleShared0RowResultTErrorInst :
+  core.ops.function.FnMut F rusqlite.row.Row (core.result.Result T
+  rusqlite.error.Error)) :
+  rusqlite.statement.Statement → P → F → Result ((core.result.Result
+    (rusqlite.row.MappedRows F) rusqlite.error.Error) ×
+    rusqlite.statement.Statement)
+  op12 : rusqlite.transaction.Transaction → Result rusqlite.Connection
+  op13 :
+  rusqlite.types.value_ref.ValueRef → Result (core.result.Result
+    (alloc.vec.Vec Std.U8) rusqlite.types.from_sql.FromSqlError)
+  op14 {T : Type} (ToSqlInst : rusqlite.types.to_sql.ToSql T) :
+  T → Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput
+    rusqlite.error.Error)
+  op15 :
+  Str → Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput
+    rusqlite.error.Error)
+  op16 :
+  sandbox_controller_core.capture.continuation.OriginalContinueIdentity →
+    Result sandbox_controller_core.model.Command
+  op17 :
+  sandbox_controller_core.capture.CaptureHandoff → Result (Option
+    sandbox_controller_core.capture.continuation.OriginalContinuation)
+  op19 :
+  sandbox_controller_core.model.World → sandbox_controller_core.model.Command
+    → Result Bool
+  op20 :
+  sandbox_controller_core.ids.FsId → sandbox_controller_core.ids.FsId →
+    Result Bool
+  op21 :
+  sandbox_controller_core.ids.SnapshotId →
+    sandbox_controller_core.ids.SnapshotId → Result Bool
+  op22 :
+  sandbox_controller_core.model.FilePolicyRef →
+    sandbox_controller_core.model.FilePolicyRef → Result Bool
+  op23 :
+  sandbox_controller_core.model.SnapshotManifestRef →
+    sandbox_controller_core.model.SnapshotManifestRef → Result Bool
+  op24 :
+  sandbox_controller_core.model.RestoreSource →
+    sandbox_controller_core.model.RestoreSource → Result Bool
+  op25 :
+  sandbox_controller_core.model.NetworkPolicy → Result
+    sandbox_controller_core.model.NetworkPolicy
+  op26 :
+  sandbox_controller_core.model.NetworkPolicy →
+    sandbox_controller_core.model.NetworkPolicy → Result Bool
+  op27 :
+  sandbox_controller_core.model.OperationKind →
+    sandbox_controller_core.model.OperationKind → Result Bool
+  op28 {__D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer __D Clause0_Error) :
+  __D → Result (core.result.Result sandbox_controller_core.model.EffectId
+    Clause0_Error)
+  op30 :
+  sandbox_controller_core.model.EffectOrigin →
+    sandbox_controller_core.model.EffectOrigin → Result Bool
+  op31 :
+  sandbox_controller_core.model.World → sandbox_controller_core.ids.SandboxId
+    → Result (Option sandbox_controller_core.model.SandboxRecord)
+  op32 :
+  sandbox_controller_core.model.World →
+    sandbox_controller_core.model.OperationKey → Result (Option
+    sandbox_controller_core.model.OperationLedgerRecord)
+  op33 :
+  sandbox_controller_core.model.World →
+    sandbox_controller_core.model.OperationKey → Result (Option
+    sandbox_controller_core.model.OperationPlan)
+  op34 :
+  sandbox_controller_core.model.World →
+    sandbox_controller_core.model.LogicalEffectId → Result (Option
+    sandbox_controller_core.model.LogicalEffectRecord)
+  op35 : sandproof_protocol.TenantId → sandproof_protocol.TenantId → Result Bool
+  op36 :
+  sandproof_protocol.SandboxId → sandproof_protocol.SandboxId → Result Bool
+  op37 :
+  sandproof_protocol.OperationId → sandproof_protocol.OperationId → Result
+    Bool
+  op38 : sandproof_protocol.SandboxId → Result Str
+  op39 {C : Type} {__D : Type} {Clause1_Error : Type} (serde_coredeDeserializeInst :
+  serde_core.de.Deserialize C) (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer __D Clause1_Error) :
+  __D → Result (core.result.Result (sandproof_protocol.WorkAction C)
+    Clause1_Error)
+  op40 {E : Type} {__D : Type} {Clause1_Error : Type} (serde_coredeDeserializeInst :
+  serde_core.de.Deserialize E) (serde_coredeDeserializerInst :
+  serde_core.de.Deserializer __D Clause1_Error) :
+  __D → Result (core.result.Result (sandproof_protocol.WorkReceipt E)
+    Clause1_Error)
+  op41 {E : Type} {C : Type} (ResourceEvidenceInst :
+  sandproof_protocol.ResourceEvidence E) :
+  sandproof_protocol.WorkReceipt E → sandproof_protocol.WorkAction C →
+    Result (core.result.Result Unit sandproof_protocol.ContractError)
+  op42 {T : Type} (serde_coredeDeserializeInst : serde_core.de.Deserialize T) :
+  Slice Std.U8 → Result (core.result.Result T serde_json.error.Error)
+  op43 :
+  Str → sandbox_controller_core.ids.SandboxId → Result (core.result.Result
+    sandproof_protocol.SandboxId JournalError)
+  op44 :
+  Str → sandbox_controller_core.model.OperationKey → Result
+    (core.result.Result sandproof_protocol.OperationId JournalError)
+  op45 :
+  sandbox_controller_core.ids.TenantId → Result (core.result.Result
+    sandproof_protocol.TenantId JournalError)
+  op46 :
+  Str → sandbox_controller_core.model.Command → Result (core.result.Result
+    sandproof_protocol.ResourceRef JournalError)
+  op47 : sandproof_protocol.ContractError → Result JournalError
+  op48 : serde_json.error.Error → Result JournalError
+  op49 : rusqlite.error.Error → Result JournalError
+  op50 {I : Type} {F : Type} {Clause0_Item : Type}
+  (coreitertraitsiteratorIteratorInst : core.iter.traits.iterator.Iterator I
+  Clause0_Item)
+  (coreopsfunctionFnMutFPairClause0_ItemArrayOptionPairWorkActionEffectIdVecU85PairResultTupleJournalErrorArrayOptionPairWorkActionEffectIdVecU85Inst
+  : core.ops.function.FnMut F (Clause0_Item × (Array (Option
+  ((sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) ×
+  (alloc.vec.Vec Std.U8))) 5#usize)) ((core.result.Result Unit JournalError) ×
+  (Array (Option ((sandproof_protocol.WorkAction
+  sandbox_controller_core.model.EffectId) × (alloc.vec.Vec Std.U8)))
+  5#usize))) :
+  I → Array (Option ((sandproof_protocol.WorkAction
+    sandbox_controller_core.model.EffectId) × (alloc.vec.Vec Std.U8))) 5#usize
+    → F → Result ((core.result.Result Unit JournalError) × (Array (Option
+    ((sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) ×
+    (alloc.vec.Vec Std.U8))) 5#usize))
+
+variable [Representations] [ops : Operations]
+
+abbrev Bool.Insts.CoreCmpPartialEqBool.ne := @ops.op0
+
+abbrev rusqlite.Connection.prepare := @ops.op6
+
+abbrev ArrayT1.Insts.RusqliteParamsParams.__bind_in := @ops.op7
+
+abbrev rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError.next := @ops.op8
+
+abbrev rusqlite.row.Row.get := @ops.op9
+
+abbrev Usize.Insts.RusqliteRowRowIndex.idx := @ops.op10
+
+abbrev rusqlite.statement.Statement.query_map := @ops.op11
+
+abbrev rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref := @ops.op12
+
+abbrev alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result := @ops.op13
+
+abbrev Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql := @ops.op14
+
+abbrev Str.Insts.RusqliteTypesTo_sqlToSql.to_sql := @ops.op15
+
+abbrev sandbox_controller_core.capture.continuation.OriginalContinueIdentity.activation_command := @ops.op16
+
+abbrev sandbox_controller_core.capture.CaptureHandoff.original_continuation := @ops.op17
+
+abbrev sandbox_controller_core.effect.effect_succeeded_check := @ops.op19
+
+abbrev sandbox_controller_core.ids.FsId.Insts.CoreCmpPartialEqFsId.eq := @ops.op20
+
+abbrev sandbox_controller_core.ids.SnapshotId.Insts.CoreCmpPartialEqSnapshotId.eq := @ops.op21
+
+abbrev sandbox_controller_core.model.FilePolicyRef.Insts.CoreCmpPartialEqFilePolicyRef.eq := @ops.op22
+
+abbrev sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCmpPartialEqSnapshotManifestRef.eq := @ops.op23
+
+abbrev sandbox_controller_core.model.RestoreSource.Insts.CoreCmpPartialEqRestoreSource.eq := @ops.op24
+
+abbrev sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone := @ops.op25
+
+abbrev sandbox_controller_core.model.NetworkPolicy.Insts.CoreCmpPartialEqNetworkPolicy.eq := @ops.op26
+
+abbrev sandbox_controller_core.model.OperationKind.Insts.CoreCmpPartialEqOperationKind.eq := @ops.op27
+
+abbrev sandbox_controller_core.model.EffectId.Insts.Serde_coreDeDeserialize.deserialize := @ops.op28
+
+abbrev sandbox_controller_core.model.EffectOrigin.Insts.CoreCmpPartialEqEffectOrigin.eq := @ops.op30
+
+abbrev sandbox_controller_core.model.World.sandbox_record := @ops.op31
+
+abbrev sandbox_controller_core.model.World.operation_record := @ops.op32
+
+abbrev sandbox_controller_core.model.World.operation_plan := @ops.op33
+
+abbrev sandbox_controller_core.model.World.logical_effect := @ops.op34
+
+abbrev sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq := @ops.op35
+
+abbrev sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq := @ops.op36
+
+abbrev sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq := @ops.op37
+
+abbrev sandproof_protocol.SandboxId.as_str := @ops.op38
+
+abbrev sandproof_protocol.WorkAction.Insts.Serde_coreDeDeserialize.deserialize := @ops.op39
+
+abbrev sandproof_protocol.WorkReceipt.Insts.Serde_coreDeDeserialize.deserialize := @ops.op40
+
+abbrev sandproof_protocol.WorkReceipt.validate_for := @ops.op41
+
+abbrev serde_json.de.from_slice := @ops.op42
+
+abbrev controller.identity.sandbox_id := @ops.op43
+
+abbrev controller.identity.operation_id := @ops.op44
+
+abbrev controller.identity.owner_id := @ops.op45
+
+abbrev controller.identity.resource := @ops.op46
+
+abbrev JournalError.Insts.CoreConvertFromContractError.from := @ops.op47
+
+abbrev JournalErrorFromJson.from := @ops.op48
+
+abbrev JournalErrorFromSqlite.from := @ops.op49
+
+abbrev controller.lifecycle_inbox.readiness.snapshot.accept_startup_rows := @ops.op50
+
+end SandproofUnloadStartupJoint

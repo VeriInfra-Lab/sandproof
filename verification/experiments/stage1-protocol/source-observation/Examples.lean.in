@@ -1,0 +1,26 @@
+import SandboxModel.Lifecycle.Protocol.SourceObservation.Values
+open Aeneas Aeneas.Std SandproofSourceObservationRust
+namespace SandboxModel.Stage1Protocol.SourceObservation
+open Values
+theorem normal_expected : Expected value requirement = true := by
+  simp [Expected, Accepts, value, requirement, limits]
+theorem binding_expected : Expected badBinding requirement = false := by
+  simp [Expected, Accepts, badBinding, value, requirement, different_digest]
+theorem start_expected : Expected badStart requirement = false := by
+  simp [Expected, Accepts, badStart, value, requirement, capture.SourceProcessIdentity.mk.injEq]
+theorem boot_expected : Expected badBoot requirement = false := by
+  simp [Expected, Accepts, badBoot, value, requirement, capture.SourceProcessIdentity.mk.injEq]
+theorem large_expected : Expected tooLarge requirement = false := by
+  simp [Expected, Accepts, tooLarge, value, requirement, limits]
+theorem digest_expected : Expected changedDigests requirement = true := by
+  simp [Expected, Accepts, changedDigests, value, requirement, limits]
+theorem boundary_expected : Expected boundary requirement = true := by
+  simp [Expected, Accepts, boundary, value, requirement, limits]
+end SandboxModel.Stage1Protocol.SourceObservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.binding_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.start_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.boot_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.large_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.digest_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.boundary_expected

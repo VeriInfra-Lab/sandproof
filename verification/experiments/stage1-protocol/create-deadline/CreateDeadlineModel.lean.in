@@ -1,0 +1,21 @@
+import SandproofStage1Request.Types
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateDeadlineModel
+
+abbrev JournalError := SandproofStage1RequestRust.sandproof_controller_service.JournalError
+abbrev RustResult := core.result.Result I64 JournalError
+abbrev unsupported : JournalError :=
+  SandproofStage1RequestRust.sandproof_controller_service.JournalError.UnsupportedInput
+
+-- Pure conversion/remap only. No accepted intent, transaction, SQL or save claim.
+def InRange (value : U64) : Prop := (value.val : Int) ≤ I64.max
+
+def Correct (value : U64) : RustResult → Prop
+  | .Ok output => output.val = (value.val : Int)
+  | .Err error => error = unsupported ∧ I64.max < (value.val : Int)
+
+def FullDeadlineContract (convert : U64 → Result RustResult) : Prop :=
+  ∀ value, convert value ⦃ result => Correct value result ⦄
+
+end SandboxModel.Stage1Protocol.CreateDeadlineModel

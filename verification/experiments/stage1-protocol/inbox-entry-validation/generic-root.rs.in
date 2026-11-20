@@ -1,0 +1,9 @@
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+pub(super) fn proof_entry_kind_using<E: super::unload_resolution::UnloadEncoding>(
+    inbox: &Inbox,
+    session: &Session,
+    entry: &Entry,
+    context: &AuthenticatedCenterContext,
+) -> Result<usize, JournalError> {
+    inbox.entry_kind_using::<E>(session, entry, context)
+}

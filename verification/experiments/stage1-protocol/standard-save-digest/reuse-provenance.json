@@ -1,0 +1,19 @@
+{
+  "kind": "unchanged-Save-domain-math-and-parent-SHA-contract",
+  "old_five_domain_lemmas": {
+    "body_sha256": "58f98cf7e3e9d2bd6d3841f35bad261dacaa6cd14ca09eb63a23a0821a3dd5e3",
+    "verbatim_bodies_preserved": true,
+    "old_original_readback_sha256": "f11aad81cd4999e843c1110e4649afe4ed3c8fc444070aa4b8998e90d37512e0",
+    "execution_retagged": false
+  },
+  "current_specs_and_refinements": {
+    "verification/experiments/stage1-protocol/inbox-save/InboxSaveModel.lean.in": "dc3ac4fe2b70f4d42fd5ad8c9a33273ee216b3b08c20d1fa2c019c80ae5655ad",
+    "verification/experiments/stage1-protocol/inbox-save/InboxSaveRun.lean.in": "855064a16f60567a9c5aba057e84611a6064a099b1dc66636aa2e2dc93b9ab15",
+    "verification/experiments/stage1-protocol/inbox-save/InboxSaveProofs.lean.in": "1bf54cc02886dbdd3c50d389e6d8d13d374bd91090256310481d70d447dcf8c9",
+    "verification/experiments/stage1-protocol/inbox-config-validation/ConfigValidationModel.lean.in": "443c875f93d2946bc636f61f90673822f19c06f8b323b33d03726102096603b7",
+    "verification/experiments/stage1-protocol/inbox-config/ConfigBudgetModel.lean.in": "3ff225e93c79269c769e63f5eaa1a4eec18a98e11ba5f27200166c151d20cdfb"
+  },
+  "parent_package": "standard-digest",
+  "parent_full_contract": "SandboxModel.Stage1Protocol.StandardDigest.FullDigestContract",
+  "new_generic_caller_and_actual_digest_instantiations_require_current_checks": true
+}

@@ -1,0 +1,152 @@
+// Real original journal fixture and actual full-work comparison. Host input is controlled.
+fn proof_work_match_fixture(path: &Path) -> (ControllerJournal, SourceWorkRecord) {
+    let (mut journal, _) = ready(path);
+    let record = prepare(&mut journal);
+    (journal, record)
+}
+
+#[test]
+fn proof_work_match_normal() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    assert!(crate::proof_source_work_eq(
+        &record.work,
+        &record.work.clone()
+    ));
+}
+
+#[test]
+fn proof_work_match_limits() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut changed = record.work.clone();
+    changed.requirement.limits.max_configuration_bytes += 1;
+    assert!(!crate::proof_source_work_eq(&record.work, &changed));
+}
+
+#[test]
+fn proof_work_match_node() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut changed = record.work.clone();
+    changed.requirement.node.node_generation = 2.try_into().unwrap();
+    assert!(!crate::proof_source_work_eq(&record.work, &changed));
+}
+
+#[test]
+fn proof_work_match_bootstrap() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut changed = record.work.clone();
+    changed
+        .requirement
+        .host_bootstrap
+        .boot_id
+        .push_str("-other");
+    assert!(!crate::proof_source_work_eq(&record.work, &changed));
+}
+
+#[test]
+fn proof_work_match_resource() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut changed = record.work.clone();
+    changed.requirement.resource.id = "other-vm".try_into().unwrap();
+    assert!(!crate::proof_source_work_eq(&record.work, &changed));
+}
+
+#[test]
+fn proof_work_match_process() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut changed = record.work.clone();
+    changed.requirement.source.start_time_ticks += 1;
+    assert!(!crate::proof_source_work_eq(&record.work, &changed));
+}
+
+#[test]
+fn proof_work_match_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut changed = record.work.clone();
+    changed.requirement.work_binding = ContentDigest::from_sha256([99; 32]);
+    assert!(!crate::proof_source_work_eq(&record.work, &changed));
+}
+
+#[test]
+fn proof_work_match_credential() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut changed = record.work.clone();
+    changed.anchor.credential.0 += 1;
+    assert!(!crate::proof_source_work_eq(&record.work, &changed));
+}
+
+#[test]
+fn proof_work_match_credential_bytes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut changed = record.work.clone();
+    changed.anchor.credential.1[31] ^= 1;
+    assert!(!crate::proof_source_work_eq(&record.work, &changed));
+}
+
+#[test]
+fn proof_work_match_accepted_version() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut changed = record.work.clone();
+    changed.anchor.request.accepted_version += 1;
+    assert!(!crate::proof_source_work_eq(&record.work, &changed));
+}
+
+#[test]
+fn proof_work_match_command() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut changed = record.work.clone();
+    changed
+        .anchor
+        .native
+        .uncertain_actions
+        .push(core::EffectId {
+            logical: core::LogicalEffectId {
+                command: core::Command::InstallFence {
+                    sandbox: core::SandboxId(1),
+                    epoch: 2,
+                    terminal: true,
+                },
+            },
+            attempt: 3,
+        });
+    assert!(!crate::proof_source_work_eq(&record.work, &changed));
+}
+
+#[test]
+fn proof_work_match_receipt() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut changed = record.work.clone();
+    changed
+        .anchor
+        .original_receipts
+        .push(ContentDigest::from_sha256([98; 32]));
+    assert!(!crate::proof_source_work_eq(&record.work, &changed));
+}
+
+#[test]
+fn proof_work_match_codec_limits() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record) = proof_work_match_fixture(&dir.path().join("db"));
+    let mut sources = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let next = sources
+        .records
+        .iter_mut()
+        .find(|next| next.work == record.work)
+        .unwrap();
+    next.work.requirement.limits.max_configuration_bytes += 1;
+    assert!(matches!(
+        codec::save(&journal.journal.connection, &sources, sources.max_sessions),
+        Err(JournalError::Conflict)
+    ));
+}

@@ -1,0 +1,2 @@
+# Keep the original Aeneas template bytes, including trailing blank lines.
+**/*_Template.lean whitespace=-blank-at-eof

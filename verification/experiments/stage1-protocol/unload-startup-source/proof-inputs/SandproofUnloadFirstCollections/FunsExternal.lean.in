@@ -1,0 +1,19 @@
+import SandproofUnloadFirstCollections.Types
+import SandboxModel.Lifecycle.Protocol.DigestByteBridge
+
+open Aeneas Aeneas.Std
+namespace SandproofUnloadFirstCollections
+
+-- ActionIdentity's fixed derived Clone preserves each owned field.
+def sandproof_protocol.ActionIdentity.Insts.CoreCloneClone.clone
+    (identity : sandproof_protocol.ActionIdentity) : Result sandproof_protocol.ActionIdentity :=
+  .ok identity
+
+-- Exact complete-byte view from the existing SHA-256 boundary.
+def controller.lifecycle_inbox.source_work.digest (bytes : Slice U8) :
+    Result sandproof_protocol.lifecycle.digest.ContentDigest :=
+  if bytes.val.length < 2^61 then
+    .ok (SandboxModel.Stage1Protocol.DigestByteBridge.referenceOutput bytes)
+  else .fail .panic
+
+end SandproofUnloadFirstCollections

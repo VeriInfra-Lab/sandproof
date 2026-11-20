@@ -1,0 +1,28 @@
+import SandproofRestoreValidation.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofRestoreValidationRust
+namespace SandboxModel.Stage1Protocol.RestoreLifetime
+abbrev Native := controller.lifecycle_inbox.readiness.NativeCreateSnapshot
+abbrev Facts := sandproof_protocol.lifecycle.observation.CurrentReadyFacts
+abbrev Lifetime := controller.admission.Lifetime
+/-- Already decoded values; no authority, persistence or physical-state claim. -/
+def Matches (native : Native) (saved : Facts) (now : I64) : Prop :=
+  match native.lifetime with
+  | none => False
+  | some life =>
+    match life.started_at_ms with
+    | none => False
+    | some started =>
+      ¬ now < 0#i64 ∧ ¬ started < 0#i64 ∧ ¬ life.deadline_ms < 0#i64 ∧
+      ¬ life.max_deadline_ms < 0#i64 ∧ ¬ life.startup_deadline_ms < 0#i64 ∧
+      saved.started_at_ms = IScalar.hcast .U64 started ∧
+      saved.end_at_ms = IScalar.hcast .U64 life.deadline_ms ∧
+      saved.max_end_at_ms = IScalar.hcast .U64 life.max_deadline_ms ∧
+      saved.startup_deadline_ms = IScalar.hcast .U64 life.startup_deadline_ms ∧
+      saved.observed_at_ms ≤ IScalar.hcast .U64 now ∧
+      started ≤ now ∧ started ≤ life.startup_deadline_ms ∧
+      now < life.deadline_ms ∧ now < life.max_deadline_ms
+
+def FullLifetimeContract (run : Native → Facts → I64 → Result Bool) : Prop :=
+  ∀ native saved now, run native saved now = .ok (by classical exact decide (Matches native saved now))
+end SandboxModel.Stage1Protocol.RestoreLifetime

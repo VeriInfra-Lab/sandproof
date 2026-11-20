@@ -9,7 +9,9 @@ from unittest.mock import patch
 from tools.check_network_extraction import (ROOTS, STANDARD_SOURCES, check, check_standard_sources,
                                            drop_glue_name, llbc_digest)
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.tests.proof_input_fixture import reference_root
+
+ROOT = reference_root()
 FUNCTION = 'sandbox_controller_core::network::ipv4_list_contains'
 
 

@@ -1,0 +1,26 @@
+{
+  "kind": "actual-reply-helper-same-contract-rust-mutations",
+  "property": "SandboxModel.Stage1Protocol.RecordReply.FullReplyContract",
+  "actual": {
+    "mutation": null
+  },
+  "wrong": {
+    "skip-match": {
+      "source": "sandbox-internal/src/server/lifecycle.rs",
+      "before": "    match received {\n        Ok(recorded) if recorded.matches(intent) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
+      "after": "    let _ = intent;\n    match received {\n        Ok(recorded) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Err(ReceiveError::Capacity | ReceiveError::Unavailable) => Err(RecordReplyError::Unavailable),\n    }\n",
+      "scope": "Only omit the original full matches decision; remove now-unreachable Ok fallback and mark the borrowed input used so this stays a compiling intended wrong implementation.",
+      "common_normal": "RecordReplyValues.original / received",
+      "counterexample": "same session and changed full capture: RecordReplyValues.original / changedCapture"
+    },
+    "clear-terminal": {
+      "source": "sandbox-internal/src/server/lifecycle.rs",
+      "before": "    match received {\n        Ok(recorded) if recorded.matches(intent) => Ok(recorded),\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
+      "after": "    match received {\n        Ok(mut recorded) if recorded.matches(intent) => {\n            recorded.terminal = false;\n            Ok(recorded)\n        }\n        Err(ReceiveError::Conflict) => Err(RecordReplyError::Conflict),\n        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {\n            Err(RecordReplyError::Unavailable)\n        }\n    }\n",
+      "scope": "Only clobber the full returned terminal payload after the unchanged successful matches guard.",
+      "common_normal": "RecordReplyValues.original / received (terminal false)",
+      "counterexample": "normal complete matching receipt with terminal true: RecordReplyValues.original / terminalReceived"
+    }
+  },
+  "proof_policy": "Wrong views import the unchanged Model/Values and existing Recorded proof, and exclude the correct RecordReplyCore/RecordReplyWitnesses."
+}

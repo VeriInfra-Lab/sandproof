@@ -1,0 +1,16 @@
+
+// Invoke the actual standard instances; no hash expression is copied here.
+pub fn proof_digest_instance_load(connection: &Connection, bytes: &[u8]) -> [u8; 32] {
+    let mut effects = super::super::checkpoint::StandardConfigRead { connection };
+    InboxLoadEffects::digest(&mut effects, bytes)
+}
+
+pub fn proof_digest_instance_save(connection: &Connection, bytes: &[u8]) -> [u8; 32] {
+    let mut effects = StandardInboxSave { connection };
+    InboxSaveEffects::digest(&mut effects, bytes)
+}
+
+// Invoke the current rebind adapter on the original complete receiver.
+pub fn proof_digest_instance_save_rebind(effects: &mut super::super::checkpoint::StandardConfigRead<'_>, bytes: &[u8]) -> [u8;32] {
+    InboxSaveEffects::digest(effects, bytes)
+}

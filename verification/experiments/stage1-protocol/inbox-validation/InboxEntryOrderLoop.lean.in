@@ -1,0 +1,118 @@
+import SandboxModel.Lifecycle.Protocol.InboxEntryOrderStep
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxValidation
+noncomputable section
+open scoped Classical
+
+def entryLoop {U : Type} (encoding : UnloadEncoding U) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) (iterator : core.slice.iter.Iter Entry)
+    (maximum : U64) (kinds : Array U16 5#usize) :=
+  Inbox.validate_entry_order_using_loop encoding iterator inbox session.id session.retention
+    session.owner session.current_version session.terminal session.refusal session.incarnation
+    session.local session.entries session.confirmed_terminal session.confirmed_renewal
+    session.compacted_sdk_through session.native_retirement context maximum kinds
+
+def storedScan (encode : UnloadResolution.Encoding) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) : List Entry → U64 → Array U16 5#usize → Result EntryLoopReturn
+  | [], maximum, kinds => .ok (.Ok (maximum, kinds))
+  | entry :: tail, maximum, kinds => do
+    let checked ← storedEntryStep encode inbox session context entry maximum kinds
+    match checked with
+    | .Err error => .ok (.Err error)
+    | .Ok (next, counted) => storedScan encode inbox session context tail next counted
+
+theorem entry_loop_end {U : Type} (encoding : UnloadEncoding U) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) (values : Slice Entry) (index : Nat)
+    (maximum : U64) (kinds : Array U16 5#usize) (outside : values.val.length ≤ index) :
+    entryLoop encoding inbox session context (InboxEntry.cursor values index) maximum kinds =
+      .ok (.Ok (maximum, kinds)) := by
+  change loop (fun (iterator, current, counted) => entryBody encoding inbox session context iterator current counted)
+    (InboxEntry.cursor values index, maximum, kinds) = _
+  rw [loop]
+  dsimp only
+  rw [entry_body_end encoding inbox session context values index maximum kinds outside]
+  simp
+
+theorem entry_loop_step {U : Type} (encoding : UnloadEncoding U) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) (values : Slice Entry) (index : Nat)
+    (maximum : U64) (kinds : Array U16 5#usize) (inside : index < values.val.length) :
+    entryLoop encoding inbox session context (InboxEntry.cursor values index) maximum kinds =
+      (do let checked ← storedEntryStep encoding.encode inbox session context values.val[index] maximum kinds
+          match checked with
+          | .Err error => .ok (.Err error)
+          | .Ok (next, counted) =>
+            entryLoop encoding inbox session context (InboxEntry.cursor values (index + 1)) next counted) := by
+  change loop (fun (iterator, current, counted) => entryBody encoding inbox session context iterator current counted)
+    (InboxEntry.cursor values index, maximum, kinds) = _
+  rw [loop]
+  dsimp only
+  rw [entry_body_next encoding inbox session context values index maximum kinds inside]
+  simp only [InboxEntry.bind_then]
+  apply congrArg (fun continuation => Bind.bind
+    (storedEntryStep encoding.encode inbox session context values.val[index] maximum kinds) continuation)
+  funext checked
+  cases checked with
+  | Err error => simp [continueEntries]
+  | Ok value => cases value; simp [continueEntries]; rfl
+
+theorem entry_loop_refines_storage {U : Type} (encoding : UnloadEncoding U) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) (values : Slice Entry) (index : Nat)
+    (maximum : U64) (kinds : Array U16 5#usize) :
+    entryLoop encoding inbox session context (InboxEntry.cursor values index) maximum kinds =
+      storedScan encoding.encode inbox session context (values.val.drop index) maximum kinds := by
+  induction remaining : values.val.length - index using Nat.strong_induction_on
+      generalizing index maximum kinds with
+  | h remaining ih =>
+    by_cases inside : index < values.val.length
+    · rw [entry_loop_step encoding inbox session context values index maximum kinds inside]
+      have stepIH (next : U64) (counted : Array U16 5#usize) :=
+        ih (values.val.length - (index + 1)) (by omega) (index + 1) next counted rfl
+      simp_rw [stepIH]
+      rw [List.drop_eq_getElem_cons inside]
+      rfl
+    · rw [entry_loop_end encoding inbox session context values index maximum kinds (by omega)]
+      simp [List.drop_eq_nil_of_le (by omega : values.val.length ≤ index), storedScan]
+
+theorem stored_scan_refines (encode : UnloadResolution.Encoding) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) (entries : List Entry) (maximum : U64)
+    (kinds : Array U16 5#usize) :
+    (do let checked ← storedScan encode inbox session context entries maximum kinds
+        .ok (observeSummary checked)) =
+      entryScan encode inbox session context entries (arraySummary maximum kinds) := by
+  induction entries generalizing maximum kinds with
+  | nil => simp [storedScan, entryScan, observeSummary]
+  | cons entry tail ih =>
+    simp only [storedScan, storedEntryStep, entryScan, show (arraySummary maximum kinds).maximum = maximum from rfl]
+    by_cases ordered : entry.intent.accepted_version.val ≤ maximum.val
+    · simp [ordered, observeSummary]
+    · simp only [UScalar.le_equiv, ordered, ↓reduceIte]
+      by_cases retained : entry.intent.request.operation ≠ .Destroy ∧
+        InboxRetained.expected session maximum entry.intent = false
+      · simp [retained, observeSummary]
+      · simp only [retained, ↓reduceIte, bind_assoc_eq]
+        apply congrArg (fun continuation => Bind.bind (InboxEntry.entryView encode inbox session entry context) continuation)
+        funext checked
+        cases checked with
+        | Err error => simp [observeSummary]
+        | Ok kind =>
+          dsimp only
+          rw [← stored_increment_refines maximum entry.intent.accepted_version kinds kind]
+          simp only [bind_assoc_eq]
+          apply congrArg (fun continuation => Bind.bind (storedIncrement entry.intent.accepted_version kinds kind) continuation)
+          funext counted
+          cases counted with
+          | Err error => simp [observeSummary]
+          | Ok value => cases value; simp only [observeSummary, bind_tc_ok]; exact ih _ _
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.entry_loop_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.entry_loop_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.entry_loop_refines_storage
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.stored_scan_refines

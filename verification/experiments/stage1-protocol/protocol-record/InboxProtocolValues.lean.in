@@ -1,0 +1,29 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolFixtureValues
+import SandboxModel.Lifecycle.Protocol.InboxProtocolRecord
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+namespace SandboxModel.Stage1Protocol.ProtocolRecord.Values
+noncomputable section
+open InboxLoad.Values (saved terminal renewal unload bytes digest)
+open SessionShape.Values (vector)
+
+
+theorem normal_actual_flow (trace : InboxLoad.Values.Trace) :
+    record_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic normalIO trace SavedRetirement.Values.createIntent EnvelopeValues.context =
+      .ok (.Ok (.Recorded normalState),
+        (trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.normal) ++ writeTrace) := by
+  have refined := full_flow_contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic normalIO ComposedConfig.standard_graphic_contract
+    InboxLoad.Values.normal_represented SavedRetirement.Values.createIntent EnvelopeValues.context trace
+  exact refined.trans (normal_model_flow trace)
+
+
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.Values.normal_actual_flow

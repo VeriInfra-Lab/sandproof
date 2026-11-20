@@ -180,7 +180,7 @@
     "verification/json-counter-inputs.sha256": "ff32662c026e2c73411803d00e6bb24ef466fbf02bcdd99ca9e42ec9e560b97f",
     "verification/json-identifiers-inputs.sha256": "e34c816a958a2802fb3059252e52804a1c4f2f24c83c0648f24a0c9616170e4b",
     "verification/json-request-inputs.sha256": "7578893db0b1473d517952d66ff143cbc1b62156df2adce0ec7c5823812ac292",
-    "verification/schema-domains-inputs.sha256": "ad2d8cd52c5c6e04ca28c5c81d9c734649f0a6911c0621ea4111dac927c9edc0",
+    "verification/schema-domains-inputs.sha256": "ece3d1c2c7e4d9c7b3c99fc4e31f55b335ae3538e6e248d901d980071ce4414b",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
     "verification/json-counter-environment.json": "a5e58edc18ec5b71b3d7779339afabce9c760a36536e70dc319bd125c711d980",
     "verification/json-identifiers-environment.json": "e8ff7192aec9aafd5adf58bcddcb13619c5f61d0d301351dffc869cebfaf1d14",
@@ -188,7 +188,7 @@
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
     "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
-    "verification/use-inventory-inputs.sha256": "88e8cfce98aa2f2cb53b95ff2053153b11d8907082cf56914f837cb3db7c5edb",
+    "verification/use-inventory-inputs.sha256": "4be87c2c07aa15d541fe8595bb8b8b4bf67d5e9d8d3623aa61bc3a3d4bd8d84f",
     "verification/use-inventory/config.json": "d12f4cac13d42ebc86263d1057ffc75dbcc39eb10d2f0fdef2711c3842bf15b7",
     "verification/use-inventory/catalogue.json": "37959dbcbff3a2452f9e2f5bac7712808f484d4c8fd9ca6a23e06f5e702186cf",
     "verification/use-inventory/responsibilities.json": "4aef49f07dd43b706059de6f82df7ba665b25e0eaf6361dc79a2ed47d269705c"

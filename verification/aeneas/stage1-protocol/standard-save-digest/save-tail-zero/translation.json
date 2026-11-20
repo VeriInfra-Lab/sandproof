@@ -1,0 +1,133 @@
+{
+  "aeneas_version": "nightly-2026.09.09-505b6ca",
+  "charon_version": "0.1.254",
+  "crate": "sandproof_controller_service",
+  "functions": [
+    {
+      "def_id": 26,
+      "lean_name": "controller.lifecycle_inbox.sha256.digest",
+      "lean_file": "SandproofStandardSaveDigest/FunsExternal_Template.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::sha256::digest",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/sha256.rs",
+        "begin_line": 4,
+        "end_line": 6
+      },
+      "is_opaque": true,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 21,
+      "lean_name": "SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+      "lean_file": "SandproofStandardSaveDigest/Funs.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave<'_0>}::digest",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+        "begin_line": 134,
+        "end_line": 140
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 22,
+      "lean_name": "SandproofStandardSaveDigestRust.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest",
+      "lean_file": "SandproofStandardSaveDigest/Funs.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::checkpoint::config::StandardConfigRead<'_0>}::digest",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+        "begin_line": 167,
+        "end_line": 174
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 11,
+      "lean_name": "SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.proof_stage1_save_digest",
+      "lean_file": "SandproofStandardSaveDigest/Funs.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_save_digest",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+        "begin_line": 385,
+        "end_line": 387
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    },
+    {
+      "def_id": 12,
+      "lean_name": "SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.proof_stage1_read_save_digest",
+      "lean_file": "SandproofStandardSaveDigest/Funs.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::proof_stage1_read_save_digest",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+        "begin_line": 390,
+        "end_line": 395
+      },
+      "is_opaque": false,
+      "can_fail": true,
+      "can_diverge": false,
+      "is_rec": false,
+      "reducible": false
+    }
+  ],
+  "types": [
+    {
+      "def_id": 8,
+      "lean_name": "rusqlite.Connection",
+      "lean_file": "SandproofStandardSaveDigest/TypesExternal_Template.lean",
+      "rust_name": "rusqlite::Connection",
+      "is_local": false,
+      "source": {
+        "file": "/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/rusqlite-0.40.2/src/lib.rs",
+        "begin_line": 357,
+        "end_line": 357
+      }
+    },
+    {
+      "def_id": 3,
+      "lean_name": "SandproofStandardSaveDigestRust.controller.checkpoint.config.StandardConfigRead",
+      "lean_file": "SandproofStandardSaveDigest/Types.lean",
+      "rust_name": "sandproof_controller_service::controller::checkpoint::config::StandardConfigRead",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/checkpoint/config.rs",
+        "begin_line": 77,
+        "end_line": 79
+      }
+    },
+    {
+      "def_id": 2,
+      "lean_name": "SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.StandardInboxSave",
+      "lean_file": "SandproofStandardSaveDigest/Types.lean",
+      "rust_name": "sandproof_controller_service::controller::lifecycle_inbox::codec::StandardInboxSave",
+      "is_local": true,
+      "source": {
+        "file": "controller-service/src/controller/lifecycle_inbox/codec.rs",
+        "begin_line": 126,
+        "end_line": 128
+      }
+    }
+  ],
+  "globals": [],
+  "trait_decls": [],
+  "trait_impls": []
+}

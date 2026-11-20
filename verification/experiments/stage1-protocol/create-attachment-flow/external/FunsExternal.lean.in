@@ -1,0 +1,71 @@
+import SandproofStage1Request.OrdDefaultBinding
+import SandproofStage1Graphic.Funs
+import SandboxModel.Lifecycle.Protocol.RenewalResultTag
+import SandproofStage1Request.SharedValueBindings
+import SandproofStage1Request.Types
+open Aeneas Aeneas.Std
+namespace SandproofStage1RequestRust
+-- The actual fixed Std wrapper contains the complete generated error enum.
+-- This alias is local to this view; the original fixed backend stays unchanged.
+abbrev core.num.error.TryFromIntError := core.num.error.IntErrorKind
+
+
+-- Reuse the fixed Foundations literal adapter without altering generated bodies.
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
+def Bool.Insts.CoreCmpPartialEqBool.ne (left right : Bool) : Result Bool :=
+  .ok (left != right)
+
+def core.option.Option.is_some_and {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) (value : Option T) (state : F) : Result Bool :=
+  SandproofFoundationsRust.core.option.Option.is_some_and callback value state
+
+def core.option.Option.is_none_or {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) (value : Option T) (state : F) : Result Bool :=
+  SandproofFoundationsRust.core.option.Option.is_none_or callback value state
+
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  SandproofFoundationsRust.core.option.Option.as_ref value
+
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (dictionary : core.cmp.PartialEq T T) (left right : Option T) : Result Bool :=
+  match left, right with
+  | none, none => .ok true
+  | some left, some right => dictionary.eq left right
+  | _, _ => .ok false
+
+def core.result.Result.ok {T E : Type} (value : core.result.Result T E) : Result (Option T) :=
+  SandproofFoundationsRust.core.result.Result.ok value
+
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq left right
+
+def alloc.string.String.len (value : String) : Result Usize := do
+  let text ← SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  SandproofFoundationsRust.core.str.Str.len text
+
+def alloc.string.String.is_empty (value : String) : Result Bool := do
+  let text ← SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  SandproofFoundationsRust.core.str.Str.is_empty text
+
+def alloc.string.String.Insts.CoreCloneClone.clone (value : String) : Result String :=
+  .ok value
+
+def alloc.string.String.Insts.CoreOpsDerefDerefStr.deref (value : String) : Result Str :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+
+def alloc.vec.Vec.is_empty {T : Type} (allocator : Type) (values : alloc.vec.Vec T) :
+    Result Bool := SandproofFoundationsRust.alloc.vec.Vec.is_empty allocator values
+
+def SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter
+    {T : Type} (_allocator : Type) (value : alloc.vec.Vec T) :
+    Result (core.slice.iter.Iter T) :=
+  core.slice.Slice.iter (alloc.vec.Vec.deref value)
+
+def core.result.Result.is_err {T E : Type} (value : core.result.Result T E) : Result Bool :=
+  SandproofStage1GraphicRust.core.result.Result.is_err value
+
+end SandproofStage1RequestRust

@@ -1,0 +1,47 @@
+import SandboxModel.Lifecycle.Protocol.InboxPositionModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxPosition
+open InboxRecord InboxAppend
+
+theorem fresh_stores_intent (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (decision : FreshDecision) (out : RecordReturn) (s e : Usize)
+    (post : FreshPost inbox intent decision out) (returned : out.1 = .Ok (s, e)) :
+    StoredIntent out.2 s e intent := by
+  cases decision with
+  | reject error =>
+      have same : out = (.Err error, inbox) := post
+      simp [same] at returned
+  | insert terminal incarnation =>
+      obtain ⟨index, position, recorded, _frame, contents⟩ := post
+      rw [recorded] at returned
+      have pair : index = s ∧ 0#usize = e := by simpa using returned
+      obtain ⟨rfl, rfl⟩ := pair
+      refine ⟨freshSession intent terminal incarnation, pendingEntry intent, ?_, ?_, rfl⟩
+      · simp [contents, position]
+      · simp [freshSession, freshEntries]
+
+theorem existing_stores_intent (inbox : Inbox) (index : Usize) (session : Session)
+    (intent : AcceptedLifecycleIntent) (decision : ExistingDecision) (out : RecordReturn)
+    (s e : Usize) (bound : index.val < inbox.sessions.val.length)
+    (post : ExistingPost inbox index session intent decision out)
+    (returned : out.1 = .Ok (s, e)) : StoredIntent out.2 s e intent := by
+  cases decision with
+  | reject error =>
+      have same : out = (.Err error, inbox) := post
+      simp [same] at returned
+  | append terminal =>
+      obtain ⟨entries, entry_index, contents, position, same⟩ := post
+      rw [same] at returned ⊢
+      have pair : index = s ∧ entry_index = e := by simpa using returned
+      obtain ⟨rfl, rfl⟩ := pair
+      refine ⟨appendedSession session intent terminal entries, pendingEntry intent, ?_, ?_, rfl⟩
+      · simp [replaceSession, bound]
+      · simp [appendedSession, contents, position]
+
+end SandboxModel.Stage1Protocol.InboxPosition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.fresh_stores_intent
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.existing_stores_intent

@@ -1,0 +1,299 @@
+import SandproofUnloadBaseSnapshot.Provider
+import SandproofUnloadFirstObservation.FunsExternal
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std Result
+
+namespace BaseSnapshotLink
+
+variable [p : SandproofUnloadFirstObservation.Representations]
+
+abbrev baseRepresentations (SandboxRecord LifecycleReadyObservation : Type) : SandproofUnloadBaseSnapshot.Representations where
+  core_io_error_Error := p.core_io_error_Error
+  rusqlite_error_Error := p.rusqlite_error_Error
+  rusqlite_Connection := p.rusqlite_Connection
+  rusqlite_transaction_Transaction := p.rusqlite_transaction_Transaction
+  sandbox_controller_core_controller_ControllerReject := p.sandbox_controller_core_controller_ControllerReject
+  sandbox_controller_core_ids_SandboxId := p.sandbox_controller_core_ids_SandboxId
+  sandbox_controller_core_ids_OperationId := p.sandbox_controller_core_ids_OperationId
+  sandbox_controller_core_ids_TenantId := p.sandbox_controller_core_ids_TenantId
+  sandbox_controller_core_ids_VmId := p.sandbox_controller_core_ids_VmId
+  sandbox_controller_core_model_Phase := p.sandbox_controller_core_model_Phase
+  sandbox_controller_core_model_OperationResult := SandproofUnloadFirstObservation.sandbox_controller_core.model.OperationResult
+  sandbox_controller_core_model_Operation := p.sandbox_controller_core_model_Operation
+  sandbox_controller_core_model_EffectId := p.sandbox_controller_core_model_EffectId
+  sandbox_controller_core_model_SandboxRecord := SandboxRecord
+  sandbox_controller_core_model_World := p.sandbox_controller_core_model_World
+  sandproof_protocol_internal_lifecycle_CreateBinding := p.sandproof_protocol_internal_lifecycle_CreateBinding
+  sandproof_protocol_internal_lifecycle_LifecycleFact := p.sandproof_protocol_internal_lifecycle_LifecycleFact
+  sandproof_protocol_internal_NodeIdentity := p.sandproof_protocol_internal_NodeIdentity
+  sandproof_protocol_ContractError := p.sandproof_protocol_ContractError
+  sandproof_protocol_TenantId := p.sandproof_protocol_TenantId
+  sandproof_protocol_WorkAction := fun C => SandproofUnloadFirstObservation.sandproof_protocol.WorkAction C
+  sandproof_protocol_lifecycle_authority_CenterIdentity := p.sandproof_protocol_lifecycle_authority_CenterIdentity
+  sandproof_protocol_lifecycle_authority_AuthenticatedCenterContext := p.sandproof_protocol_lifecycle_authority_AuthenticatedCenterContext
+  sandproof_protocol_lifecycle_identity_CaptureId := p.sandproof_protocol_lifecycle_identity_CaptureId
+  sandproof_protocol_lifecycle_identity_IncarnationId := p.sandproof_protocol_lifecycle_identity_IncarnationId
+  sandproof_protocol_lifecycle_digest_ContentDigest := p.sandproof_protocol_lifecycle_digest_ContentDigest
+  sandproof_protocol_lifecycle_identity_OperationBinding := p.sandproof_protocol_lifecycle_identity_OperationBinding
+  sandproof_protocol_lifecycle_identity_RetentionBinding := p.sandproof_protocol_lifecycle_identity_RetentionBinding
+  sandproof_protocol_lifecycle_identity_SessionId := p.sandproof_protocol_lifecycle_identity_SessionId
+  sandproof_protocol_lifecycle_observation_CreateRefusalReason := p.sandproof_protocol_lifecycle_observation_CreateRefusalReason
+  sandproof_protocol_lifecycle_renewal_RenewalConfirmation := p.sandproof_protocol_lifecycle_renewal_RenewalConfirmation
+  sandproof_protocol_lifecycle_terminal_TerminalLifecycleObservation := p.sandproof_protocol_lifecycle_terminal_TerminalLifecycleObservation
+  serde_json_error_Error := p.serde_json_error_Error
+  capture_continuation_OriginalContinueWorkRequest := p.capture_continuation_OriginalContinueWorkRequest
+  capture_HostEpochRegistration := SandproofUnloadFirstObservation.capture.HostEpochRegistration
+  capture_HostEpochObservation := SandproofUnloadFirstObservation.capture.HostEpochObservation
+  capture_SourceProcessIdentity := SandproofUnloadFirstObservation.capture.SourceProcessIdentity
+  controller_admission_Lifetime := p.controller_admission_Lifetime
+  CrashPoint := p.CrashPoint
+  controller_lifecycle_inbox_model_Owner := p.controller_lifecycle_inbox_model_Owner
+  controller_lifecycle_inbox_model_LifecycleRetentionLane := p.controller_lifecycle_inbox_model_LifecycleRetentionLane
+  controller_lifecycle_inbox_native_retirement_NativeRetirementReceipt := p.controller_lifecycle_inbox_native_retirement_NativeRetirementReceipt
+  controller_lifecycle_inbox_unload_resolution_UnloadResolution := p.controller_lifecycle_inbox_unload_resolution_UnloadResolution
+  host_contract_CreateOptions := p.host_contract_CreateOptions
+  controller_lifecycle_inbox_readiness_LifecycleReadyObservation := LifecycleReadyObservation
+
+
+variable (SandboxRecord LifecycleReadyObservation : Type)
+
+abbrev PIntent := SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+abbrev BIntent := @SandproofUnloadBaseSnapshot.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent (baseRepresentations SandboxRecord LifecycleReadyObservation)
+abbrev POperation := SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.request.LifecycleOperation
+abbrev BOperation := @SandproofUnloadBaseSnapshot.sandproof_protocol.lifecycle.request.LifecycleOperation (baseRepresentations SandboxRecord LifecycleReadyObservation)
+abbrev PNative := SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot
+abbrev BNative := @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.NativeCreateSnapshot (baseRepresentations SandboxRecord LifecycleReadyObservation)
+abbrev PLocalBinding := SandproofUnloadFirstObservation.controller.internal_inbox.model.InternalLocalBinding
+abbrev BLocalBinding := @SandproofUnloadBaseSnapshot.controller.internal_inbox.model.InternalLocalBinding (baseRepresentations SandboxRecord LifecycleReadyObservation)
+abbrev PReady := SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.snapshot.ReadyCandidate
+abbrev BReady := @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot.ReadyCandidate (baseRepresentations SandboxRecord LifecycleReadyObservation)
+abbrev PReadiness := SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.CreateReadiness
+abbrev BReadiness := @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.CreateReadiness (baseRepresentations SandboxRecord LifecycleReadyObservation)
+abbrev PError := SandproofUnloadFirstObservation.JournalError
+abbrev BError := @SandproofUnloadBaseSnapshot.JournalError (baseRepresentations SandboxRecord LifecycleReadyObservation)
+
+def toBaseOperation :
+    POperation → BOperation SandboxRecord LifecycleReadyObservation := fun value =>
+  letI : SandproofUnloadBaseSnapshot.Representations :=
+    baseRepresentations SandboxRecord LifecycleReadyObservation
+  match value with
+  | .Create binding incarnation => .Create binding incarnation
+  | .Unload incarnation capture => .Unload incarnation capture
+  | .Resume source capture target digest => .Resume source capture target digest
+  | .Renew incarnation deadline force => .Renew incarnation deadline force
+  | .Destroy => .Destroy
+
+def fromBaseOperation :
+    BOperation SandboxRecord LifecycleReadyObservation → POperation := fun value =>
+  letI : SandproofUnloadBaseSnapshot.Representations :=
+    baseRepresentations SandboxRecord LifecycleReadyObservation
+  match value with
+  | .Create binding incarnation => .Create binding incarnation
+  | .Unload incarnation capture => .Unload incarnation capture
+  | .Resume source capture target digest => .Resume source capture target digest
+  | .Renew incarnation deadline force => .Renew incarnation deadline force
+  | .Destroy => .Destroy
+
+def toBaseIntent (intent : PIntent) : BIntent SandboxRecord LifecycleReadyObservation :=
+  letI : SandproofUnloadBaseSnapshot.Representations :=
+    baseRepresentations SandboxRecord LifecycleReadyObservation
+  {
+    request := {
+      binding := intent.request.binding
+      operation := toBaseOperation SandboxRecord LifecycleReadyObservation intent.request.operation
+    }
+    accepted_version := intent.accepted_version
+    center := intent.center
+    retention := intent.retention
+  }
+
+def fromBaseIntent (intent : BIntent SandboxRecord LifecycleReadyObservation) : PIntent :=
+  letI : SandproofUnloadBaseSnapshot.Representations :=
+    baseRepresentations SandboxRecord LifecycleReadyObservation
+  {
+    request := {
+      binding := intent.request.binding
+      operation := fromBaseOperation SandboxRecord LifecycleReadyObservation intent.request.operation
+    }
+    accepted_version := intent.accepted_version
+    center := intent.center
+    retention := intent.retention
+  }
+
+theorem intentRoundtrip (intent : PIntent) :
+    fromBaseIntent SandboxRecord LifecycleReadyObservation
+      (toBaseIntent SandboxRecord LifecycleReadyObservation intent) = intent := by
+  rcases intent with ⟨⟨binding, operation⟩, version, center, retention⟩
+  cases operation <;> rfl
+
+def fromBaseLocal (binding : BLocalBinding SandboxRecord LifecycleReadyObservation) : PLocalBinding :=
+  letI : SandproofUnloadBaseSnapshot.Representations :=
+    baseRepresentations SandboxRecord LifecycleReadyObservation
+  {
+    sandbox := binding.sandbox
+    owner := binding.owner
+    operation := binding.operation
+  }
+
+def fromBaseNative (native : BNative SandboxRecord LifecycleReadyObservation) : PNative :=
+  letI : SandproofUnloadBaseSnapshot.Representations :=
+    baseRepresentations SandboxRecord LifecycleReadyObservation
+  {
+    owner := native.owner
+    phase := native.phase
+    terminal := native.terminal
+    epoch := native.epoch
+    generation := native.generation
+    current_vm := native.current_vm
+    current_operation := native.current_operation
+    lifetime := native.lifetime
+    uncertain_actions := native.uncertain_actions
+  }
+
+def fromBaseError :
+    BError SandboxRecord LifecycleReadyObservation → PError := fun value =>
+  letI : SandproofUnloadBaseSnapshot.Representations :=
+    baseRepresentations SandboxRecord LifecycleReadyObservation
+  match value with
+  | .Io error => .Io error
+  | .Sqlite error => .Sqlite error
+  | .CommitUncertain error => .CommitUncertain error
+  | .Json error => .Json error
+  | .Contract error => .Contract error
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .InjectedCrash point => .InjectedCrash point
+  | .ControllerRejected reason => .ControllerRejected reason
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+def fromBaseReady (readiness : BReadiness SandboxRecord LifecycleReadyObservation → PReadiness)
+    (candidate : BReady SandboxRecord LifecycleReadyObservation) : PReady :=
+  letI : SandproofUnloadBaseSnapshot.Representations :=
+    baseRepresentations SandboxRecord LifecycleReadyObservation
+  {
+    view := {
+      request := fromBaseIntent SandboxRecord LifecycleReadyObservation candidate.view.request
+      current_request := fromBaseIntent SandboxRecord LifecycleReadyObservation candidate.view.current_request
+      «local» := candidate.view.«local».map (fromBaseLocal SandboxRecord LifecycleReadyObservation)
+      historical_result := candidate.view.historical_result
+      native_input_high_water := candidate.view.native_input_high_water
+      native := candidate.view.native.map (fromBaseNative SandboxRecord LifecycleReadyObservation)
+      readiness := readiness candidate.view.readiness
+    }
+    actions := candidate.actions
+    continuation := candidate.continuation
+    receipts := candidate.receipts
+    source := candidate.source
+    credential := candidate.credential
+    options := candidate.options
+    ready_fact := candidate.ready_fact
+  }
+
+theorem projectionTransport (readiness : BReadiness SandboxRecord LifecycleReadyObservation → PReadiness)
+    (candidate : BReady SandboxRecord LifecycleReadyObservation) :
+    letI : SandproofUnloadBaseSnapshot.Representations :=
+      baseRepresentations SandboxRecord LifecycleReadyObservation
+    let result := fromBaseReady SandboxRecord LifecycleReadyObservation readiness candidate
+    result.view.native = candidate.view.native.map (fromBaseNative SandboxRecord LifecycleReadyObservation) ∧
+      result.view.historical_result = candidate.view.historical_result := by
+  exact ⟨rfl, rfl⟩
+
+variable [ops : @SandproofUnloadBaseSnapshot.Operations
+  (baseRepresentations SandboxRecord LifecycleReadyObservation)]
+
+def actualReadBaseSnapshot (readiness : BReadiness SandboxRecord LifecycleReadyObservation → PReadiness)
+    (tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction)
+    (ns : Str) (world : SandproofUnloadFirstObservation.sandbox_controller_core.model.World)
+    (intent : PIntent)
+    (context : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext) :
+    Result (core.result.Result PReady PError) := do
+  let result ← @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot.base_snapshot
+    (baseRepresentations SandboxRecord LifecycleReadyObservation) ops tx ns world (toBaseIntent SandboxRecord LifecycleReadyObservation intent) context
+  match result with
+  | .Ok candidate => .ok (.Ok (fromBaseReady SandboxRecord LifecycleReadyObservation readiness candidate))
+  | .Err error => .ok (.Err (fromBaseError SandboxRecord LifecycleReadyObservation error))
+
+variable [SandproofUnloadFirstObservation.ParentCalls]
+
+theorem parentCallError
+    (readiness : BReadiness SandboxRecord LifecycleReadyObservation → PReadiness)
+    (tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction)
+    (ns : Str) (world : SandproofUnloadFirstObservation.sandbox_controller_core.model.World)
+    (intent : PIntent)
+    (context : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+    (error : BError SandboxRecord LifecycleReadyObservation)
+    (linked : SandproofUnloadFirstObservation.ParentCalls.readBaseSnapshot tx ns world intent context =
+      actualReadBaseSnapshot SandboxRecord LifecycleReadyObservation readiness tx ns world intent context)
+    (returned : @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot.base_snapshot
+      (baseRepresentations SandboxRecord LifecycleReadyObservation) ops tx ns world (toBaseIntent SandboxRecord LifecycleReadyObservation intent) context = .ok (.Err error)) :
+    SandproofUnloadFirstObservation.ParentCalls.readBaseSnapshot tx ns world intent context =
+      .ok (.Err (fromBaseError SandboxRecord LifecycleReadyObservation error)) := by
+  simp only [linked, actualReadBaseSnapshot, returned, bind_tc_ok]
+
+theorem parentCallSuccess
+    (readiness : BReadiness SandboxRecord LifecycleReadyObservation → PReadiness)
+    (tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction)
+    (ns : Str) (world : SandproofUnloadFirstObservation.sandbox_controller_core.model.World)
+    (intent : PIntent)
+    (context : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+    (candidate : BReady SandboxRecord LifecycleReadyObservation)
+    (linked : SandproofUnloadFirstObservation.ParentCalls.readBaseSnapshot tx ns world intent context =
+      actualReadBaseSnapshot SandboxRecord LifecycleReadyObservation readiness tx ns world intent context)
+    (returned : @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot.base_snapshot
+      (baseRepresentations SandboxRecord LifecycleReadyObservation) ops tx ns world
+      (toBaseIntent SandboxRecord LifecycleReadyObservation intent) context = .ok (.Ok candidate)) :
+    SandproofUnloadFirstObservation.ParentCalls.readBaseSnapshot tx ns world intent context =
+      .ok (.Ok (fromBaseReady SandboxRecord LifecycleReadyObservation readiness candidate)) := by
+  simp only [linked, actualReadBaseSnapshot, returned, bind_tc_ok]
+
+theorem parentHighWaterError
+    (readiness : BReadiness SandboxRecord LifecycleReadyObservation → PReadiness)
+    (tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction)
+    (connection : SandproofUnloadFirstObservation.rusqlite.Connection)
+    (ns : Str) (world : SandproofUnloadFirstObservation.sandbox_controller_core.model.World)
+    (intent : PIntent)
+    (context : SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+    (current : BIntent SandboxRecord LifecycleReadyObservation)
+    (localBinding : BLocalBinding SandboxRecord LifecycleReadyObservation)
+    (native : BNative SandboxRecord LifecycleReadyObservation)
+    (history : Option SandproofUnloadFirstObservation.sandbox_controller_core.model.OperationResult)
+    (ready : BReadiness SandboxRecord LifecycleReadyObservation)
+    (error : BError SandboxRecord LifecycleReadyObservation)
+    (linked : SandproofUnloadFirstObservation.ParentCalls.readBaseSnapshot tx ns world intent context =
+      actualReadBaseSnapshot SandboxRecord LifecycleReadyObservation readiness tx ns world intent context)
+    (evaluated : @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot.base_snapshot
+      (baseRepresentations SandboxRecord LifecycleReadyObservation) ops tx ns world
+      (toBaseIntent SandboxRecord LifecycleReadyObservation intent) context =
+      @SandproofUnloadBaseSnapshot.finishRead
+        (baseRepresentations SandboxRecord LifecycleReadyObservation) ops connection
+        (toBaseIntent SandboxRecord LifecycleReadyObservation intent) current localBinding native history ready)
+    (high : ops.inputHighWater connection = .ok (.Err error)) :
+    SandproofUnloadFirstObservation.ParentCalls.readBaseSnapshot tx ns world intent context =
+      .ok (.Err (fromBaseError SandboxRecord LifecycleReadyObservation error)) := by
+  apply parentCallError SandboxRecord LifecycleReadyObservation readiness tx ns world intent context error linked
+  rw [evaluated]
+  exact @SandproofUnloadBaseSnapshot.highWaterError
+    (baseRepresentations SandboxRecord LifecycleReadyObservation) ops connection
+    (toBaseIntent SandboxRecord LifecycleReadyObservation intent) current localBinding native history ready error high
+
+end BaseSnapshotLink
+
+#audit_controller_proof BaseSnapshotLink.intentRoundtrip
+#audit_controller_proof BaseSnapshotLink.projectionTransport
+#audit_controller_proof BaseSnapshotLink.parentCallError
+#audit_controller_proof BaseSnapshotLink.parentCallSuccess
+#audit_controller_proof BaseSnapshotLink.parentHighWaterError

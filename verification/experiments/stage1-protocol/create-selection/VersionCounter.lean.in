@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.CreateSelectionValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateSelection.WrongVersion
+open Values
+abbrev run := sandproof_controller_service.controller.lifecycle_inbox.create_attachment_selection
+
+theorem observed : run older intent = .ok (.Ok (0#usize, 0#usize, 2#u64)) := by
+  have got : older.find intent = .ok (.Ok (some (0#usize, 0#usize))) :=
+    lookup_returns { selected with current_version := 2#u64 } rfl
+  have item : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Session)
+      older.sessions 0#usize = .ok { selected with current_version := 2#u64 } := by
+    simpa only [older, withSession] using singleton_index { selected with current_version := 2#u64 }
+  unfold run sandproof_controller_service.controller.lifecycle_inbox.create_attachment_selection
+  rw [got]
+  simp only [core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or,
+    bind_tc_ok, uncurry_apply_pair]
+  rw [item]
+  simp [core.option.Option.is_some, selected, InboxLookup.Witness.session,
+    intent, EnvelopeValues.intent, Validation.Examples.createPayload]
+
+theorem violates_full_contract : ¬ FullSelectionContract run := by
+  intro contract
+  have post := contract older intent
+  rw [observed] at post
+  simp [WP.spec_ok, observe, older_expected] at post
+
+end SandboxModel.Stage1Protocol.CreateSelection.WrongVersion
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.WrongVersion.observed
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.WrongVersion.violates_full_contract

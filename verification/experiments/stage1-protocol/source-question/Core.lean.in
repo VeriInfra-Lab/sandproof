@@ -1,0 +1,40 @@
+import SandboxModel.Lifecycle.Protocol.SourceQuestion.Cloning
+open Aeneas Aeneas.Std SandproofSourceQuestionRust
+namespace SandboxModel.Stage1Protocol.SourceQuestion.Candidate
+open Cloning
+
+theorem actual (anchor : Anchor) (limits : Limits) (binding : Binding) :
+    run anchor limits binding = Expected anchor limits binding := by
+  cases h : anchor.original_actions.val[1]? <;>
+    simp [run, controller.lifecycle_inbox.source_work.snapshot.question_from_binding,
+      Expected, alloc.vec.Vec.index_usize, h, Build]
+
+theorem full_question_contract : FullQuestionContract run := actual
+
+theorem accepts_iff (anchor : Anchor) (limits : Limits) (binding : Binding) (work : Work) :
+    run anchor limits binding = .ok work ↔
+      ∃ action, anchor.original_actions.val[1]? = some action ∧
+        work = Build anchor limits binding action.resource := by
+  rw [actual]
+  unfold Expected
+  cases anchor.original_actions.val[1]? <;> simp [eq_comm]
+
+theorem bounds_failure_iff (anchor : Anchor) (limits : Limits) (binding : Binding) :
+    run anchor limits binding = .fail .arrayOutOfBounds ↔ anchor.original_actions.val[1]? = none := by
+  rw [actual]
+  unfold Expected
+  cases anchor.original_actions.val[1]? <;> simp
+
+theorem full_fields (anchor : Anchor) (limits : Limits) (binding : Binding) (work : Work)
+    (accepted : run anchor limits binding = .ok work) :
+    work.anchor = anchor ∧ work.requirement.work_binding = binding ∧
+    work.requirement.node = anchor.node ∧ work.requirement.host_bootstrap = anchor.host_bootstrap ∧
+    work.requirement.source = anchor.source ∧ work.requirement.limits = limits := by
+  obtain ⟨action, _, rfl⟩ := (accepts_iff anchor limits binding work).mp accepted
+  simp [Build]
+end SandboxModel.Stage1Protocol.SourceQuestion.Candidate
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.full_question_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.bounds_failure_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceQuestion.Candidate.full_fields

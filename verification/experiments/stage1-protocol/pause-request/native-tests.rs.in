@@ -1,0 +1,131 @@
+fn proof_pause_request_work() -> SourceWork {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&dir.path().join("db"));
+    prepare(&mut journal).work
+}
+
+fn proof_pause_request_expected(work: &SourceWork) -> crate::capture::PauseWorkRequest {
+    let LifecycleOperation::Unload {
+        source_incarnation,
+        capture,
+    } = work.anchor.request.request.operation
+    else {
+        panic!("the original fixture is an Unload");
+    };
+    crate::capture::PauseWorkRequest {
+        binding: sandproof_protocol::lifecycle::CaptureBinding {
+            operation: work.anchor.request.request.binding.clone(),
+            source_incarnation,
+            capture,
+        },
+        source_work_binding: work.requirement.work_binding,
+        node: work.requirement.node.clone(),
+        source_resource: work.requirement.resource.clone(),
+        source: work.requirement.source.clone(),
+    }
+}
+
+#[test]
+fn proof_pause_request_full() {
+    let work = proof_pause_request_work();
+    let expected = proof_pause_request_expected(&work);
+    assert!(expected.valid());
+    let value = crate::proof_source_pause_request(&work).unwrap();
+    assert_eq!(value, expected);
+}
+
+#[test]
+fn proof_pause_request_operation_binding() {
+    let work = proof_pause_request_work();
+    let value = crate::proof_source_pause_request(&work).unwrap();
+    assert_eq!(value.binding.operation, work.anchor.request.request.binding);
+}
+
+#[test]
+fn proof_pause_request_wire_numbers() {
+    let work = proof_pause_request_work();
+    let expected = proof_pause_request_expected(&work);
+    let value = crate::proof_source_pause_request(&work).unwrap();
+    assert_eq!(
+        value.binding.source_incarnation,
+        expected.binding.source_incarnation
+    );
+    assert_eq!(value.binding.capture, expected.binding.capture);
+}
+
+#[test]
+fn proof_pause_request_work_binding() {
+    let work = proof_pause_request_work();
+    let value = crate::proof_source_pause_request(&work).unwrap();
+    assert_eq!(value.source_work_binding, work.requirement.work_binding);
+}
+
+#[test]
+fn proof_pause_request_node() {
+    let work = proof_pause_request_work();
+    let value = crate::proof_source_pause_request(&work).unwrap();
+    assert_eq!(value.node, work.requirement.node);
+}
+
+#[test]
+fn proof_pause_request_resource() {
+    let work = proof_pause_request_work();
+    let value = crate::proof_source_pause_request(&work).unwrap();
+    assert_eq!(value.source_resource, work.requirement.resource);
+}
+
+#[test]
+fn proof_pause_request_process() {
+    let work = proof_pause_request_work();
+    let value = crate::proof_source_pause_request(&work).unwrap();
+    assert_eq!(value.source, work.requirement.source);
+}
+
+#[test]
+fn proof_pause_request_native_domain() {
+    let mut work = proof_pause_request_work();
+    work.anchor.native.generation = 37;
+    let expected = proof_pause_request_expected(&work);
+    let value = crate::proof_source_pause_request(&work).unwrap();
+    assert_eq!(
+        value.binding.source_incarnation,
+        expected.binding.source_incarnation
+    );
+}
+
+#[test]
+fn proof_pause_request_non_unload() {
+    let work = proof_pause_request_work();
+    let create = work.anchor.execution_origin.request.operation.clone();
+    let operations = [
+        create,
+        LifecycleOperation::Renew {
+            incarnation: IncarnationId::try_from(101).unwrap(),
+            end_at_ms: 90_010,
+            extend_only: false,
+        },
+        LifecycleOperation::Resume {
+            source_incarnation: IncarnationId::try_from(101).unwrap(),
+            capture: CaptureId::try_from(1).unwrap(),
+            target_incarnation: IncarnationId::try_from(102).unwrap(),
+            manifest_digest: ContentDigest::from_sha256([1; 32]),
+        },
+        LifecycleOperation::Destroy {},
+    ];
+    for operation in operations {
+        let mut changed = work.clone();
+        changed.anchor.request.request.operation = operation;
+        assert!(matches!(
+            crate::proof_source_pause_request(&changed),
+            Err(JournalError::Conflict)
+        ));
+    }
+}
+
+#[test]
+fn proof_pause_request_does_not_validate_source() {
+    let mut work = proof_pause_request_work();
+    work.requirement.source.pid = 0;
+    let value = crate::proof_source_pause_request(&work).unwrap();
+    assert_eq!(value.source.pid, 0);
+}

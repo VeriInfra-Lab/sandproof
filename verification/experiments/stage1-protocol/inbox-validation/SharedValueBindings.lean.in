@@ -1,0 +1,65 @@
+import SandproofFoundations.IdentifierLibrary
+open Aeneas Aeneas.Std
+namespace SandproofFoundationsRust
+
+@[simp, rust_fun "alloc::string::{core::cmp::PartialEq<alloc::string::String, alloc::string::String>}::eq"]
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool := .ok (decide (left = right))
+
+@[simp, rust_fun "alloc::vec::{alloc::vec::Vec<@T>}::is_empty"]
+def alloc.vec.Vec.is_empty {T : Type} (_A : Type) (values : alloc.vec.Vec T) :
+    Result Bool := .ok (decide (values.val.length = 0))
+
+@[rust_fun "core::option::{core::option::Option<@T>}::is_some_and"]
+def core.option.Option.is_some_and {T F : Type}
+    (callback : Aeneas.Std.core.ops.function.FnOnce F T Bool)
+    (value : Option T) (state : F) : Result Bool :=
+  match value with
+  | none => .ok false
+  | some entry => callback.call_once state entry
+
+@[rust_fun "core::option::{core::option::Option<@T>}::is_none_or"]
+def core.option.Option.is_none_or {T F : Type}
+    (callback : Aeneas.Std.core.ops.function.FnOnce F T Bool)
+    (value : Option T) (state : F) : Result Bool :=
+  match value with
+  | none => .ok true
+  | some entry => callback.call_once state entry
+
+@[simp, rust_fun "core::option::{core::option::Option<@T>}::as_ref"]
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  .ok value
+
+@[simp, rust_fun "core::result::{core::result::Result<@T, @E>}::ok"]
+def core.result.Result.ok {T E : Type} (value : core.result.Result T E) :
+    Result (Option T) :=
+  match value with
+  | .Ok result => .ok (some result)
+  | .Err _ => .ok none
+
+@[rust_fun "core::str::{str}::len"]
+def core.str.Str.len (value : Str) : Result Usize :=
+  .ok (Usize.ofNatCore value.val.length (by have := value.property; scalar_tac))
+
+@[simp, rust_fun "core::str::{str}::is_empty"]
+def core.str.Str.is_empty (value : Str) : Result Bool :=
+  .ok (decide (value.val.length = 0))
+
+@[simp, rust_fun "core::str::{str}::bytes"]
+def core.str.Str.bytes (value : Str) : Result core.str.iter.Bytes :=
+  .ok ⟨value.val⟩
+
+@[rust_fun "core::str::iter::{core::iter::traits::iterator::Iterator<core::str::iter::Bytes<'0>, u8>}::all"]
+def core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all {F : Type}
+    (callback : core.ops.function.FnMut F U8 Bool)
+    (bytes : core.str.iter.Bytes) (state : F) : Result (Bool × core.str.iter.Bytes) := do
+  let (accepted, rest) ← IdentifierLibrary.allBytes callback.call_mut state bytes.remaining
+  .ok (accepted, ⟨rest⟩)
+
+@[rust_fun "alloc::string::{core::ops::deref::Deref<alloc::string::String, str>}::deref"]
+def alloc.string.String.Insts.CoreOpsDerefDerefStr.deref (value : String) : Result Str :=
+  if h : IdentifierLibrary.StringRepresentable value then
+    .ok (.from (IdentifierLibrary.stringBytes value) h)
+  else .fail .maximumSizeExceeded
+
+end SandproofFoundationsRust

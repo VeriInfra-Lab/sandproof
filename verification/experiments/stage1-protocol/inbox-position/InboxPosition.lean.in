@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.InboxPositionContract
+import SandboxModel.Lifecycle.Protocol.InboxRecordTotal
+import SandboxModel.Lifecycle.Protocol.InboxState
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxPosition
+open InboxRecord InboxRecordTotal InboxState
+
+theorem record_state_contract : FullRecordStateContract Inbox.record Inbox.state :=
+  contracts_compose Inbox.record Inbox.state InboxRecordTotal.record_contract InboxState.state_contract
+
+/-- Success supplies its own bounds; the caller need not assume them. -/
+theorem record_success_position (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (out : RecordReturn) (s e : Usize) (recorded : inbox.record intent = .ok out)
+    (success : out.1 = .Ok (s, e)) : StoredIntent out.2 s e intent := by
+  obtain ⟨actual, returned, post⟩ := WP.spec_imp_exists (InboxRecordTotal.record_contract inbox intent)
+  rw [recorded] at returned
+  have same : out = actual := Result.ok_injective returned
+  subst actual
+  exact record_post_stores_intent inbox intent out s e post success
+
+theorem record_success_query (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (out : RecordReturn) (s e : Usize) (recorded : inbox.record intent = .ok out)
+    (success : out.1 = .Ok (s, e)) :
+    ∃ state, out.2.state s e = .ok state ∧ state.intent = intent := by
+  have stored := record_success_position inbox intent out s e recorded success
+  obtain ⟨sb, eb, full⟩ := stored_intent_bounds out.2 s e intent stored
+  exact ⟨_, state_contract out.2 s e sb eb, full⟩
+
+end SandboxModel.Stage1Protocol.InboxPosition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.record_state_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.record_success_position
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.record_success_query

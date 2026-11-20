@@ -159,6 +159,7 @@ fn maintenance_configuration_is_explicit_strict_and_requires_bounded_host() {
     assert!(check(full_capacity_settings()).is_ok());
     for field in [
         "retention_ms",
+        "max_operations_per_sandbox",
         "max_checkpoint_bytes",
         "max_records",
         "max_references",

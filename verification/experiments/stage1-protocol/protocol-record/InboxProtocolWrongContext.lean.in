@@ -1,0 +1,95 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolFixtureValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.ProtocolRecord.WrongContext
+noncomputable section
+open Values
+open InboxLoad.Values (saved terminal renewal unload)
+
+def foreignContext : AuthenticatedCenterContext :=
+  ⟨EnvelopeValues.center, ⟨"deployment", "other-host", 1#u64⟩⟩
+
+theorem foreign_node : InboxValidation.Values.normal.config.node ≠ foreignContext.expected_node := by
+  simp [InboxValidation.Values.normal, ConfigValidation.Values.fixture,
+    ConfigBudget.Values.fixture, ConfigBudget.Values.small, foreignContext, EnvelopeValues.node]
+
+theorem model_refuses (trace : InboxLoad.Values.Trace) :
+    flowView saved terminal renewal unload normalIO SavedRetirement.Values.createIntent foreignContext trace =
+      .ok (.Err .Conflict, trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.normal) := by
+  have rejected := InboxAdmission.foreign_config_node_rejected InboxValidation.Values.normal
+    SavedRetirement.Values.createIntent foreignContext foreign_node
+  unfold flowView
+  change Bind.bind (m := Result)
+    (InboxLoad.fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      InboxLoad.Values.normalEffects trace) _ = _
+  rw [InboxLoad.Values.normal_model_loaded]
+  simp [loadedView, rejected]
+
+theorem actual_records (trace : InboxLoad.Values.Trace) :
+    record_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic normalIO trace SavedRetirement.Values.createIntent foreignContext =
+      .ok (.Ok (.Recorded normalState),
+        (trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.normal) ++ writeTrace) := by
+  have loaded : load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic normalIO.codecInboxLoadEffectsInst trace =
+        .ok (.Ok (some InboxValidation.Values.normal),
+          trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.normal) :=
+    InboxLoad.Values.normal_loaded trace
+  have found : InboxValidation.Values.normal.find SavedRetirement.Values.createIntent = .ok (.Ok none) :=
+    (InboxLookup.find_none_iff _ _).mpr (by simp [InboxValidation.Values.normal, SessionShape.Values.vector])
+  have guarded (state : InboxLoad.Values.Trace) :
+      guard_destroy normalIO state InboxValidation.Values.normal SavedRetirement.Values.createIntent =
+        .ok (.Ok (), state) := by
+    simp [guard_destroy, SavedRetirement.Values.createIntent]
+  have attached (state : InboxLoad.Values.Trace) :
+      attach_destroy normalIO state InboxValidation.Values.recorded SavedRetirement.Values.createIntent
+        0#usize 0#usize = .ok (.Ok (), state, InboxValidation.Values.recorded) := by
+    simp [attach_destroy, SavedRetirement.Values.createIntent]
+  have queried : InboxValidation.Values.recorded.state 0#usize 0#usize = .ok normalState := by
+    simpa [normalState, InboxValidation.Values.recorded, SessionShape.Values.vector,
+      SessionShape.Values.entry, InboxRecord.pendingEntry, InboxValidation.Values.recordedSession,
+      SessionShape.Values.normal] using
+      InboxState.state_contract InboxValidation.Values.recorded 0#usize 0#usize (by decide) (by decide)
+  unfold record_using
+  rw [loaded]
+  simp only [bind_tc_ok, uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or]
+  rw [found]
+  simp only [bind_tc_ok]
+  rw [guarded]
+  simp only [bind_tc_ok, uncurry_apply_pair]
+  rw [normal_recorded]
+  simp only [bind_tc_ok, uncurry_apply_pair]
+  rw [attached]
+  simp only [bind_tc_ok, uncurry_apply_pair]
+  rw [InboxSave.save_refines saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract
+    normalIO.codecInboxSaveEffectsInst InboxValidation.Values.recorded
+    (trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.normal)
+    InboxValidation.Values.fixture_representable]
+  change Bind.bind (m := Result)
+    (InboxSave.saveView saved terminal renewal unload writeIO InboxValidation.Values.recorded
+      (trace ++ InboxLoad.Values.completeTrace InboxValidation.Values.normal)) _ = _
+  rw [normal_model_saved]
+  simp [queried]
+
+theorem violates_full_contract : ¬ FullFlowContract record_using := by
+  intro contract
+  have predicted := contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic normalIO ComposedConfig.standard_graphic_contract
+    InboxLoad.Values.normal_represented SavedRetirement.Values.createIntent foreignContext []
+  have contradiction := (actual_records []).symm.trans (predicted.trans (model_refuses []))
+  simp at contradiction
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord.WrongContext
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.WrongContext.foreign_node
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.WrongContext.model_refuses
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.WrongContext.actual_records
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.WrongContext.violates_full_contract

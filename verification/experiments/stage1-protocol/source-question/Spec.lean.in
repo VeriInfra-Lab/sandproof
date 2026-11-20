@@ -1,0 +1,26 @@
+import SandproofSourceQuestion.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofSourceQuestionRust
+namespace SandboxModel.Stage1Protocol.SourceQuestion.Candidate
+abbrev Anchor := controller.lifecycle_inbox.source_work.SourceAnchor
+abbrev Limits := capture.source.SourceObservationConfig
+abbrev Binding := sandproof_protocol.lifecycle.digest.ContentDigest
+abbrev Work := controller.lifecycle_inbox.source_work.SourceWork
+abbrev run := controller.lifecycle_inbox.source_work.snapshot.question_from_binding
+def Build (anchor : Anchor) (limits : Limits) (binding : Binding)
+    (resource : sandproof_protocol.ResourceRef) : Work :=
+  { anchor := anchor
+    requirement := {
+      work_binding := binding
+      node := anchor.node
+      host_bootstrap := anchor.host_bootstrap
+      resource := resource
+      source := anchor.source
+      limits := limits } }
+def Expected (anchor : Anchor) (limits : Limits) (binding : Binding) : Result Work :=
+  match anchor.original_actions.val[1]? with
+  | none => .fail .arrayOutOfBounds
+  | some action => .ok (Build anchor limits binding action.resource)
+def FullQuestionContract (operation : Anchor → Limits → Binding → Result Work) : Prop :=
+  ∀ anchor limits binding, operation anchor limits binding = Expected anchor limits binding
+end SandboxModel.Stage1Protocol.SourceQuestion.Candidate

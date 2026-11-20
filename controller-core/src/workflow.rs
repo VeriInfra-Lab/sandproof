@@ -33,7 +33,12 @@ fn scheduled(world: &World, command: &Command) -> bool {
 fn failed_create(world: &World, sandbox: SandboxId) -> Option<ControllerInput> {
     let record = world.sandbox_record(sandbox)?;
     let operation = record.current_operation?;
-    if record.phase != Phase::Starting || operation.kind != OperationKind::Create {
+    if record.phase != Phase::Starting
+        || !matches!(
+            operation.kind,
+            OperationKind::Create | OperationKind::Resume
+        )
+    {
         return None;
     }
     let key = OperationKey {
@@ -113,7 +118,9 @@ fn claimable(world: &World, sandbox: SandboxId) -> bool {
         let effect = &world.effect_ids()[index];
         if effect.command().sandbox() == sandbox
             && world.effect_status(effect) == Some(EffectStatus::Committed)
+            && !crate::maintenance::released_execution::discharged(world, effect)
             && !crate::effect::startup_dispatch_revoked(world, effect.command())
+            && crate::capture::continuation::capture_dispatch_allowed(world, effect)
             && (!unresolved
                 || crate::scheduler::dispatch_allowed_during_abort(world, effect.command()))
         {
@@ -224,7 +231,10 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
         return WorkflowStep::Blocked;
     };
     if record.phase == Phase::Starting
-        && operation.kind == OperationKind::Create
+        && matches!(
+            operation.kind,
+            OperationKind::Create | OperationKind::Resume
+        )
         && plan.vm.is_none()
     {
         return apply(ControllerInput::Scheduler(SchedulerInput::ReserveStartup(
@@ -234,7 +244,12 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
     if claimable(world, sandbox) {
         return WorkflowStep::Claim;
     }
-    if record.phase == Phase::Starting && operation.kind == OperationKind::Create {
+    if record.phase == Phase::Starting
+        && matches!(
+            operation.kind,
+            OperationKind::Create | OperationKind::Resume
+        )
+    {
         let (Some(vm), Some(slot)) = (plan.vm, plan.slot) else {
             return WorkflowStep::Blocked;
         };
@@ -256,6 +271,9 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
         }
         return WorkflowStep::PublishRunning;
     }
+    if let Some(step) = paused_workflow_step(world, sandbox, record, plan) {
+        return step;
+    }
     if record.phase == Phase::Running {
         return WorkflowStep::Complete;
     }
@@ -265,10 +283,20 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
     if record.phase != Phase::Revoking {
         return WorkflowStep::Blocked;
     }
+    revoking_step(world, sandbox, record, operation, plan)
+}
+
+fn revoking_step(
+    world: &World,
+    sandbox: SandboxId,
+    record: &crate::SandboxRecord,
+    operation: crate::Operation,
+    plan: &crate::OperationPlan,
+) -> WorkflowStep {
     let failure = match (operation.kind, operation.status) {
         (OperationKind::Kill, _) => None,
         (
-            OperationKind::Create,
+            OperationKind::Create | OperationKind::Resume,
             OperationStatus::Compensating(failure) | OperationStatus::Failed(failure),
         ) => Some(failure),
         _ => return WorkflowStep::Blocked,
@@ -296,7 +324,7 @@ pub fn next_step(world: &World, sandbox: SandboxId) -> WorkflowStep {
     if let Some(step) = stop_next(world, sandbox, record, plan) {
         return step;
     }
-    if let Some(step) = retire_next(world, sandbox) {
+    if let Some(step) = retire_next(world, sandbox, failure) {
         return step;
     }
     let publication = match failure {
@@ -346,12 +374,28 @@ fn vm_needs_stop(world: &World, vm: crate::VmId) -> bool {
     status != VmStatus::Stopped && status != VmStatus::Reclaimed
 }
 
-fn retire_next(world: &World, sandbox: SandboxId) -> Option<WorkflowStep> {
+fn retire_next(
+    world: &World,
+    sandbox: SandboxId,
+    failure: Option<crate::FailureKind>,
+) -> Option<WorkflowStep> {
+    // Only Create compensation supplies a failure here. The original handler
+    // checks the exact terminal fence, stop/abort receipts and closed resources.
+    // This preview grants no physical release and does not resolve any effect.
+    let failure_ready = failure.is_some_and(|failure| {
+        crate::publication::handle_publish_failure(world, sandbox, failure).is_ok()
+    });
     let mut index = 0;
     let mut result = None;
     while index < world.effect_ids().len() && result.is_none() {
         let effect = &world.effect_ids()[index];
-        if effect.command().sandbox() == sandbox && effect_unresolved(world, effect) {
+        let pending_prepare_observation = failure_ready
+            && matches!(effect.command(), Command::PrepareVm { .. })
+            && crate::terminal::startup_effect_in_current_abort(world, effect);
+        if effect.command().sandbox() == sandbox
+            && effect_unresolved(world, effect)
+            && !pending_prepare_observation
+        {
             result = Some(WorkflowStep::Blocked);
             if let Some(command) = crate::terminal::activation_stop_current(world, effect) {
                 let logical = crate::LogicalEffectId { command };
@@ -373,3 +417,95 @@ fn retire_next(world: &World, sandbox: SandboxId) -> Option<WorkflowStep> {
     }
     result
 }
+
+fn pause_step(
+    world: &World,
+    sandbox: SandboxId,
+    record: &crate::SandboxRecord,
+    plan: &crate::OperationPlan,
+) -> WorkflowStep {
+    let key = plan.key;
+    let Some(source) = plan.target_snapshot else {
+        return apply(ControllerInput::Scheduler(
+            SchedulerInput::ReservePauseSnapshot(key),
+        ));
+    };
+    let Some(vm) = plan.vm else {
+        return WorkflowStep::Blocked;
+    };
+    let Some(physical) = world.vm_record(vm) else {
+        return WorkflowStep::Blocked;
+    };
+    let seal = Command::SealSnapshot {
+        sandbox,
+        epoch: plan.epoch,
+        generation: plan.generation,
+        vm,
+        workspace: record.workspace,
+        snapshot: source.snapshot,
+        manifest: source.manifest,
+    };
+    if !scheduled(world, &seal) {
+        if physical.status != VmStatus::Frozen || unresolved(world, sandbox) {
+            return WorkflowStep::Blocked;
+        }
+        return apply(ControllerInput::Scheduler(SchedulerInput::SealSnapshot(
+            sandbox,
+            source.snapshot,
+            source.manifest,
+        )));
+    }
+    if !crate::effect::effect_succeeded_check(world, &seal) {
+        return WorkflowStep::Blocked;
+    }
+    let commit = Command::CommitSnapshot {
+        sandbox,
+        epoch: plan.epoch,
+        generation: plan.generation,
+        snapshot: source.snapshot,
+        manifest: source.manifest,
+    };
+    if !scheduled(world, &commit) {
+        return apply(ControllerInput::Scheduler(SchedulerInput::CommitSnapshot(
+            sandbox,
+            source.snapshot,
+        )));
+    }
+    if !crate::effect::effect_succeeded_check(world, &commit) {
+        return WorkflowStep::Blocked;
+    }
+    let stop = Command::StopVm {
+        sandbox,
+        epoch: plan.epoch,
+        generation: plan.generation,
+        vm,
+    };
+    if !crate::effect::effect_succeeded_check(world, &stop) {
+        return WorkflowStep::Blocked;
+    }
+    apply(ControllerInput::Publication(PublicationInput::Paused(
+        sandbox, source,
+    )))
+}
+
+fn paused_workflow_step(
+    world: &World,
+    sandbox: SandboxId,
+    record: &crate::SandboxRecord,
+    plan: &crate::OperationPlan,
+) -> Option<WorkflowStep> {
+    if record.phase == Phase::Pausing
+        && record
+            .current_operation
+            .is_some_and(|operation| operation.kind == OperationKind::Pause)
+    {
+        return Some(pause_step(world, sandbox, record, plan));
+    }
+    if record.phase == Phase::Paused {
+        return Some(cleanup(world, sandbox, record.generation));
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests;

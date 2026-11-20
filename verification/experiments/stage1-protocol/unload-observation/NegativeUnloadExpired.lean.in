@@ -1,0 +1,30 @@
+import SandboxModel.Lifecycle.Protocol.UnloadValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.internal sandproof_protocol.lifecycle.authority
+open sandproof_protocol.lifecycle.identity sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.unload
+open SandboxModel.Stage1Protocol SandboxModel.Stage1Protocol.Validation
+open SandboxModel.Stage1Protocol.ReadyFactValues SandboxModel.Stage1Protocol.UnloadValues
+namespace SandboxModel.Stage1Protocol.NegativeUnloadExpired
+
+-- Checked against the actual compiled/extracted Rust mutant and the same full contract.
+theorem actual_mutant_accepts : unload_matches (observation (.OriginalContinued expiredFacts)) original = .ok true := by
+  have checked : U64.checked_add 2#u64 1#u64 = some 3#u64 := by decide
+  simp [unload_matches, UnloadObservation.matches_request,
+    observation, original, expiredFacts,
+    facts, resumeIntent, EnvelopeValues.intent,
+    Replay.accepted_eq, AcceptedLifecycleIntent.accepted_version_for_request, Library.option_u64_eq,
+    RetentionBinding.valid_for, checked]
+
+theorem violates_same_full_contract : ¬ UnloadBinding.FullContract unload_matches := by
+  classical
+  intro contract
+  have exact_result := contract (observation (.OriginalContinued expiredFacts)) original
+  rw [actual_mutant_accepts] at exact_result
+  have rejected := counterexamples_outside_contract.2.2.2
+  simp [rejected] at exact_result
+
+end SandboxModel.Stage1Protocol.NegativeUnloadExpired
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeUnloadExpired.actual_mutant_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeUnloadExpired.violates_same_full_contract

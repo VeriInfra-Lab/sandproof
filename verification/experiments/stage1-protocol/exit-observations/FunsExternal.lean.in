@@ -1,0 +1,16 @@
+import Aeneas
+import SandproofExitObservations.Types
+open Aeneas Aeneas.Std
+namespace SandproofExitObservationsRust
+/- Only the existing A6 fixed String and Option equality interfaces. -/
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (dictionary : core.cmp.PartialEq T T) (left right : Option T) : Result Bool :=
+  match left, right with
+  | none, none => .ok true
+  | some left, some right => dictionary.eq left right
+  | _, _ => .ok false
+
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool :=
+  .ok (decide (left = right))
+end SandproofExitObservationsRust

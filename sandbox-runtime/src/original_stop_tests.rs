@@ -75,6 +75,7 @@ fn fixture(source: &RuntimeProcessIdentity) -> (tempfile::TempDir, Runtime) {
         // Private controlled fixture only. Production constructors retain all
         // root/KVM/deployment checks, with no test switch in the public API.
         config: RuntimeConfig {
+            guest_instance_id: "guest-instance".into(),
             console_policy: None,
             host_slot: None,
             jailer: "/not-invoked/jailer".into(),

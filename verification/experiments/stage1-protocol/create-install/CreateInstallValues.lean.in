@@ -1,0 +1,61 @@
+import SandboxModel.Lifecycle.Protocol.CreateInstallModel
+import SandboxModel.Lifecycle.Protocol.CreateSelectionValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateInstall.Values
+noncomputable section
+open scoped Classical
+open InboxLookup.Witness
+
+abbrev base := CreateSelection.Values.normal
+abbrev selected := CreateSelection.Values.selected
+abbrev entry := CreateSelection.Values.entry
+
+def binding : InternalLocalBinding := ⟨10#u64, 20#u64, 30#u64⟩
+def mapped : Session := { selected with
+  «local» := some binding,
+  entries := InboxLookup.Witness.singleton { entry with local_operation := some binding.operation } }
+def freshResult : Inbox := { base with
+  owner_high_water := binding.owner, owners := InboxLookup.Witness.singleton (ownerRow selected binding),
+  sessions := InboxLookup.Witness.singleton mapped }
+def known : Inbox := { base with
+  owner_high_water := 99#u64,
+  owners := alloc.vec.Vec.from [⟨"other", 9#u64⟩, ⟨"owner", 20#u64⟩] (by simp; scalar_tac) }
+def knownResult : Inbox := { known with sessions := InboxLookup.Witness.singleton mapped }
+
+theorem selected_intent_valid : Validation.ValidEnvelope entry.intent EnvelopeValues.context :=
+  CreateSelection.Values.envelope_valid
+
+theorem base_session : base.sessions.val[0]? = some selected := by
+  simp [base, CreateSelection.Values.normal, CreateSelection.Values.withSession, InboxLookup.Witness.inbox, InboxLookup.Witness.singleton]
+
+theorem selected_entry : selected.entries.val[0]? = some entry := by
+  simp [selected, CreateSelection.Values.selected, InboxLookup.Witness.singleton]
+
+theorem base_bounds : (0#usize).val < base.sessions.val.length ∧
+    (0#usize).val < base.sessions.val[0].entries.val.length := by
+  simp [base, CreateSelection.Values.normal, CreateSelection.Values.withSession, InboxLookup.Witness.inbox,
+    InboxLookup.Witness.singleton, CreateSelection.Values.selected]
+
+theorem base_missing : ¬ HasOwner base selected.owner := by
+  simp [HasOwner, base, CreateSelection.Values.normal, CreateSelection.Values.withSession,
+    InboxLookup.Witness.inbox, empty]
+
+theorem known_present : HasOwner known selected.owner := by
+  simp [HasOwner, known, selected, CreateSelection.Values.selected, InboxLookup.Witness.session]
+
+theorem base_room : base.owners.val.length < Usize.max := by
+  simp [base, CreateSelection.Values.normal, CreateSelection.Values.withSession,
+    InboxLookup.Witness.inbox, empty]
+  scalar_tac
+
+end
+end SandboxModel.Stage1Protocol.CreateInstall.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.Values.selected_intent_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.Values.base_session
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.Values.selected_entry
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.Values.base_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.Values.base_missing
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.Values.known_present
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateInstall.Values.base_room

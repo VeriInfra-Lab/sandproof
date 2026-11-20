@@ -1,0 +1,134 @@
+import SandproofFoundations.TypesExternal
+
+open Aeneas Aeneas.Std Result ControlFlow Error
+
+namespace SandproofUnloadStartupJoint
+
+class Representations where
+  ty0 : Type
+  ty1 : Type → Type
+  ty2 : Type
+  ty3 : Type
+  ty4 : Type
+  ty5 : Type
+  ty6 : Type → Type
+  ty7 : Type
+  ty8 : Type
+  ty9 : Type
+  ty10 : Type
+  ty11 : Type
+  ty12 : Type
+  ty13 : Type
+  ty14 : Type
+  ty15 : Type
+  ty16 : Type
+  ty17 : Type
+  ty18 : Type
+  ty19 : Type
+  ty20 : Type
+  ty21 : Type
+  ty22 : Type
+  ty23 : Type
+  ty24 : Type
+  ty25 : Type
+  ty26 : Type
+  ty27 : Type
+  ty28 : Type
+  ty29 : Type
+  ty30 : Type
+  ty31 : Type
+  ty32 : Type
+  ty33 : Type
+  ty34 : Type
+  ty35 : Type
+  ty36 : Type
+  ty37 : Type
+  ty38 : Type
+  ty39 : Type
+
+abbrev core.io.error.Error [r : Representations] := r.ty0
+
+abbrev core.mem.maybe_uninit.MaybeUninit [r : Representations] := r.ty1
+
+abbrev rusqlite.error.Error [r : Representations] := r.ty2
+
+abbrev rusqlite.Connection [r : Representations] := r.ty3
+
+abbrev rusqlite.statement.Statement [r : Representations] := r.ty4
+
+abbrev rusqlite.types.to_sql.ToSqlOutput [r : Representations] := r.ty5
+
+abbrev rusqlite.row.MappedRows [r : Representations] := r.ty6
+
+abbrev rusqlite.row.Row [r : Representations] := r.ty7
+
+abbrev rusqlite.types.value_ref.ValueRef [r : Representations] := r.ty8
+
+abbrev rusqlite.types.from_sql.FromSqlError [r : Representations] := r.ty9
+
+abbrev rusqlite.transaction.Transaction [r : Representations] := r.ty10
+
+abbrev sandbox_controller_core.ids.OperationId [r : Representations] := r.ty11
+
+abbrev sandbox_controller_core.model.NetworkPolicy [r : Representations] := r.ty12
+
+abbrev sandbox_controller_core.model.RestoreSource [r : Representations] := r.ty13
+
+abbrev sandbox_controller_core.model.SnapshotManifestRef [r : Representations] := r.ty14
+
+abbrev sandbox_controller_core.model.FilePolicyRef [r : Representations] := r.ty15
+
+abbrev sandbox_controller_core.ids.SnapshotId [r : Representations] := r.ty16
+
+abbrev sandbox_controller_core.ids.FsId [r : Representations] := r.ty17
+
+abbrev sandbox_controller_core.capture.continuation.CaptureWorkEndReceipt [r : Representations] := r.ty18
+
+abbrev sandbox_controller_core.capture.CaptureHandoff [r : Representations] := r.ty19
+
+abbrev sandbox_controller_core.controller.ControllerReject [r : Representations] := r.ty20
+
+abbrev sandbox_controller_core.model.World [r : Representations] := r.ty21
+
+abbrev sandbox_controller_core.ids.TenantId [r : Representations] := r.ty22
+
+abbrev sandbox_controller_core.model.Phase [r : Representations] := r.ty23
+
+abbrev sandbox_controller_core.model.WorkspaceApiAccess [r : Representations] := r.ty24
+
+abbrev sandbox_controller_core.model.OperationInput [r : Representations] := r.ty25
+
+abbrev sandbox_controller_core.model.FailureKind [r : Representations] := r.ty26
+
+abbrev sandbox_controller_core.model.OperationResult [r : Representations] := r.ty27
+
+abbrev sandbox_controller_core.model.Authority [r : Representations] := r.ty28
+
+abbrev sandbox_controller_core.model.LogicalEffectResult [r : Representations] := r.ty29
+
+abbrev sandproof_protocol.TenantId [r : Representations] := r.ty30
+
+abbrev sandproof_protocol.SandboxId [r : Representations] := r.ty31
+
+abbrev sandproof_protocol.OperationId [r : Representations] := r.ty32
+
+abbrev sandproof_protocol.LogicalActionId [r : Representations] := r.ty33
+
+abbrev sandproof_protocol.FailureCode [r : Representations] := r.ty34
+
+abbrev sandproof_protocol.UnknownReason [r : Representations] := r.ty35
+
+abbrev sandproof_protocol.lifecycle.digest.ContentDigest [r : Representations] := r.ty36
+
+abbrev serde_json.error.Error [r : Representations] := r.ty37
+
+abbrev capture.SourceProcessIdentity [r : Representations] := r.ty38
+
+abbrev CrashPoint [r : Representations] := r.ty39
+abbrev core.fmt.Formatter := SandproofFoundationsRust.core.fmt.Formatter
+abbrev core.fmt.Error := SandproofFoundationsRust.core.fmt.Error
+abbrev core.fmt.Display := SandproofFoundationsRust.core.fmt.Display
+abbrev core.fmt.Debug := SandproofFoundationsRust.core.fmt.Debug
+abbrev core.error.Error := SandproofFoundationsRust.core.error.Error
+
+end SandproofUnloadStartupJoint

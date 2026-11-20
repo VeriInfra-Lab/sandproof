@@ -1,0 +1,39 @@
+import SandboxModel.Lifecycle.Protocol.StandardDigestLibrary
+import SandboxModel.Lifecycle.Protocol.StandardDigestValues
+open Aeneas Aeneas.Std SandproofStandardDigestRust
+namespace SandboxModel.Stage1Protocol.StandardDigestInputCounter
+open StandardDigest
+
+theorem wrong_common_normal : actual Values.normal Values.empty = expected Values.normal Values.empty := by
+  simp [actual, expected,
+    controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest,
+    Values.empty, core.slice.index.Slice.index, core.slice.index.SliceIndexRangeToUsizeSlice.index,
+    Slice.length, List.slice, controller.lifecycle_inbox.sha256.digest]
+
+theorem wrong_abc_uses_empty : actual Values.normal Values.abc = expected Values.normal Values.empty := by
+  simp [actual, expected,
+    controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest,
+    Values.abc, Values.empty, core.slice.index.Slice.index, core.slice.index.SliceIndexRangeToUsizeSlice.index,
+    Slice.length, List.slice, controller.lifecycle_inbox.sha256.digest]
+
+theorem complete_hashes_differ :
+    DigestByteBridge.referenceOutput Values.empty ≠ DigestByteBridge.referenceOutput Values.abc := by
+  intro same
+  have payloads := congrArg (fun value : Array U8 32#usize =>
+    (SandproofFoundationsRust.IdentifierLibrary.byteArray value.val).toList) same
+  rw [Values.empty_full_payload, Values.abc_full_payload] at payloads
+  have first := (List.cons.inj payloads).1
+  exact (by decide : (0xe3 : UInt8) ≠ 0xba) first
+
+theorem same_full_contract_rejected : ¬ FullDigestContract actual := by
+  intro contract
+  have accepted := contract Values.normal Values.abc Values.abc_normal
+  rw [wrong_abc_uses_empty] at accepted
+  have same := Result.ok_injective accepted
+  exact complete_hashes_differ (congrArg Prod.fst same)
+
+end SandboxModel.Stage1Protocol.StandardDigestInputCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestInputCounter.wrong_common_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestInputCounter.wrong_abc_uses_empty
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestInputCounter.complete_hashes_differ
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestInputCounter.same_full_contract_rejected

@@ -1,0 +1,38 @@
+import SandboxModel.Lifecycle.Protocol.SourceQuestion.Spec
+open Aeneas Aeneas.Std SandproofSourceQuestionRust
+namespace SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Values
+
+def digest : Array U8 32#usize := Array.from (List.replicate 32 (0#u8)) (by decide)
+def otherDigest : Array U8 32#usize := Array.from (List.replicate 32 (1#u8)) (by decide)
+def node : sandproof_protocol.internal.NodeIdentity := ⟨"deployment", "node", 1#u64⟩
+def bootstrap : capture.HostEpochRegistration := ⟨1#u16, "boot", digest⟩
+def source : capture.SourceProcessIdentity := ⟨1234#u32, 5678#u64, "boot"⟩
+def limits : capture.source.SourceObservationConfig :=
+  ⟨32768#u32, 1024#u32, 1048576#u64, 1048576#u64, 1048576#u64, 68719476736#u64⟩
+def create : sandproof_protocol.internal.lifecycle.CreateBinding :=
+  ⟨"template", digest, ⟨1#u64, 1#u64, 4096#u64, 4096#u64⟩,
+    alloc.vec.Vec.from [123#u8, 125#u8] (by scalar_tac), 1000#u64, 2000#u64, 3000#u64⟩
+def origin : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent :=
+  ⟨⟨⟨4#u16, node, "session", ⟨"deployment", "owner", 1#u64, 1#u64⟩, .Absent⟩,
+    .Create create 101#u64⟩, 1#u64, ⟨"deployment", "center"⟩, ⟨1#u16, 1#u64⟩⟩
+def request : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent :=
+  { origin with request := ⟨{ origin.request.binding with
+      key := ⟨"deployment", "owner", 1#u64, 2#u64⟩, expected := .Version 1#u64 },
+    .Unload 101#u64 1#u64⟩, accepted_version := 2#u64 }
+def base : Work :=
+  ⟨⟨request, origin, ⟨1#u64, 2#u64, 3#u64⟩,
+      ⟨2#u64, .Running, false, 1#u64, 101#u64, some 5#u64, none,
+        some ⟨some 10#i64, 2010#i64, 3010#i64, 1010#i64, 4096#u64⟩,
+        alloc.vec.Vec.from [] (by scalar_tac)⟩,
+      none, node, bootstrap, source, digest, (1#u64, digest),
+      alloc.vec.Vec.from [] (by scalar_tac), alloc.vec.Vec.from [digest] (by scalar_tac)⟩,
+    ⟨digest, node, bootstrap, ⟨.Vm, "vm"⟩, source, limits⟩⟩
+
+def workspaceAction : sandproof_protocol.ActionIdentity :=
+  ⟨1#u16, "owner", "session", "operation", 2#u64, 101#u64, "prepare", 1#u64,
+    ⟨.Workspace, "workspace"⟩⟩
+def vmAction : sandproof_protocol.ActionIdentity :=
+  { workspaceAction with logical_action := "activate", resource := ⟨.Vm, "vm"⟩ }
+def anchor : Anchor :=
+  { base.anchor with original_actions := alloc.vec.Vec.from [workspaceAction, vmAction] (by scalar_tac) }
+end SandboxModel.Stage1Protocol.SourceQuestion.Candidate.Values

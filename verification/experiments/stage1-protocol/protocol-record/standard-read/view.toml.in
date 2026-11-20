@@ -1,0 +1,31 @@
+name = "standard-record-proof"
+version = "0.1.0"
+
+[[lean_lib]]
+name = "SandboxModel"
+srcDir = "."
+
+[[lean_lib]]
+name = "SandproofStandardRecord"
+srcDir = "verification/experiments/stage1-protocol/protocol-record/standard-read/generated"
+
+[[lean_lib]]
+name = "SandproofFoundations"
+srcDir = "verification/aeneas/foundations"
+
+[[lean_lib]]
+name = "SandproofLoopCallbacks"
+srcDir = "verification/aeneas/loop-callbacks"
+
+[[lean_lib]]
+name = "SandproofSqliteStatements"
+srcDir = "verification/aeneas/sqlite-statements"
+
+[[lean_lib]]
+name = "SandproofSqlite"
+srcDir = "verification/aeneas/sqlite"
+
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"

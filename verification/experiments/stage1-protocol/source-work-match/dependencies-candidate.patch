@@ -1,0 +1,20 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -969,3 +969,17 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+ 
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++
++### V3 完整 SourceWork 比较
++
++source-work-match 捕获9c50da7c实际派生比较，透明 lib 根只调用 left == right。
++复用已有逐符号 A6 字符串、Option/字典、Vec、数组/标量比较；实际 core::tuple
++比较透明抽取并证明回调顺序，没有新可信 Pair 模型。完整请求比较证明在当前
++生成类型上重新核对；不复制替代协议算法。三个普通外部模型不包含业务公理。
++
++FullWorkContract 直接实例化现有 FullReplayContract，给出所有已解码值的完整
++精化、接受/拒绝 iff、总性。V3仍需实例化真实查找、键、逐行参数/JSON/SHA/错误
++传播；V0的最小待补合同仍为 BTreeSet<[u8;32],Global>::insert 与 contains，
++不沿用字符串键 insert 范围。V5/A4负责物理事务/未知提交/恢复历史，V6材料事实、
++V7独立认证、V1/V2当前意图/耐久发送分别提供。相等不推出这些业务条件。

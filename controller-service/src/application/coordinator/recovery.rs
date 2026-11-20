@@ -132,9 +132,23 @@ fn reclaim_uncertain_actions<H: WorkRecovery>(
 }
 
 fn effect_needs_recovery(world: &core::World, effect: &core::EffectId) -> bool {
+    if core::maintenance::released_execution::discharged(world, effect) {
+        return false;
+    }
     match world.effect_status(effect) {
-        Some(core::EffectStatus::Acknowledged(_) | core::EffectStatus::RetiredByStop(_)) => false,
+        Some(
+            core::EffectStatus::Acknowledged(_)
+            | core::EffectStatus::RetiredByStop(_)
+            | core::EffectStatus::RetiredByCaptureEnd(_)
+            | core::EffectStatus::RetiredByCaptureDrain(_),
+        ) => false,
         Some(core::EffectStatus::Committed) => {
+            // A terminal intent forbids the original startup dispatch. This
+            // action was never claimed, so it owns no unknown physical work.
+            // Already Dispatched/OutcomeUnknown actions still block below.
+            if core::effect::startup_dispatch_revoked(world, effect.command()) {
+                return false;
+            }
             // Failed creates can retain unclaimed startup actions. Use the
             // dispatcher's core preview to distinguish obsolete work; never
             // suppress a dispatched action whose physical result is unknown.
@@ -273,7 +287,9 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
             Err(error) => return Err(map_journal(error)),
         };
         let unclaimed = initial.effect_ids().iter().all(|effect| {
-            effect.command().sandbox() != *sandbox
+            initial
+                .logical_effect(&effect.logical)
+                .is_none_or(|logical| logical.origin != core::EffectOrigin::Operation(key))
                 || matches!(
                     initial.effect_status(effect),
                     Some(core::EffectStatus::Committed)
@@ -293,7 +309,7 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
         }
         if !ensure_launch_config(
             host,
-            *sandbox,
+            (*sandbox, record.generation),
             &options,
             registered.is_some(),
             unclaimed,
@@ -304,7 +320,7 @@ fn blocked_launch_configs<H: LaunchConfiguration>(
             continue;
         }
         let credential = host
-            .token_for(*sandbox)
+            .token_for(*sandbox, record.generation)
             .and_then(|value| data_credentials::digest(&value));
         let digest = match credential {
             Ok(value) => value,
@@ -372,14 +388,15 @@ fn register_recovered_credential(
 
 fn ensure_launch_config<H: LaunchConfiguration>(
     host: &H,
-    sandbox: core::SandboxId,
+    execution: (core::SandboxId, core::Generation),
     options: &crate::CreateOptions,
     registered: bool,
     unclaimed: bool,
     context: FaultContext,
     first_fault: &mut Option<FaultRecord>,
 ) -> Result<bool, ApplicationError> {
-    let fault = match host.has_bound_launch_config(sandbox, options) {
+    let (sandbox, generation) = execution;
+    let fault = match host.has_bound_launch_config(sandbox, generation, options) {
         Ok(true) => return Ok(true),
         // A registered credential or a claimed action forbids token rotation,
         // even if the original descriptor is no longer readable.
@@ -388,7 +405,7 @@ fn ensure_launch_config<H: LaunchConfiguration>(
             FaultKind::CredentialUnavailable,
             context,
         ),
-        Ok(false) => match host.put_bound_launch_config(sandbox, &token()?, options) {
+        Ok(false) => match host.put_bound_launch_config(sandbox, generation, &token()?, options) {
             Ok(()) => return Ok(true),
             Err(error) => FaultRecord::application(FaultStage::PutCredential, &error, context),
         },
@@ -411,8 +428,9 @@ pub(super) fn host_routes_drained<H: ControllerHost>(
 /// Whether a committed physical position may acquire its missing host binding.
 ///
 /// Startup inventory and managed recovery must use the same rule: no host work
-/// was claimed, except terminal fences for an already cancelled, unlaunched
-/// instance. The caller still validates the original position and predecessor;
+/// of this incarnation was claimed, except terminal fences for an already
+/// cancelled, unlaunched instance. Settled older-incarnation work is historical.
+/// The caller still validates the original position and predecessor;
 /// this predicate never authorizes creating a new sandbox or credential.
 #[must_use]
 pub fn can_install_host_slot_binding(world: &core::World, sandbox: core::SandboxId) -> bool {
@@ -424,11 +442,50 @@ pub fn can_install_host_slot_binding(world: &core::World, sandbox: core::Sandbox
     world.effect_ids().iter().all(|effect| {
         effect.command().sandbox() != sandbox
             || world.effect_status(effect) == Some(core::EffectStatus::Committed)
+            || settled_prior_incarnation(world, effect, record.generation)
             // A terminal fence alone cannot prepare or launch a VM. Any
             // claimed opening fence, prepare or other action still blocks.
             || (terminal_before_launch
                 && matches!(effect.command(), core::Command::InstallFence { terminal: true, .. }))
     })
+}
+
+// Derive historical work's incarnation from its original plan, including fence
+// commands. Missing provenance and unresolved old work remain vetoes.
+fn settled_prior_incarnation(
+    world: &core::World,
+    effect: &core::EffectId,
+    current_generation: core::Generation,
+) -> bool {
+    if !matches!(
+        world.effect_status(effect),
+        Some(
+            core::EffectStatus::Acknowledged(_)
+                | core::EffectStatus::RetiredByStop(_)
+                | core::EffectStatus::RetiredByCaptureEnd(_)
+                | core::EffectStatus::RetiredByCaptureDrain(_)
+        )
+    ) {
+        return false;
+    }
+    let Some(logical) = world.logical_effect(&effect.logical) else {
+        return false;
+    };
+    let generation = match logical.origin {
+        core::EffectOrigin::Operation(key) => world
+            .operation_plan(key)
+            .filter(|plan| plan.key.sandbox == effect.command().sandbox())
+            .map(|plan| plan.generation),
+        core::EffectOrigin::Maintenance(sandbox) if sandbox == effect.command().sandbox() => {
+            match effect.command() {
+                core::Command::CleanupVm { generation, .. }
+                | core::Command::CleanupSlot { generation, .. } => Some(*generation),
+                _ => None,
+            }
+        }
+        core::EffectOrigin::Maintenance(_) => None,
+    };
+    generation.is_some_and(|generation| generation > 0 && generation < current_generation)
 }
 
 pub(super) fn bind_recovery_slots<H: HostSlots>(
@@ -581,6 +638,21 @@ fn epoch_blocked_startups(
         .collect())
 }
 
+fn close_released_executions(
+    journal: &mut ControllerJournal,
+    selected: Option<core::SandboxId>,
+) -> Result<(), ApplicationError> {
+    let originals = journal.world().map_err(map_journal)?;
+    for (sandbox, _) in originals.sandbox_records() {
+        if selected.is_none_or(|id| id == *sandbox) {
+            journal
+                .close_released_lifecycle_execution(*sandbox, &mut NeverCrash)
+                .map_err(map_journal)?;
+        }
+    }
+    Ok(())
+}
+
 pub(super) fn recover_locked<H: ControllerHost>(
     inner: &mut Inner<H>,
     selected: Option<core::SandboxId>,
@@ -594,6 +666,7 @@ pub(super) fn recover_locked<H: ControllerHost>(
             .abort_due_startups(clock.now_ms()?, &mut NeverCrash)
             .map_err(map_admission)?;
     }
+    close_released_executions(journal, selected)?;
     let initial = journal.world().map_err(map_journal)?;
     // Use the state before reconciliation: work whose last cleanup receipt is
     // recovered in this scan must still finish and be counted once. Already
@@ -791,3 +864,6 @@ impl<H: ControllerHost> ControllerApplication<H> {
         Ok(report)
     }
 }
+
+#[cfg(test)]
+mod tests;

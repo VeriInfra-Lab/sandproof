@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordTotalModel
+import SandboxModel.Lifecycle.Protocol.InboxStateModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxPosition
+
+/-- Representation relation for the returned position in this exact Inbox.
+It preserves the entire intent; it asserts no authorization or physical fact. -/
+def StoredIntent (inbox : Inbox) (s e : Usize) (intent : AcceptedLifecycleIntent) : Prop :=
+  ∃ (session : Session) (entry : Entry),
+    inbox.sessions.val[s.val]? = some session ∧
+    session.entries.val[e.val]? = some entry ∧ entry.intent = intent
+
+theorem stored_intent_bounds (inbox : Inbox) (s e : Usize) (intent : AcceptedLifecycleIntent)
+    (stored : StoredIntent inbox s e intent) :
+    ∃ (sb : s.val < inbox.sessions.val.length)
+      (eb : e.val < (inbox.sessions.val[s.val]'sb).entries.val.length),
+      ((inbox.sessions.val[s.val]'sb).entries.val[e.val]'eb).intent = intent := by
+  obtain ⟨session, entry, hs, he, full⟩ := stored
+  obtain ⟨sb, same_session⟩ := List.getElem?_eq_some_iff.mp hs
+  obtain ⟨eb, same_entry⟩ := List.getElem?_eq_some_iff.mp he
+  subst session
+  subst entry
+  exact ⟨sb, eb, full⟩
+
+theorem stored_intent_valid (inbox : Inbox) (s e : Usize) (intent : AcceptedLifecycleIntent)
+    (stored : StoredIntent inbox s e intent) : InboxState.ValidPosition inbox s e := by
+  obtain ⟨sb, eb, _full⟩ := stored_intent_bounds inbox s e intent stored
+  exact ⟨sb, eb⟩
+
+end SandboxModel.Stage1Protocol.InboxPosition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.stored_intent_bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxPosition.stored_intent_valid

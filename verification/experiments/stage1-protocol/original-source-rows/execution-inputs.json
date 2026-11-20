@@ -1,0 +1,208 @@
+{
+  "schema": 1,
+  "capture_inputs": {
+    "precheck-config.json": "9f74ae8b1cfacba1af77af41de4e7eaaa1a49661956c3e3a5c77a8c464d7abfe",
+    "SourceIdentifierFormula.lean": "e4aad414ec5f8e25000f345271217cc8d54bd964a5e18b952856468d6307483a",
+    "SourceIdentifierProvider.lean": "5394005a9eafc80a3173a00b3c533991cd31186f641f2d62ab41be6009778f97",
+    "actual-source-audit.py": "7d322a746be0c65f3578c531c60fcabbe8fa9caba83764a0ee31b294012e77e9",
+    "admit-original-source.py": "c4c62372275bbeb533c8fefcedea8a0d6edb807e97eb9088ba098808d08371b7",
+    "current-call_mut.lean.fragment": "1a717fab5286092c66399c6bf42e0b28a2bc71e4298d11172ba7f32e09f24ecd",
+    "current-call_once.lean.fragment": "4b6e4df3ea96a441a9266d92f7cd0af9f854878f5035c06a0d961af07fed5a55",
+    "current-row14-valid-identifier.lean.fragment": "bdfba39b44b9cbcce09f0e979797b2010ba2f19712afc31d62cacf5c2d60f20e",
+    "metadata-view-lib.rs": "c523e1df529df66600a8ddaed7a863467b93b85a84adc6adafe1b896f49e3581",
+    "name-metadata-plan.json": "12c480942ee150f475d8084807b3144c5854458711549f345e01a728bbea64a9",
+    "proof-link-binding.json": "1f863b5bee6ca3371a383b21ac2f5f2bd31854c4c05de46b484dac971d1c5fb6",
+    "provider-call_mut.lean.fragment": "1a717fab5286092c66399c6bf42e0b28a2bc71e4298d11172ba7f32e09f24ecd",
+    "provider-call_once.lean.fragment": "4b6e4df3ea96a441a9266d92f7cd0af9f854878f5035c06a0d961af07fed5a55",
+    "provider-frozen-protocol-lib.rs": "eac6d277cd77b680f554f318ad5a2cb5e9ba40f09172486c8ba62d656fdabb0d",
+    "provider-link-audit.py": "fca484af2bda64c15240b47156ddb6fbacc09319181ba7a338a9b027e9e2ac6c",
+    "provider-valid-identifier.lean.fragment": "bdfba39b44b9cbcce09f0e979797b2010ba2f19712afc31d62cacf5c2d60f20e"
+  },
+  "external_templates": {
+    "FunsExternal_Template.lean": "832b530b5f9dedfd36a324158a6383e6400a928e3536a5a75155e656cfa35f78",
+    "TypesExternal_Template.lean": "8ca8c6712c493731c6b4d621445f40d4516cbf16452910e23d3036e8d58f8058"
+  },
+  "materialize": {
+    "OriginalRowsDriver.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/OriginalRowsDriver.lean.in",
+      "sha256": "bcee60ec240c508a4e99217e9f6baf4dd2cb5143525212546609718d84aa52c9"
+    },
+    "OriginalRowsInvariant.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/OriginalRowsInvariant.lean.in",
+      "sha256": "ca7dfa082222b393ca4e7f4b99c5f8899021714efab30c4cbfb143948b493f85"
+    },
+    "OriginalSourceSqliteOps.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/OriginalSourceSqliteOps.lean.in",
+      "sha256": "5af4944a966165875673ec9d60cb133b82a1182491991fac729e81e45d2e9966"
+    },
+    "SourceAgreement.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceAgreement.lean.in",
+      "sha256": "a6818149919a88d8525540eff036e5043b71ced48fcad37a5b9042ccefeaf95c"
+    },
+    "SourceCompleteEvidence.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceCompleteEvidence.lean.in",
+      "sha256": "4b8047f077ff83089ea4fe01a05683d033361e877ed88c4918bf508a8d0211c3"
+    },
+    "SourceDriverPrefix.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceDriverPrefix.lean.in",
+      "sha256": "00ab2ababa9fa839faaa0f286750a9dc22e8dd4eb5c2b575ac96b03f45936bd7"
+    },
+    "SourceIdentifierFormula.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceIdentifierFormula.lean.in",
+      "sha256": "e4aad414ec5f8e25000f345271217cc8d54bd964a5e18b952856468d6307483a"
+    },
+    "SourceObservedRows.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceObservedRows.lean.in",
+      "sha256": "dc5247a1cf3ceda6eccaeae5da40154a1bed9ddc3fa9c518200f7623810959d5"
+    },
+    "SourceOptionResult.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceOptionResult.lean.in",
+      "sha256": "e476e7f1359ad4809d5420ba10aa4f9d0505e4be0555c8d32287ae80684bdeb0"
+    },
+    "SourceRowEvidence.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceRowEvidence.lean.in",
+      "sha256": "b556b87482723764a32606689079ff33d9a785ac8f89dcf32b938604ecb0e614"
+    },
+    "SourceRowSlots.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceRowSlots.lean.in",
+      "sha256": "7519c11eb3b20e79cee20f0516395039a8c808d937cc788cc6f1705ab3413f8a"
+    },
+    "SourceStdLibrary.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceStdLibrary.lean.in",
+      "sha256": "b1e3458eff2d4544aa0e679ccb22a91a4708079f9a268bed5d0b7778bc37a5dc"
+    },
+    "SourceStdTypes.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceStdTypes.lean.in",
+      "sha256": "688a66dd0eaa3fc3dc224438c41126d33238d1989ff9056e168459b1f483c56d"
+    },
+    "SourceUsingRowInvariant.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceUsingRowInvariant.lean.in",
+      "sha256": "81f726bae96759304d635915bc7b7171a88d2904d23e253dc4ba8e3827dac9d6"
+    },
+    "SourceUsingSuccess.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/SourceUsingSuccess.lean.in",
+      "sha256": "23d6868ad965fa7d7db7d267dfaa2a8cb14f5cd6679546d516cb2f77d260ddde"
+    },
+    "verification/aeneas/original-source-rows/SandproofOriginalSourceRows/FunsExternal.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/bindings/FunsExternal.lean.in",
+      "sha256": "394e78eeb22cdb3c2de93b2177d8440a633ea66698d1a6771cedc9664ad8ef98"
+    },
+    "verification/aeneas/original-source-rows/SandproofOriginalSourceRows/TypesExternal.lean": {
+      "source": "verification/experiments/stage1-protocol/original-source-rows/bindings/TypesExternal.lean.in",
+      "sha256": "2141a24fa3521d921fbc975902334c0f731be7e4bffb15ecdc6cd5339e12db7a"
+    },
+    "SandboxModel/Foundations/IdentifierModel.lean": {
+      "source": "SandboxModel/Foundations/IdentifierModel.lean",
+      "sha256": "1e40b772c61a27026285f68bd54eff1243f995634a091e13e743202357e89bef"
+    },
+    "SandboxModel/ProofAuditCommand.lean": {
+      "source": "SandboxModel/ProofAuditCommand.lean",
+      "sha256": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188"
+    },
+    "verification/aeneas/create-transaction-link/SandproofLoadBlob/ReadValueData.lean": {
+      "source": "verification/experiments/stage1-protocol/standard-blob/external/ReadValueData.lean.in",
+      "sha256": "d05b9a6e9219ddf5a9d429bdaf77280e569b4cd8c7475c7f38e77a38f81b3db9"
+    },
+    "verification/aeneas/create-transaction-link/SandproofLoadBlob/TypesExternal.lean": {
+      "source": "verification/experiments/stage1-protocol/standard-blob/external/TypesExternal.lean.in",
+      "sha256": "c58afadae676c43611cb3c2add28d3ab16689edf4fd8f39ae15c65b5dc196a9a"
+    },
+    "verification/aeneas/create-transaction-link/SandproofSqliteSession/Data.lean": {
+      "source": "verification/experiments/create-transaction-link/SqliteSessionData.lean.in",
+      "sha256": "6d2fbb26001dab59cf69f13c4e1065761c145cc0910d127afe6dd0dc98061a99"
+    },
+    "verification/aeneas/create-transaction-link/SandproofSqliteSession/ReadOps.lean": {
+      "source": "verification/experiments/create-transaction-link/SqliteReadOps.lean.in",
+      "sha256": "d53a906fa35ba6c3f195dcdc51b862d023016b1f9cca2833605994abb5812e4c"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": {
+      "source": "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+      "sha256": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c"
+    },
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": {
+      "source": "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+      "sha256": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8"
+    },
+    "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean": {
+      "source": "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+      "sha256": "b22b9a544018ac114c7d992acfdc2ab28b0379cf4ddb82b59955abc92048e7ab"
+    },
+    "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean": {
+      "source": "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean",
+      "sha256": "4bd78eb7f545377f7fea06ccb5a89f2b2b10e9f0e2a2d171284c063fa338b673"
+    }
+  },
+  "generated_directory": "verification/aeneas/original-source-rows/SandproofOriginalSourceRows",
+  "lake_view": {
+    "source": "verification/experiments/stage1-protocol/original-source-rows/lakefile.toml.in",
+    "sha256": "97daf98fdda6b7c31c1df0ba7ae15cd9fd3fcb717c96066e023dc78c953b12a1"
+  },
+  "closure_files": [
+    "OriginalRowsDriver.lean",
+    "OriginalRowsInvariant.lean",
+    "OriginalSourceSqliteOps.lean",
+    "SandboxModel/Foundations/IdentifierModel.lean",
+    "SandboxModel/ProofAuditCommand.lean",
+    "SourceAgreement.lean",
+    "SourceCompleteEvidence.lean",
+    "SourceDriverPrefix.lean",
+    "SourceIdentifierFormula.lean",
+    "SourceObservedRows.lean",
+    "SourceOptionResult.lean",
+    "SourceRowEvidence.lean",
+    "SourceRowSlots.lean",
+    "SourceStdLibrary.lean",
+    "SourceStdTypes.lean",
+    "SourceUsingRowInvariant.lean",
+    "SourceUsingSuccess.lean",
+    "verification/aeneas/create-transaction-link/SandproofLoadBlob/ReadValueData.lean",
+    "verification/aeneas/create-transaction-link/SandproofLoadBlob/TypesExternal.lean",
+    "verification/aeneas/create-transaction-link/SandproofSqliteSession/Data.lean",
+    "verification/aeneas/create-transaction-link/SandproofSqliteSession/ReadOps.lean",
+    "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean",
+    "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean",
+    "verification/aeneas/original-source-rows/SandproofOriginalSourceRows/Funs.lean",
+    "verification/aeneas/original-source-rows/SandproofOriginalSourceRows/FunsExternal.lean",
+    "verification/aeneas/original-source-rows/SandproofOriginalSourceRows/Types.lean",
+    "verification/aeneas/original-source-rows/SandproofOriginalSourceRows/TypesExternal.lean",
+    "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
+    "verification/aeneas/sqlite/SandproofSqlite/TypesExternal.lean"
+  ],
+  "audits": [
+    "SandboxModel.Stage1Protocol.OriginalRowsDriver.loop_normal_return",
+    "SandboxModel.Stage1Protocol.OriginalRowsDriver.run_normal_return",
+    "SandboxModel.Stage1Protocol.OriginalRowsDriver.run_normal_return_of_calls",
+    "SandproofOriginalSourceRowsRust.SourceAgreement.same_source_is_complete_record_equality",
+    "SandproofOriginalSourceRowsRust.SourceAgreement.actual_source_equality_checks_all_three_fields",
+    "SandproofOriginalSourceRowsRust.SourceAgreement.actual_agreement_accepts_exactly_valid_compatible_source",
+    "SandproofOriginalSourceRowsRust.SourceAgreement.successful_agreement_keeps_existing_source",
+    "SandproofOriginalSourceRowsRust.SourceAgreement.conflicting_source_is_rejected_without_replacing_previous",
+    "SandproofOriginalSourceRowsRust.SourceCompleteEvidence.actual_row_preserves_installed_evidence",
+    "SandproofOriginalSourceRowsRust.SourceCompleteEvidence.actual_source_success_has_both_installed_evidence",
+    "SandproofOriginalSourceRowsRust.SourceCompleteEvidence.actual_empty_agreement_success_is_valid",
+    "SandproofOriginalSourceRowsRust.SourceCompleteEvidence.actual_source_success_has_valid_full_identity",
+    "SandproofOriginalSourceRowsRust.SourceObservedRows.actual_driver_preserves_observed_rows",
+    "SandproofOriginalSourceRowsRust.SourceObservedRows.actual_observed_row_preserves_evidence",
+    "SandproofOriginalSourceRowsRust.SourceObservedRows.actual_source_success_has_observed_evidence",
+    "SandproofOriginalSourceRowsRust.SourceObservedRows.actual_source_success_complete_contract",
+    "SandproofOriginalSourceRowsRust.option_ok_or_lift_matches_fixed_library",
+    "SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_requires_decoded_action",
+    "SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_requires_bound_source_command",
+    "SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_requires_decoded_plan",
+    "SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_requires_checked_plan",
+    "SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_requires_checked_action",
+    "SandproofOriginalSourceRowsRust.SourceRowEvidence.actual_new_slot_has_complete_row_evidence",
+    "SandproofOriginalSourceRowsRust.SourceRowSlots.actual_agree_normal_return_keeps_some",
+    "SandproofOriginalSourceRowsRust.SourceRowSlots.actual_handler_slot_step",
+    "SandproofOriginalSourceRowsRust.SourceRowSlots.actual_handler_retains_non_target_slot",
+    "SandproofOriginalSourceRowsRust.SourceRowSlots.actual_handler_never_overwrites_existing_source",
+    "SandproofOriginalSourceRowsRust.SourceRowSlots.new_prepared_slot_comes_from_actual_agree",
+    "SandproofOriginalSourceRowsRust.SourceUsingRowInvariant.actual_callback_normal_success_projects_complete_handler_poststate",
+    "SandproofOriginalSourceRowsRust.SourceUsingRowInvariant.actual_driver_preserves_rows",
+    "SandproofOriginalSourceRowsRust.SourceUsingRowInvariant.actual_source_success_inherits_both_row_properties",
+    "SandproofOriginalSourceRowsRust.SourceUsingSuccess.bind_normal_iff",
+    "SandproofOriginalSourceRowsRust.SourceUsingSuccess.phase_ne_running",
+    "SandproofOriginalSourceRowsRust.SourceUsingSuccess.status_ne_executing",
+    "SandproofOriginalSourceRowsRust.SourceUsingSuccess.actual_success_has_complete_path"
+  ]
+}

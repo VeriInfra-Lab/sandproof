@@ -1,0 +1,10 @@
+[package]
+name = "sandproof-unix-path-values"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[lib]
+path = "roots.rs.in"

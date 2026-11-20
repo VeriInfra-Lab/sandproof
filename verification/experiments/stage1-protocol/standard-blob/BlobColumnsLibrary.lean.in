@@ -1,0 +1,21 @@
+import SandboxModel.Lifecycle.Protocol.BlobColumnsModel
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.BlobColumns
+noncomputable section
+
+/-- Normalization of the proposed fixed library models, not a Rust library proof. -/
+theorem fixed_get_model_refines (row : rusqlite.row.Row) (index : Usize) :
+    rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex
+      alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql row index = .ok (column row index) := by
+  by_cases inside : index.val < row.statement.columns.val
+  · cases raw : row.column index <;>
+      simp [rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex.idx,
+        alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result,
+        column, inside, raw]
+  · simp [rusqlite.row.Row.get, Usize.Insts.RusqliteRowRowIndex.idx, column, inside]
+
+end
+end SandboxModel.Stage1Protocol.BlobColumns
+
+#audit_controller_proof SandboxModel.Stage1Protocol.BlobColumns.fixed_get_model_refines

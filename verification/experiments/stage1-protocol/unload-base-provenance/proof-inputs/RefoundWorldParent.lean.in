@@ -1,0 +1,134 @@
+import WorldParentConclusion
+import BaseSecondInbox
+import BaseCodecLoad
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandboxModel.Stage1Protocol.InboxLoad
+open SandboxModel.Stage1Protocol.InboxOriginBinding
+open SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge
+
+variable [SandproofUnloadFirstObservation.Representations] [SandproofUnloadStartupJoint.Representations]
+
+/-- The parent postcondition is elaborated once over its abstract call
+    dictionaries, then instantiated with the two concrete reading paths. -/
+def RefoundWorkPost
+    [SandproofUnloadFirstObservation.ParentCalls] [SandproofUnloadStartupJoint.Operations]
+    {ledgerBase : SandproofUnloadOriginalLedger.Representations} {ready E : Type}
+    {host : SandproofUnloadFirstObservation.host_contract.HostEvidence E}
+    {serde : SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E}
+    {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx ns intent now input)
+    (carriers : StartupCarriers) (lv : LedgerLeafViews ledgerBase ready)
+    (native : BaseNative ready) (ledger : StartupLedger) (selectedPlan : UnloadFirstActualStartup.Plan) : Prop :=
+  ∀ (encoded : alloc.vec.Vec U8) (digestValue : Binding) (startupAction : Action),
+    SandproofUnloadFirstObservation.ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encoded) →
+    SandproofUnloadFirstObservation.ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encoded) = .ok digestValue →
+    reads.actionIdentities.val[1]? = some startupAction →
+    SandproofUnloadFirstObservation.ParentCalls.cloneResource startupAction.resource = .ok startupAction.resource →
+    SandproofUnloadFirstObservation.ParentCalls.cloneLimits input.limits = .ok input.limits →
+    ∃ work : Work, ∃ plan : UnloadFirstActualStartup.Plan,
+      SandproofUnloadFirstObservation.controller.lifecycle_inbox.source_work.snapshot.current
+        host serde tx ns intent now input = .ok (.Ok work) ∧
+      work.anchor.«local» = reads.localValue ∧
+      work.anchor.native = BaseSnapshotLink.fromBaseNative Record ready native ∧
+      reads.base.view.historical_result = (ledger.result.map lv.resultFromStartup).map lv.resultToParent ∧
+      SandproofUnloadStartupJoint.sandbox_controller_core.model.World.operation_plan
+        (cast carriers.world input.world) (SandproofUnloadStartupJoint.startupKey (carriers.localView reads.localValue)) =
+          .ok (some plan) ∧ plan = selectedPlan ∧ plan.sealed = true
+
+set_option maxHeartbeats 1000000 in
+/-- Complete the normal parent path using the refound base session. Its local
+    is deduced from the actual codec and parent selection, then the original
+    base record, ledger and startup plan provide the returned work. -/
+theorem actual_first_work_uses_refound_world_record_and_sealed_plan
+    {R T N U B S : Type}
+    {nativeBase : SandproofUnloadNativeSnapshot.Representations}
+    {ledgerBase : SandproofUnloadOriginalLedger.Representations} {ready : Type}
+    (parent : SandproofUnloadFirstObservation.ParentCalls)
+    (startupOps : SandproofUnloadStartupJoint.Operations)
+    (carriers : StartupCarriers) (errors : StartupErrorCarriers)
+    (hostView : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E →
+      SandproofUnloadStartupJoint.host_contract.HostEvidence E)
+    (serdeView : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E →
+      SandproofUnloadStartupJoint.serde_core.de.DeserializeOwned E)
+    (nv : NativeLeafViews nativeBase ready) (nativeOps : NativeOps nativeBase)
+    (lv : LedgerLeafViews ledgerBase ready) (ledgerOps : LedgerOps ledgerBase)
+    (ops : BaseOps ready) (readyView : ReadyView ready)
+    (inboxViews : Carriers)
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects S) (represented : DecodedStringsRepresentable io)
+    (snapshot : SameInboxSnapshot io)
+    (stateForConnection : BaseCodecLoad.ParentConnection → S)
+    (first after₁ after₂ : S)
+    (left right : sandproof_controller_service.controller.lifecycle_inbox.model.Inbox)
+    (read₁ : load_using saved terminal renewal unload graphic io first = .ok (.Ok (some left), after₁)) :
+    letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready
+    letI : SandproofUnloadStartupJoint.Operations := SandproofUnloadStartupJoint.bindStartupRowsB4 startupOps
+    let load := BaseCodecLoad.readParentInbox inboxViews saved terminal renewal unload graphic io stateForConnection
+    let inboxParent := bindInboxReads parent inboxViews
+    let inboxBase := BaseSecondInbox.install ops parent inboxViews load
+    letI : SandproofUnloadFirstObservation.ParentCalls :=
+      bindActualBase (bindStartupCall inboxParent carriers errors hostView serdeView)
+        (installBaseReads carriers nv nativeOps lv ledgerOps inboxBase) readyView
+    ∀ {E : Type} {host : SandproofUnloadFirstObservation.host_contract.HostEvidence E}
+      {serde : SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E}
+      {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+      {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+      (reads : FirstRead host serde tx ns intent now input)
+      (firstInbox : input.inbox = fromInbox inboxViews left)
+      (found : left.find (toIntent inboxViews intent) = .ok (.Ok (some (reads.sessionIndex, reads.entryIndex))))
+      (calls : UnloadFirstActualStartup.Opened (hostView host) (serdeView serde)
+        (cast carriers.tx tx) ns (cast carriers.world input.world) (carriers.localView reads.localValue))
+      (prepare : OriginalPrepareContext (cast carriers.world input.world) (carriers.localView reads.localValue) calls.plan)
+      (native : BaseNative ready)
+      (before : @BaseInput.ReadsBeforeLocal (BaseReps ready) (installBaseReads carriers nv nativeOps lv ledgerOps inboxBase)
+        tx (BaseSnapshotLink.toBaseIntent Record ready reads.originEntry.intent) reads.context native)
+      (read₂ : load_using saved terminal renewal unload graphic io (stateForConnection before.connection) =
+        .ok (.Ok (some right), after₂))
+      (nativeRead : actualNativeRead carriers nv nativeOps tx ns input.world
+        (baseLocalFromParent ready reads.localValue) prepare.record = .ok (.Ok native)),
+      RefoundWorkPost reads carriers lv native prepare.ledger calls.plan := by
+  letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready
+  letI : SandproofUnloadStartupJoint.Operations := SandproofUnloadStartupJoint.bindStartupRowsB4 startupOps
+  intro load inboxParent inboxBase E host serde tx ns intent now input reads firstInbox found calls prepare native before read₂ nativeRead
+  letI : SandproofUnloadFirstObservation.ParentCalls :=
+    bindActualBase (bindStartupCall inboxParent carriers errors hostView serdeView)
+      (installBaseReads carriers nv nativeOps lv ledgerOps inboxBase) readyView
+  have loaded := BaseCodecLoad.second_conn_load_uses_actual_codec inboxViews saved terminal renewal unload
+    graphic io stateForConnection before.connection right after₂ read₂
+  have atSession := reads.getSession
+  rw [firstInbox] at atSession
+  have atState := reads.stateRead
+  rw [firstInbox] at atState
+  have selected := BaseSecondInbox.actual_second_base_load_supplies_local
+    (installBaseReads carriers nv nativeOps lv ledgerOps ops) parent inboxViews load saved terminal
+    renewal unload graphic graphicLaw io represented snapshot first (stateForConnection before.connection)
+    after₁ after₂ left right read₁ read₂ (toIntent inboxViews intent) reads.sessionIndex reads.entryIndex
+    found before.connection loaded reads.session reads.state reads.originEntry reads.localValue atSession
+    atState reads.originRead reads.localBinding
+  obtain ⟨baseRead⟩ := BaseSecondInbox.prefix_from_second_read
+    (installBaseReads carriers nv nativeOps lv ledgerOps inboxBase) tx reads.originEntry.intent
+    reads.context reads.localValue native before
+    (BaseInboxView.toBaseInbox Record ready (fromInbox inboxViews right)) reads.sessionIndex selected
+  unfold RefoundWorkPost
+  intro encoded digestValue startupAction encode digest slot cloneResource cloneLimits
+  exact actual_first_work_shares_world_record_and_plan inboxParent startupOps carriers errors hostView serdeView
+    nv nativeOps lv ledgerOps inboxBase readyView reads calls prepare native baseRead nativeRead
+    encoded digestValue startupAction encode digest slot cloneResource cloneLimits
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.actual_first_work_uses_refound_world_record_and_sealed_plan

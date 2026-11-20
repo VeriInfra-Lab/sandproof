@@ -1,0 +1,16 @@
+import SandboxModel.Lifecycle.Protocol.InboxAdmissionModel
+import SandboxModel.Lifecycle.Protocol.Accepted
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxAdmission
+
+theorem accepted_body (intent : AcceptedLifecycleIntent) (context : AuthenticatedCenterContext) :
+    intent.validate context = .ok (Validation.expectedAccepted intent context) := by
+  simpa [accepted_validate] using Validation.envelope_refines intent context
+
+end SandboxModel.Stage1Protocol.InboxAdmission
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.accepted_body

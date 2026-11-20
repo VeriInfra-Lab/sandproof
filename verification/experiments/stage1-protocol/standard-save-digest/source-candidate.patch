@@ -1,0 +1,11 @@
+--- a/controller-service/src/controller/lifecycle_inbox/codec.rs
++++ b/controller-service/src/controller/lifecycle_inbox/codec.rs
+@@ -133,7 +133,7 @@
+         Ok(serde_json::to_vec(inbox)?)
+     }
+     fn digest(&mut self, bytes: &[u8]) -> [u8; 32] {
+-        Sha256::digest(bytes).into()
++        sha256_bytes(bytes)
+     }
+     fn update(
+         &mut self,
