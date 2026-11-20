@@ -1,0 +1,16 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -27 +27,13 @@
++
++## V3 初始化 u64 范围的薄绑定候选
++
++本段为待审查采用候选，未因模型引理通过而成为已批准合同。固定生产 b0d791cc 的来源
++初始化使用完整 `1..=rows`；隔离 helper `next_initial_source_id` 的完整体只调用原
++`ids.next()`。继续沿既有正常共享/独占借用和 IntoIterator 机械接线条件，所需对应为
++每个原 RangeInclusive<u64> 的 next 返回及更新状态，与固定 Aeneas `StepU64` 和
++`RangeInclusive.next_U64_spec` 相符。需要核对实际 Std 版本/源码、完整类型/字典及适配，
++不信任整个循环、SQL 或业务 handler。空/反向区间不产生值，最后编号产出一次再 exhausted；
++行错误不触发后续 next 由本包业务证明提供，不列为库前提。该库条件不供给业务行数、写入、事务、耐久或物理事实。
++具体候选和当前实际证明见 [完整行循环](../../verification/experiments/stage1-protocol/unload-parent-link/source-init-loop/README.md)；
++采用仍由 V0/主控独立核对，原 tuple/Row/摘要等薄绑定与整个隔离一般等价继续保留原提供方。
+ ## 第一阶段新增依赖合同

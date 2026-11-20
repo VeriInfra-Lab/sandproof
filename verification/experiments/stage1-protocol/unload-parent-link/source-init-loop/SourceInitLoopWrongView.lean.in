@@ -1,0 +1,33 @@
+import SourceInitLoop
+
+open Aeneas Aeneas.Std Result ControlFlow
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+set_option autoImplicit false
+set_option linter.style.whitespace false
+set_option linter.style.longLine false
+
+namespace SandboxModel.Stage1Protocol.SourceInitLoopWrongView
+noncomputable section
+section
+variable (io : Ports)
+local notation "JournalError" => SaveRows.Error
+local notation "controller.lifecycle_inbox.source_work.codec.next_initial_source_id" => io.next
+local notation "controller.lifecycle_inbox.source_work.codec.insert_initial_source_row" =>
+  SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.insert_initial_source_row io
+
+-- ACTUAL WRONG BODY
+
+local notation "controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop.body" =>
+  controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop.body io
+
+-- ACTUAL WRONG LOOP
+
+local notation "controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop" =>
+  controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop io
+
+-- ACTUAL WRONG ENTRY
+
+end
+end
+end SandboxModel.Stage1Protocol.SourceInitLoopWrongView

@@ -1,0 +1,53 @@
+#[cfg(test)]
+mod source_init_loop_contract {
+    use super::*;
+    use crate::controller::tests_support::lifecycle_application as v3;
+
+    #[test]
+    fn source_init_loop_preserves_every_complete_reserved_row() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = v3::open(&directory.path().join("db"));
+        let transaction = journal.journal.connection.unchecked_transaction().unwrap();
+        let limits = v3::source_limits();
+        let inbox = v3::config();
+        let rows = reserved_records(&transaction, inbox.max_sessions).unwrap();
+        let reserve = limits.required_bytes(1);
+        assert!(rows > 1);
+        initialize(&transaction, limits, &inbox).unwrap();
+        let mut statement = transaction
+            .prepare(
+                "SELECT id,state_json,sha256,reserve_bytes,work_key FROM controller_source_work_records ORDER BY id",
+            )
+            .unwrap();
+        let records: Vec<(i64, Vec<u8>, Vec<u8>, i64, Option<Vec<u8>>)> = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let expected: Vec<_> = (1..=rows)
+            .map(|id| {
+                (
+                    i64::try_from(id).unwrap(),
+                    b"null".to_vec(),
+                    Sha256::digest(b"null").to_vec(),
+                    i64::try_from(reserve).unwrap(),
+                    None,
+                )
+            })
+            .collect();
+        assert_eq!(
+            records, expected,
+            "initial source rows must include every reserved id with complete values"
+        );
+        drop(statement);
+        transaction.rollback().unwrap();
+    }
+}

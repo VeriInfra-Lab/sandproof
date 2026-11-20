@@ -1,0 +1,58 @@
+import SourceInitLoopParent
+import SourceInitLoopWrongView
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+open SandboxModel.Stage1Protocol
+open SourceInitLoop SourceInitLoopParent
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitLoopNegative
+noncomputable section
+
+abbrev wrong := SourceInitLoopWrongView.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows
+
+theorem unique_complete_sequence (left right : List U64)
+    (same : left.map UScalar.val = right.map UScalar.val) : left = right := by
+  have injective : Function.Injective (UScalar.val : U64 → Nat) := by
+    intro a b equal
+    scalar_tac
+  exact injective.list_map same
+
+theorem wrong_skips_original_last (io : Ports) (db : SaveRows.Db) (reserve : U64) (payload digest : Slice U8)
+    (observed : io.next ⟨1#u64,1#u64,false⟩ = .ok (some 1#u64,⟨1#u64,1#u64,true⟩)) :
+    wrong io db 1#u64 reserve payload digest = .ok (.Ok ()) := by
+  unfold wrong SourceInitLoopWrongView.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows
+    SourceInitLoopWrongView.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop
+  simp only [core.ops.range.RangeInclusive.new,bind_tc_ok]
+  rw [loop]
+  unfold SourceInitLoopWrongView.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop.body
+  rw [observed]
+  simp
+
+theorem normal_control_still_succeeds (db : SaveRows.Db) (payload digest : Slice U8) :
+    wrong normalPorts db 1#u64 222212#u64 payload digest = .ok (.Ok ()) := by
+  exact wrong_skips_original_last normalPorts db 222212#u64 payload digest (original_next_last 1#u64)
+
+theorem rejects_same_complete_contract : ¬ SourceInitLoop.Contract wrong := by
+  intro contract
+  let db := SourceRecordBoundsContract.sampleConnection 0#i64
+  let payload := SourceInitMetadataSpec.nullBytes
+  let digest := Array.to_slice SourceInitMetadataSpec.witnessNullDigest
+  obtain ⟨actualIds,actualValues,actualReturned⟩ :=
+    SourceInitLoop.actual_contract failingPorts db 1#u64 222212#u64 payload digest (fun _ => rfl)
+  obtain ⟨wrongIds,wrongValues,wrongReturned⟩ :=
+    contract failingPorts db 1#u64 222212#u64 payload digest (fun _ => rfl)
+  have same := unique_complete_sequence actualIds wrongIds (actualValues.trans wrongValues.symm)
+  rw [←same,←actualReturned] at wrongReturned
+  rw [wrong_skips_original_last failingPorts db 222212#u64 payload digest (original_next_last 1#u64),
+    failing_one_row] at wrongReturned
+  simp at wrongReturned
+
+end
+end SandboxModel.Stage1Protocol.SourceInitLoopNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopNegative.unique_complete_sequence
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopNegative.wrong_skips_original_last
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopNegative.normal_control_still_succeeds
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopNegative.rejects_same_complete_contract
