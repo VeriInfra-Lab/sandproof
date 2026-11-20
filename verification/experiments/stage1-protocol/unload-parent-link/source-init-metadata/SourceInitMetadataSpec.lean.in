@@ -1,0 +1,130 @@
+import SourceInitMetadataView
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceInitMetadataSpec
+noncomputable section
+open SourceInitMetadataView
+
+abbrev Suffix := Ports → SaveRows.Db → Limits → Inbox → U64 → U64 → Result Reply
+
+def statement : Str := SandproofSourceRowSqlSelect.toStr
+  "INSERT INTO controller_source_work VALUES(1,?1,?2,?3)"
+
+def nullBytes : Slice U8 := SourceRowChargeSpec.samplePayload
+
+def afterInsert (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (reply : core.result.Result Usize rusqlite.error.Error) : Result Reply :=
+  match reply with
+  | .Err error => .ok (.Err (.Sqlite error))
+  | .Ok _ => do
+    let digest ← io.digest nullBytes
+    rowLoop io db rows reserve nullBytes (Array.to_slice digest)
+
+def afterTables (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (bytes : alloc.vec.Vec U8) : Result Reply := do
+  let digest ← io.digest (alloc.vec.Vec.deref bytes)
+  let reply ← io.execute (parameters io) db statement
+    (alloc.vec.Vec.deref bytes, Array.to_slice digest, 8192#i64)
+  afterInsert io db rows reserve reply
+
+def afterMetadataTable (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (bytes : alloc.vec.Vec U8) (reply : core.result.Result Unit rusqlite.error.Error) : Result Reply :=
+  match reply with
+  | .Err error => .ok (.Err (.Sqlite error))
+  | .Ok () => do
+    let reply ← io.batch db SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.RECORDS_TABLE
+    match reply with
+    | .Err error => .ok (.Err (.Sqlite error))
+    | .Ok () => afterTables io db rows reserve bytes
+
+def afterEncoding (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (reply : core.result.Result (alloc.vec.Vec U8) serde_json.error.Error) : Result Reply :=
+  match reply with
+  | .Err error => .ok (.Err (.Json error))
+  | .Ok bytes =>
+    if 8192 < bytes.val.length then .ok (.Err .MaintenanceCapacity)
+    else do
+      let reply ← io.batch db SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.TABLE
+      afterMetadataTable io db rows reserve bytes reply
+
+def expected (io : Ports) (db : SaveRows.Db) (config : Limits) (inbox : Inbox)
+    (rows reserve : U64) : Result Reply := do
+  let node ← cloneNode io inbox.node
+  let reply ← io.encode {config, node, max_sessions := inbox.max_sessions}
+  afterEncoding io db rows reserve reply
+
+/-- All library results remain arbitrary, including effects and nonreturn.
+    The actual original row loop is retained, not assumed correct or total. -/
+def Contract (suffix : Suffix) : Prop :=
+  ∀ io db config inbox rows reserve,
+    suffix io db config inbox rows reserve = expected io db config inbox rows reserve
+
+end
+end SandboxModel.Stage1Protocol.SourceInitMetadataSpec
+
+namespace SandboxModel.Stage1Protocol.SourceInitMetadataSpec
+noncomputable section
+
+def witnessInbox : SourceInitMetadataView.Inbox where
+  center := ⟨"deployment", "primary"⟩
+  node := ⟨"deployment", "node", 1#u64⟩
+  host_epoch := none
+  max_sessions := 1#u16
+  max_operations_per_session := 3#u16
+  max_options_bytes := 1024#u32
+  max_profile_bytes := 4096#u32
+  max_manifest_bytes := 16384#u32
+
+/-- Concrete test bytes and supplied digest values; no Serde/SHA theorem. -/
+def witnessText : Str := SandproofSourceRowSqlSelect.toStr "{\"config\":{\"max_work_bytes\":1024,\"max_configuration_bytes\":1,\"max_executable_bytes\":1,\"max_kernel_bytes\":1,\"max_disk_bytes\":1,\"max_material_bytes\":1},\"node\":{\"deployment_id\":\"deployment\",\"node_id\":\"node\",\"node_generation\":1},\"max_sessions\":1}"
+
+def witnessBytes : alloc.vec.Vec U8 := .from witnessText.val witnessText.property
+
+def witnessDigest : Array U8 32#usize := Array.make 32#usize [219#u8,142#u8,109#u8,190#u8,3#u8,191#u8,168#u8,191#u8,170#u8,127#u8,165#u8,154#u8,216#u8,193#u8,186#u8,68#u8,77#u8,165#u8,25#u8,130#u8,105#u8,239#u8,61#u8,251#u8,94#u8,209#u8,118#u8,61#u8,167#u8,22#u8,117#u8,41#u8] (by decide)
+def witnessNullDigest : Array U8 32#usize := Array.make 32#usize [116#u8,35#u8,78#u8,152#u8,175#u8,231#u8,73#u8,143#u8,181#u8,218#u8,241#u8,243#u8,106#u8,194#u8,215#u8,138#u8,204#u8,51#u8,148#u8,100#u8,249#u8,80#u8,112#u8,59#u8,140#u8,1#u8,152#u8,146#u8,249#u8,130#u8,185#u8,11#u8] (by decide)
+
+/-- A typed parameter observer for a counterexample, not SQLite adoption. -/
+def witnessThree {A B C : Type} (_a : rusqlite.types.to_sql.ToSql A)
+    (_b : rusqlite.types.to_sql.ToSql B) (c : rusqlite.types.to_sql.ToSql C)
+    (values : A × B × C) (stmt : rusqlite.statement.Statement) :
+    Result (core.result.Result Unit rusqlite.error.Error × rusqlite.statement.Statement) := do
+  let value ← c.to_sql values.2.2
+  match value with
+  | .Err error => .ok (.Err error,stmt)
+  | .Ok (.Borrowed (.Integer signed)) =>
+    if signed = 8192#i64 then .ok (.Ok (),stmt) else .fail .panic
+  | _ => .fail .panic
+
+def witnessExecute {P : Type} (params : rusqlite.params.Params P) (_db : SaveRows.Db) (_sql : Str)
+    (values : P) : Result (core.result.Result Usize rusqlite.error.Error) := do
+  let (reply,_) ← params.__bind_in values SourceRowChargeSpec.sampleRow.statement
+  match reply with
+  | .Err error => .ok (.Err error)
+  | .Ok () => .ok (.Ok 1#usize)
+
+def witnessPorts : Ports where
+  cloneNodeId := fun value => .ok value
+  cloneDeploymentId := fun value => .ok value
+  encode := fun _ => .ok (.Ok witnessBytes)
+  digest := fun bytes => .ok (if bytes.val.length = 4 then witnessNullDigest else witnessDigest)
+  next := fun ids =>
+    if ids.start = 1#u64 ∧ ids.«end» = 1#u64 then
+      if ids.exhausted then .ok (none,ids) else .ok (some 1#u64,{ids with exhausted := true})
+    else .fail .panic
+  batch := fun _ _ => .ok (.Ok ())
+  execute := witnessExecute
+  integer := fun value => .ok (.Ok (.Borrowed (.Integer value)))
+  blob := fun value => .ok (.Ok (.Borrowed (.Blob value)))
+  bind3 := witnessThree
+  bind4 := fun {_ _ _ _} _ _ _ _ _ stmt => .ok (.Ok (),stmt)
+
+
+
+end
+end SandboxModel.Stage1Protocol.SourceInitMetadataSpec

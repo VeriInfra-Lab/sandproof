@@ -1,0 +1,182 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-init-metadata",
+  "parent_prs": [
+    993
+  ],
+  "prior": {
+    "pr": 993,
+    "physical_files": 93,
+    "full_audits": 408
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceInitMetadata",
+      "physical_files": 96,
+      "full_audits": 442,
+      "own_modules": [
+        "SourceInitMetadataView.lean",
+        "SourceInitMetadataSpec.lean",
+        "SourceInitMetadata.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_conversion",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.length_cast",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.null_bytes_exact",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.node_clone_retains_all_three_fields",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.clone_failure_is_first",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.clone_nonreturn_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.given_encoding",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.encoder_error_precedes_all_sql",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.encoder_failure_precedes_all_sql",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.oversized_encoding_precedes_ddl",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.accepted_encoding_enters_first_ddl",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.first_ddl_error_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.second_ddl_error_precedes_digest",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.both_ddl_success_enters_digest",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_digest_failure_precedes_insert",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_digest_supplies_complete_arguments",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_sql_error_precedes_null_digest",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.accepted_count_keeps_original_null_digest_and_loop",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.null_digest_failure_precedes_loop",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.complete_null_digest_enters_same_loop",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.parameters_route_complete_three_values",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.accepted_parent_uses_full_metadata_contract",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.public_parent_uses_full_metadata_contract",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_encoding_length",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_node_clone",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_row_success",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_loop_success",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_metadata_digest",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_null_digest",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_metadata_sql",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_expected_success",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.normal_complete_suffix",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.normal_inputs_are_accepted_domain"
+      ]
+    },
+    {
+      "variant": "metadata-reserve-short",
+      "formal_root": "SourceInitMetadataNegative",
+      "physical_files": 98,
+      "full_audits": 447,
+      "own_modules": [
+        "SourceInitMetadataView.lean",
+        "SourceInitMetadataSpec.lean",
+        "SourceInitMetadata.lean",
+        "SourceInitMetadataWrongView.lean",
+        "SourceInitMetadataNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_conversion",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.length_cast",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.null_bytes_exact",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.node_clone_retains_all_three_fields",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.clone_failure_is_first",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.clone_nonreturn_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.given_encoding",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.encoder_error_precedes_all_sql",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.encoder_failure_precedes_all_sql",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.oversized_encoding_precedes_ddl",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.accepted_encoding_enters_first_ddl",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.first_ddl_error_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.second_ddl_error_precedes_digest",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.both_ddl_success_enters_digest",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_digest_failure_precedes_insert",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_digest_supplies_complete_arguments",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.metadata_sql_error_precedes_null_digest",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.accepted_count_keeps_original_null_digest_and_loop",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.null_digest_failure_precedes_loop",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.complete_null_digest_enters_same_loop",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.parameters_route_complete_three_values",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.accepted_parent_uses_full_metadata_contract",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.public_parent_uses_full_metadata_contract",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_encoding_length",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_node_clone",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_row_success",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_loop_success",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_metadata_digest",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_null_digest",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_metadata_sql",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.witness_expected_success",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.normal_complete_suffix",
+        "SandboxModel.Stage1Protocol.SourceInitMetadata.normal_inputs_are_accepted_domain",
+        "SandboxModel.Stage1Protocol.SourceInitMetadataNegative.short_reservation",
+        "SandboxModel.Stage1Protocol.SourceInitMetadataNegative.short_conversion",
+        "SandboxModel.Stage1Protocol.SourceInitMetadataNegative.short_parameter_reaches_rejection",
+        "SandboxModel.Stage1Protocol.SourceInitMetadataNegative.actual_wrong_normal_suffix",
+        "SandboxModel.Stage1Protocol.SourceInitMetadataNegative.rejects_same_complete_contract"
+      ]
+    }
+  ],
+  "capture_policy": "revalidate and reuse #993 original capture; compile/extract real metadata-reserve-short from same production archive",
+  "native_candidate": {
+    "name": "stage1-source-init-metadata",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "metadata-reserve-short",
+      "adapted-metadata-reserve-short"
+    ],
+    "tests": [
+      "controller::lifecycle_inbox::source_work::codec::source_init_metadata_contract::source_init_metadata_preserves_complete_initial_value",
+      "controller::lifecycle_inbox::source_work::codec::source_init_row_contract::source_init_row_keeps_complete_initial_insert",
+      "controller::lifecycle_inbox::source_work::codec::source_policy_read_contract::source_policy_read_normal_complete_policy_reaches_original_count",
+      "controller::lifecycle_inbox::source_work::codec::source_policy_read_contract::source_policy_read_rejects_invalid_operation_bound_before_count",
+      "controller::lifecycle_inbox::source_work::codec::source_policy_read_contract::source_policy_read_preserves_non_operation_validation"
+    ],
+    "expected": {
+      "original": {
+        "passed": 5,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 5,
+        "failed": 0
+      },
+      "metadata-reserve-short": {
+        "passed": 4,
+        "failed": 1
+      },
+      "adapted-metadata-reserve-short": {
+        "passed": 4,
+        "failed": 1
+      }
+    },
+    "rejection": "initial source metadata must retain the complete configuration, digest and 8192 reservation",
+    "restoration": "new original source/target after both mutants: compile and run all five exact tests",
+    "full_functional_required": true
+  },
+  "representation": {
+    "configuration": "all six limits, full cloned node and original max_sessions",
+    "metadata": "same complete bytes and supplied 32-byte digest, same three-value Params/connection, id=1 and reserve=8192",
+    "sequence": "clone/encode/size/first DDL/second DDL/digest/metadata INSERT/null digest/original loop; errors/effects/nonreturn preserved",
+    "parent": "reuse #992 actual prefix/public root and #993 actual single-row contract",
+    "normal_witness": "accepted one-session domain and one true/finished range step; not arbitrary iteration or real Serde/SHA"
+  },
+  "remaining_providers": {
+    "V0": [
+      "existing Row/Range/borrow, tuple Params and thin delegates adoption; production-to-isolated general equivalence"
+    ],
+    "V5": [
+      "actual SQL effects, same physical transaction/snapshot/durability",
+      "actual JSON/digest instances, arbitrary loop and complete durable initialization/database budget"
+    ],
+    "V7": [
+      "independent authentication/configuration provenance"
+    ],
+    "V6": [
+      "actual material/VM/physical facts"
+    ]
+  },
+  "production_candidate_equivalence_complete": false,
+  "public_registration_accepted": false,
+  "registration_mode": "independent actual project per view; retain full inherited/common/counterexample file and audit closure; original native execution identity; no partial root fallback"
+}

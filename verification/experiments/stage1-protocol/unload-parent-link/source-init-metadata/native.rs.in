@@ -1,0 +1,45 @@
+#[cfg(test)]
+mod source_init_metadata_contract {
+    use super::*;
+    use crate::controller::tests_support::lifecycle_application as v3;
+
+    #[test]
+    fn source_init_metadata_preserves_complete_initial_value() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = v3::open(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let transaction = connection.unchecked_transaction().unwrap();
+        let limits = v3::source_limits();
+        let inbox = v3::config();
+        initialize(&transaction, limits.clone(), &inbox).unwrap();
+        let mut statement = transaction
+            .prepare(
+                "SELECT id,state_json,sha256,reserve_bytes FROM controller_source_work ORDER BY id",
+            )
+            .unwrap();
+        let records: Vec<(i64, Vec<u8>, Vec<u8>, i64)> = statement
+            .query_map([], |row| {
+                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            })
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        let expected = Configuration {
+            config: limits.clone(),
+            node: inbox.node.clone(),
+            max_sessions: inbox.max_sessions,
+        };
+        let bytes = serde_json::to_vec(&expected).unwrap();
+        assert_eq!(
+            records,
+            vec![(1, bytes.clone(), Sha256::digest(&bytes).to_vec(), 8192)],
+            "initial source metadata must retain the complete configuration, digest and 8192 reservation"
+        );
+        let decoded: Configuration = serde_json::from_slice(&records[0].1).unwrap();
+        assert_eq!(decoded.config, limits);
+        assert_eq!(decoded.node, inbox.node);
+        assert_eq!(decoded.max_sessions, inbox.max_sessions);
+        drop(statement);
+        transaction.rollback().unwrap();
+    }
+}
