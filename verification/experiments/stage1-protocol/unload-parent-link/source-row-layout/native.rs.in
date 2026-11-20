@@ -1,0 +1,65 @@
+#[cfg(test)]
+mod source_row_layout_contract {
+    use super::*;
+
+    fn measured(table: &str, occupied: bool) -> (u64, Result<u64, JournalError>) {
+        let directory = tempfile::tempdir().unwrap();
+        let journal =
+            crate::controller::lifecycle_inbox::source_work::proof_source_row_layout_fixture(
+                &directory.path().join("db"),
+                occupied,
+            );
+        let connection = &journal.journal.connection;
+        let cap = config(connection).unwrap().unwrap();
+        let sql = match (table, occupied) {
+            ("controller_source_work", false) => "SELECT * FROM controller_source_work WHERE id=1",
+            ("controller_source_work_records", false) => {
+                "SELECT * FROM controller_source_work_records WHERE work_key IS NULL ORDER BY id LIMIT 1"
+            }
+            ("controller_source_work_records", true) => {
+                "SELECT * FROM controller_source_work_records WHERE work_key IS NOT NULL ORDER BY id LIMIT 1"
+            }
+            _ => panic!("one original source layout required"),
+        };
+        connection
+            .query_row(sql, [], |row| {
+                let reservation = u64::try_from(row.get::<_, i64>(3)?).unwrap();
+                let columns = row.as_ref().column_count();
+                let counted = row_bytes(row, columns, &cap);
+                let result =
+                    counted.and_then(|current| charged_inbox_bytes(table, row, current, &cap));
+                Ok((reservation, result))
+            })
+            .unwrap()
+    }
+
+    #[test]
+    fn source_row_layout_metadata_has_forty_eight_overhead_bytes() {
+        let (reservation, measured) = measured("controller_source_work", false);
+        assert_eq!(
+            measured.unwrap(),
+            reservation + 48,
+            "source metadata must reserve exactly 48 overhead bytes"
+        );
+    }
+
+    #[test]
+    fn source_row_layout_empty_work_has_eighty_overhead_bytes() {
+        let (reservation, measured) = measured("controller_source_work_records", false);
+        assert_eq!(
+            measured.unwrap(),
+            reservation + 80,
+            "empty source work must reserve exactly 80 overhead bytes"
+        );
+    }
+
+    #[test]
+    fn source_row_layout_occupied_work_has_eighty_overhead_bytes() {
+        let (reservation, measured) = measured("controller_source_work_records", true);
+        assert_eq!(
+            measured.unwrap(),
+            reservation + 80,
+            "occupied source work must reserve exactly 80 overhead bytes"
+        );
+    }
+}

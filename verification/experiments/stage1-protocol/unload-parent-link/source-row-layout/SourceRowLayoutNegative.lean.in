@@ -1,0 +1,46 @@
+import SourceRowLayoutSpec
+import SourceRowUsageNegative
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowLayoutNegative
+open SourceRowChargeView SourceRowUsageView SourceRowUsageSpec SourceRowLayoutSpec SourceRowChargeSpec
+open SourceRecordBoundsView (Capacity)
+
+theorem actual_undercharged_empty : charge sampleRow 50#u64 sampleCapacity = .ok (.Ok 222290#u64) :=
+  (source_names sampleRow 50#u64 sampleCapacity).2.symm.trans SourceRowUsageNegative.truncated_source_charge
+
+theorem truncated_count_breaks_same_layout_contract : ¬SourceRowLayoutSpec.Contract count charge := by
+  intro contract
+  obtain ⟨amount, charged, value⟩ := contract sampleRow samplePayload sampleDigest 1#i64 222212#i64
+    80 sampleCapacity 222212#u64 50#u64 sample_empty_layout
+    SourceRowUsageNegative.truncated_normal_count sample_conversion
+    (by rw [full_blob_length]; change 4 ≤ 222212; decide) (by rfl)
+  have same := charged.symm.trans actual_undercharged_empty
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at same
+  subst amount
+  change 222290 = 222212 + 80 at value
+  omega
+
+theorem truncated_count_breaks_same_accepting_contract : ¬SourceRowLayoutSpec.AcceptingContract count charge := by
+  intro contract
+  obtain ⟨current, amount, counted, charged, value⟩ := contract sampleRow samplePayload sampleDigest 1#i64
+    222212#i64 80 sampleCapacity 222212#u64 sample_empty_layout sample_conversion
+    (by rw [full_blob_length]; change 4 ≤ 222212; decide) (by rfl) (by change 32 ≤ 222212; decide)
+  have sameCurrent := SourceRowUsageNegative.truncated_normal_count.symm.trans counted
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at sameCurrent
+  subst current
+  have same := charged.symm.trans actual_undercharged_empty
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at same
+  subst amount
+  change 222290 = 222212 + 80 at value
+  omega
+
+end SandboxModel.Stage1Protocol.SourceRowLayoutNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutNegative.actual_undercharged_empty
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutNegative.truncated_count_breaks_same_layout_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutNegative.truncated_count_breaks_same_accepting_contract

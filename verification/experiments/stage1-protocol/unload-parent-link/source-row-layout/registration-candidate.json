@@ -1,0 +1,133 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-row-layout",
+  "parent_prs": [
+    986
+  ],
+  "prior": {
+    "pr": 986,
+    "physical_files": 58,
+    "full_audits": 197
+  },
+  "capture_reuse": {
+    "pr": 986,
+    "new_rust_capture": false,
+    "variants": [
+      "original",
+      "drop-terminator-byte"
+    ],
+    "unchanged_complete_parent_plan_required": true,
+    "original_raw_evidence_required": true
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceRowLayout",
+      "physical_files": 60,
+      "full_audits": 223,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.full_column_from_ref",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.integer_from_ref",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.reservation_has_room_for_overhead",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.header_first_four_samples",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.four_columns_current",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.five_columns_current",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.payload_replacement_exact",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.base_reservation_exact",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.future_key_exact",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.layout_contract_of_complete_count",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.total_succ",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.account_normal_return",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.contributions_bounded",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.normal_four_counted",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.normal_five_counted",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.normal_layout_counted",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.accepting_contract_of_complete_count",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.sample_header",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.sample_empty_layout",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.sample_conversion",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.uniform_record_total",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.preallocated_source_total",
+        "SandboxModel.Stage1Protocol.SourceRowLayout.actual_layout_contract",
+        "SandboxModel.Stage1Protocol.SourceRowLayout.actual_accepting_contract",
+        "SandboxModel.Stage1Protocol.SourceRowLayout.record_layouts_have_identical_charge",
+        "SandboxModel.Stage1Protocol.SourceRowLayout.normal_empty_layout_accepts"
+      ],
+      "own_modules": [
+        "SourceRowLayoutSpec.lean",
+        "SourceRowLayout.lean"
+      ]
+    },
+    {
+      "variant": "drop-terminator-byte",
+      "formal_root": "SourceRowLayoutNegative",
+      "physical_files": 60,
+      "full_audits": 222,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.full_column_from_ref",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.integer_from_ref",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.reservation_has_room_for_overhead",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.header_first_four_samples",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.four_columns_current",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.five_columns_current",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.payload_replacement_exact",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.base_reservation_exact",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.future_key_exact",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.layout_contract_of_complete_count",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.total_succ",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.account_normal_return",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.contributions_bounded",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.normal_four_counted",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.normal_five_counted",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.normal_layout_counted",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.accepting_contract_of_complete_count",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.sample_header",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.sample_empty_layout",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.sample_conversion",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.uniform_record_total",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutSpec.preallocated_source_total",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutNegative.actual_undercharged_empty",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutNegative.truncated_count_breaks_same_layout_contract",
+        "SandboxModel.Stage1Protocol.SourceRowLayoutNegative.truncated_count_breaks_same_accepting_contract"
+      ],
+      "own_modules": [
+        "SourceRowLayoutSpec.lean",
+        "SourceRowLayoutNegative.lean"
+      ]
+    }
+  ],
+  "native_candidate": {
+    "name": "stage1-source-row-layout",
+    "variants": [
+      "original",
+      "drop-terminator-byte"
+    ],
+    "tests": [
+      "source_row_layout_metadata_has_forty_eight_overhead_bytes",
+      "source_row_layout_empty_work_has_eighty_overhead_bytes",
+      "source_row_layout_occupied_work_has_eighty_overhead_bytes"
+    ],
+    "expected_original_passed": 3,
+    "expected_mutant_failed": 3,
+    "preparation": "native.py",
+    "full_functional_required": true
+  },
+  "new_external_contracts": [],
+  "inherited_pending_library_symbols": [
+    "#985 four Row projection operations",
+    "#986 Range next/IntoIterator and borrow binding"
+  ],
+  "remaining_providers": {
+    "V5": [
+      "physical schema/query/column provenance",
+      "typed BLOB/key provenance from the original load",
+      "actual fill/clear/retirement transactions",
+      "initialize u64 arithmetic and writes",
+      "whole sql_usage and database budget"
+    ]
+  },
+  "public_registration_accepted": false
+}

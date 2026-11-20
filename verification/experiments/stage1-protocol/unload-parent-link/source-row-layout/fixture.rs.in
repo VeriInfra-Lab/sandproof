@@ -1,0 +1,9 @@
+pub(super) fn proof_source_row_layout_fixture(path: &Path, occupied: bool) -> ControllerJournal {
+    let (mut journal, _) = ready(path);
+    if occupied {
+        let _ = prepare(&mut journal);
+    }
+    let loaded = codec::load(&journal.journal.connection).unwrap().unwrap();
+    assert_eq!(loaded.records.is_empty(), !occupied);
+    journal
+}

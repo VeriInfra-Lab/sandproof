@@ -1,0 +1,14 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,11 @@
++
++## V3 来源行布局与预留公式候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`，精确复用 #985/#986 的真实生成体。
++四列 metadata、五列空键、五列已占用 32 字节键的任意布局分别预留 reserve+48/80/80；
++正常容量域内实际列计费与来源计费均成功，空键/占用键两种已表示布局的数值预留相同。
++自然数合计连接原初始化系数，同合同拒绝 #986 少计长度的真实 Rust 版；不新增或迁记 Rust 抽取。
++原生正反、普通/公共验收及既有薄绑定采纳仍待执行；完整 initialize 的 u64 加乘/写入、
++sql_usage 的父循环、事务/预算及系统结论继续开放。
++[输入、复用与范围](../verification/experiments/stage1-protocol/unload-parent-link/source-row-layout/README.md)。
+ ## V3 首次卸载使用同一条原执行记录

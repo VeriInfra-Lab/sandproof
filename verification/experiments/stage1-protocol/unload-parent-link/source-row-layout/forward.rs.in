@@ -1,0 +1,7 @@
+#[cfg(test)]
+pub(in crate::controller) fn proof_source_row_layout_fixture(
+    path: &std::path::Path,
+    occupied: bool,
+) -> crate::ControllerJournal {
+    tests::proof_source_row_layout_fixture(path, occupied)
+}

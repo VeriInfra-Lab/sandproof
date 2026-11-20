@@ -1,0 +1,67 @@
+import SourceRowLayoutSpec
+import SourceRowUsage
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowLayout
+open SourceRowChargeView SourceRowUsageView SourceRowUsageSpec SourceRowLayoutSpec
+open SourceRecordBoundsView (Capacity)
+
+theorem actual_layout_contract : SourceRowLayoutSpec.Contract count charge :=
+  layout_contract_of_complete_count count SourceRowUsage.complete_count
+
+theorem actual_accepting_contract : AcceptingContract count charge :=
+  accepting_contract_of_complete_count count SourceRowUsage.complete_count
+
+theorem record_layouts_have_identical_charge
+    (before after : Row) (beforePayload beforeDigest afterPayload afterDigest : Slice U8)
+    (id signed : I64) (cap : Capacity) (future : U64)
+    (beforeLayout : Layout before beforePayload beforeDigest id signed 80)
+    (afterLayout : Layout after afterPayload afterDigest id signed 80)
+    (converted : SourceRecordBoundsView.toUnsigned signed = .ok (.Ok future))
+    (beforeBound : (SourceRowChargeSpec.payloadLength beforePayload).val ≤ future.val)
+    (afterBound : (SourceRowChargeSpec.payloadLength afterPayload).val ≤ future.val)
+    (within : future.val ≤ cap.max_sql_value_bytes.val) (scalarWithin : 32 ≤ cap.max_sql_value_bytes.val) :
+    ∃ beforeBytes afterBytes amount,
+      count before before.statement.columns cap = .ok (.Ok beforeBytes) ∧
+      count after after.statement.columns cap = .ok (.Ok afterBytes) ∧
+      charge before beforeBytes cap = .ok (.Ok amount) ∧
+      charge after afterBytes cap = .ok (.Ok amount) ∧ amount.val = future.val + 80 := by
+  obtain ⟨beforeBytes, beforeAmount, countedBefore, chargedBefore, valueBefore⟩ :=
+    actual_accepting_contract before beforePayload beforeDigest id signed 80 cap future
+      beforeLayout converted beforeBound within scalarWithin
+  obtain ⟨afterBytes, afterAmount, countedAfter, chargedAfter, valueAfter⟩ :=
+    actual_accepting_contract after afterPayload afterDigest id signed 80 cap future
+      afterLayout converted afterBound within scalarWithin
+  have same : afterAmount = beforeAmount := UScalar.eq_of_val_eq (by omega)
+  subst afterAmount
+  exact ⟨beforeBytes, afterBytes, beforeAmount, countedBefore, countedAfter, chargedBefore, chargedAfter, valueBefore⟩
+
+open SourceRowChargeSpec
+
+theorem normal_empty_layout_accepts :
+    ∃ current amount,
+      count sampleRow sampleRow.statement.columns sampleCapacity = .ok (.Ok current) ∧
+      charge sampleRow current sampleCapacity = .ok (.Ok amount) ∧
+      current.val = 52 ∧ amount.val = 222292 := by
+  obtain ⟨current, amount, counted, charged, value⟩ := actual_accepting_contract
+    sampleRow samplePayload sampleDigest 1#i64 222212#i64 80 sampleCapacity 222212#u64 sample_empty_layout
+    sample_conversion (by rw [full_blob_length]; change 4 ≤ 222212; decide)
+    (by rfl) (by change 32 ≤ 222212; decide)
+  have exactCount := SourceRowUsage.sample_full_count.symm.trans counted
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at exactCount
+  have currentValue : current.val = 52 := by rw [← exactCount]; rfl
+  refine ⟨current, amount, counted, charged, currentValue, ?_⟩
+  exact value
+
+
+end SandboxModel.Stage1Protocol.SourceRowLayout
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayout.actual_layout_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayout.actual_accepting_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayout.record_layouts_have_identical_charge
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayout.normal_empty_layout_accepts

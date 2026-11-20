@@ -1,0 +1,466 @@
+import SourceRowUsageSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowLayoutSpec
+open SourceRowChargeView SourceRowUsageView SourceRowUsageSpec
+
+/-- Same original SQL columns, not a replacement protocol or source record. -/
+def Header (row : Row) (payload digest : Slice U8) (id signed : I64) : Prop :=
+  refAt row 0#usize = .ok (.Ok (.Integer id)) ∧
+  refAt row 1#usize = .ok (.Ok (.Blob payload)) ∧
+  refAt row 2#usize = .ok (.Ok (.Blob digest)) ∧
+  refAt row 3#usize = .ok (.Ok (.Integer signed)) ∧
+  digest.val.length = 32
+
+/-- The actual four/five-column schema shapes. The index is the reserved
+    overhead, including a future key for an empty five-column work slot. -/
+inductive Layout (row : Row) (payload digest : Slice U8) (id signed : I64) : Nat → Prop where
+  | metadata (columns : row.statement.columns = 4#usize)
+      (header : Header row payload digest id signed) : Layout row payload digest id signed 48
+  | empty (columns : row.statement.columns = 5#usize)
+      (header : Header row payload digest id signed)
+      (key : refAt row 4#usize = .ok (.Ok .Null)) : Layout row payload digest id signed 80
+  | occupied (columns : row.statement.columns = 5#usize)
+      (header : Header row payload digest id signed) (key : Slice U8)
+      (keyRead : refAt row 4#usize = .ok (.Ok (.Blob key))) (keySize : key.val.length = 32) :
+      Layout row payload digest id signed 80
+
+/-- Normal accepted reservation domain. It does not assert that JSON was
+    decoded, the digest computed, an intent authorized or a transaction durable. -/
+def Contract (counter : Counter) (charge : SourceRowChargeSpec.Charge) : Prop :=
+  ∀ (row : Row) (payload digest : Slice U8) (id signed : I64) (overhead : Nat)
+      (cap : Capacity) (future current : U64),
+    Layout row payload digest id signed overhead →
+    counter row row.statement.columns cap = .ok (.Ok current) →
+    SourceRecordBoundsView.toUnsigned signed = .ok (.Ok future) →
+    (SourceRowChargeSpec.payloadLength payload).val ≤ future.val →
+    future.val ≤ cap.max_sql_value_bytes.val →
+    ∃ amount, charge row current cap = .ok (.Ok amount) ∧ amount.val = future.val + overhead
+
+def contributions (payload : Slice U8) (keyBytes : U64) : Nat → U64
+  | 0 | 3 => 8#u64
+  | 1 => SourceRowChargeSpec.payloadLength payload
+  | 2 => 32#u64
+  | 4 => keyBytes
+  | _ => 0#u64
+
+open SourceRowChargeSpec
+
+theorem full_column_from_ref (row : Row) (index : Usize) (value : Value)
+    (got : refAt row index = .ok (.Ok value)) :
+    fullColumn row index = .ok (.Ok (fullSize value)) := by
+  simp [fullColumn, got]
+
+theorem integer_from_ref (row : Row) (index : Usize) (value : I64)
+    (within : index.val < row.statement.columns.val)
+    (got : refAt row index = .ok (.Ok (.Integer value))) :
+    integerAt row index = .ok (.Ok value) := by
+  have actual : refAt row index = .ok (.Ok (SandproofSourceRowSqlSelect.asValueRef (row.column index))) := by
+    simp [refAt, getRef, SandproofSourceRowSqlSelect.Usize.Insts.RusqliteRowRowIndex.idx, within]
+  rw [actual] at got
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at got
+  simp [integerAt, SandproofSourceRowSqlSelect.rusqlite.row.Row.get,
+    SandproofSourceRowSqlSelect.Usize.Insts.RusqliteRowRowIndex.idx, within, got,
+    SandproofSourceRowSqlSelect.I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result]
+
+theorem reservation_has_room_for_overhead (signed : I64) (future : U64)
+    (converted : SourceRecordBoundsView.toUnsigned signed = .ok (.Ok future)) :
+    future.val + 80 ≤ U64.max := by
+  unfold SourceRecordBoundsView.toUnsigned at converted
+  split at converted
+  · rename_i nonnegative
+    simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at converted
+    subst future
+    have cast := IScalar.hcast_inBounds_spec .U64 signed (by scalar_tac)
+    simp only [lift, WP.spec_ok] at cast
+    scalar_tac
+  · simp at converted
+
+theorem header_first_four_samples (row : Row) (payload digest : Slice U8) (id signed : I64)
+    (header : Header row payload digest id signed) (keyBytes : U64) :
+    ∀ offset, offset < 4 → fullColumn row (indexOf (0 + offset)) =
+      .ok (.Ok (contributions payload keyBytes (0 + offset))) := by
+  rcases header with ⟨get0, get1, get2, get3, digestSize⟩
+  have col0 := full_column_from_ref row 0#usize (.Integer id) get0
+  have col1 := full_column_from_ref row 1#usize (.Blob payload) get1
+  have col2 := full_column_from_ref row 2#usize (.Blob digest) get2
+  have col3 := full_column_from_ref row 3#usize (.Integer signed) get3
+  have digestWidth : fullSize (.Blob digest) = 32#u64 := by
+    apply UScalar.eq_of_val_eq
+    rw [(full_text_and_blob_size digest).2, digestSize]
+    rfl
+  have index0 : indexOf 0 = 0#usize := index_self 0#usize
+  have index1 : indexOf 1 = 1#usize := index_self 1#usize
+  have index2 : indexOf 2 = 2#usize := index_self 2#usize
+  have index3 : indexOf 3 = 3#usize := index_self 3#usize
+  intro offset bound
+  rcases (by omega : offset = 0 ∨ offset = 1 ∨ offset = 2 ∨ offset = 3) with rfl | rfl | rfl | rfl
+  · simpa [contributions, index0, fullSize] using col0
+  · simpa [contributions, index1, fullSize, SourceRowChargeSpec.payloadLength] using col1
+  · simpa [contributions, index2, digestWidth] using col2
+  · simpa [contributions, index3, fullSize] using col3
+
+theorem four_columns_current (counter : Counter) (counterCorrect : SourceRowUsageSpec.Contract counter)
+    (row : Row) (payload digest : Slice U8) (id signed : I64) (cap : Capacity) (current : U64)
+    (columns : row.statement.columns = 4#usize) (header : Header row payload digest id signed)
+    (measured : counter row row.statement.columns cap = .ok (.Ok current)) :
+    current.val = (SourceRowChargeSpec.payloadLength payload).val + 48 := by
+  rw [counterCorrect, columns] at measured
+  change account (fullColumn row) cap 4 0 0#u64 = .ok (.Ok current) at measured
+  have total := account_success_is_full_sum (contributions payload 0#u64) (fullColumn row) cap
+    0 4 0#u64 current (header_first_four_samples row payload digest id signed header 0#u64) measured
+  simp [expectedTotal, List.range'_succ, contributions] at total
+  omega
+
+theorem five_columns_current (counter : Counter) (counterCorrect : SourceRowUsageSpec.Contract counter)
+    (row : Row) (payload digest : Slice U8) (id signed : I64) (cap : Capacity) (current keyBytes : U64)
+    (columns : row.statement.columns = 5#usize) (header : Header row payload digest id signed)
+    (fifth : fullColumn row 4#usize = .ok (.Ok keyBytes))
+    (measured : counter row row.statement.columns cap = .ok (.Ok current)) :
+    current.val = (SourceRowChargeSpec.payloadLength payload).val + 48 + keyBytes.val := by
+  rw [counterCorrect, columns] at measured
+  change account (fullColumn row) cap 5 0 0#u64 = .ok (.Ok current) at measured
+  have samples : ∀ offset, offset < 5 → fullColumn row (indexOf (0 + offset)) =
+      .ok (.Ok (contributions payload keyBytes (0 + offset))) := by
+    intro offset bound
+    by_cases first : offset < 4
+    · exact header_first_four_samples row payload digest id signed header keyBytes offset first
+    · have last : offset = 4 := by omega
+      subst offset
+      have index4 : indexOf 4 = 4#usize := index_self 4#usize
+      simpa [contributions, index4] using fifth
+  have total := account_success_is_full_sum (contributions payload keyBytes) (fullColumn row) cap
+    0 5 0#u64 current samples measured
+  simp [expectedTotal, List.range'_succ, contributions] at total
+  omega
+
+theorem payload_replacement_exact (current length future delta : U64)
+    (currentValue : current.val = length.val + delta.val)
+    (room : future.val + delta.val ≤ U64.max) :
+    ∃ amount, SourceRowChargeSpec.replacePayload current length future = .Ok amount ∧
+      amount.val = future.val + delta.val := by
+  have subtraction := U64.checked_sub_bv_spec current length
+  cases subReply : U64.checked_sub current length with
+  | none => simp only [subReply] at subtraction; omega
+  | some remainder =>
+    simp only [subReply] at subtraction
+    have remainderValue : remainder.val = delta.val := by omega
+    have addition := U64.checked_add_bv_spec remainder future
+    cases addReply : U64.checked_add remainder future with
+    | none => simp only [addReply] at addition; omega
+    | some amount =>
+      simp only [addReply] at addition
+      exact ⟨amount, by simp [SourceRowChargeSpec.replacePayload, subReply, addReply], by omega⟩
+
+theorem base_reservation_exact (row : Row) (payload : Slice U8) (signed : I64)
+    (cap : Capacity) (future current delta : U64)
+    (got : refAt row 1#usize = .ok (.Ok (.Blob payload)))
+    (reservation : integerAt row 3#usize = .ok (.Ok signed))
+    (converted : SourceRecordBoundsView.toUnsigned signed = .ok (.Ok future))
+    (longEnough : (SourceRowChargeSpec.payloadLength payload).val ≤ future.val)
+    (within : future.val ≤ cap.max_sql_value_bytes.val)
+    (currentValue : current.val = (SourceRowChargeSpec.payloadLength payload).val + delta.val)
+    (room : future.val + delta.val ≤ U64.max) :
+    ∃ amount, base row current cap = .ok (.Ok amount) ∧ amount.val = future.val + delta.val := by
+  obtain ⟨amount, replaced, amountValue⟩ := payload_replacement_exact current
+    (SourceRowChargeSpec.payloadLength payload) future delta currentValue room
+  refine ⟨amount, ?_, amountValue⟩
+  rw [SourceRowChargeSpec.base_keeps_complete_reservation_and_checked_arithmetic
+    row current cap payload signed future got reservation converted]
+  simp [not_lt.mpr longEnough, not_lt.mpr within, replaced]
+
+theorem future_key_exact (future amount : U64)
+    (amountValue : amount.val = future.val + 48) (room : future.val + 80 ≤ U64.max) :
+    ∃ total, SourceRowChargeSpec.addKey amount = .Ok total ∧ total.val = future.val + 80 := by
+  have width : (32#u64 : U64).val = 32 := by rfl
+  have addition := U64.checked_add_bv_spec amount 32#u64
+  cases added : U64.checked_add amount 32#u64 with
+  | none => simp only [added, width] at addition; omega
+  | some total =>
+    simp only [added, width] at addition
+    exact ⟨total, by simp [SourceRowChargeSpec.addKey, added], by omega⟩
+
+theorem layout_contract_of_complete_count (counter : Counter)
+    (complete : SourceRowUsageSpec.Contract counter) : SourceRowLayoutSpec.Contract counter charge := by
+  intro row payload digest id signed overhead cap future current layout measured converted longEnough within
+  have room := reservation_has_room_for_overhead signed future converted
+  cases layout with
+  | metadata columns header =>
+    have currentValue := four_columns_current counter complete row payload digest id signed cap current
+      columns header measured
+    have indexWithin : (3#usize : Usize).val < row.statement.columns.val := by rw [columns]; scalar_tac
+    have typed := integer_from_ref row 3#usize signed indexWithin header.2.2.2.1
+    obtain ⟨amount, baseOk, amountValue⟩ := base_reservation_exact row payload signed cap future current
+      48#u64 header.2.1 typed converted longEnough within currentValue (by change future.val + 48 ≤ U64.max; omega)
+    refine ⟨amount, ?_, amountValue⟩
+    exact SourceRowCharge.other_column_counts_skip_fifth_column row current cap amount baseOk (by
+      rw [columns]; decide)
+  | empty columns header key =>
+    have fifth : fullColumn row 4#usize = .ok (.Ok 0#u64) := full_column_from_ref row 4#usize .Null key
+    have currentValue := five_columns_current counter complete row payload digest id signed cap current
+      0#u64 columns header fifth measured
+    have zeroWidth : (0#u64 : U64).val = 0 := by rfl
+    rw [zeroWidth, Nat.add_zero] at currentValue
+    have indexWithin : (3#usize : Usize).val < row.statement.columns.val := by rw [columns]; scalar_tac
+    have typed := integer_from_ref row 3#usize signed indexWithin header.2.2.2.1
+    obtain ⟨amount, baseOk, amountValue⟩ := base_reservation_exact row payload signed cap future current
+      48#u64 header.2.1 typed converted longEnough within currentValue (by change future.val + 48 ≤ U64.max; omega)
+    obtain ⟨total, keyAdded, totalValue⟩ := future_key_exact future amount amountValue room
+    refine ⟨total, ?_, totalValue⟩
+    rw [SourceRowCharge.original_future_key_contract row current cap amount baseOk columns key, keyAdded]
+  | occupied columns header key keyRead keySize =>
+    have fifth := full_column_from_ref row 4#usize (.Blob key) keyRead
+    have keyWidth : fullSize (.Blob key) = 32#u64 := by
+      apply UScalar.eq_of_val_eq
+      rw [(full_text_and_blob_size key).2, keySize]
+      rfl
+    rw [keyWidth] at fifth
+    have counted := five_columns_current counter complete row payload digest id signed cap current
+      32#u64 columns header fifth measured
+    have currentValue : current.val = (SourceRowChargeSpec.payloadLength payload).val + (80#u64 : U64).val := by
+      change current.val = (SourceRowChargeSpec.payloadLength payload).val + 80
+      have width : (32#u64 : U64).val = 32 := by rfl
+      rw [width] at counted
+      omega
+    have indexWithin : (3#usize : Usize).val < row.statement.columns.val := by rw [columns]; scalar_tac
+    have typed := integer_from_ref row 3#usize signed indexWithin header.2.2.2.1
+    obtain ⟨amount, baseOk, amountValue⟩ := base_reservation_exact row payload signed cap future current
+      80#u64 header.2.1 typed converted longEnough within currentValue room
+    refine ⟨amount, ?_, amountValue⟩
+    exact SourceRowCharge.nonnull_key_is_not_charged_twice row current cap amount (.Blob key) baseOk columns keyRead rfl
+
+theorem total_succ (sizes : Nat → U64) (first remaining : Nat) :
+    expectedTotal sizes first (remaining + 1) = (sizes first).val + expectedTotal sizes (first + 1) remaining := by
+  simp [expectedTotal, List.range'_succ]
+
+theorem account_normal_return (sizes : Nat → U64) (read : Usize → Result (Reply U64))
+    (cap : Capacity) (first remaining : Nat) (bytes : U64)
+    (samples : ∀ offset, offset < remaining →
+      read (indexOf (first + offset)) = .ok (.Ok (sizes (first + offset))))
+    (within : ∀ offset, offset < remaining → (sizes (first + offset)).val ≤ cap.max_sql_value_bytes.val)
+    (room : bytes.val + expectedTotal sizes first remaining ≤ U64.max) :
+    ∃ amount, account read cap remaining first bytes = .ok (.Ok amount) ∧
+      amount.val = bytes.val + expectedTotal sizes first remaining := by
+  induction remaining generalizing first bytes with
+  | zero => exact ⟨bytes, rfl, by simp [expectedTotal]⟩
+  | succ remaining ih =>
+    have firstRead := samples 0 (by omega)
+    have firstWithin := within 0 (by omega)
+    simp only [Nat.add_zero] at firstRead firstWithin
+    rw [total_succ] at room
+    have addition := U64.checked_add_bv_spec bytes (sizes first)
+    cases added : U64.checked_add bytes (sizes first) with
+    | none => simp only [added] at addition; omega
+    | some next =>
+      simp only [added] at addition
+      have laterRead : ∀ offset, offset < remaining →
+          read (indexOf (first + 1 + offset)) = .ok (.Ok (sizes (first + 1 + offset))) := by
+        intro offset bound
+        simpa only [Nat.add_assoc, Nat.add_comm 1 offset] using samples (offset + 1) (by omega)
+      have laterWithin : ∀ offset, offset < remaining →
+          (sizes (first + 1 + offset)).val ≤ cap.max_sql_value_bytes.val := by
+        intro offset bound
+        simpa only [Nat.add_assoc, Nat.add_comm 1 offset] using within (offset + 1) (by omega)
+      have laterRoom : next.val + expectedTotal sizes (first + 1) remaining ≤ U64.max := by omega
+      obtain ⟨amount, counted, value⟩ := ih (first + 1) next laterRead laterWithin laterRoom
+      exact ⟨amount, by simp [account, firstRead, not_lt.mpr firstWithin, added, counted], by
+        rw [total_succ]; omega⟩
+
+theorem contributions_bounded (payload : Slice U8) (keyBytes : U64) (cap : Capacity)
+    (payloadWithin : (SourceRowChargeSpec.payloadLength payload).val ≤ cap.max_sql_value_bytes.val)
+    (keyWithin : keyBytes.val ≤ cap.max_sql_value_bytes.val)
+    (scalarWithin : 32 ≤ cap.max_sql_value_bytes.val) :
+    ∀ offset, offset < 5 → (contributions payload keyBytes offset).val ≤ cap.max_sql_value_bytes.val := by
+  intro offset bound
+  rcases (by omega : offset = 0 ∨ offset = 1 ∨ offset = 2 ∨ offset = 3 ∨ offset = 4) with rfl | rfl | rfl | rfl | rfl
+  · change 8 ≤ cap.max_sql_value_bytes.val; omega
+  · exact payloadWithin
+  · exact scalarWithin
+  · change 8 ≤ cap.max_sql_value_bytes.val; omega
+  · exact keyWithin
+
+theorem normal_four_counted (counter : Counter) (complete : SourceRowUsageSpec.Contract counter)
+    (row : Row) (payload digest : Slice U8) (id signed : I64) (cap : Capacity)
+    (columns : row.statement.columns = 4#usize) (header : Header row payload digest id signed)
+    (payloadWithin : (SourceRowChargeSpec.payloadLength payload).val ≤ cap.max_sql_value_bytes.val)
+    (scalarWithin : 32 ≤ cap.max_sql_value_bytes.val)
+    (room : (SourceRowChargeSpec.payloadLength payload).val + 48 ≤ U64.max) :
+    ∃ current, counter row row.statement.columns cap = .ok (.Ok current) := by
+  have bounded : ∀ offset, offset < 4 →
+      (contributions payload 0#u64 (0 + offset)).val ≤ cap.max_sql_value_bytes.val := by
+    intro offset bound
+    simpa only [Nat.zero_add] using contributions_bounded payload 0#u64 cap payloadWithin (by change 0 ≤ _; omega)
+      scalarWithin offset (by omega)
+  have totalRoom : (0#u64 : U64).val + expectedTotal (contributions payload 0#u64) 0 4 ≤ U64.max := by
+    simp [expectedTotal, List.range'_succ, contributions]
+    omega
+  obtain ⟨current, counted, _⟩ := account_normal_return (contributions payload 0#u64)
+    (fullColumn row) cap 0 4 0#u64 (header_first_four_samples row payload digest id signed header 0#u64)
+    bounded totalRoom
+  refine ⟨current, ?_⟩
+  rw [complete, columns]
+  exact counted
+
+theorem normal_five_counted (counter : Counter) (complete : SourceRowUsageSpec.Contract counter)
+    (row : Row) (payload digest : Slice U8) (id signed : I64) (cap : Capacity) (keyBytes : U64)
+    (columns : row.statement.columns = 5#usize) (header : Header row payload digest id signed)
+    (fifth : fullColumn row 4#usize = .ok (.Ok keyBytes))
+    (payloadWithin : (SourceRowChargeSpec.payloadLength payload).val ≤ cap.max_sql_value_bytes.val)
+    (keyWithin : keyBytes.val ≤ cap.max_sql_value_bytes.val)
+    (scalarWithin : 32 ≤ cap.max_sql_value_bytes.val)
+    (room : (SourceRowChargeSpec.payloadLength payload).val + 48 + keyBytes.val ≤ U64.max) :
+    ∃ current, counter row row.statement.columns cap = .ok (.Ok current) := by
+  have samples : ∀ offset, offset < 5 → fullColumn row (indexOf (0 + offset)) =
+      .ok (.Ok (contributions payload keyBytes (0 + offset))) := by
+    intro offset bound
+    by_cases first : offset < 4
+    · exact header_first_four_samples row payload digest id signed header keyBytes offset first
+    · have last : offset = 4 := by omega
+      subst offset
+      have index4 : indexOf 4 = 4#usize := index_self 4#usize
+      simpa [contributions, index4] using fifth
+  have bounded : ∀ offset, offset < 5 →
+      (contributions payload keyBytes (0 + offset)).val ≤ cap.max_sql_value_bytes.val := by
+    simpa only [Nat.zero_add] using contributions_bounded payload keyBytes cap payloadWithin keyWithin scalarWithin
+  have totalRoom : (0#u64 : U64).val + expectedTotal (contributions payload keyBytes) 0 5 ≤ U64.max := by
+    simp [expectedTotal, List.range'_succ, contributions]
+    omega
+  obtain ⟨current, counted, _⟩ := account_normal_return (contributions payload keyBytes)
+    (fullColumn row) cap 0 5 0#u64 samples bounded totalRoom
+  refine ⟨current, ?_⟩
+  rw [complete, columns]
+  exact counted
+
+theorem normal_layout_counted (counter : Counter) (complete : SourceRowUsageSpec.Contract counter)
+    (row : Row) (payload digest : Slice U8) (id signed : I64) (overhead : Nat) (cap : Capacity) (future : U64)
+    (layout : Layout row payload digest id signed overhead)
+    (converted : SourceRecordBoundsView.toUnsigned signed = .ok (.Ok future))
+    (longEnough : (SourceRowChargeSpec.payloadLength payload).val ≤ future.val)
+    (within : future.val ≤ cap.max_sql_value_bytes.val)
+    (scalarWithin : 32 ≤ cap.max_sql_value_bytes.val) :
+    ∃ current, counter row row.statement.columns cap = .ok (.Ok current) := by
+  have room := reservation_has_room_for_overhead signed future converted
+  have payloadWithin := Nat.le_trans longEnough within
+  cases layout with
+  | metadata columns header =>
+    exact normal_four_counted counter complete row payload digest id signed cap columns header
+      payloadWithin scalarWithin (by omega)
+  | empty columns header key =>
+    have fifth : fullColumn row 4#usize = .ok (.Ok 0#u64) := full_column_from_ref row 4#usize .Null key
+    exact normal_five_counted counter complete row payload digest id signed cap 0#u64 columns header fifth
+      payloadWithin (by change 0 ≤ _; omega) scalarWithin (by change _ + 48 + 0 ≤ _; omega)
+  | occupied columns header key keyRead keySize =>
+    have fifth := full_column_from_ref row 4#usize (.Blob key) keyRead
+    have keyWidth : fullSize (.Blob key) = 32#u64 := by
+      apply UScalar.eq_of_val_eq
+      rw [(full_text_and_blob_size key).2, keySize]
+      rfl
+    rw [keyWidth] at fifth
+    exact normal_five_counted counter complete row payload digest id signed cap 32#u64 columns header fifth
+      payloadWithin scalarWithin scalarWithin (by change _ + 48 + 32 ≤ _; omega)
+
+def AcceptingContract (counter : Counter) (charge : SourceRowChargeSpec.Charge) : Prop :=
+  ∀ (row : Row) (payload digest : Slice U8) (id signed : I64) (overhead : Nat)
+      (cap : Capacity) (future : U64),
+    Layout row payload digest id signed overhead →
+    SourceRecordBoundsView.toUnsigned signed = .ok (.Ok future) →
+    (SourceRowChargeSpec.payloadLength payload).val ≤ future.val →
+    future.val ≤ cap.max_sql_value_bytes.val →
+    32 ≤ cap.max_sql_value_bytes.val →
+    ∃ current amount, counter row row.statement.columns cap = .ok (.Ok current) ∧
+      charge row current cap = .ok (.Ok amount) ∧ amount.val = future.val + overhead
+
+theorem accepting_contract_of_complete_count (counter : Counter)
+    (complete : SourceRowUsageSpec.Contract counter) : AcceptingContract counter charge := by
+  intro row payload digest id signed overhead cap future layout converted longEnough within scalarWithin
+  obtain ⟨current, counted⟩ := normal_layout_counted counter complete row payload digest id signed overhead
+    cap future layout converted longEnough within scalarWithin
+  obtain ⟨amount, charged, value⟩ := layout_contract_of_complete_count counter complete row payload digest id signed
+    overhead cap future current layout counted converted longEnough within
+  exact ⟨current, amount, counted, charged, value⟩
+
+theorem sample_header : Header sampleRow samplePayload sampleDigest 1#i64 222212#i64 := by
+  refine ⟨?_, sample_payload, ?_, ?_, ?_⟩
+  · reduce_row_columns
+  · reduce_row_columns
+  · reduce_row_columns
+  · rfl
+
+theorem sample_empty_layout : Layout sampleRow samplePayload sampleDigest 1#i64 222212#i64 80 :=
+  .empty rfl sample_header sample_key
+
+theorem sample_conversion : SourceRecordBoundsView.toUnsigned 222212#i64 = .ok (.Ok 222212#u64) := by
+  simp [SourceRecordBoundsView.toUnsigned]
+  apply UScalar.eq_of_val_eq
+  have cast := IScalar.hcast_inBounds_spec .U64 222212#i64 (by scalar_tac)
+  simp only [lift, WP.spec_ok] at cast
+  scalar_tac
+
+theorem uniform_record_total (future : U64) (records : List U64)
+    (reserved : ∀ amount, amount ∈ records → amount.val = future.val + 80) :
+    (records.map UScalar.val).sum = records.length * (future.val + 80) := by
+  induction records with
+  | nil => simp
+  | cons amount rest ih =>
+    have head := reserved amount (by simp)
+    have tail : ∀ value, value ∈ rest → value.val = future.val + 80 := by
+      intro value member
+      exact reserved value (by simp [member])
+    simp only [List.map_cons, List.sum_cons, List.length_cons, head, ih tail]
+    simp [Nat.add_mul, Nat.add_comm]
+
+theorem preallocated_source_total (metadata future : U64) (records : List U64)
+    (configuration : metadata.val = 8192 + 48)
+    (reserved : ∀ amount, amount ∈ records → amount.val = future.val + 80) :
+    metadata.val + (records.map UScalar.val).sum =
+      8192 + 48 + records.length * (future.val + 80) := by
+  rw [configuration, uniform_record_total future records reserved]
+
+end SandboxModel.Stage1Protocol.SourceRowLayoutSpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.full_column_from_ref
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.integer_from_ref
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.reservation_has_room_for_overhead
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.header_first_four_samples
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.four_columns_current
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.five_columns_current
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.payload_replacement_exact
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.base_reservation_exact
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.future_key_exact
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.layout_contract_of_complete_count
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.total_succ
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.account_normal_return
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.contributions_bounded
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.normal_four_counted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.normal_five_counted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.normal_layout_counted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.accepting_contract_of_complete_count
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.sample_header
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.sample_empty_layout
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.sample_conversion
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.uniform_record_total
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowLayoutSpec.preallocated_source_total
