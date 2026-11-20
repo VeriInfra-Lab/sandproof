@@ -1,0 +1,62 @@
+#[cfg(test)]
+mod source_record_count_contract {
+    use super::*;
+    use crate::controller::{checkpoint, tests_support::lifecycle_application as v3};
+
+    #[test]
+    fn source_record_count_retains_two_lifecycle_positions() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = v3::open(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let policy = checkpoint::config(connection).unwrap().unwrap();
+        policy.validate().unwrap();
+        assert_eq!(
+            records_per_session(connection).unwrap(),
+            policy.max_operations_per_sandbox - 2,
+            "source count must retain both original lifecycle positions"
+        );
+    }
+
+    #[test]
+    fn source_record_count_scales_the_complete_session_value() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = v3::open(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let policy = checkpoint::config(connection).unwrap().unwrap();
+        policy.validate().unwrap();
+        for sessions in [0, 1, 2, 4096, u16::MAX] {
+            let expected = u128::from(sessions) * u128::from(policy.max_operations_per_sandbox - 2);
+            assert_eq!(
+                u128::from(reserved_records(connection, sessions).unwrap()),
+                expected,
+                "source count must multiply the complete session value after reserving two positions"
+            );
+        }
+    }
+
+    #[test]
+    fn source_record_count_zero_does_not_skip_the_original_policy_error() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = v3::open(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let before = checkpoint::config(connection).unwrap().unwrap();
+        before.validate().unwrap();
+        let transaction = connection.unchecked_transaction().unwrap();
+        assert_eq!(
+            transaction
+                .execute("DELETE FROM controller_maintenance_config WHERE id=1", [])
+                .unwrap(),
+            1
+        );
+        let result = reserved_records(&transaction, 0);
+        assert!(
+            matches!(
+                &result,
+                Err(JournalError::Sqlite(rusqlite::Error::QueryReturnedNoRows))
+            ),
+            "zero sessions must preserve the original policy query error: {result:?}"
+        );
+        transaction.rollback().unwrap();
+        assert_eq!(checkpoint::config(connection).unwrap().unwrap(), before);
+    }
+}

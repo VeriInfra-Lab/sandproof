@@ -1,0 +1,26 @@
+import SourceReservation
+
+open Aeneas Aeneas.Std Result
+open SandproofSourceRowSqlSelect hiding toStr
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Policy PolicyRead)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRecordCountView
+
+section
+variable (policy : PolicyRead)
+local notation "controller.checkpoint.config" => policy
+
+-- ACTUAL PER SESSION
+
+local notation "controller.lifecycle_inbox.source_work.codec.records_per_session" =>
+  controller.lifecycle_inbox.source_work.codec.records_per_session policy
+
+-- ACTUAL RESERVED RECORDS
+
+end
+
+abbrev perSession := controller.lifecycle_inbox.source_work.codec.records_per_session
+abbrev count := controller.lifecycle_inbox.source_work.codec.reserved_records
+
+end SandboxModel.Stage1Protocol.SourceRecordCountView

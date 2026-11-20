@@ -1,0 +1,215 @@
+import SourceRecordCountSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Policy PolicyRead Config Capacity)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRecordCount
+open SourceRecordCountSpec SourceRecordCountView
+
+theorem actual_contract : Contract count := by
+  intro read db sessions
+  unfold count controller.lifecycle_inbox.source_work.codec.reserved_records
+    controller.lifecycle_inbox.source_work.codec.records_per_session
+  simp only [lift, bind_tc_ok, bind_assoc_eq]
+  apply congrArg (fun continuation => read db >>= continuation)
+  funext reply
+  cases reply with
+  | Err failure => simp [afterPolicy, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok policy =>
+    cases policy with
+    | none => simp [afterPolicy, core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | some policy =>
+      simp only [core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or, bind_tc_ok]
+      by_cases enough : 2 ≤ policy.max_operations_per_sandbox.val
+      · obtain ⟨per, returned, value⟩ := subtraction_has_normal_return policy.max_operations_per_sandbox enough
+        rw [returned]
+        simp only [bind_tc_ok]
+        rw [multiply_returns_full_natural_value, value]
+        simp only [afterPolicy, not_lt.mpr enough, if_false]
+      · have tooSmall : policy.max_operations_per_sandbox.val < 2 := by omega
+        rw [two_position_subtraction, if_pos tooSmall]
+        simp [afterPolicy, tooSmall]
+
+theorem original_is_actual (read : PolicyRead) (db : SaveRows.Db) (sessions : U16) :
+    SourceRecordBoundsView.reserved read db sessions = count read db sessions := by rfl
+
+theorem given_policy (read : PolicyRead) (db : SaveRows.Db) (sessions : U16) (policy : Policy)
+    (found : read db = .ok (.Ok (some policy))) :
+    count read db sessions = afterPolicy (.Ok (some policy)) sessions := by
+  rw [actual_contract, found]
+  simp only [bind_tc_ok]
+
+theorem success_iff (read : PolicyRead) (db : SaveRows.Db) (sessions : U16) (policy : Policy) (amount : U64)
+    (found : read db = .ok (.Ok (some policy))) :
+    count read db sessions = .ok (.Ok amount) ↔
+      2 ≤ policy.max_operations_per_sandbox.val ∧
+        amount.val = sessions.val * (policy.max_operations_per_sandbox.val - 2) := by
+  rw [given_policy read db sessions policy found]
+  by_cases enough : 2 ≤ policy.max_operations_per_sandbox.val
+  · simp only [afterPolicy, not_lt.mpr enough, if_false]
+    change wrappedTotal _ = .ok (.Ok amount) ↔ _
+    rw [wrapped_success_iff]
+    simp only [enough, true_and]
+  · have tooSmall : policy.max_operations_per_sandbox.val < 2 := by omega
+    simp [afterPolicy, tooSmall, enough]
+
+theorem integer_failure_iff (read : PolicyRead) (db : SaveRows.Db) (sessions : U16) (policy : Policy)
+    (found : read db = .ok (.Ok (some policy))) :
+    count read db sessions = .fail .integerOverflow ↔
+      policy.max_operations_per_sandbox.val < 2 ∨
+        U64.max < sessions.val * (policy.max_operations_per_sandbox.val - 2) := by
+  rw [given_policy read db sessions policy found]
+  by_cases enough : 2 ≤ policy.max_operations_per_sandbox.val
+  · simp only [afterPolicy, not_lt.mpr enough, if_false]
+    change wrappedTotal _ = .fail .integerOverflow ↔ _
+    rw [wrapped_overflow_iff]
+    simp only [false_or]
+  · have tooSmall : policy.max_operations_per_sandbox.val < 2 := by omega
+    simp [afterPolicy, tooSmall]
+
+theorem read_error_is_first (read : PolicyRead) (db : SaveRows.Db) (sessions : U16) (failure : SaveRows.Error)
+    (failed : read db = .ok (.Err failure)) : count read db sessions = .ok (.Err failure) := by
+  rw [actual_contract, failed]
+  simp only [bind_tc_ok, afterPolicy]
+
+theorem read_failure_is_preserved (read : PolicyRead) (db : SaveRows.Db) (sessions : U16) (failure : Error)
+    (failed : read db = .fail failure) : count read db sessions = .fail failure := by
+  rw [actual_contract, failed]
+  simp only [bind_tc_fail]
+
+theorem missing_policy_is_rejected (read : PolicyRead) (db : SaveRows.Db) (sessions : U16)
+    (missing : read db = .ok (.Ok none)) : count read db sessions = .ok (.Err .CorruptStore) := by
+  rw [actual_contract, missing]
+  simp only [bind_tc_ok, afterPolicy]
+
+theorem zero_sessions_return_zero_after_policy (read : PolicyRead) (db : SaveRows.Db) (policy : Policy)
+    (found : read db = .ok (.Ok (some policy))) (enough : 2 ≤ policy.max_operations_per_sandbox.val) :
+    count read db 0#u16 = .ok (.Ok 0#u64) := by
+  apply (success_iff read db 0#u16 policy 0#u64 found).mpr
+  exact ⟨enough, by change 0 = 0 * _; omega⟩
+
+theorem zero_sessions_do_not_skip_underflow (read : PolicyRead) (db : SaveRows.Db) (policy : Policy)
+    (found : read db = .ok (.Ok (some policy))) (tooSmall : policy.max_operations_per_sandbox.val < 2) :
+    count read db 0#u16 = .fail .integerOverflow :=
+  (integer_failure_iff read db 0#u16 policy found).mpr (.inl tooSmall)
+
+theorem bounded_policy_returns_exact_count (read : PolicyRead) (db : SaveRows.Db) (sessions : U16) (policy : Policy)
+    (found : read db = .ok (.Ok (some policy))) (bounded : BoundedPolicy policy) :
+    ∃ rows, count read db sessions = .ok (.Ok rows) ∧
+      rows.val = sessions.val * (policy.max_operations_per_sandbox.val - 2) ∧
+      sessions.val ≤ rows.val ∧ rows.val ≤ sessions.val * 126 := by
+  have enough : 2 ≤ policy.max_operations_per_sandbox.val := by unfold BoundedPolicy at bounded; omega
+  have perLow : 1 ≤ policy.max_operations_per_sandbox.val - 2 := by unfold BoundedPolicy at bounded; omega
+  have perHigh : policy.max_operations_per_sandbox.val - 2 ≤ 126 := by unfold BoundedPolicy at bounded; omega
+  have sessionsBound : sessions.val ≤ 65535 := by scalar_tac
+  have fullBound := Nat.mul_le_mul sessionsBound perHigh
+  have fits : sessions.val * (policy.max_operations_per_sandbox.val - 2) ≤ U64.max := by
+    rw [U64.max_eq]
+    omega
+  obtain ⟨rows, _, value⟩ := SourceReservationSpec.try_mk_has_normal_return _ fits
+  refine ⟨rows, (success_iff read db sessions policy rows found).mpr ⟨enough, value⟩, value, ?_, ?_⟩
+  · have lower := Nat.mul_le_mul_left sessions.val perLow
+    simpa only [Nat.mul_one, value] using lower
+  · rw [value]
+    exact Nat.mul_le_mul_left sessions.val perHigh
+
+theorem server_session_rows_bounded (read : PolicyRead) (db : SaveRows.Db) (sessions : U16) (policy : Policy)
+    (found : read db = .ok (.Ok (some policy))) (bounded : BoundedPolicy policy)
+    (sessionsValid : SourceConfigSpec.SessionsValid sessions) :
+    ∃ rows, count read db sessions = .ok (.Ok rows) ∧
+      rows.val = sessions.val * (policy.max_operations_per_sandbox.val - 2) ∧ 1 ≤ rows.val ∧ rows.val ≤ 516096 := by
+  obtain ⟨rows, computed, value, lower, upper⟩ := bounded_policy_returns_exact_count read db sessions policy found bounded
+  unfold SourceConfigSpec.SessionsValid at sessionsValid
+  exact ⟨rows, computed, value, by omega, by omega⟩
+
+theorem original_guard_computes_both_numbers {Node : Type} {f : SourceKeyEncode.Fields}
+    (read : PolicyRead) (scan : SourceRecordBoundsView.Scan f) (db : SaveRows.Db)
+    (config : Config Node) (cap : Capacity) (policy : Policy) (reported : SourceRecordBoundsView.Bounds)
+    (found : read db = .ok (.Ok (some policy))) (bounded : BoundedPolicy policy)
+    (queryReply : SourceRecordBoundsView.queryBounds db = .ok (.Ok reported)) :
+    ∃ reserve rows, SourceRecordBoundsView.reservation config.config 1#u64 = .ok reserve ∧
+      SourceRecordBoundsView.reserved read db config.max_sessions = .ok (.Ok rows) ∧
+      reserve.val = SourceReservationSpec.total config.config 1#u64 ∧
+      rows.val = config.max_sessions.val * (policy.max_operations_per_sandbox.val - 2) ∧
+      SourceRecordBoundsView.loader read scan db config cap =
+        SourceRecordBoundsContract.afterBounds scan db cap.max_sql_value_bytes reserve rows reported := by
+  obtain ⟨rows, computed, rowsValue, _, _⟩ := bounded_policy_returns_exact_count read db config.max_sessions policy found bounded
+  rw [← original_is_actual] at computed
+  obtain ⟨reserve, reserved, reserveValue, loaded⟩ :=
+    SourceReservation.original_record_guard_uses_computed_reserve read scan db config cap rows reported computed queryReply
+  exact ⟨reserve, rows, reserved, computed, reserveValue, rowsValue, loaded⟩
+
+theorem original_policy_error_precedes_aggregate {Node : Type} {f : SourceKeyEncode.Fields}
+    (read : PolicyRead) (scan : SourceRecordBoundsView.Scan f) (db : SaveRows.Db)
+    (config : Config Node) (cap : Capacity) (failure : SaveRows.Error)
+    (failed : read db = .ok (.Err failure)) :
+    SourceRecordBoundsView.loader read scan db config cap = .ok (.Err failure) := by
+  have countFailed := read_error_is_first read db config.max_sessions failure failed
+  rw [← original_is_actual] at countFailed
+  exact SourceReservation.original_count_error_precedes_aggregate read scan db config cap failure countFailed
+
+theorem original_missing_policy_precedes_aggregate {Node : Type} {f : SourceKeyEncode.Fields}
+    (read : PolicyRead) (scan : SourceRecordBoundsView.Scan f) (db : SaveRows.Db)
+    (config : Config Node) (cap : Capacity) (missing : read db = .ok (.Ok none)) :
+    SourceRecordBoundsView.loader read scan db config cap = .ok (.Err .CorruptStore) := by
+  have countFailed := missing_policy_is_rejected read db config.max_sessions missing
+  rw [← original_is_actual] at countFailed
+  exact SourceReservation.original_count_error_precedes_aggregate read scan db config cap .CorruptStore countFailed
+
+theorem original_aggregate_error_after_both_numbers {Node : Type} {f : SourceKeyEncode.Fields}
+    (read : PolicyRead) (scan : SourceRecordBoundsView.Scan f) (db : SaveRows.Db)
+    (config : Config Node) (cap : Capacity) (policy : Policy) (failure : SandproofSourceRowSqlSelect.rusqlite.error.Error)
+    (found : read db = .ok (.Ok (some policy))) (bounded : BoundedPolicy policy)
+    (queryReply : SourceRecordBoundsView.queryBounds db = .ok (.Err failure)) :
+    SourceRecordBoundsView.loader read scan db config cap = .ok (.Err (.Sqlite failure)) := by
+  obtain ⟨rows, computed, _, _, _⟩ := bounded_policy_returns_exact_count read db config.max_sessions policy found bounded
+  rw [← original_is_actual] at computed
+  exact SourceReservation.original_aggregate_error_precedes_capacity read scan db config cap rows failure computed queryReply
+
+theorem normal_one_session (db : SaveRows.Db) :
+    count SourceRecordBoundsContract.samplePolicy db 1#u16 = .ok (.Ok 1#u64) := by
+  rw [← original_is_actual]
+  exact SourceRecordBoundsContract.sample_count_exact db
+
+theorem normal_pair_fits_sql {Node : Type} (read : PolicyRead) (db : SaveRows.Db)
+    (config : Config Node) (policy : Policy)
+    (found : read db = .ok (.Ok (some policy))) (bounded : BoundedPolicy policy)
+    (sessionsValid : SourceConfigSpec.SessionsValid config.max_sessions)
+    (limitsAccepted : SourceConfigView.valid config.config = .ok true) :
+    ∃ reserve rows, SourceRecordBoundsView.reservation config.config 1#u64 = .ok reserve ∧
+      SourceRecordBoundsView.reserved read db config.max_sessions = .ok (.Ok rows) ∧
+      222212 ≤ reserve.val ∧ reserve.val ≤ 5464064 ∧ 1 ≤ rows.val ∧ rows.val ≤ 516096 ∧
+      SourceRecordBoundsView.sqlConvert reserve = .ok (.Ok (UScalar.hcast .I64 reserve)) ∧
+      SourceRecordBoundsView.sqlConvert rows = .ok (.Ok (UScalar.hcast .I64 rows)) := by
+  obtain ⟨reserve, reserved, lower, upper⟩ := SourceReservation.actual_guard_supplies_single_bounds config.config limitsAccepted
+  obtain ⟨rows, computed, _, rowLow, rowHigh⟩ := server_session_rows_bounded read db config.max_sessions policy found bounded sessionsValid
+  rw [← original_is_actual] at computed
+  refine ⟨reserve, rows, reserved, computed, lower, upper, rowLow, rowHigh, ?_, ?_⟩
+  · have fits : (reserve.val : Int) ≤ I64.max := by scalar_tac
+    rw [SourceRecordBounds.convert_sql_uses_exact_signed_limit, if_pos fits]
+  · have fits : (rows.val : Int) ≤ I64.max := by scalar_tac
+    rw [SourceRecordBounds.convert_sql_uses_exact_signed_limit, if_pos fits]
+
+end SandboxModel.Stage1Protocol.SourceRecordCount
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.original_is_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.given_policy
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.success_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.integer_failure_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.read_error_is_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.read_failure_is_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.missing_policy_is_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.zero_sessions_return_zero_after_policy
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.zero_sessions_do_not_skip_underflow
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.bounded_policy_returns_exact_count
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.server_session_rows_bounded
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.original_guard_computes_both_numbers
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.original_policy_error_precedes_aggregate
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.original_missing_policy_precedes_aggregate
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.original_aggregate_error_after_both_numbers
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.normal_one_session
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordCount.normal_pair_fits_sql
