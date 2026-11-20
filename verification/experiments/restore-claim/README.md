@@ -36,7 +36,7 @@
 仍在，标记与 Dispatch 更新均未持久化。激活提交结果未知时保留原责任，重开按
 原 claim、效果状态及 outbox 读回。提交已成立时读回同一个完整动作，未成立时仍
 只处理原 ready 条目。初次准入未知同样须先读回原键，再判断是否需要完成首次准入。
-这些 SQLite 结论依赖 [A4 事务与恢复](../../../../docs/formal/dependencies.md) 的
+这些 SQLite 结论依赖 [A4 事务与恢复](../../../docs/formal/dependencies.md) 的
 固定版本、WAL/synchronous FULL、单写者、同一受保护文件和可靠同步条件。
 
 ## B 线引用的身份来源
@@ -50,7 +50,7 @@
 | 实际 action、effect、attempt | 首次激活后 `RestoreClaim.activation` 持久保存完整 `WorkAction<EffectId>`。它含 `ActionIdentity` 的版本、owner、sandbox、operation、epoch、generation、逻辑动作、attempt、resource，以及 native `EffectId` 的完整命令和 attempt。`validate_record` 核对命令各适用字段、计划 VM 和实际效果 origin/status。 |
 | SQL 行和恢复 work binding | 源行的 `work_key` 为原 `SourceAnchor` 编码的摘要，唯一约束及 `load_records` 复核它，并保留整行及 JSON 摘要。`RestoreWorkRequest::binding_digest` 对完整 intent、source requirement、Full work、manifest、Seal action、native operation、generation 的原 Serde 编码取 SHA-256。许可只存完整 action 与此摘要。 |
 
-上述摘要依赖原 [A6/A9 Serde 和 SHA-256 合同](../../../../docs/formal/dependencies.md)。
+上述摘要依赖原 [A6/A9 Serde 和 SHA-256 合同](../../../docs/formal/dependencies.md)。
 原字段、键、完整字节及作用域仍须随绑定核对。源进程 PID、宿主路径、单个摘要均不足
 以标识原捕获和候选。现有 `restore-work` 的 `FullWorkContract` 覆盖从已解码
 `SourceWorkRecord` 构造完整 `RestoreWorkRequest`，其调用和耐久义务由本包保持显式。
@@ -119,7 +119,7 @@ SQLite 首次准入、原 VM 与原映射重开复用使用原
 实际文件服务诊断。复验脚本只在各自的私有源码副本写入薄根和 Lake 登记。
 
 ```sh
-case_dir=verification/experiments/stage1-protocol/restore-claim
+case_dir=verification/experiments/restore-claim
 bash "$case_dir/verify-decisions.sh" "$FORMAL_EVIDENCE" "$PROOF_LOCK" \
   "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
 ```
@@ -134,6 +134,7 @@ cargo test --locked --offline -p sandproof-controller-service --lib \
   restore_activation_commit_unknown_reads_back_original_claim -- --nocapture
 ```
 
-登记交给集成窗口。独立形式任务含正确与错误两个隔离 Lake 视图，每个按真实导入闭包
+本包和现有 Stage1 公共模板目录同级，集成窗口统一登记。独立形式任务含正确与错误
+两个隔离 Lake 视图，每个按真实导入闭包
 与审计清单检查。普通任务应加入激活提交未知读回及两个已存在的 Resume 用例。公共
 根、冻结、覆盖和标准批次入口在合并这些任务时登记。
