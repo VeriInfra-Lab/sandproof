@@ -1,0 +1,127 @@
+import SourceRowChargeSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowCharge
+open SourceRowChargeView SourceRowChargeSpec
+
+theorem original_null_match_covers_every_variant (value : Value) :
+    isNull value = .ok (nullTag value) := by
+  cases value <;> rfl
+
+theorem source_preserves_base_error (row : Row) (current : U64) (cap : Capacity)
+    (failure : SourceRowChargeView.Error) (reply : base row current cap = .ok (.Err failure)) :
+    charge row current cap = .ok (.Err failure) := by
+  unfold charge SourceRowChargeView.controller.lifecycle_inbox.source_work.codec.charged_bytes
+  change (do let result ← base row current cap; _) = _
+  rw [reply]
+  simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem other_column_counts_skip_fifth_column (row : Row) (current : U64) (cap : Capacity)
+    (amount : U64) (reply : base row current cap = .ok (.Ok amount))
+    (shape : row.statement.columns ≠ 5#usize) :
+    charge row current cap = .ok (.Ok amount) := by
+  unfold charge SourceRowChargeView.controller.lifecycle_inbox.source_work.codec.charged_bytes
+  change (do let result ← base row current cap; _) = _
+  rw [reply]
+  simp [rowStatement, columnCount, shape, core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem fifth_column_error_is_preserved (row : Row) (current : U64) (cap : Capacity)
+    (amount : U64) (failure : SqlError) (reply : base row current cap = .ok (.Ok amount))
+    (shape : row.statement.columns = 5#usize)
+    (key : refAt row 4#usize = .ok (.Err failure)) :
+    charge row current cap = .ok (.Err (.Sqlite failure)) := by
+  unfold charge SourceRowChargeView.controller.lifecycle_inbox.source_work.codec.charged_bytes
+  change (do let result ← base row current cap; _) = _
+  rw [reply]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch, rowStatement, columnCount, shape, if_true]
+  change (do let result ← refAt row 4#usize; _) = _
+  rw [key]
+  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SourceLoadView.fromSql]
+
+theorem nonnull_key_is_not_charged_twice (row : Row) (current : U64) (cap : Capacity)
+    (amount : U64) (value : Value) (reply : base row current cap = .ok (.Ok amount))
+    (shape : row.statement.columns = 5#usize)
+    (key : refAt row 4#usize = .ok (.Ok value)) (notNull : nullTag value = false) :
+    charge row current cap = .ok (.Ok amount) := by
+  unfold charge SourceRowChargeView.controller.lifecycle_inbox.source_work.codec.charged_bytes
+  change (do let result ← base row current cap; _) = _
+  rw [reply]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch, rowStatement, columnCount, shape, if_true]
+  change (do let result ← refAt row 4#usize; _) = _
+  rw [key]
+  simp [original_null_match_covers_every_variant, notNull]
+
+theorem original_future_key_contract : Contract charge := by
+  intro row current cap amount reply shape key
+  unfold charge SourceRowChargeView.controller.lifecycle_inbox.source_work.codec.charged_bytes
+  change (do let result ← base row current cap; _) = _
+  rw [reply]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch, rowStatement, columnCount, shape, if_true]
+  change (do let result ← refAt row 4#usize; _) = _
+  rw [key]
+  simp [SourceRowChargeView.controller.lifecycle_inbox.source_work.codec.source_key_is_null,
+    addKey, core.option.Option.ok_or, lift]
+  cases U64.checked_add amount 32#u64 <;> rfl
+
+theorem empty_record_overhead_is_eighty
+    (row : Row) (current : U64) (cap : Capacity) (bytes : Slice U8)
+    (signed : I64) (future amount value : U64)
+    (payload : refAt row 1#usize = .ok (.Ok (.Blob bytes)))
+    (reservation : integerAt row 3#usize = .ok (.Ok signed))
+    (converted : SourceRecordBoundsView.toUnsigned signed = .ok (.Ok future))
+    (baseOk : base row current cap = .ok (.Ok amount))
+    (shape : row.statement.columns = 5#usize) (key : refAt row 4#usize = .ok (.Ok .Null))
+    (currentBytes : current.val = (payloadLength bytes).val + 48)
+    (returned : charge row current cap = .ok (.Ok value)) :
+    value.val = future.val + 80 := by
+  have originalBytes := successful_base_uses_original_payload_and_reservation row current cap bytes signed
+    future amount payload reservation converted baseOk
+  rw [original_future_key_contract row current cap amount baseOk shape key] at returned
+  have keyReturn : addKey amount = .Ok value := by
+    simpa only [Result.ok.injEq] using returned
+  have keyValue := future_key_success_value amount value keyReturn
+  omega
+
+theorem metadata_overhead_is_forty_eight
+    (row : Row) (current : U64) (cap : Capacity) (bytes : Slice U8)
+    (signed : I64) (future amount : U64)
+    (payload : refAt row 1#usize = .ok (.Ok (.Blob bytes)))
+    (reservation : integerAt row 3#usize = .ok (.Ok signed))
+    (converted : SourceRecordBoundsView.toUnsigned signed = .ok (.Ok future))
+    (baseOk : base row current cap = .ok (.Ok amount))
+    (shape : row.statement.columns ≠ 5#usize)
+    (currentBytes : current.val = (payloadLength bytes).val + 48) :
+    charge row current cap = .ok (.Ok amount) ∧ amount.val = future.val + 48 := by
+  have originalBytes := successful_base_uses_original_payload_and_reservation row current cap bytes signed
+    future amount payload reservation converted baseOk
+  exact ⟨other_column_counts_skip_fifth_column row current cap amount baseOk shape, by omega⟩
+
+theorem normal_empty_row_reserves_all_future_key_bytes :
+    charge sampleRow 52#u64 sampleCapacity = .ok (.Ok 222292#u64) := by
+  rw [original_future_key_contract sampleRow 52#u64 sampleCapacity 222260#u64
+    sample_base_normal (by rfl) sample_key]
+  rfl
+
+theorem future_key_overflow_is_rejected :
+    charge sampleRow 18446744073709329407#u64 sampleCapacity = .ok (.Err .MaintenanceCapacity) := by
+  rw [original_future_key_contract sampleRow 18446744073709329407#u64 sampleCapacity
+    18446744073709551615#u64 sample_base_at_maximum (by rfl) sample_key]
+  rfl
+
+end SandboxModel.Stage1Protocol.SourceRowCharge
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowCharge.original_null_match_covers_every_variant
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowCharge.source_preserves_base_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowCharge.other_column_counts_skip_fifth_column
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowCharge.fifth_column_error_is_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowCharge.nonnull_key_is_not_charged_twice
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowCharge.original_future_key_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowCharge.empty_record_overhead_is_eighty
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowCharge.metadata_overhead_is_forty_eight
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowCharge.normal_empty_row_reserves_all_future_key_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowCharge.future_key_overflow_is_rejected

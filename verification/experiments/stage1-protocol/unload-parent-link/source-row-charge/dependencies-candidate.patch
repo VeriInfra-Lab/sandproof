@@ -1,0 +1,17 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -335 +335,14 @@
++### A4/A6 来源行只读投影候选（待主控采纳）
++
++固定 rusqlite 0.40.2 的 Row::get_ref<usize> 复用原 usize 索引：越界保留原错误，
++成功返回同一 Row/Statement 的指定列完整 ValueRef。Row::as_ref 返回原 Statement；
++Statement::column_count 返回它的实际列数。ValueRef::as_blob 仅对 Blob 返回原完整借用，
++其它四类返回原 InvalidType。有效原借用、原列缓冲和同一快照由 A4/V5 提供；
++不从借用值或列数推出表身份、授权或耐久接受。
++
++[来源行计费候选](../../verification/experiments/stage1-protocol/unload-parent-link/source-row-charge/README.md)
++在同一个原 Row 表示中实例化这些接口，并保留两段业务计费的透明生成体。
++V5 仍负责 current 来自原 capacity::row_bytes、sql_usage 的实际表分派和完整预算；
++原生及公共登记各自验收，不把整个 SQLite 或计费业务设为可信。
++
+ ### SQLite：当前 Inbox 保存两 BLOB 参数（实际接线与验收单列）

@@ -1,0 +1,50 @@
+import SourceRowChargeSpec
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowChargeNegative
+open SourceRowChargeView SourceRowChargeSpec
+theorem omitted_key_undercharges_normal_empty_row :
+    charge sampleRow 52#u64 sampleCapacity = .ok (.Ok 222260#u64) := by
+  unfold charge SourceRowChargeView.controller.lifecycle_inbox.source_work.codec.charged_bytes
+  change (do let result ← base sampleRow 52#u64 sampleCapacity; _) = _
+  rw [sample_base_normal]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch, rowStatement, columnCount]
+  change (if (5#usize : Usize) = 5#usize then _ else _) = _
+  rw [if_pos rfl]
+  change (do let result ← refAt sampleRow 4#usize; _) = _
+  rw [sample_key]
+  simp [SourceRowChargeView.controller.lifecycle_inbox.source_work.codec.source_key_is_null,
+    core.option.Option.ok_or, lift]
+  rfl
+
+theorem omitted_key_allows_overflow_case :
+    charge sampleRow 18446744073709329407#u64 sampleCapacity = .ok (.Ok 18446744073709551615#u64) := by
+  unfold charge SourceRowChargeView.controller.lifecycle_inbox.source_work.codec.charged_bytes
+  change (do let result ← base sampleRow 18446744073709329407#u64 sampleCapacity; _) = _
+  rw [sample_base_at_maximum]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch, rowStatement, columnCount]
+  change (if (5#usize : Usize) = 5#usize then _ else _) = _
+  rw [if_pos rfl]
+  change (do let result ← refAt sampleRow 4#usize; _) = _
+  rw [sample_key]
+  simp [SourceRowChargeView.controller.lifecycle_inbox.source_work.codec.source_key_is_null,
+    core.option.Option.ok_or, lift]
+  rfl
+
+theorem omitted_key_breaks_same_contract : ¬Contract charge := by
+  intro contract
+  have required := contract sampleRow 52#u64 sampleCapacity 222260#u64 sample_base_normal (by rfl) sample_key
+  rw [omitted_key_undercharges_normal_empty_row] at required
+  have keyResult : addKey 222260#u64 = .Ok 222292#u64 := by rfl
+  rw [keyResult] at required
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at required
+  exact (by decide : (222260#u64 : U64) ≠ 222292#u64) required
+
+end SandboxModel.Stage1Protocol.SourceRowChargeNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeNegative.omitted_key_undercharges_normal_empty_row
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeNegative.omitted_key_allows_overflow_case
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeNegative.omitted_key_breaks_same_contract

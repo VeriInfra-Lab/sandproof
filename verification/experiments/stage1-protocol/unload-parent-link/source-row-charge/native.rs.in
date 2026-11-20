@@ -1,0 +1,95 @@
+#[cfg(test)]
+mod source_row_charge_contract {
+    use super::*;
+    use crate::controller::tests_support::lifecycle_application as v3;
+
+    const EMPTY: &str = "SELECT 1,x'6e756c6c',x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b',222212,NULL";
+
+    fn charge(sql: &str, current: u64) -> Result<u64, JournalError> {
+        let connection = Connection::open_in_memory().unwrap();
+        let mut cap = v3::maintenance().capacity.unwrap();
+        cap.max_sql_value_bytes = 222212;
+        connection
+            .query_row(sql, [], |row| Ok(charged_bytes(row, current, &cap)))
+            .unwrap()
+    }
+
+    #[test]
+    fn source_row_charge_reserves_the_future_key_once() {
+        assert_eq!(
+            charge(EMPTY, 52).unwrap(),
+            222292,
+            "empty source row must reserve the future 32-byte key"
+        );
+        // This row already physically contains its 32-byte key.
+        assert_eq!(
+            charge("SELECT 1,x'6e756c6c',x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b',222212,x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b'", 84).unwrap(),
+            222292
+        );
+        assert_eq!(
+            charge("SELECT 1,x'6e756c6c',x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b',8192", 52).unwrap(),
+            8240
+        );
+        assert_eq!(
+            charge("SELECT 1,x'6e756c6c',x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b',8192,NULL,7", 60).unwrap(),
+            8248
+        );
+        for (value, current, expected) in [
+            ("7", 60, 8248),
+            ("7.0", 60, 8248),
+            ("'key'", 55, 8243),
+            (
+                "x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b'",
+                84,
+                8272,
+            ),
+        ] {
+            let sql = format!(
+                "SELECT 1,x'6e756c6c',x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b',8192,{value}"
+            );
+            assert_eq!(charge(&sql, current).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    fn source_row_charge_preserves_first_errors_and_checked_bounds() {
+        assert!(matches!(
+            charge("SELECT 1", 0),
+            Err(JournalError::Sqlite(rusqlite::Error::InvalidColumnIndex(1)))
+        ));
+        assert!(matches!(
+            charge(
+                "SELECT 1,'not-blob',x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b','not-integer',NULL",
+                52
+            ),
+            Err(JournalError::CorruptStore)
+        ));
+        assert!(matches!(
+            charge(
+                "SELECT 1,x'6e756c6c',x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b','not-integer',NULL",
+                52
+            ),
+            Err(JournalError::Sqlite(rusqlite::Error::InvalidColumnType(..)))
+        ));
+        for future in [-1, 3, 222213] {
+            let sql = format!(
+                "SELECT 1,x'6e756c6c',x'74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b',{future},NULL"
+            );
+            assert!(matches!(charge(&sql, 52), Err(JournalError::CorruptStore)));
+        }
+        assert!(matches!(
+            charge(EMPTY, 3),
+            Err(JournalError::MaintenanceCapacity)
+        ));
+        assert!(matches!(
+            charge(EMPTY, u64::MAX),
+            Err(JournalError::MaintenanceCapacity)
+        ));
+        let overflow = charge(EMPTY, u64::MAX - 222208);
+        assert!(
+            matches!(overflow, Err(JournalError::MaintenanceCapacity)),
+            "future work key charge must reject overflow: {overflow:?}"
+        );
+        assert_eq!(charge(EMPTY, u64::MAX - 222208 - 32).unwrap(), u64::MAX);
+    }
+}
