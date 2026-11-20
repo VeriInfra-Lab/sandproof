@@ -1,0 +1,125 @@
+#[cfg(test)]
+mod source_init_reads_contract {
+    use super::*;
+    use crate::controller::tests_support::lifecycle_application as v3;
+
+    fn configured() -> (Connection, checkpoint::MaintenanceConfig) {
+        let connection = Connection::open_in_memory().unwrap();
+        let policy = v3::maintenance();
+        policy.validate().unwrap();
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                crate::journal::MAINTAINED_FORMAT_VERSION,
+            )
+            .unwrap();
+        connection
+            .execute_batch("CREATE TABLE controller_maintenance_config(id INTEGER PRIMARY KEY CHECK(id=1),config_json BLOB NOT NULL);")
+            .unwrap();
+        connection
+            .execute(
+                "INSERT INTO controller_maintenance_config VALUES(1,?1)",
+                [serde_json::to_vec(&policy).unwrap()],
+            )
+            .unwrap();
+        assert_eq!(
+            checkpoint::config(&connection).unwrap(),
+            Some(policy.clone())
+        );
+        (connection, policy)
+    }
+
+    #[test]
+    fn source_init_reads_preserves_complete_current_capacity() {
+        let (connection, policy) = configured();
+        let expected = policy.capacity.clone().unwrap();
+        assert_eq!(
+            config(&connection).unwrap(),
+            Some(expected),
+            "source capacity read must preserve the complete current validated capacity"
+        );
+        assert_eq!(checkpoint::config(&connection).unwrap(), Some(policy));
+    }
+
+    #[test]
+    fn source_init_reads_keeps_format_error_before_missing_row() {
+        let (connection, _) = configured();
+        connection
+            .execute("DELETE FROM controller_maintenance_config", [])
+            .unwrap();
+        connection.pragma_update(None, "user_version", 0).unwrap();
+        assert!(matches!(
+            config(&connection),
+            Err(JournalError::UnsupportedStore)
+        ));
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                crate::journal::MAINTAINED_FORMAT_VERSION,
+            )
+            .unwrap();
+        assert!(matches!(
+            config(&connection),
+            Err(JournalError::Sqlite(rusqlite::Error::QueryReturnedNoRows))
+        ));
+    }
+
+    #[test]
+    fn source_init_reads_retains_complete_maintenance_validation() {
+        let (connection, original) = configured();
+        let mut invalid_operation = original.clone();
+        invalid_operation.max_operations_per_sandbox = 1;
+        let mut invalid_retention = original.clone();
+        invalid_retention.retention_ms = 0;
+        let mut missing_capacity = original.clone();
+        missing_capacity.capacity = None;
+        let mut invalid_capacity = original.clone();
+        invalid_capacity
+            .capacity
+            .as_mut()
+            .unwrap()
+            .max_sql_value_bytes = 0;
+        for policy in [
+            invalid_operation,
+            invalid_retention,
+            missing_capacity,
+            invalid_capacity,
+        ] {
+            let transaction = connection.unchecked_transaction().unwrap();
+            transaction
+                .execute(
+                    "UPDATE controller_maintenance_config SET config_json=?1 WHERE id=1",
+                    [serde_json::to_vec(&policy).unwrap()],
+                )
+                .unwrap();
+            assert!(matches!(
+                config(&transaction),
+                Err(JournalError::UnsupportedStore)
+            ));
+            transaction.rollback().unwrap();
+            assert_eq!(
+                checkpoint::config(&connection).unwrap(),
+                Some(original.clone())
+            );
+        }
+    }
+
+    #[test]
+    fn source_init_reads_second_query_error_retains_first_policy() {
+        let (connection, original) = configured();
+        let transaction = connection.unchecked_transaction().unwrap();
+        let first = checkpoint::config(&transaction).unwrap().unwrap();
+        transaction
+            .execute("DELETE FROM controller_maintenance_config", [])
+            .unwrap();
+        assert!(matches!(
+            config(&transaction),
+            Err(JournalError::Sqlite(rusqlite::Error::QueryReturnedNoRows))
+        ));
+        assert_eq!(first, original);
+        transaction.rollback().unwrap();
+        assert_eq!(checkpoint::config(&connection).unwrap(), Some(original));
+    }
+}

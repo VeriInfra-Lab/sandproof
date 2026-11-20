@@ -1,0 +1,252 @@
+import SourceInitLoopParent
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofStage1RequestRust sandproof_controller_service
+open sandproof_controller_service.controller.checkpoint.config
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitReads
+noncomputable section
+
+abbrev raw {E : Type} (io : ReadConfigEffects E) (before : E) :=
+  SourceInitCapacityReadView.controller.capacity.config_using io before
+abbrev standard (deserialize : SourcePolicyReadSpec.DeserializeMaintenance)
+    (decode : SourcePolicyReadSpec.DecodeSlice) (db : SaveRows.Db) :=
+  SourceInitCapacityReadView.controller.capacity.config deserialize decode db
+abbrev Capacity := SourceRecordBoundsView.Capacity
+abbrev Policy := SourceRecordBoundsView.Policy
+
+def Contract (reader : {E : Type} → ReadConfigEffects E → E →
+    Result ((core.result.Result (Option Capacity) SaveRows.Error) × E)) : Prop :=
+  ∀ {E} (io : ReadConfigEffects E) before,
+    reader io before = SourceInitCapacityReadView.capacityReadView io before
+
+theorem existing_complete_reader : Contract raw :=
+  SourceInitCapacityReadView.capacity_read_refines
+
+theorem read_error_is_preserved {E : Type} (io : ReadConfigEffects E) (before after : E)
+    (failure : SaveRows.Error) (failed : read_using io before = .ok (.Err failure,after)) :
+    raw io before = .ok (.Err failure,after) := by
+  unfold raw
+  rw [SourceInitCapacityReadView.capacity_read_refines,SourceInitCapacityReadView.capacityReadView,
+    ←InboxLoadConfig.read_full_refines,failed]
+  simp
+
+theorem read_failure_is_preserved {E : Type} (io : ReadConfigEffects E) (before : E)
+    (failure : Error) (failed : read_using io before = .fail failure) :
+    raw io before = .fail failure := by
+  unfold raw
+  rw [SourceInitCapacityReadView.capacity_read_refines,SourceInitCapacityReadView.capacityReadView,
+    ←InboxLoadConfig.read_full_refines,failed]
+  simp
+
+theorem read_nonreturn_is_preserved {E : Type} (io : ReadConfigEffects E) (before : E)
+    (divergent : read_using io before = .div) : raw io before = .div := by
+  unfold raw
+  rw [SourceInitCapacityReadView.capacity_read_refines,SourceInitCapacityReadView.capacityReadView,
+    ←InboxLoadConfig.read_full_refines,divergent]
+  simp
+
+theorem never_returns_missing_capacity {E : Type} (io : ReadConfigEffects E) (before after : E) :
+    raw io before ≠ .ok (.Ok none,after) := by
+  intro returned
+  unfold raw at returned
+  rw [SourceInitCapacityReadView.capacity_read_refines] at returned
+  unfold SourceInitCapacityReadView.capacityReadView at returned
+  obtain ⟨⟨reply,state⟩,read,continued⟩ := SourcePolicyReadSpec.bind_success_value _ _ _ returned
+  cases reply with
+  | Err error => simp at continued
+  | Ok option =>
+    cases option with
+    | none => simp at continued
+    | some policy =>
+      cases present : policy.capacity <;> simp [present] at continued
+
+theorem successful_capacity_has_own_validated_policy {E : Type} (io : ReadConfigEffects E)
+    (before after : E) (capacity : Capacity)
+    (returned : raw io before = .ok (.Ok (some capacity),after)) :
+    ∃ policy, read_using io before = .ok (.Ok (some policy),after) ∧
+      policy.capacity = some capacity ∧ MaintenanceConfig.validate policy = .ok (.Ok ()) := by
+  unfold raw at returned
+  rw [SourceInitCapacityReadView.capacity_read_refines] at returned
+  unfold SourceInitCapacityReadView.capacityReadView at returned
+  obtain ⟨⟨reply,state⟩,read,continued⟩ := SourcePolicyReadSpec.bind_success_value _ _ _ returned
+  cases reply with
+  | Err error => simp at continued
+  | Ok option =>
+    cases option with
+    | none => simp at continued
+    | some policy =>
+      cases present : policy.capacity with
+      | none => simp [present] at continued
+      | some found =>
+        have same : found = capacity ∧ state = after := by simpa [present] using continued
+        rw [same.1] at present
+        rw [same.2] at read
+        have actual : read_using io before = .ok (.Ok (some policy),after) := by
+          rw [InboxLoadConfig.read_full_refines]
+          exact read
+        obtain ⟨_,_,_,_,_,_,validated⟩ := SourcePolicyReadSpec.read_success_provenance io before after policy actual
+        exact ⟨policy,actual,present,validated⟩
+
+theorem successful_capacity_iff {E : Type} (io : ReadConfigEffects E) (before after : E) (capacity : Capacity) :
+    raw io before = .ok (.Ok (some capacity),after) ↔
+    ∃ policy, read_using io before = .ok (.Ok (some policy),after) ∧
+      policy.capacity = some capacity ∧ MaintenanceConfig.validate policy = .ok (.Ok ()) := by
+  constructor
+  · exact successful_capacity_has_own_validated_policy io before after capacity
+  · rintro ⟨policy,read,present,validated⟩
+    exact SourceInitCapacityReadView.second_read_extracts_its_own_full_capacity io before after policy capacity read present
+
+theorem standard_never_returns_missing_capacity
+    (deserialize : SourcePolicyReadSpec.DeserializeMaintenance) (decode : SourcePolicyReadSpec.DecodeSlice)
+    (db : SaveRows.Db) : standard deserialize decode db ≠ .ok (.Ok none) := by
+  intro returned
+  unfold standard at returned
+  rw [SourceInitCapacityReadView.actual_standard_root] at returned
+  obtain ⟨⟨reply,after⟩,read,continued⟩ := SourcePolicyReadSpec.bind_success_value _ _ _ returned
+  have same : reply = .Ok none := by simpa using continued
+  rw [same] at read
+  exact never_returns_missing_capacity _ _ _ read
+
+theorem standard_success_has_own_policy
+    (deserialize : SourcePolicyReadSpec.DeserializeMaintenance) (decode : SourcePolicyReadSpec.DecodeSlice)
+    (db : SaveRows.Db) (capacity : Capacity)
+    (returned : standard deserialize decode db = .ok (.Ok (some capacity))) :
+    ∃ after policy,
+      read_using (SourcePolicyRead.standardEffects deserialize decode) {connection := db} =
+        .ok (.Ok (some policy),after) ∧ policy.capacity = some capacity ∧
+      MaintenanceConfig.validate policy = .ok (.Ok ()) := by
+  unfold standard at returned
+  rw [SourceInitCapacityReadView.actual_standard_root] at returned
+  obtain ⟨⟨reply,after⟩,read,continued⟩ := SourcePolicyReadSpec.bind_success_value _ _ _ returned
+  have same : reply = .Ok (some capacity) := by simpa using continued
+  rw [same] at read
+  obtain ⟨policy,provenance,present,validated⟩ := successful_capacity_has_own_validated_policy _ _ _ _ read
+  exact ⟨after,policy,provenance,present,validated⟩
+
+theorem standard_format_error
+    (deserialize : SourcePolicyReadSpec.DeserializeMaintenance) (decode : SourcePolicyReadSpec.DecodeSlice)
+    (db : SaveRows.Db) (after : StandardConfigRead) (failure : SaveRows.Error)
+    (queried : (SourcePolicyRead.standardEffects deserialize decode).query_i64 {connection := db}
+      InboxLoadConfig.formatStatement = .ok (.Err failure,after)) :
+    standard deserialize decode db = .ok (.Err failure) := by
+  have observed := read_error_is_preserved _ _ _ _ (InboxLoadConfig.format_error _ _ _ _ queried)
+  unfold raw at observed
+  unfold standard
+  rw [SourceInitCapacityReadView.actual_standard_root,observed]
+  simp
+
+theorem first_read_error_precedes_capacity_and_writes
+    (io : SandproofSourceInitCapacity.Ports)
+    (deserialize : SourcePolicyReadSpec.DeserializeMaintenance) (decode : SourcePolicyReadSpec.DecodeSlice)
+    (capacityRead : SourceInitCapacity.CapacityRead) (db : SaveRows.Db)
+    (limits : SourceRecordBoundsView.Limits) (inbox : SourceInitCapacity.Inbox)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (after : StandardConfigRead) (failure : SaveRows.Error)
+    (queried : (SourcePolicyRead.standardEffects deserialize decode).query_i64 {connection := db}
+      InboxLoadConfig.formatStatement = .ok (.Err failure,after)) :
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.initialize io
+      (SourcePolicyRead.policyRead deserialize decode) capacityRead db limits inbox = .ok (.Err failure) := by
+  rw [SourceInitCapacity.public_root_forwards_same_complete_input]
+  apply SourceInitCapacity.count_error_precedes_capacity_and_writes io _ capacityRead db limits inbox failure valid sessions
+  rw [SourceInitCapacity.original_count_is_parent]
+  exact SourceRecordCount.read_error_is_first _ db inbox.max_sessions failure
+    (SourcePolicyRead.standard_format_error deserialize decode db after failure queried)
+
+/-- Projections of the same original effect family at the two actual states.
+    The physical connection/state representation remains a provider obligation. -/
+def policyAt {E : Type} (reads : SaveRows.Db → ReadConfigEffects E) (state : E) :
+    SourceRecordBoundsView.PolicyRead := fun db => do
+  let (reply,_) ← read_using (reads db) state
+  .ok reply
+
+def capacityAt {E : Type} (reads : SaveRows.Db → ReadConfigEffects E) (state : E) :
+    SourceInitCapacity.CapacityRead := fun db => do
+  let (reply,_) ← raw (reads db) state
+  .ok reply
+
+theorem second_effect_read_error_preserves_first_count {E : Type}
+    (io : SandproofSourceInitCapacity.Ports) (reads : SaveRows.Db → ReadConfigEffects E)
+    (before middle after : E) (db : SaveRows.Db) (limits : SourceRecordBoundsView.Limits)
+    (inbox : SourceInitCapacity.Inbox) (policy : Policy)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (first : read_using (reads db) before = .ok (.Ok (some policy),middle))
+    (failure : SaveRows.Error)
+    (second : (reads db).query_i64 middle InboxLoadConfig.formatStatement = .ok (.Err failure,after)) :
+    ∃ rows reserve,
+      SourceInitCapacity.count (policyAt reads before) db inbox.max_sessions = .ok (.Ok rows) ∧
+      SourceReservationView.reservation limits 1#u64 = .ok reserve ∧
+      SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.initialize io
+        (policyAt reads before) (capacityAt reads middle) db limits inbox = .ok (.Err failure) := by
+  have found : policyAt reads before db = .ok (.Ok (some policy)) := by simp [policyAt,first]
+  have bounded := SourcePolicyReadSpec.read_success_has_bound (reads db) before middle policy first
+  obtain ⟨rows,counted,_,_,_⟩ := SourceRecordCount.bounded_policy_returns_exact_count
+    (policyAt reads before) db inbox.max_sessions policy found bounded
+  obtain ⟨reserve,reserved,_⟩ := SourceReservation.original_single_computed limits
+  have actualCount : SourceInitCapacity.count (policyAt reads before) db inbox.max_sessions = .ok (.Ok rows) := by
+    rw [SourceInitCapacity.original_count_is_parent]
+    exact counted
+  have actualReserve : SourceReservationView.reservation limits 1#u64 = .ok reserve := by
+    rw [←SourceReservation.original_is_actual]
+    exact reserved
+  have capacityFailed : capacityAt reads middle db = .ok (.Err failure) := by
+    unfold capacityAt
+    rw [read_error_is_preserved _ _ _ _ (InboxLoadConfig.format_error _ _ _ _ second)]
+    simp
+  refine ⟨rows,reserve,actualCount,actualReserve,?_⟩
+  rw [SourceInitCapacity.public_root_forwards_same_complete_input]
+  exact SourceInitCapacity.capacity_error_precedes_encoding_and_writes io _ _ db limits inbox rows reserve failure
+    valid sessions actualCount actualReserve capacityFailed
+
+/-- A legal stateful witness: the first read succeeds, the second observes an
+    error. This is a model provider, not an executed SQLite history. -/
+def sequentialEffects : ReadConfigEffects Nat where
+  query_i64 := fun state _ =>
+    if state = 0 then .ok (.Ok journal.MAINTAINED_FORMAT_VERSION,1)
+    else .ok (.Err .Conflict,state+1)
+  query_bytes := fun state _ => .ok (.Ok SourcePolicyReadSpec.bytes,state+1)
+  decode_maintenance := fun state _ => .ok (.Ok InboxLoadConfig.Values.normal,state+1)
+
+theorem sequential_first_read_is_legal :
+    read_using sequentialEffects 0 = .ok (.Ok (some InboxLoadConfig.Values.normal),3) := by
+  have valid : InboxLoadConfig.maintenanceResult InboxLoadConfig.Values.normal = .ok (.Ok ()) := by
+    rw [←InboxLoadConfig.maintenance_full_refines]
+    exact InboxLoadConfig.Values.normal_accepted
+  rw [InboxLoadConfig.read_full_refines]
+  simp [InboxLoadConfig.readFullView,sequentialEffects,valid]
+
+theorem sequential_second_observation :
+    sequentialEffects.query_i64 3 InboxLoadConfig.formatStatement = .ok (.Err .Conflict,4) := by rfl
+
+theorem sequential_initializer_keeps_second_error (io : SandproofSourceInitCapacity.Ports) (db : SaveRows.Db) :
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.initialize io
+      (policyAt (fun _ => sequentialEffects) 0) (capacityAt (fun _ => sequentialEffects) 3)
+      db SourceConfigSpec.sample SourceInitMetadataSpec.witnessInbox = .ok (.Err .Conflict) := by
+  obtain ⟨_,_,_,_,returned⟩ := second_effect_read_error_preserves_first_count io
+    (fun _ => sequentialEffects) 0 3 4 db SourceConfigSpec.sample SourceInitMetadataSpec.witnessInbox
+    InboxLoadConfig.Values.normal SourceConfigSpec.sample_valid
+    (by unfold SourceConfigSpec.SessionsValid SourceInitMetadataSpec.witnessInbox; decide)
+    sequential_first_read_is_legal .Conflict sequential_second_observation
+  exact returned
+
+end
+end SandboxModel.Stage1Protocol.SourceInitReads
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.existing_complete_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.read_error_is_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.read_failure_is_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.read_nonreturn_is_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.never_returns_missing_capacity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.successful_capacity_has_own_validated_policy
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.successful_capacity_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.standard_never_returns_missing_capacity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.standard_success_has_own_policy
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.standard_format_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.first_read_error_precedes_capacity_and_writes
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.second_effect_read_error_preserves_first_count
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.sequential_first_read_is_legal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.sequential_second_observation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitReads.sequential_initializer_keeps_second_error

@@ -1,0 +1,16 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,13 @@
++## V3 初始化读取来源候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`，接续 #995。复用原完整容量/维护读取
++对应，新增成功来源的充要关系、原 after 状态及全部容量字段；真实 raw/standard 根均不
++返回 Ok(None)。首读错误先于容量/编码/写入；同一原 generic 效果族显式保留两次读取的
++before/middle/after，第二次错误不覆盖原计数。合法状态见证排除相互矛盾的前提；物理
++StandardConfigRead/数据库状态映射仍由 V5 提供，不推导同一快照或持久接受。
++真实 Rust 保留原读取/存在检查而丢弃当前容量，编译抽取后由同一完整合同拒绝。SQLite
++完整容量/错误顺序/原校验与恢复对照仍交 ning。整个隔离一般等价、既有库薄绑定、实际
++查询/JSON/摘要/事务/耐久、整库预算、认证/物理事实和系统组合继续开放；公共登记另验。
++[原件、正反及提供方](../verification/experiments/stage1-protocol/unload-parent-link/source-init-reads/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录
