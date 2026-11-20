@@ -1,0 +1,11 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,8 @@
++
++## V3 来源行计费候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`。两段原行计费透明，保留完整载荷/
++预留、首错和 checked 算术；仅五列 Null 键增加未来 32 字节，元数据不访问第五列。
++同合同拒绝漏加键的 Rust 版。原生正反、逐符号库登记、current 来源和整体预算仍待验收。
++[复验与范围](../verification/experiments/stage1-protocol/unload-parent-link/source-row-charge/README.md)。
+ ## V3 首次卸载使用同一条原执行记录

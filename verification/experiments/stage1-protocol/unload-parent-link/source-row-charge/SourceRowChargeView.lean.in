@@ -1,0 +1,64 @@
+import SourceRecordBounds
+
+open Aeneas Aeneas.Std Result
+open SandproofSourceRowSqlSelect
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity)
+set_option autoImplicit false
+set_option maxRecDepth 2048
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+
+namespace SandboxModel.Stage1Protocol.SourceRowChargeView
+
+abbrev Row := rusqlite.row.Row
+abbrev Value := rusqlite.types.value_ref.ValueRef
+abbrev SqlError := rusqlite.error.Error
+abbrev Error := SaveRows.Error
+abbrev Reply (T : Type) := core.result.Result T Error
+abbrev SqlReply (T : Type) := core.result.Result T SqlError
+
+def getRef {I : Type} (dictionary : rusqlite.row.RowIndex I) (row : Row) (index : I) :
+    Result (SqlReply Value) := do
+  let checked ← dictionary.idx index row.statement
+  match checked with
+  | .Err failure => .ok (.Err failure)
+  | .Ok index => .ok (.Ok (asValueRef (row.column index)))
+
+def asBlob (value : Value) :
+    Result (core.result.Result (Slice U8) rusqlite.types.from_sql.FromSqlError) :=
+  match value with
+  | .Blob bytes => .ok (.Ok bytes)
+  | _ => .ok (.Err .invalidType)
+
+def rowStatement (row : Row) : Result rusqlite.statement.Statement := .ok row.statement
+def columnCount (statement : rusqlite.statement.Statement) : Result Usize := .ok statement.columns
+
+def optionAndThen {T U F : Type} (f : core.ops.function.FnOnce F T (Option U))
+    (value : Option T) (state : F) : Result (Option U) :=
+  match value with
+  | none => .ok none
+  | some value => f.call_once state value
+
+local notation "controller.capacity.CapacityConfig" => Capacity
+local notation "JournalError.Insts.CoreConvertFromError" => SourceLoadView.fromSql
+local notation "U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from" => SourceRecordBoundsView.toUnsigned
+local notation "rusqlite.row.Row.get_ref" => getRef
+local notation "rusqlite.types.value_ref.ValueRef.as_blob" => asBlob
+local notation "rusqlite.row.Row.Insts.CoreConvertAsRefStatement.as_ref" => rowStatement
+local notation "rusqlite.column.Statement.column_count" => columnCount
+local notation "core.option.Option.and_then" => optionAndThen
+
+-- ACTUAL CLOSURE TYPES
+-- ACTUAL CALLBACKS
+-- ACTUAL BASE
+-- ACTUAL NULL MATCH
+-- ACTUAL SOURCE
+
+abbrev base := controller.lifecycle_inbox.codec.charged_bytes
+abbrev isNull := controller.lifecycle_inbox.source_work.codec.source_key_is_null
+abbrev charge := controller.lifecycle_inbox.source_work.codec.charged_bytes
+abbrev refAt (row : Row) (index : Usize) := getRef Usize.Insts.RusqliteRowRowIndex row index
+abbrev integerAt (row : Row) (index : Usize) :=
+  rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex I64.Insts.RusqliteTypesFrom_sqlFromSql row index
+
+end SandboxModel.Stage1Protocol.SourceRowChargeView

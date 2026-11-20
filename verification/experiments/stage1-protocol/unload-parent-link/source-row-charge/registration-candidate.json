@@ -1,0 +1,110 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-row-charge",
+  "parent_prs": [
+    984
+  ],
+  "prior": {
+    "pr": 978,
+    "formal_root": "SourceRecordBounds",
+    "physical_files": 52,
+    "full_audits": 145
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceRowCharge",
+      "physical_files": 55,
+      "full_audits": 172,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_payload",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_integer",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_key",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.full_blob_length",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.payload_replacement_success_value",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.payload_replacement_error_exact",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.future_key_error_exact",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.future_key_success_value",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_blob_query_error_is_first",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_nonblob_rejects_before_integer",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_integer_error_follows_blob",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_keeps_complete_reservation_and_checked_arithmetic",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_rejects_negative_reservation_before_arithmetic",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.successful_base_uses_original_payload_and_reservation",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_base",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_base_normal",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_base_at_maximum",
+        "SandboxModel.Stage1Protocol.SourceRowCharge.original_null_match_covers_every_variant",
+        "SandboxModel.Stage1Protocol.SourceRowCharge.source_preserves_base_error",
+        "SandboxModel.Stage1Protocol.SourceRowCharge.other_column_counts_skip_fifth_column",
+        "SandboxModel.Stage1Protocol.SourceRowCharge.fifth_column_error_is_preserved",
+        "SandboxModel.Stage1Protocol.SourceRowCharge.nonnull_key_is_not_charged_twice",
+        "SandboxModel.Stage1Protocol.SourceRowCharge.original_future_key_contract",
+        "SandboxModel.Stage1Protocol.SourceRowCharge.empty_record_overhead_is_eighty",
+        "SandboxModel.Stage1Protocol.SourceRowCharge.metadata_overhead_is_forty_eight",
+        "SandboxModel.Stage1Protocol.SourceRowCharge.normal_empty_row_reserves_all_future_key_bytes",
+        "SandboxModel.Stage1Protocol.SourceRowCharge.future_key_overflow_is_rejected"
+      ],
+      "own_modules": [
+        "SourceRowChargeView.lean",
+        "SourceRowChargeSpec.lean",
+        "SourceRowCharge.lean"
+      ]
+    },
+    {
+      "variant": "omit-future-key",
+      "formal_root": "SourceRowChargeNegative",
+      "physical_files": 55,
+      "full_audits": 165,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_payload",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_integer",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_key",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.full_blob_length",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.payload_replacement_success_value",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.payload_replacement_error_exact",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.future_key_error_exact",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.future_key_success_value",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_blob_query_error_is_first",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_nonblob_rejects_before_integer",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_integer_error_follows_blob",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_keeps_complete_reservation_and_checked_arithmetic",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_rejects_negative_reservation_before_arithmetic",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.successful_base_uses_original_payload_and_reservation",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_base",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_base_normal",
+        "SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_base_at_maximum",
+        "SandboxModel.Stage1Protocol.SourceRowChargeNegative.omitted_key_undercharges_normal_empty_row",
+        "SandboxModel.Stage1Protocol.SourceRowChargeNegative.omitted_key_allows_overflow_case",
+        "SandboxModel.Stage1Protocol.SourceRowChargeNegative.omitted_key_breaks_same_contract"
+      ],
+      "own_modules": [
+        "SourceRowChargeView.lean",
+        "SourceRowChargeSpec.lean",
+        "SourceRowChargeNegative.lean"
+      ]
+    }
+  ],
+  "native_candidate": {
+    "name": "stage1-source-row-charge",
+    "variants": [
+      "original",
+      "omit-future-key"
+    ],
+    "tests": [
+      "source_row_charge_reserves_the_future_key_once",
+      "source_row_charge_preserves_first_errors_and_checked_bounds"
+    ],
+    "full_functional_required": true
+  },
+  "pending_library_symbols": [
+    "Row::get_ref<usize>",
+    "Row::as_ref",
+    "Statement::column_count",
+    "ValueRef::as_blob"
+  ],
+  "public_registration_accepted": false
+}

@@ -1,0 +1,287 @@
+import SourceRowChargeView
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol.SourceRecordBoundsView (Capacity)
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRowChargeSpec
+open SourceRowChargeView
+
+def nullTag : Value → Bool
+  | .Null => true
+  | _ => false
+
+def payloadLength (bytes : Slice U8) : U64 := UScalar.cast .U64 (Slice.len bytes)
+
+def replacePayload (current length future : U64) : Reply U64 :=
+  match (U64.checked_sub current length).bind (fun value => U64.checked_add value future) with
+  | some value => .Ok value
+  | none => .Err .MaintenanceCapacity
+
+def addKey (amount : U64) : Reply U64 :=
+  match U64.checked_add amount 32#u64 with
+  | some value => .Ok value
+  | none => .Err .MaintenanceCapacity
+
+abbrev Charge := Row → U64 → Capacity → Result (Reply U64)
+
+def Contract (charge : Charge) : Prop :=
+  ∀ (row : Row) (current : U64) (cap : Capacity) (amount : U64),
+    base row current cap = .ok (.Ok amount) →
+    row.statement.columns = 5#usize →
+    refAt row 4#usize = .ok (.Ok .Null) →
+    charge row current cap = .ok (addKey amount)
+
+macro "reduce_blob " reply:term : tactic =>
+  `(tactic|
+    (unfold base SourceRowChargeView.controller.lifecycle_inbox.codec.charged_bytes
+     change (do let result ← refAt _ 1#usize; _) = _
+     have originalBlob := $reply
+     rw [originalBlob]
+     simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch, asBlob,
+       core.result.Result.map_err, lift]))
+
+def samplePayload : Slice U8 := Slice.from [110#u8, 117#u8, 108#u8, 108#u8] (by simp; scalar_tac)
+def sampleDigest : Slice U8 := Slice.from [116#u8, 35#u8, 78#u8, 152#u8, 175#u8, 231#u8, 73#u8, 143#u8, 181#u8, 218#u8, 241#u8, 243#u8, 106#u8, 194#u8, 215#u8, 138#u8, 204#u8, 51#u8, 148#u8, 100#u8, 249#u8, 80#u8, 112#u8, 59#u8, 140#u8, 1#u8, 152#u8, 146#u8, 249#u8, 130#u8, 185#u8, 11#u8] (by simp; scalar_tac)
+
+def sampleRow : Row where
+  object := 2
+  statement := ⟨⟨0, [], fun _ => ⟨0⟩⟩, 1, 5#usize, fun _ => ⟨0⟩⟩
+  column := fun index => match index.val with
+    | 0 => .Integer 1#i64
+    | 1 => .Blob samplePayload
+    | 2 => .Blob sampleDigest
+    | 3 => .Integer 222212#i64
+    | _ => .Null
+  conversionError := fun _ _ _ => ⟨0⟩
+
+def sampleCapacity : Capacity :=
+  {SourceRecordBoundsContract.sampleCapacity with max_sql_value_bytes := 222212#u64}
+
+macro "reduce_row_columns" : tactic =>
+  `(tactic|
+    (simp [refAt, integerAt, getRef, sampleRow, samplePayload, sampleDigest,
+      SandproofSourceRowSqlSelect.Usize.Insts.RusqliteRowRowIndex,
+      SandproofSourceRowSqlSelect.Usize.Insts.RusqliteRowRowIndex.idx,
+      SandproofSourceRowSqlSelect.I64.Insts.RusqliteTypesFrom_sqlFromSql,
+      SandproofSourceRowSqlSelect.I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result,
+      SandproofSourceRowSqlSelect.rusqlite.row.Row.get,
+      SandproofSourceRowSqlSelect.asValueRef]))
+
+theorem sample_payload : refAt sampleRow 1#usize = .ok (.Ok (.Blob samplePayload)) := by
+  reduce_row_columns
+
+theorem sample_integer : integerAt sampleRow 3#usize = .ok (.Ok 222212#i64) := by
+  reduce_row_columns
+
+theorem sample_key : refAt sampleRow 4#usize = .ok (.Ok .Null) := by
+  reduce_row_columns
+
+theorem full_blob_length (bytes : Slice U8) :
+    (payloadLength bytes).val = bytes.val.length := by
+  simp [payloadLength, Slice.len]
+
+theorem payload_replacement_success_value (current length future value : U64)
+    (returned : replacePayload current length future = .Ok value) :
+    length.val ≤ current.val ∧ value.val = current.val - length.val + future.val := by
+  have subSpec := U64.checked_sub_bv_spec current length
+  cases subReply : U64.checked_sub current length with
+  | none => simp [replacePayload, subReply] at returned
+  | some remainder =>
+    simp only [subReply] at subSpec
+    have addSpec := U64.checked_add_bv_spec remainder future
+    cases addReply : U64.checked_add remainder future with
+    | none => simp [replacePayload, subReply, addReply] at returned
+    | some total =>
+      simp only [addReply] at addSpec
+      have same : total = value := by simpa [replacePayload, subReply, addReply] using returned
+      subst value
+      exact ⟨subSpec.1, by rw [addSpec.2.1, subSpec.2.1]⟩
+
+theorem payload_replacement_error_exact (current length future : U64) :
+    replacePayload current length future = .Err .MaintenanceCapacity ↔
+      current.val < length.val ∨ U64.max < current.val - length.val + future.val := by
+  have subSpec := U64.checked_sub_bv_spec current length
+  cases subReply : U64.checked_sub current length with
+  | none =>
+    simp only [subReply] at subSpec
+    simp [replacePayload, subReply, subSpec]
+  | some remainder =>
+    simp only [subReply] at subSpec
+    have addSpec := U64.checked_add_bv_spec remainder future
+    cases addReply : U64.checked_add remainder future with
+    | none =>
+      simp only [addReply] at addSpec
+      have overflow : U64.max < current.val - length.val + future.val := by
+        simpa only [subSpec.2.1] using addSpec
+      simp [replacePayload, subReply, addReply, overflow]
+    | some total =>
+      simp only [addReply] at addSpec
+      have safeSub : ¬current.val < length.val := Nat.not_lt.mpr subSpec.1
+      have safeAdd : ¬U64.max < current.val - length.val + future.val := by
+        rw [← subSpec.2.1]
+        exact Nat.not_lt.mpr addSpec.1
+      simp [replacePayload, subReply, addReply, safeSub, safeAdd]
+
+theorem future_key_error_exact (amount : U64) :
+    addKey amount = .Err .MaintenanceCapacity ↔ U64.max < amount.val + 32 := by
+  have spec := U64.checked_add_bv_spec amount 32#u64
+  cases reply : U64.checked_add amount 32#u64 with
+  | none =>
+    simp only [reply] at spec
+    simpa [addKey, reply] using spec
+  | some value =>
+    simp only [reply] at spec
+    have safe : ¬U64.max < amount.val + 32 := by simpa using Nat.not_lt.mpr spec.1
+    simp [addKey, reply, safe]
+
+theorem future_key_success_value (amount value : U64) (reply : addKey amount = .Ok value) :
+    value.val = amount.val + 32 := by
+  have spec := U64.checked_add_bv_spec amount 32#u64
+  cases checked : U64.checked_add amount 32#u64 with
+  | none => simp [addKey, checked] at reply
+  | some actual =>
+    simp only [checked] at spec
+    have same : actual = value := by simpa [addKey, checked] using reply
+    subst value
+    simpa using spec.2.1
+
+theorem base_blob_query_error_is_first (row : Row) (current : U64) (cap : Capacity)
+    (failure : SqlError) (reply : refAt row 1#usize = .ok (.Err failure)) :
+    base row current cap = .ok (.Err (.Sqlite failure)) := by
+  unfold base SourceRowChargeView.controller.lifecycle_inbox.codec.charged_bytes
+  change (do let result ← refAt row 1#usize; _) = _
+  rw [reply]
+  simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SourceLoadView.fromSql]
+
+theorem base_nonblob_rejects_before_integer (row : Row) (current : U64) (cap : Capacity)
+    (value : Value) (payload : refAt row 1#usize = .ok (.Ok value))
+    (notBlob : ∀ bytes, value ≠ .Blob bytes) :
+    base row current cap = .ok (.Err .CorruptStore) := by
+  unfold base SourceRowChargeView.controller.lifecycle_inbox.codec.charged_bytes
+  change (do let result ← refAt row 1#usize; _) = _
+  rw [payload]
+  cases value with
+  | Blob bytes => exact False.elim (notBlob bytes rfl)
+  | Null | Integer _ | Real _ | Text _ =>
+    simp [asBlob, core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+      SourceRowChargeView.controller.lifecycle_inbox.codec.charged_bytes.closure.Insts.CoreOpsFunctionFnOnceTupleFromSqlErrorJournalError,
+      SourceRowChargeView.controller.lifecycle_inbox.codec.charged_bytes.closure.Insts.CoreOpsFunctionFnOnceTupleFromSqlErrorJournalError.call_once,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem base_integer_error_follows_blob (row : Row) (current : U64) (cap : Capacity)
+    (bytes : Slice U8) (failure : SqlError)
+    (payload : refAt row 1#usize = .ok (.Ok (.Blob bytes)))
+    (reply : integerAt row 3#usize = .ok (.Err failure)) :
+    base row current cap = .ok (.Err (.Sqlite failure)) := by
+  reduce_blob payload
+  change (do let result ← integerAt row 3#usize; _) = _
+  rw [reply]
+  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SourceLoadView.fromSql]
+
+theorem base_keeps_complete_reservation_and_checked_arithmetic
+    (row : Row) (current : U64) (cap : Capacity) (bytes : Slice U8)
+    (signed : I64) (future : U64)
+    (payload : refAt row 1#usize = .ok (.Ok (.Blob bytes)))
+    (reservation : integerAt row 3#usize = .ok (.Ok signed))
+    (converted : SourceRecordBoundsView.toUnsigned signed = .ok (.Ok future)) :
+    base row current cap =
+      .ok (if future.val < (payloadLength bytes).val ∨ cap.max_sql_value_bytes.val < future.val
+        then .Err .CorruptStore else replacePayload current (payloadLength bytes) future) := by
+  reduce_blob payload
+  change (do let result ← integerAt row 3#usize; _) = _
+  rw [reservation]
+  simp only [bind_tc_ok]
+  rw [converted]
+  simp only [bind_tc_ok]
+  by_cases short : future.val < (payloadLength bytes).val <;>
+    by_cases large : cap.max_sql_value_bytes.val < future.val
+  all_goals
+    simp only [full_blob_length] at short
+    simp [payloadLength, short, large, replacePayload, optionAndThen,
+      SourceRowChargeView.controller.lifecycle_inbox.codec.charged_bytes.closure_2.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64,
+      SourceRowChargeView.controller.lifecycle_inbox.codec.charged_bytes.closure_2.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64.call_once,
+      core.option.Option.ok_or]
+  all_goals
+    cases subReply : U64.checked_sub current (UScalar.cast .U64 (Slice.len bytes)) with
+    | none => simp
+    | some remainder =>
+      cases addReply : U64.checked_add remainder future <;> simp [addReply]
+
+theorem base_rejects_negative_reservation_before_arithmetic
+    (row : Row) (current : U64) (cap : Capacity) (bytes : Slice U8) (signed : I64)
+    (payload : refAt row 1#usize = .ok (.Ok (.Blob bytes)))
+    (reservation : integerAt row 3#usize = .ok (.Ok signed)) (negative : signed.val < 0) :
+    base row current cap = .ok (.Err .CorruptStore) := by
+  reduce_blob payload
+  change (do let result ← integerAt row 3#usize; _) = _
+  rw [reservation]
+  simp [SourceRecordBoundsView.toUnsigned, not_le.mpr negative,
+    SourceRowChargeView.controller.lifecycle_inbox.codec.charged_bytes.closure_1.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError,
+    SourceRowChargeView.controller.lifecycle_inbox.codec.charged_bytes.closure_1.Insts.CoreOpsFunctionFnOnceTupleTryFromIntErrorJournalError.call_once,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem successful_base_uses_original_payload_and_reservation
+    (row : Row) (current : U64) (cap : Capacity) (bytes : Slice U8)
+    (signed : I64) (future amount : U64)
+    (payload : refAt row 1#usize = .ok (.Ok (.Blob bytes)))
+    (reservation : integerAt row 3#usize = .ok (.Ok signed))
+    (converted : SourceRecordBoundsView.toUnsigned signed = .ok (.Ok future))
+    (normal : base row current cap = .ok (.Ok amount)) :
+    (payloadLength bytes).val ≤ current.val ∧
+      amount.val = current.val - (payloadLength bytes).val + future.val := by
+  rw [base_keeps_complete_reservation_and_checked_arithmetic row current cap bytes signed future
+    payload reservation converted] at normal
+  by_cases rejected : future.val < (payloadLength bytes).val ∨ cap.max_sql_value_bytes.val < future.val
+  · simp [rejected] at normal
+  · simp only [if_neg rejected, Result.ok.injEq] at normal
+    exact payload_replacement_success_value current (payloadLength bytes) future amount normal
+
+theorem sample_base (current : U64) :
+    base sampleRow current sampleCapacity = .ok (replacePayload current 4#u64 222212#u64) := by
+  have conversion : SourceRecordBoundsView.toUnsigned 222212#i64 = .ok (.Ok 222212#u64) := by
+    simp [SourceRecordBoundsView.toUnsigned]
+    apply UScalar.eq_of_val_eq
+    have cast := IScalar.hcast_inBounds_spec .U64 222212#i64 (by scalar_tac)
+    simp only [lift, WP.spec_ok] at cast
+    scalar_tac
+  rw [base_keeps_complete_reservation_and_checked_arithmetic sampleRow current sampleCapacity
+    samplePayload 222212#i64 222212#u64 sample_payload sample_integer conversion]
+  have length : payloadLength samplePayload = 4#u64 := by
+    apply UScalar.eq_of_val_eq
+    rw [full_blob_length]
+    rfl
+  simp [length, sampleCapacity, SourceRecordBoundsContract.sampleCapacity]
+
+theorem sample_base_normal :
+    base sampleRow 52#u64 sampleCapacity = .ok (.Ok 222260#u64) := by
+  rw [sample_base]
+  rfl
+
+theorem sample_base_at_maximum :
+    base sampleRow 18446744073709329407#u64 sampleCapacity = .ok (.Ok 18446744073709551615#u64) := by
+  rw [sample_base]
+  rfl
+
+end SandboxModel.Stage1Protocol.SourceRowChargeSpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_payload
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_integer
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_key
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.full_blob_length
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.payload_replacement_success_value
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.payload_replacement_error_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.future_key_error_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.future_key_success_value
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_blob_query_error_is_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_nonblob_rejects_before_integer
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_integer_error_follows_blob
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_keeps_complete_reservation_and_checked_arithmetic
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.base_rejects_negative_reservation_before_arithmetic
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.successful_base_uses_original_payload_and_reservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_base
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_base_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRowChargeSpec.sample_base_at_maximum
