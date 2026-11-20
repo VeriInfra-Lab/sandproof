@@ -1,0 +1,59 @@
+import SourceInitRowView
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitRowSpec
+noncomputable section
+open SourceInitRowView
+
+abbrev Reply := core.result.Result Unit SaveRows.Error
+abbrev Insert := Ports → SaveRows.Db → U64 → Slice U8 → Slice U8 → U64 → Result Reply
+
+def statement : Str := SandproofSourceRowSqlSelect.toStr
+  "INSERT INTO controller_source_work_records VALUES(?1,?2,?3,?4,NULL)"
+
+/-- The actual API ignores the returned affected-row count. No durability,
+    row-existence, hash, authorization or iterator fact is inferred here. -/
+def afterExecute (reply : core.result.Result Usize rusqlite.error.Error) : Result Reply :=
+  match reply with
+  | .Err error => .ok (.Err (.Sqlite error))
+  | .Ok _ => .ok (.Ok ())
+
+def expected (io : Ports) (db : SaveRows.Db) (id : U64) (payload digest : Slice U8) (reserve : U64) : Result Reply := do
+  let first ← SourceRecordBoundsView.sqlConvert id
+  match first with
+  | .Err error => .ok (.Err error)
+  | .Ok signedId =>
+    let second ← SourceRecordBoundsView.sqlConvert reserve
+    match second with
+    | .Err error => .ok (.Err error)
+    | .Ok signedReserve => do
+      let reply ← io.execute (parameters io) db statement (signedId, payload, digest, signedReserve)
+      afterExecute reply
+
+def Contract (run : Insert) : Prop :=
+  ∀ io db id payload digest reserve, run io db id payload digest reserve = expected io db id payload digest reserve
+
+end
+end SandboxModel.Stage1Protocol.SourceInitRowSpec
+
+namespace SandboxModel.Stage1Protocol.SourceInitRowSpec
+/-- A typed test port, not a claim about actual SQLite or durability.
+    All unrelated methods fail if reached. -/
+def probePorts (affected : Usize) : Ports where
+  cloneNodeId := fun _ => .fail .panic
+  cloneDeploymentId := fun _ => .fail .panic
+  encode := fun _ => .fail .panic
+  digest := fun _ => .fail .panic
+  next := fun _ => .fail .panic
+  batch := fun _ _ => .fail .panic
+  execute := fun {_} _ _ sql _ => if sql = statement then .ok (.Ok affected) else .fail .panic
+  integer := fun _ => .fail .panic
+  blob := fun _ => .fail .panic
+  bind3 := fun {_ _ _} _ _ _ _ _ => .fail .panic
+  bind4 := fun {_ _ _ _} _ _ _ _ _ _ => .fail .panic
+end SandboxModel.Stage1Protocol.SourceInitRowSpec

@@ -1,0 +1,15 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,12 @@
++## V3 来源初始化单行 INSERT 候选
++
++固定 `b0d791ccc4d4e058b710dbf8f46766652b2853df`，接续 #992。隔离候选的实际单行
++INSERT 对任意原输入保持 id/reserve 转换顺序、完整四参数、同连接/Params 和第五列 NULL。
++SQL 错误包装、失败/效果/非返回保持；原实现忽略影响行数，Ok(0) 仍返回成功，不推导插入或耐久。
++复用原计数/预留与真实完整配置读取，合法配置内每个 id≤rows 的转换均可表示。
++实际 Rust 仅交换 SQL 的 id/reserve 占位符后，同一完整合同在正常行上拒绝它；真实 SQLite
++完整列断言仍交 ning 编译、执行和恢复对照。原生产到隔离候选的一般等价、库薄绑定、完整循环、
++元数据/JSON/摘要、SQL 事务和持久初始化及系统组合仍开放。普通/原生/公共完整验收待主控采用。
++[原件、正常/反例及提供方](../verification/experiments/stage1-protocol/unload-parent-link/source-init-row/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录

@@ -1,0 +1,128 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-init-row",
+  "parent_prs": [
+    992
+  ],
+  "prior": {
+    "pr": 992,
+    "physical_files": 90,
+    "full_audits": 392
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceInitRow",
+      "physical_files": 93,
+      "full_audits": 408,
+      "own_modules": [
+        "SourceInitRowView.lean",
+        "SourceInitRowSpec.lean",
+        "SourceInitRow.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceInitRow.actual_conversion_is_existing",
+        "SandboxModel.Stage1Protocol.SourceInitRow.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceInitRow.all_representable_arguments_reach_exact_execute",
+        "SandboxModel.Stage1Protocol.SourceInitRow.id_error_precedes_any_execute",
+        "SandboxModel.Stage1Protocol.SourceInitRow.reserve_error_precedes_any_execute",
+        "SandboxModel.Stage1Protocol.SourceInitRow.sql_error_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitRow.sql_success_ignores_affected_count",
+        "SandboxModel.Stage1Protocol.SourceInitRow.sql_failure_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitRow.sql_nonreturn_preserved",
+        "SandboxModel.Stage1Protocol.SourceInitRow.normal_domain_supplies_every_row_conversion",
+        "SandboxModel.Stage1Protocol.SourceInitRow.both_oversized_values_keep_id_first",
+        "SandboxModel.Stage1Protocol.SourceInitRow.zero_arguments_reach_execute",
+        "SandboxModel.Stage1Protocol.SourceInitRow.normal_complete_row",
+        "SandboxModel.Stage1Protocol.SourceInitRow.zero_affected_count_is_not_a_rejection",
+        "SandboxModel.Stage1Protocol.SourceInitRow.parameters_route_complete_four_values",
+        "SandboxModel.Stage1Protocol.SourceInitRow.standard_read_supplies_every_row_conversion"
+      ]
+    },
+    {
+      "variant": "swap-row-placeholders",
+      "formal_root": "SourceInitRowNegative",
+      "physical_files": 94,
+      "full_audits": 399,
+      "own_modules": [
+        "SourceInitRowView.lean",
+        "SourceInitRowSpec.lean",
+        "SourceInitRowWrongView.lean",
+        "SourceInitRowNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceInitRowNegative.converted",
+        "SandboxModel.Stage1Protocol.SourceInitRowNegative.wrong_statement_differs",
+        "SandboxModel.Stage1Protocol.SourceInitRowNegative.wrong_normal_row",
+        "SandboxModel.Stage1Protocol.SourceInitRowNegative.expected_normal_row",
+        "SandboxModel.Stage1Protocol.SourceInitRowNegative.rejects_same_complete_contract",
+        "SandboxModel.Stage1Protocol.SourceInitRowNegative.bytes_to_list_exact",
+        "SandboxModel.Stage1Protocol.SourceInitRowNegative.string_representation_injective"
+      ]
+    }
+  ],
+  "native_candidate": {
+    "name": "stage1-source-init-row",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "swap-row-placeholders",
+      "adapted-swap-row-placeholders"
+    ],
+    "tests": [
+      "controller::lifecycle_inbox::source_work::codec::source_init_row_contract::source_init_row_keeps_complete_initial_insert",
+      "controller::lifecycle_inbox::source_work::codec::source_policy_read_contract::source_policy_read_normal_complete_policy_reaches_original_count",
+      "controller::lifecycle_inbox::source_work::codec::source_policy_read_contract::source_policy_read_rejects_invalid_operation_bound_before_count",
+      "controller::lifecycle_inbox::source_work::codec::source_policy_read_contract::source_policy_read_preserves_non_operation_validation"
+    ],
+    "expected": {
+      "original": {
+        "passed": 4,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 4,
+        "failed": 0
+      },
+      "swap-row-placeholders": {
+        "passed": 3,
+        "failed": 1
+      },
+      "adapted-swap-row-placeholders": {
+        "passed": 3,
+        "failed": 1
+      }
+    },
+    "rejection": "initial source row must preserve all four bound values and NULL key",
+    "restoration": "new original source/target after both mutants: compile and execute all four exact tests",
+    "full_functional_required": true
+  },
+  "representation": {
+    "parameters": "all four original typed values, same Params/connection and exact SQL with fifth column NULL",
+    "result": "conversion errors, SQL error wrapping, effects/failure/nonreturn; all successful affected counts accepted",
+    "payload_digest": "arbitrary complete byte slices, not authentication or a computed hash",
+    "normal_domain": "reuse #989 full row/reservation bounds and #990 actual complete validated read"
+  },
+  "remaining_providers": {
+    "V0": [
+      "existing Row/Range/borrow and tuple Params/return delegate adoption; production-to-isolated general equivalence"
+    ],
+    "V5": [
+      "actual SQLite interpretation, physical snapshot/transaction/durability",
+      "actual JSON/digest instance, full loop, metadata write and complete initialization/database budget"
+    ],
+    "V7": [
+      "independent authenticated/configuration provenance"
+    ],
+    "V6": [
+      "actual material/VM and physical facts"
+    ]
+  },
+  "production_candidate_equivalence_complete": false,
+  "public_registration_accepted": false,
+  "registration_mode": "independent physical project for each view, full actual file/audit closure and original native execution identity; no partial root fallback"
+}

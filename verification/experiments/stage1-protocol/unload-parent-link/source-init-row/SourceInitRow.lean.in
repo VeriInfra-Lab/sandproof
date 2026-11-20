@@ -1,0 +1,218 @@
+import SourceInitRowSpec
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+open SandboxModel.Stage1Protocol
+open SourceInitRowView SourceInitRowSpec
+set_option autoImplicit false
+
+
+
+namespace SandboxModel.Stage1Protocol.SourceInitRow
+noncomputable section
+
+theorem actual_conversion_is_existing (value : U64) :
+    convert value = SourceRecordBoundsView.sqlConvert value := by rfl
+
+theorem actual_contract : Contract SourceInitRowView.insert := by
+  intro io db id payload digest reserve
+  unfold SourceInitRowView.insert SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.insert_initial_source_row expected
+  rw [show SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.sql id = SourceRecordBoundsView.sqlConvert id from actual_conversion_is_existing id]
+  apply congrArg (fun next => SourceRecordBoundsView.sqlConvert id >>= next)
+  funext first
+  cases first with
+  | Err failure => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok signedId =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+    rw [show SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.sql reserve = SourceRecordBoundsView.sqlConvert reserve from actual_conversion_is_existing reserve]
+    apply congrArg (fun next => SourceRecordBoundsView.sqlConvert reserve >>= next)
+    funext second
+    cases second with
+    | Err failure => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok signedReserve =>
+      simp only [bind_tc_ok]
+      change (io.execute (parameters io) db statement (signedId,payload,digest,signedReserve) >>= _) = _
+      apply congrArg (fun next => io.execute (parameters io) db statement (signedId,payload,digest,signedReserve) >>= next)
+      funext reply
+      cases reply with
+      | Err failure =>
+        simp [afterExecute,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+          SandproofStage1RequestRust.sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from]
+      | Ok affected => simp [afterExecute]
+
+
+theorem all_representable_arguments_reach_exact_execute (io : Ports) (db : SaveRows.Db)
+    (id : U64) (payload digest : Slice U8) (reserve : U64)
+    (idFits : (id.val : Int) ≤ I64.max) (reserveFits : (reserve.val : Int) ≤ I64.max) :
+    SourceInitRowView.insert io db id payload digest reserve =
+      (io.execute (parameters io) db statement
+        (UScalar.hcast .I64 id, payload, digest, UScalar.hcast .I64 reserve) >>= afterExecute) := by
+  rw [actual_contract]
+  simp [expected, SourceRecordBounds.convert_sql_uses_exact_signed_limit, idFits, reserveFits]
+
+theorem id_error_precedes_any_execute (io : Ports) (db : SaveRows.Db)
+    (id : U64) (payload digest : Slice U8) (reserve : U64)
+    (idTooLarge : I64.max < (id.val : Int)) :
+    SourceInitRowView.insert io db id payload digest reserve = .ok (.Err .MaintenanceCapacity) := by
+  rw [actual_contract]
+  simp [expected, SourceRecordBounds.convert_sql_uses_exact_signed_limit, not_le.mpr idTooLarge]
+
+theorem reserve_error_precedes_any_execute (io : Ports) (db : SaveRows.Db)
+    (id : U64) (payload digest : Slice U8) (reserve : U64)
+    (idFits : (id.val : Int) ≤ I64.max) (reserveTooLarge : I64.max < (reserve.val : Int)) :
+    SourceInitRowView.insert io db id payload digest reserve = .ok (.Err .MaintenanceCapacity) := by
+  rw [actual_contract]
+  simp [expected, SourceRecordBounds.convert_sql_uses_exact_signed_limit, idFits, not_le.mpr reserveTooLarge]
+
+theorem sql_error_preserved (io : Ports) (db : SaveRows.Db)
+    (id : U64) (payload digest : Slice U8) (reserve : U64) (failure : rusqlite.error.Error)
+    (idFits : (id.val : Int) ≤ I64.max) (reserveFits : (reserve.val : Int) ≤ I64.max)
+    (sqlReply : io.execute (parameters io) db statement
+      (UScalar.hcast .I64 id, payload, digest, UScalar.hcast .I64 reserve) = .ok (.Err failure)) :
+    SourceInitRowView.insert io db id payload digest reserve = .ok (.Err (.Sqlite failure)) := by
+  rw [all_representable_arguments_reach_exact_execute io db id payload digest reserve idFits reserveFits,
+    sqlReply]
+  simp [afterExecute]
+
+theorem sql_success_ignores_affected_count (io : Ports) (db : SaveRows.Db)
+    (id : U64) (payload digest : Slice U8) (reserve : U64) (affected : Usize)
+    (idFits : (id.val : Int) ≤ I64.max) (reserveFits : (reserve.val : Int) ≤ I64.max)
+    (sqlReply : io.execute (parameters io) db statement
+      (UScalar.hcast .I64 id, payload, digest, UScalar.hcast .I64 reserve) = .ok (.Ok affected)) :
+    SourceInitRowView.insert io db id payload digest reserve = .ok (.Ok ()) := by
+  rw [all_representable_arguments_reach_exact_execute io db id payload digest reserve idFits reserveFits,
+    sqlReply]
+  simp [afterExecute]
+
+theorem sql_failure_preserved (io : Ports) (db : SaveRows.Db)
+    (id : U64) (payload digest : Slice U8) (reserve : U64) (failure : Error)
+    (idFits : (id.val : Int) ≤ I64.max) (reserveFits : (reserve.val : Int) ≤ I64.max)
+    (sqlReply : io.execute (parameters io) db statement
+      (UScalar.hcast .I64 id, payload, digest, UScalar.hcast .I64 reserve) = .fail failure) :
+    SourceInitRowView.insert io db id payload digest reserve = .fail failure := by
+  rw [all_representable_arguments_reach_exact_execute io db id payload digest reserve idFits reserveFits,
+    sqlReply]
+  simp
+
+theorem sql_nonreturn_preserved (io : Ports) (db : SaveRows.Db)
+    (id : U64) (payload digest : Slice U8) (reserve : U64)
+    (idFits : (id.val : Int) ≤ I64.max) (reserveFits : (reserve.val : Int) ≤ I64.max)
+    (sqlReply : io.execute (parameters io) db statement
+      (UScalar.hcast .I64 id, payload, digest, UScalar.hcast .I64 reserve) = .div) :
+    SourceInitRowView.insert io db id payload digest reserve = .div := by
+  rw [all_representable_arguments_reach_exact_execute io db id payload digest reserve idFits reserveFits,
+    sqlReply]
+  simp
+
+
+/-- Reuse the existing complete reservation/count bound, rather than
+    assuming each row conversion already succeeded. This does not prove
+    RangeInclusive iteration, a physical read snapshot or SQL effects. -/
+theorem normal_domain_supplies_every_row_conversion {Node : Type}
+    (read : SourceRecordBoundsView.PolicyRead) (db : SaveRows.Db)
+    (config : SourceRecordBoundsView.Config Node) (policy : SourceRecordBoundsView.Policy)
+    (found : read db = .ok (.Ok (some policy))) (bounded : SourceRecordCountSpec.BoundedPolicy policy)
+    (sessionsValid : SourceConfigSpec.SessionsValid config.max_sessions)
+    (limitsAccepted : SourceConfigView.valid config.config = .ok true)
+    (io : Ports) (payload digest : Slice U8) :
+    ∃ reserve rows, SourceRecordBoundsView.reservation config.config 1#u64 = .ok reserve ∧
+      SourceRecordBoundsView.reserved read db config.max_sessions = .ok (.Ok rows) ∧
+      1 ≤ rows.val ∧ rows.val ≤ 516096 ∧
+      ∀ id : U64, id.val ≤ rows.val →
+        SourceInitRowView.insert io db id payload digest reserve =
+          (io.execute (parameters io) db statement
+            (UScalar.hcast .I64 id, payload, digest, UScalar.hcast .I64 reserve) >>= afterExecute) := by
+  obtain ⟨reserve, rows, reserved, counted, _, reserveHigh, low, high, _, _⟩ :=
+    SourceRecordCount.normal_pair_fits_sql read db config policy found bounded sessionsValid limitsAccepted
+  refine ⟨reserve, rows, reserved, counted, low, high, ?_⟩
+  intro id within
+  apply all_representable_arguments_reach_exact_execute
+  · scalar_tac
+  · scalar_tac
+
+/-- Prefix rejection remains independent of a failing SQL port. -/
+theorem both_oversized_values_keep_id_first (io : Ports) (db : SaveRows.Db) (payload digest : Slice U8) :
+    SourceInitRowView.insert io db 18446744073709551615#u64 payload digest 18446744073709551615#u64 =
+      .ok (.Err .MaintenanceCapacity) := by
+  apply id_error_precedes_any_execute
+  scalar_tac
+
+/-- Zero is within the helper's conversion domain; it is not a valid
+    initialized row id in the SQL schema or a loop occurrence assertion. -/
+theorem zero_arguments_reach_execute (io : Ports) (db : SaveRows.Db) (payload digest : Slice U8) :
+    SourceInitRowView.insert io db 0#u64 payload digest 0#u64 =
+      (io.execute (parameters io) db statement (0#i64,payload,digest,0#i64) >>= afterExecute) := by
+  rw [all_representable_arguments_reach_exact_execute io db 0#u64 payload digest 0#u64 (by scalar_tac) (by scalar_tac)]
+  have castZero : UScalar.hcast .I64 0#u64 = 0#i64 := by decide
+  rw [castZero]
+
+
+theorem normal_complete_row (db : SaveRows.Db) :
+    SourceInitRowView.insert (probePorts 1#usize) db 1#u64
+      SourceRowChargeSpec.samplePayload SourceRowChargeSpec.sampleDigest 222212#u64 = .ok (.Ok ()) := by
+  rw [all_representable_arguments_reach_exact_execute _ _ _ _ _ _ (by scalar_tac) (by scalar_tac)]
+  simp [probePorts, afterExecute]
+
+theorem zero_affected_count_is_not_a_rejection (db : SaveRows.Db) :
+    SourceInitRowView.insert (probePorts 0#usize) db 1#u64
+      SourceRowChargeSpec.samplePayload SourceRowChargeSpec.sampleDigest 222212#u64 = .ok (.Ok ()) := by
+  rw [all_representable_arguments_reach_exact_execute _ _ _ _ _ _ (by scalar_tac) (by scalar_tac)]
+  simp [probePorts, afterExecute]
+
+
+theorem parameters_route_complete_four_values (io : Ports) (id : I64)
+    (payload digest : Slice U8) (reserve : I64) (stmt : rusqlite.statement.Statement) :
+    (parameters io).__bind_in (id,payload,digest,reserve) stmt =
+      io.bind4
+        (SandproofSourceInitCapacity.I64.Insts.RusqliteTypesTo_sqlToSql io)
+        (SandproofSourceRowSqlSelect.Shared0T.Insts.RusqliteTypesTo_sqlToSql
+          (SandproofSourceInitCapacity.SliceU8.Insts.RusqliteTypesTo_sqlToSql io))
+        (SandproofSourceRowSqlSelect.Shared0T.Insts.RusqliteTypesTo_sqlToSql
+          (SandproofSourceInitCapacity.SliceU8.Insts.RusqliteTypesTo_sqlToSql io))
+        (SandproofSourceInitCapacity.I64.Insts.RusqliteTypesTo_sqlToSql io)
+        (id,payload,digest,reserve) stmt := by rfl
+
+/-- The prior actual full reader discharges the policy bound. Serde and
+    physical read/transaction facts remain the existing explicit boundary. -/
+theorem standard_read_supplies_every_row_conversion {Node : Type}
+    (deserialize : SourcePolicyReadSpec.DeserializeMaintenance) (decode : SourcePolicyReadSpec.DecodeSlice)
+    (db : SaveRows.Db) (config : SourceRecordBoundsView.Config Node) (policy : SourceRecordBoundsView.Policy)
+    (found : SourcePolicyRead.policyRead deserialize decode db = .ok (.Ok (some policy)))
+    (sessionsValid : SourceConfigSpec.SessionsValid config.max_sessions)
+    (limitsAccepted : SourceConfigView.valid config.config = .ok true)
+    (io : Ports) (payload digest : Slice U8) :
+    ∃ reserve rows, SourceRecordBoundsView.reservation config.config 1#u64 = .ok reserve ∧
+      SourceRecordBoundsView.reserved (SourcePolicyRead.policyRead deserialize decode) db config.max_sessions = .ok (.Ok rows) ∧
+      1 ≤ rows.val ∧ rows.val ≤ 516096 ∧
+      ∀ id : U64, id.val ≤ rows.val →
+        SourceInitRowView.insert io db id payload digest reserve =
+          (io.execute (parameters io) db statement
+            (UScalar.hcast .I64 id, payload, digest, UScalar.hcast .I64 reserve) >>= afterExecute) := by
+  obtain ⟨_, _, _, bounded⟩ := SourcePolicyRead.standard_success_uses_validated_policy deserialize decode db policy found
+  exact normal_domain_supplies_every_row_conversion _ db config policy found bounded sessionsValid limitsAccepted io payload digest
+
+end
+end SandboxModel.Stage1Protocol.SourceInitRow
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.actual_conversion_is_existing
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.actual_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.all_representable_arguments_reach_exact_execute
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.id_error_precedes_any_execute
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.reserve_error_precedes_any_execute
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.sql_error_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.sql_success_ignores_affected_count
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.sql_failure_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.sql_nonreturn_preserved
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.normal_domain_supplies_every_row_conversion
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.both_oversized_values_keep_id_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.zero_arguments_reach_execute
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.normal_complete_row
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.zero_affected_count_is_not_a_rejection
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.parameters_route_complete_four_values
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRow.standard_read_supplies_every_row_conversion

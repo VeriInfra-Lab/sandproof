@@ -1,0 +1,98 @@
+import SourceInitRowSpec
+import SourceInitRowWrongView
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+open SandboxModel.Stage1Protocol
+open SourceInitRowSpec SourceInitRowView
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitRowNegative
+noncomputable section
+
+theorem bytes_to_list_exact (bytes : ByteArray) : bytes.toList = bytes.data.toList := by
+  have loop_eq : ∀ (i : Nat) (r : List UInt8), i ≤ bytes.size →
+      ByteArray.toList.loop bytes i r = r.reverse ++ bytes.data.toList.drop i := by
+    intro i r bounded
+    fun_induction ByteArray.toList.loop bytes i r with
+    | case1 i r inside ih =>
+      rw [ih (by omega)]
+      simp only [List.reverse_cons, List.append_assoc, List.cons_append, List.nil_append]
+      congr 1
+      symm
+      rw [List.drop_eq_getElem_cons (show i < bytes.data.toList.length by simpa using inside)]
+      congr 1
+      simp only [ByteArray.get!]
+      rw [getElem!_pos bytes.data i inside]
+      simp
+      all_goals rfl
+    | case2 i r outside =>
+      have bound : bytes.data.toList.length ≤ i := by simp; omega
+      simp [List.drop_eq_nil_of_le bound]
+  unfold ByteArray.toList
+  rw [loop_eq 0 [] (Nat.zero_le _)]
+  simp
+
+
+theorem string_representation_injective (a b : String) (ha : a.toByteArray.size ≤ U32.max) (hb : b.toByteArray.size ≤ U32.max)
+    (same : Aeneas.Std.toStr a ha = Aeneas.Std.toStr b hb) : a = b := by
+  have vals := congrArg (fun (s : Str) => s.val.map (fun v => v.val)) same
+  simp only [Aeneas.Std.toStr, Slice.from, Slice.val, Aeneas.Data.ListN.ListN.from_to_inverse,
+    List.map_map] at vals
+  change a.toByteArray.toList.map UInt8.toNat = b.toByteArray.toList.map UInt8.toNat at vals
+  have raw : a.toByteArray.toList = b.toByteArray.toList :=
+    (List.map_inj_right (fun x y h => UInt8.toNat_inj.mp h)).mp vals
+  rw [bytes_to_list_exact, bytes_to_list_exact, Array.toList_inj] at raw
+  exact String.toByteArray_inj.mp (ByteArray.ext raw)
+
+
+abbrev wrong := SourceInitRowWrongView.controller.lifecycle_inbox.source_work.codec.insert_initial_source_row
+
+theorem converted (value : U64) (fits : (value.val : Int) ≤ I64.max) :
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.sql value =
+      .ok (.Ok (UScalar.hcast .I64 value)) := by
+  change SourceRecordBoundsView.sqlConvert value = _
+  rw [SourceRecordBounds.convert_sql_uses_exact_signed_limit, if_pos fits]
+
+theorem wrong_statement_differs :
+    SourceInitRowWrongView.toStr "INSERT INTO controller_source_work_records VALUES(?4,?2,?3,?1,NULL)" ≠ statement := by
+  intro same
+  apply (show "INSERT INTO controller_source_work_records VALUES(?4,?2,?3,?1,NULL)" ≠
+    "INSERT INTO controller_source_work_records VALUES(?1,?2,?3,?4,NULL)" by decide)
+  exact string_representation_injective _ _ (by rw [U32.max_eq]; decide) (by rw [U32.max_eq]; decide) same
+
+theorem wrong_normal_row (db : SaveRows.Db) :
+    wrong (probePorts 1#usize) db 1#u64
+      SourceRowChargeSpec.samplePayload SourceRowChargeSpec.sampleDigest 222212#u64 = .fail .panic := by
+  unfold wrong SourceInitRowWrongView.controller.lifecycle_inbox.source_work.codec.insert_initial_source_row
+  simp [converted 1#u64 (by scalar_tac), converted 222212#u64 (by scalar_tac),
+    core.result.Result.Insts.CoreOpsTry.branch, probePorts, wrong_statement_differs]
+
+theorem expected_normal_row (db : SaveRows.Db) :
+    expected (probePorts 1#usize) db 1#u64
+      SourceRowChargeSpec.samplePayload SourceRowChargeSpec.sampleDigest 222212#u64 = .ok (.Ok ()) := by
+  have first : SourceRecordBoundsView.sqlConvert 1#u64 = .ok (.Ok (UScalar.hcast .I64 1#u64)) :=
+    converted 1#u64 (by scalar_tac)
+  have second : SourceRecordBoundsView.sqlConvert 222212#u64 = .ok (.Ok (UScalar.hcast .I64 222212#u64)) :=
+    converted 222212#u64 (by scalar_tac)
+  simp [expected, first, second, probePorts, afterExecute]
+
+
+theorem rejects_same_complete_contract : ¬ Contract wrong := by
+  intro correct
+  have rejected := correct (probePorts 1#usize) (SourceRecordBoundsContract.sampleConnection 0#i64)
+    1#u64 SourceRowChargeSpec.samplePayload SourceRowChargeSpec.sampleDigest 222212#u64
+  rw [wrong_normal_row, expected_normal_row] at rejected
+  simp at rejected
+
+end
+end SandboxModel.Stage1Protocol.SourceInitRowNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRowNegative.converted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRowNegative.wrong_statement_differs
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRowNegative.wrong_normal_row
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRowNegative.expected_normal_row
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRowNegative.rejects_same_complete_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRowNegative.bytes_to_list_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitRowNegative.string_representation_injective
