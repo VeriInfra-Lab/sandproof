@@ -1,0 +1,12 @@
+
+fn proof_admit_root(
+    journal: &mut ControllerJournal,
+    intent: &AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+    now_ms: i64,
+    limits: crate::AdmissionLimits,
+    compute: crate::templates::ComputeLimits,
+    crashes: &mut crate::NeverCrash,
+) -> Result<crate::LifecycleWorkState, JournalError> {
+    journal.admit_lifecycle_resume(intent, context, now_ms, limits, compute, crashes)
+}

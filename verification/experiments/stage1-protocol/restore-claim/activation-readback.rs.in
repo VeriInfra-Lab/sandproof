@@ -1,0 +1,112 @@
+
+#[test]
+fn restore_activation_commit_unknown_reads_back_original_claim() {
+    use core::workflow::{self, WorkflowStep};
+    use sandproof_protocol::{WorkAction, WorkOutcome, WorkReceipt};
+
+    for durable in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("db");
+        let (mut journal, source) = unloaded_resume_source(&path);
+        let sandbox = source.work.anchor.local.sandbox;
+        let request = record_real_resume(&mut journal);
+        let admitted = admit_real_resume(&mut journal, &request);
+        journal
+            .register_data_credential(sandbox, 2, [99; 32], &mut NeverCrash)
+            .unwrap();
+        let network = claim_restore_action(&mut journal, sandbox, |command| {
+            matches!(command, core::Command::ConfigureNetwork { .. })
+        });
+        journal
+            .complete(
+                &WorkReceipt {
+                    identity: network.identity.clone(),
+                    outcome: WorkOutcome::ObservedSuccess(FullEvidence {
+                        resource: network.identity.resource.clone(),
+                        command: network.command.command().clone(),
+                    }),
+                },
+                &mut NeverCrash,
+            )
+            .unwrap();
+        for _ in 0..8 {
+            match workflow::next_step(&journal.world().unwrap(), sandbox) {
+                WorkflowStep::Apply(input) => {
+                    journal.apply(*input, &mut NeverCrash).unwrap();
+                }
+                WorkflowStep::Claim => break,
+                step => panic!("restore blocked before Activate: {step:?}"),
+            }
+        }
+        let world = journal.world().unwrap();
+        assert_eq!(workflow::next_step(&world, sandbox), WorkflowStep::Claim);
+        let effect = world
+            .effect_ids()
+            .into_iter()
+            .find(|effect| {
+                matches!(effect.command(), core::Command::ActivateVm { sandbox: id, .. } if *id == sandbox)
+                    && world.effect_status(effect) == Some(core::EffectStatus::Committed)
+            })
+            .unwrap();
+        let ready_json: Vec<u8> = journal
+            .journal
+            .connection
+            .query_row(
+                "SELECT action_json FROM outbox WHERE dispatch_state='ready' ORDER BY id",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let ready: WorkAction<core::EffectId> = serde_json::from_slice(&ready_json).unwrap();
+        assert_eq!(&ready.command, effect);
+        let before = journal.lifecycle_capture_record(sandbox).unwrap().unwrap();
+        assert!(before.restore.as_ref().unwrap().activation.is_none());
+        let work = journal.lifecycle_restore_work(&request, &v3::context()).unwrap();
+        transaction::fail_next_commit(durable);
+        assert!(matches!(
+            journal.claim_next(Some(sandbox), &mut NeverCrash),
+            Err(JournalError::CommitUncertain(_))
+        ));
+        drop(journal);
+
+        let mut journal = v3::open(&path);
+        let reopened = journal.lifecycle_capture_record(sandbox).unwrap().unwrap();
+        let claim = reopened.restore.as_ref().unwrap();
+        assert_eq!(&claim.intent, &request);
+        assert_eq!(Some(claim.local), admitted.local);
+        assert!(claim.material_use);
+        assert_eq!(admit_real_resume(&mut journal, &request), admitted);
+        assert_eq!(
+            journal.lifecycle_restore_work(&request, &v3::context()).unwrap(),
+            work
+        );
+        if durable {
+            let action = claim.activation.as_ref().unwrap();
+            assert_eq!(action, &ready);
+            assert!(journal.uncertain_actions().unwrap().contains(action));
+            assert_eq!(
+                journal.world().unwrap().effect_status(effect),
+                Some(core::EffectStatus::Dispatched)
+            );
+            let mut other_request = request.clone();
+            other_request.accepted_version += 1;
+            other_request.request.binding.expected = ExpectedSession::Version(request.accepted_version);
+            other_request.request.binding.key.sequence =
+                (request.request.binding.key.sequence.get() + 1).try_into().unwrap();
+            assert!(matches!(
+                journal.record_lifecycle_intent(&other_request, &v3::context(), &mut NeverCrash),
+                Err(JournalError::UnsupportedInput)
+            ));
+            assert_eq!(journal.lifecycle_capture_record(sandbox).unwrap(), Some(reopened));
+        } else {
+            assert_eq!(reopened, before);
+            assert_eq!(journal.world().unwrap(), world);
+            bootstrap(&mut journal);
+            let action = journal
+                .claim_next(Some(sandbox), &mut NeverCrash)
+                .unwrap()
+                .unwrap();
+            assert_eq!(action, ready);
+        }
+    }
+}

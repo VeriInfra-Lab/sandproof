@@ -1,0 +1,19 @@
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.Witness
+
+open Aeneas Aeneas.Std SandproofRestoreClaimRust
+open SandproofRestoreClaimRust.controller.lifecycle_inbox.source_work.restore
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+theorem accepts_other_candidate : proof_existing_activation marked other = .ok (some true) := rfl
+
+theorem wrong_violates_recorded_activation :
+    ¬ KeepsRecordedActivation proof_existing_activation := by
+  intro sound
+  exact different_candidate (sound marked original other rfl rfl
+    original_is_activation other_is_activation accepts_other_candidate)
+
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.accepts_other_candidate
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.wrong_violates_recorded_activation

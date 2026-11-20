@@ -1,0 +1,50 @@
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.Correct
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.Prefix
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.Witness
+
+open Aeneas Aeneas.Std SandproofRestoreClaimRust
+open SandproofRestoreClaimRust.controller.lifecycle_inbox.source_work.restore
+open SandproofRestoreClaimRust.sandproof_protocol.lifecycle.authority
+open SandproofRestoreClaimRust.sandbox_controller_core.model
+open SandproofRestoreClaimRust.sandbox_controller_core.request
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+/-- The three decisions when replay and re-admission reach the original decoded
+claim. The transaction and source identity must be established by the caller. -/
+theorem recorded_claim_readback (claim : RestoreClaim) (row : SandboxRecord)
+    (request : ResumeRequest) (intent : AcceptedLifecycleIntent) (original proposed : Action)
+    (saved : claim.activation = some original)
+    (originalActivation : IsActivation original) (proposedActivation : IsActivation proposed) :
+    proof_existing_restore (some claim) intent =
+        .ok (some (by classical exact decide (claim.intent = intent))) ∧
+      proof_resume_prefix claim row request = .ok false ∧
+      (proof_existing_activation claim proposed = .ok (some true) ↔ proposed = original) :=
+  ⟨existing_restore_exact claim intent,
+    marked_claim_refuses_resume_prefix claim row request original saved,
+    existing_activation_exact claim original proposed saved originalActivation proposedActivation⟩
+
+theorem unmarked_reaches_first_write :
+    proof_existing_activation {marked with activation := none} original = .ok none := rfl
+
+theorem replays_same_complete_request :
+    proof_existing_restore (some marked) marked.intent = .ok (some true) :=
+  same_intent_replays marked
+
+theorem accepts_original_candidate :
+    proof_existing_activation marked original = .ok (some true) :=
+  (existing_activation_exact marked original original rfl original_is_activation
+    original_is_activation).mpr rfl
+
+theorem refuses_other_candidate :
+    proof_existing_activation marked other = .ok (some false) := by
+  rw [existing_activation_value marked original other rfl original_is_activation other_is_activation]
+  simp [Ne.symm different_candidate]
+
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.recorded_claim_readback
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.unmarked_reaches_first_write
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.replays_same_complete_request
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.accepts_original_candidate
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.refuses_other_candidate

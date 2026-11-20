@@ -1,0 +1,30 @@
+import SandproofRestoreClaim.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofRestoreClaimRust
+open SandproofRestoreClaimRust.sandproof_protocol
+open SandproofRestoreClaimRust.sandbox_controller_core.model
+open SandproofRestoreClaimRust.controller.lifecycle_inbox.source_work.restore
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+abbrev Action := WorkAction EffectId
+
+def IsActivation (action : Action) : Prop :=
+  ∃ sandbox epoch generation vm, action.command.logical.command =
+    .ActivateVm sandbox epoch generation vm
+
+/-- A selected material-bearing row with a recorded activation can accept
+only that complete activation. Source-row selection and durable readback
+belong to the caller. -/
+def KeepsRecordedActivation (decideAction : RestoreClaim → Action → Result (Option Bool)) :
+    Prop :=
+  ∀ (claim : RestoreClaim) (original proposed : Action),
+    claim.material_use = true →
+    claim.activation = some original →
+    IsActivation original →
+    IsActivation proposed →
+    decideAction claim proposed = .ok (some true) →
+    proposed = original
+
+end SandboxModel.Stage1Protocol.RestoreClaim
