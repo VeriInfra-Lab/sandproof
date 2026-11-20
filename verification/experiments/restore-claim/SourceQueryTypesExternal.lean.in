@@ -1,0 +1,15 @@
+import SandproofSqliteSession.Data
+
+namespace SandproofRestoreSourceQueryRust
+
+abbrev F64 := SandproofFoundationsRust.F64
+abbrev core.io.error.Error := SandproofSqliteRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofSqliteSession.SqlError
+abbrev serde_json.error.Error := SandproofSqliteRust.serde_json.error.Error
+abbrev rusqlite.Connection := SandproofSqliteSession.Connection
+abbrev rusqlite.statement.Statement := SandproofSqliteSession.Statement
+abbrev rusqlite.row.Row := SandproofSqliteSession.IssuedRow
+abbrev rusqlite.row.MappedRows := SandproofSqliteSession.IssuedMappedCursor
+abbrev rusqlite.types.from_sql.FromSqlError := SandproofLoadBlobRust.rusqlite.types.from_sql.FromSqlError
+
+end SandproofRestoreSourceQueryRust

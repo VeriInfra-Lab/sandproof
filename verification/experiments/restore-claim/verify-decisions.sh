@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Formal entry for the selected restore decisions, scan, and source-row readback.
+# Formal entry for the selected restore decisions, scan, source-row readback, and source query.
 set -euo pipefail
 umask 077
 
 views=(correct wrong)
 case "${1:-}" in
-  --resume-scan|--source-read) views=("${1#--}"); shift ;;
+  --resume-scan|--source-read|--source-query) views=("${1#--}"); shift ;;
 esac
 if [[ $# != 5 ]]; then
-  echo 'usage: verify-decisions.sh [--resume-scan|--source-read] NEW_OUTPUT LOCK TOOL_BIN LAKE_PACKAGES LEAN_MCP_ENV' >&2
+  echo 'usage: verify-decisions.sh [--resume-scan|--source-read|--source-query] NEW_OUTPUT LOCK TOOL_BIN LAKE_PACKAGES LEAN_MCP_ENV' >&2
   exit 2
 fi
 here="$(cd -- "$(dirname -- "$0")" && pwd)"
@@ -76,6 +76,16 @@ for view in "${views[@]}"; do
       namespace=SandproofRestoreSourceRead
       target=SourceCollect
       materializer=stage_source_read.py
+      staged_source=("$project/controller-service/src/controller/lifecycle_inbox/source_work/codec.rs"
+                     "$project/controller-service/src/lib.rs")
+      ;;
+    source-query)
+      roots=(--start-from "$codec"::proof_query_source_records)
+      opacity=(--opaque rusqlite::error::Error --opaque serde_json::error::Error
+               --opaque rusqlite::types::from_sql::FromSqlError)
+      namespace=SandproofRestoreSourceQuery
+      target=SourceQuery
+      materializer=stage_source_query.py
       staged_source=("$project/controller-service/src/controller/lifecycle_inbox/source_work/codec.rs"
                      "$project/controller-service/src/lib.rs")
       ;;

@@ -96,11 +96,25 @@ native sandbox 和 operation 的认领都保留标记，正常布尔返回只能
 `original_read_row_is_in_loaded_sources` 进一步保留原 mark、完整 `RestoreClaim`
 及其所在记录。`actual_source_collect_first_error` 核对遇到原错误立即返回。
 
-这里的原查询和游标状态由 A4/V5 提供。两个摘要结果与完整原值的 Serde 接线是显式
-条件，`required_option` 的原 `Option::deserialize` 和缺失／显式 null 区别仍归原
+独立 `SourceQuery` 视图接通上述游标的真实查询入口。
+`actual_source_query_uses_issued_cursor` 以原 SELECT 在当前连接成功 prepare 且返回零
+参数为前提，证明原 `query_map` 把同一 issued statement 的 cursor 和实际回调交给
+收集器。原始行上的 0、1、2 列分别按 BLOB、BLOB、NULL 或 BLOB 转换。
+`actual_source_cursor_reads_original_row` 用同一 cursor 的本次原始行观察、合法列号
+与原列值推出完整三元组，并把 cursor 推进一次。
+`actual_source_query_prepare_error` 和
+`actual_source_mapper_preserves_column_zero_error` 分别保留原 prepare 错误与第一列
+错误。B 可引用 `original_slot_is_in_query_result`。对原 SELECT 的 prepare 成功、
+由其签发的有限 cursor 轨迹、Vec 容量、原槽位的完整列字节和实际 Serde 解码，
+原查询返回的向量含原完整 `SourceWorkRecord`，连同同一个候选及可能执行标记。
+
+本视图复用 #770 的原 SQLite connection/statement/row/cursor 载体，沿原 A4/V5 绑定
+正常读观察。锁定版 rusqlite 的空数组仅执行 `ensure_parameter_count(0)`。私有 Rust
+入口透传原 SELECT 和原 `[]`，Lean 的零参数载体取其唯一输入，固定字符串大小界限
+由内核决定。生产调用和固定工具链保持原样。两个摘要结果与完整原值的 Serde 接线
+是显式条件，`required_option` 的原 `Option::deserialize` 和缺失／显式 null 区别仍归原
 派生绑定。比较仅调用现有 A6 普通切片字节模型及固定 `Vec::as_slice` 绑定。
-原 `load_records` 的查询准备、列绑定、边界汇总、`load` 元数据及调用事务尚未一起
-抽取。私有抽取副本的命名标注只区分两种 `From` 实现，错误转换正文原样保留。
+原 `load_records` 的边界汇总、`load` 元数据、调用事务和跨重开 SQL 观察仍需接入。私有抽取副本的命名标注只区分两种 `From` 实现，错误转换正文原样保留。
 原游标和重新准入联合抽取时，固定后端的通用 `Iterator` 字典缺少 `any` 字段。
 两个视图独立保留原 Rust 决定。把该次实际游标加载的向量传给筛选，以及所有匹配
 native sandbox/operation 的行究竟是否为原认领，仍由原调用关系接通。
@@ -164,6 +178,8 @@ bash "$case_dir/verify-decisions.sh" "$FORMAL_EVIDENCE" "$PROOF_LOCK" \
 bash "$case_dir/verify-decisions.sh" --resume-scan "$SCAN_EVIDENCE" "$PROOF_LOCK" \
   "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
 bash "$case_dir/verify-decisions.sh" --source-read "$READ_EVIDENCE" "$PROOF_LOCK" \
+  "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
+bash "$case_dir/verify-decisions.sh" --source-query "$QUERY_EVIDENCE" "$PROOF_LOCK" \
   "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
 ```
 
