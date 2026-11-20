@@ -1,0 +1,134 @@
+import SourceInitLoop
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+open SandboxModel.Stage1Protocol
+open SourceInitLoop
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitLoopParent
+noncomputable section
+
+def normalPorts : Ports := {SourceInitMetadataSpec.witnessPorts with next := originalNext}
+def failingPorts : Ports := {normalPorts with execute := fun {_} _ _ _ _ => .fail .panic}
+
+theorem original_next_last (id : U64) :
+    originalNext ⟨id,id,false⟩ = .ok (some id,⟨id,id,true⟩) := by
+  obtain ⟨⟨output,after⟩,returned,post⟩ := WP.spec_imp_exists
+    (core.ops.range.RangeInclusive.Insts.CoreIterTraitsIteratorIterator.next_U64_spec ⟨id,id,false⟩)
+  simp at post
+  obtain ⟨rfl,start,stop,exhausted⟩ := post
+  have same : after = ⟨id,id,true⟩ := by cases after; simp_all
+  simpa only [originalNext,same] using returned
+
+theorem original_next_finished (cursor : Cursor) (finished : cursor.exhausted = true) :
+    originalNext cursor = .ok (none,cursor) := by
+  simp [originalNext,core.ops.range.RangeInclusive.Insts.CoreIterTraitsIteratorIterator.next,
+    core.ops.range.RangeInclusive.is_empty,finished]
+
+theorem normal_row (db : SaveRows.Db) (payload digest : Slice U8) :
+    SourceInitRowSpec.expected normalPorts db 1#u64 payload digest 222212#u64 = .ok (.Ok ()) := by
+  rw [←SourceInitRow.actual_contract]
+  apply SourceInitRow.sql_success_ignores_affected_count normalPorts db 1#u64 payload digest 222212#u64 1#usize
+    (by scalar_tac) (by scalar_tac)
+  simp [normalPorts,SourceInitMetadataSpec.witnessPorts,SourceInitMetadataSpec.witnessExecute,
+    SourceInitRowView.parameters,SandproofSourceInitCapacity.TupleABCD.Insts.RusqliteParamsParams]
+
+theorem normal_one_row (db : SaveRows.Db) (payload digest : Slice U8) :
+    SourceInitMetadataView.rowLoop normalPorts db 1#u64 222212#u64 payload digest = .ok (.Ok ()) := by
+  apply ordered_original_writes_finish normalPorts db 1#u64 222212#u64 payload digest (fun _ => rfl)
+  intro id positive bounded
+  have same : id = 1#u64 := by scalar_tac
+  simpa only [same] using normal_row db payload digest
+
+theorem failing_row (db : SaveRows.Db) (payload digest : Slice U8) :
+    SourceInitRowSpec.expected failingPorts db 1#u64 payload digest 222212#u64 = .fail .panic := by
+  rw [←SourceInitRow.actual_contract]
+  apply SourceInitRow.sql_failure_preserved failingPorts db 1#u64 payload digest 222212#u64 .panic
+    (by scalar_tac) (by scalar_tac)
+  rfl
+
+theorem failing_one_row (db : SaveRows.Db) (payload digest : Slice U8) :
+    SourceInitMetadataView.rowLoop failingPorts db 1#u64 222212#u64 payload digest = .fail .panic := by
+  unfold SourceInitMetadataView.rowLoop
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows
+  simp only [core.ops.range.RangeInclusive.new,bind_tc_ok]
+  apply row_failure_does_not_enter_next_iteration failingPorts db 222212#u64 payload digest
+    ⟨1#u64,1#u64,false⟩ ⟨1#u64,1#u64,true⟩ 1#u64 .panic
+  · exact original_next_last 1#u64
+  · exact failing_row db payload digest
+
+theorem one_original_sequence (io : Ports) (rows : U64)
+    (adopted : ∀ cursor, io.next cursor = originalNext cursor) :
+    ∃ ids, ids.map UScalar.val = List.range' 1 rows.val ∧
+      ∀ db reserve payload digest,
+        SourceInitMetadataView.rowLoop io db rows reserve payload digest =
+          expected io db reserve payload digest ids (.ok ()) := by
+  let initial : Cursor := ⟨1#u64,rows,false⟩
+  obtain ⟨ids,trace,values⟩ := original_range_has_exact_finite_trace io.next adopted initial
+  refine ⟨ids,?_,?_⟩
+  · simpa [initial,remaining] using values
+  · intro db reserve payload digest
+    unfold SourceInitMetadataView.rowLoop
+      SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows
+    simp only [core.ops.range.RangeInclusive.new,bind_tc_ok]
+    exact finite_trace_contract io db reserve payload digest initial ids (.ok ()) trace
+
+theorem metadata_insert_enters_complete_sequence (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (adopted : ∀ cursor, io.next cursor = originalNext cursor) :
+    ∃ ids, ids.map UScalar.val = List.range' 1 rows.val ∧
+      ∀ affected, SourceInitMetadataSpec.afterInsert io db rows reserve (.Ok affected) = (do
+        let digest ← io.digest SourceInitMetadataSpec.nullBytes
+        expected io db reserve SourceInitMetadataSpec.nullBytes (Array.to_slice digest) ids (.ok ())) := by
+  obtain ⟨ids,values,executed⟩ := one_original_sequence io rows adopted
+  refine ⟨ids,values,?_⟩
+  intro affected
+  unfold SourceInitMetadataSpec.afterInsert
+  apply congrArg (fun continuation => io.digest SourceInitMetadataSpec.nullBytes >>= continuation)
+  funext digest
+  exact executed db reserve SourceInitMetadataSpec.nullBytes (Array.to_slice digest)
+
+theorem accepted_public_parent_initializes_all_rows
+    (io : Ports) (read : SourceRecordBoundsView.PolicyRead) (capacityRead : SourceInitCapacity.CapacityRead)
+    (db : SaveRows.Db) (limits : SourceInitMetadataView.Limits) (inbox : SourceInitMetadataView.Inbox)
+    (rows reserve : U64) (cap : SourceRecordBoundsView.Capacity)
+    (valid : SourceConfigSpec.Valid limits) (sessions : SourceConfigSpec.SessionsValid inbox.max_sessions)
+    (counted : SourceInitCapacity.count read db inbox.max_sessions = .ok (.Ok rows))
+    (reserved : SourceReservationView.reservation limits 1#u64 = .ok reserve)
+    (found : capacityRead db = .ok (.Ok (some cap)))
+    (accepted : SourceInitCapacity.check rows reserve cap = .ok (.Ok ()))
+    (node : SandproofSourceInitCapacity.sandproof_protocol.internal.NodeIdentity)
+    (bytes : alloc.vec.Vec U8) (metadataDigest nullDigest : Array U8 32#usize) (affected : Usize)
+    (cloned : SourceInitMetadataView.cloneNode io inbox.node = .ok node)
+    (encoded : io.encode {config := limits,node,max_sessions := inbox.max_sessions} = .ok (.Ok bytes))
+    (bounded : bytes.val.length ≤ 8192)
+    (metadataTable : io.batch db SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.TABLE = .ok (.Ok ()))
+    (rowsTable : io.batch db SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.RECORDS_TABLE = .ok (.Ok ()))
+    (metadataHashed : io.digest (alloc.vec.Vec.deref bytes) = .ok metadataDigest)
+    (metadataWritten : io.execute (SourceInitMetadataView.parameters io) db SourceInitMetadataSpec.statement
+      (alloc.vec.Vec.deref bytes,Array.to_slice metadataDigest,8192#i64) = .ok (.Ok affected))
+    (nullHashed : io.digest SourceInitMetadataSpec.nullBytes = .ok nullDigest)
+    (adopted : ∀ cursor, io.next cursor = originalNext cursor)
+    (written : ∀ id : U64, 1 ≤ id.val → id.val ≤ rows.val →
+      SourceInitRowSpec.expected io db id SourceInitMetadataSpec.nullBytes (Array.to_slice nullDigest) reserve = .ok (.Ok ())) :
+    SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.initialize io read capacityRead db limits inbox = .ok (.Ok ()) := by
+  rw [SourceInitMetadata.public_parent_uses_full_metadata_contract io read capacityRead db limits inbox rows reserve cap
+    valid sessions counted reserved found accepted]
+  simp only [SourceInitMetadataSpec.expected,cloned,bind_tc_ok,encoded,SourceInitMetadataSpec.afterEncoding,
+    Nat.not_lt.mpr bounded,if_false,metadataTable,SourceInitMetadataSpec.afterMetadataTable,rowsTable,
+    SourceInitMetadataSpec.afterTables,metadataHashed,metadataWritten,SourceInitMetadataSpec.afterInsert,nullHashed]
+  exact ordered_original_writes_finish io db rows reserve SourceInitMetadataSpec.nullBytes
+    (Array.to_slice nullDigest) adopted written
+
+end
+end SandboxModel.Stage1Protocol.SourceInitLoopParent
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopParent.original_next_last
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopParent.original_next_finished
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopParent.normal_row
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopParent.normal_one_row
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopParent.failing_row
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopParent.failing_one_row
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopParent.one_original_sequence
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopParent.metadata_insert_enters_complete_sequence
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoopParent.accepted_public_parent_initializes_all_rows

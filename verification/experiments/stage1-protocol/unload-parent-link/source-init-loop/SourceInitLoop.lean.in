@@ -1,0 +1,331 @@
+import SourceInitMetadata
+
+open Aeneas Aeneas.Std
+open SandproofSourceRowSqlSelect
+open SandproofSourceInitCapacity hiding JournalError toStr
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceInitLoop
+noncomputable section
+
+abbrev Cursor := core.ops.range.RangeInclusive U64
+abbrev Reply := core.result.Result Unit SaveRows.Error
+abbrev body := SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop.body
+abbrev execute := SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop
+
+/-- Only the iterator boundary is described. It contains no row/SQL facts. -/
+inductive CursorTrace (next : Cursor → Result (Option U64 × Cursor)) :
+    Cursor → List U64 → Result Unit → Prop where
+  | stop (cursor after : Cursor) (observed : next cursor = .ok (none,after)) :
+      CursorTrace next cursor [] (.ok ())
+  | failed (cursor : Cursor) (error : Error) (observed : next cursor = .fail error) :
+      CursorTrace next cursor [] (.fail error)
+  | divergent (cursor : Cursor) (observed : next cursor = .div) :
+      CursorTrace next cursor [] .div
+  | step (cursor after : Cursor) (id : U64) (ids : List U64) (ending : Result Unit)
+      (observed : next cursor = .ok (some id,after))
+      (tail : CursorTrace next after ids ending) : CursorTrace next cursor (id::ids) ending
+
+/-- Ordered row contract: the existing full row specification is unchanged. -/
+def expected (io : Ports) (db : SaveRows.Db) (reserve : U64) (payload digest : Slice U8)
+    (ids : List U64) (ending : Result Unit) : Result Reply :=
+  match ids with
+  | [] => do
+    let _ ← ending
+    .ok (.Ok ())
+  | id::tail => do
+    let reply ← SourceInitRowSpec.expected io db id payload digest reserve
+    match reply with
+    | .Err failure => .ok (.Err failure)
+    | .Ok () => expected io db reserve payload digest tail ending
+
+theorem actual_body_contract (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (cursor : Cursor) :
+    body io db reserve payload digest cursor = (do
+      let (id,after) ← io.next cursor
+      match id with
+      | none => .ok (.done (.Ok ()))
+      | some id => do
+        let reply ← SourceInitRowSpec.expected io db id payload digest reserve
+        match reply with
+        | .Ok () => .ok (.cont after)
+        | .Err failure => .ok (.done (.Err failure))) := by
+  unfold body SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop.body
+  apply congrArg (fun continuation => io.next cursor >>= continuation)
+  funext observed
+  rcases observed with ⟨id,after⟩
+  cases id with
+  | none => rfl
+  | some id =>
+    change (SourceInitRowView.insert io db id payload digest reserve >>= _) = _
+    rw [SourceInitRow.actual_contract]
+    apply congrArg (fun continuation => SourceInitRowSpec.expected io db id payload digest reserve >>= continuation)
+    funext reply
+    cases reply with
+    | Err failure => rfl
+    | Ok value => cases value; rfl
+
+theorem loop_unfold (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (cursor : Cursor) :
+    execute io cursor db reserve payload digest = (do
+      let outcome ← body io db reserve payload digest cursor
+      match outcome with
+      | .cont after => execute io after db reserve payload digest
+      | .done reply => .ok reply) := by
+  unfold execute SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows_loop
+  rw [loop]
+  simp only [body, Bind.bind, Aeneas.Std.bind]
+  apply congrArg (fun continuation => Aeneas.Std.bind (body io db reserve payload digest cursor) continuation)
+  funext outcome
+  cases outcome <;> rfl
+
+theorem finite_trace_contract (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (cursor : Cursor) (ids : List U64) (ending : Result Unit)
+    (trace : CursorTrace io.next cursor ids ending) :
+    execute io cursor db reserve payload digest = expected io db reserve payload digest ids ending := by
+  induction trace with
+  | stop cursor after observed =>
+    rw [loop_unfold,actual_body_contract,observed]
+    simp [expected]
+  | failed cursor error observed =>
+    rw [loop_unfold,actual_body_contract,observed]
+    simp [expected]
+  | divergent cursor observed =>
+    rw [loop_unfold,actual_body_contract,observed]
+    simp [expected]
+  | step cursor after id ids ending observed tail ih =>
+    rw [loop_unfold,actual_body_contract,observed]
+    simp only [bind_tc_ok]
+    change ((SourceInitRowSpec.expected io db id payload digest reserve >>= fun reply =>
+      match reply with
+      | .Ok () => Result.ok (ControlFlow.cont after)
+      | .Err failure => Result.ok (ControlFlow.done (.Err failure))) >>= fun outcome =>
+      match outcome with
+      | .cont later => execute io later db reserve payload digest
+      | .done value => Result.ok value) = _
+    simp only [bind_assoc_eq, expected]
+    apply congrArg (fun continuation => SourceInitRowSpec.expected io db id payload digest reserve >>= continuation)
+    funext reply
+    cases reply with
+    | Err failure => simp
+    | Ok value => cases value; simpa using ih
+
+theorem no_value_finishes_without_insert (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (cursor after : Cursor)
+    (finished : io.next cursor = .ok (none,after)) :
+    execute io cursor db reserve payload digest = .ok (.Ok ()) := by
+  rw [loop_unfold,actual_body_contract,finished]
+  simp
+
+theorem iterator_failure_precedes_row (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (cursor : Cursor) (failure : Error)
+    (failed : io.next cursor = .fail failure) :
+    execute io cursor db reserve payload digest = .fail failure := by
+  rw [loop_unfold,actual_body_contract,failed]
+  simp
+
+theorem iterator_nonreturn_precedes_row (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (cursor : Cursor)
+    (divergent : io.next cursor = .div) :
+    execute io cursor db reserve payload digest = .div := by
+  rw [loop_unfold,actual_body_contract,divergent]
+  simp
+
+abbrev originalNext := core.ops.range.RangeInclusive.Insts.CoreIterTraitsIteratorIterator.next core.iter.range.StepU64
+
+def remaining (cursor : Cursor) : Nat :=
+  if cursor.exhausted then 0 else cursor.«end».val + 1 - cursor.start.val
+
+/-- Uses the existing fixed Aeneas range model, with its adoption left explicit. -/
+theorem original_range_has_exact_finite_trace
+    (next : Cursor → Result (Option U64 × Cursor))
+    (adopted : ∀ cursor, next cursor = originalNext cursor) (cursor : Cursor) :
+    ∃ ids, CursorTrace next cursor ids (.ok ()) ∧
+      ids.map UScalar.val = List.range' cursor.start.val (remaining cursor) := by
+  induction countEq : remaining cursor using Nat.strong_induction_on generalizing cursor with
+  | h count ih =>
+    obtain ⟨⟨output,after⟩,returned,post⟩ := WP.spec_imp_exists
+      (core.ops.range.RangeInclusive.Insts.CoreIterTraitsIteratorIterator.next_U64_spec cursor)
+    have actual : next cursor = .ok (output,after) := by rw [adopted]; exact returned
+    by_cases empty : cursor.exhausted = true ∨ cursor.«end».val < cursor.start.val
+    · simp only [empty,if_true] at post
+      obtain ⟨outputIsNone,afterIsCursor⟩ := post
+      rw [outputIsNone,afterIsCursor] at actual
+      refine ⟨[],CursorTrace.stop cursor cursor actual,?_⟩
+      have zero : remaining cursor = 0 := by
+        rcases empty with exhausted | reversed
+        · simp [remaining,exhausted]
+        · unfold remaining
+          split <;> omega
+      rw [←countEq,zero]
+      simp
+    · by_cases inside : cursor.start.val < cursor.«end».val
+      · simp only [empty,if_false,inside,if_true] at post
+        obtain ⟨rfl,advanced,sameEnd,notExhausted⟩ := post
+        have active : cursor.exhausted = false := by
+          cases flag : cursor.exhausted <;> simp_all
+        have smaller : remaining after < count := by
+          simp only [remaining,notExhausted,Bool.false_eq_true,if_false,active] at countEq ⊢
+          rw [sameEnd]
+          omega
+        obtain ⟨ids,trace,values⟩ := ih (remaining after) smaller after rfl
+        refine ⟨cursor.start::ids,CursorTrace.step cursor after cursor.start ids (.ok ()) actual trace,?_⟩
+        have length : remaining cursor = remaining after + 1 := by
+          simp only [remaining,notExhausted,Bool.false_eq_true,if_false,active]
+          rw [sameEnd]
+          omega
+        rw [←countEq]
+        simp only [List.map_cons,values,length,List.range'_succ]
+        rw [advanced]
+      · simp only [empty,if_false,inside] at post
+        obtain ⟨rfl,sameStart,sameEnd,exhausted⟩ := post
+        have active : cursor.exhausted = false := by
+          cases flag : cursor.exhausted <;> simp_all
+        have equalEnds : cursor.start.val = cursor.«end».val := by omega
+        have zero : remaining after = 0 := by simp [remaining,exhausted]
+        have one : remaining cursor = 1 := by simp [remaining,active,equalEnds]
+        have smaller : remaining after < count := by omega
+        obtain ⟨ids,trace,values⟩ := ih (remaining after) smaller after rfl
+        refine ⟨cursor.start::ids,CursorTrace.step cursor after cursor.start ids (.ok ()) actual trace,?_⟩
+        rw [←countEq]
+        simp [values,zero,one,List.range'_succ]
+
+theorem actual_loop_has_exact_ids
+    (io : Ports) (db : SaveRows.Db) (reserve : U64) (payload digest : Slice U8)
+    (rows : U64) (adopted : ∀ cursor, io.next cursor = originalNext cursor) :
+    ∃ ids, ids.map UScalar.val = List.range' 1 rows.val ∧
+      SourceInitMetadataView.rowLoop io db rows reserve payload digest =
+        expected io db reserve payload digest ids (.ok ()) := by
+  let initial : Cursor := ⟨1#u64,rows,false⟩
+  obtain ⟨ids,trace,values⟩ := original_range_has_exact_finite_trace io.next adopted initial
+  refine ⟨ids,?_,?_⟩
+  · simpa [initial,remaining] using values
+  · unfold SourceInitMetadataView.rowLoop
+      SandproofSourceInitCapacity.controller.lifecycle_inbox.source_work.codec.write_initial_source_rows
+    simp only [core.ops.range.RangeInclusive.new,bind_tc_ok]
+    exact finite_trace_contract io db reserve payload digest initial ids (.ok ()) trace
+
+theorem given_original_row_step (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (cursor after : Cursor) (id : U64)
+    (observed : io.next cursor = .ok (some id,after)) :
+    execute io cursor db reserve payload digest = (do
+      let reply ← SourceInitRowSpec.expected io db id payload digest reserve
+      match reply with
+      | .Ok () => execute io after db reserve payload digest
+      | .Err failure => .ok (.Err failure)) := by
+  rw [loop_unfold,actual_body_contract,observed]
+  simp only [bind_tc_ok]
+  change ((SourceInitRowSpec.expected io db id payload digest reserve >>= fun reply =>
+    match reply with
+    | .Ok () => Result.ok (ControlFlow.cont after)
+    | .Err failure => Result.ok (ControlFlow.done (.Err failure))) >>= fun outcome =>
+    match outcome with
+    | .cont later => execute io later db reserve payload digest
+    | .done value => Result.ok value) = _
+  simp only [bind_assoc_eq]
+  apply congrArg (fun continuation => SourceInitRowSpec.expected io db id payload digest reserve >>= continuation)
+  funext reply
+  cases reply with
+  | Err failure => simp
+  | Ok value => cases value; simp
+
+theorem row_error_does_not_enter_next_iteration (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (cursor after : Cursor) (id : U64) (failure : SaveRows.Error)
+    (observed : io.next cursor = .ok (some id,after))
+    (failed : SourceInitRowSpec.expected io db id payload digest reserve = .ok (.Err failure)) :
+    execute io cursor db reserve payload digest = .ok (.Err failure) := by
+  rw [given_original_row_step io db reserve payload digest cursor after id observed,failed]
+  simp
+
+theorem row_failure_does_not_enter_next_iteration (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (cursor after : Cursor) (id : U64) (failure : Error)
+    (observed : io.next cursor = .ok (some id,after))
+    (failed : SourceInitRowSpec.expected io db id payload digest reserve = .fail failure) :
+    execute io cursor db reserve payload digest = .fail failure := by
+  rw [given_original_row_step io db reserve payload digest cursor after id observed,failed]
+  simp
+
+theorem row_nonreturn_does_not_enter_next_iteration (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (cursor after : Cursor) (id : U64)
+    (observed : io.next cursor = .ok (some id,after))
+    (divergent : SourceInitRowSpec.expected io db id payload digest reserve = .div) :
+    execute io cursor db reserve payload digest = .div := by
+  rw [given_original_row_step io db reserve payload digest cursor after id observed,divergent]
+  simp
+
+abbrev Run := Ports → SaveRows.Db → U64 → U64 → Slice U8 → Slice U8 → Result Reply
+
+def Contract (run : Run) : Prop :=
+  ∀ io db rows reserve payload digest,
+    (∀ cursor, io.next cursor = originalNext cursor) →
+    ∃ ids, ids.map UScalar.val = List.range' 1 rows.val ∧
+      run io db rows reserve payload digest = expected io db reserve payload digest ids (.ok ())
+
+theorem actual_contract : Contract SourceInitMetadataView.rowLoop := by
+  intro io db rows reserve payload digest adopted
+  exact actual_loop_has_exact_ids io db reserve payload digest rows adopted
+
+theorem all_rows_success (io : Ports) (db : SaveRows.Db) (reserve : U64) (payload digest : Slice U8)
+    (ids : List U64)
+    (written : ∀ id ∈ ids, SourceInitRowSpec.expected io db id payload digest reserve = .ok (.Ok ())) :
+    expected io db reserve payload digest ids (.ok ()) = .ok (.Ok ()) := by
+  induction ids with
+  | nil => simp [expected]
+  | cons id ids ih =>
+    simp only [expected,written id (List.mem_cons_self),bind_tc_ok]
+    exact ih (fun value member => written value (List.mem_cons_of_mem id member))
+
+theorem ordered_original_writes_finish (io : Ports) (db : SaveRows.Db) (rows reserve : U64)
+    (payload digest : Slice U8) (adopted : ∀ cursor, io.next cursor = originalNext cursor)
+    (written : ∀ id : U64, 1 ≤ id.val → id.val ≤ rows.val →
+      SourceInitRowSpec.expected io db id payload digest reserve = .ok (.Ok ())) :
+    SourceInitMetadataView.rowLoop io db rows reserve payload digest = .ok (.Ok ()) := by
+  obtain ⟨ids,values,executed⟩ := actual_loop_has_exact_ids io db reserve payload digest rows adopted
+  rw [executed]
+  apply all_rows_success
+  intro id member
+  have rangeMember : id.val ∈ List.range' 1 rows.val := by
+    rw [←values]
+    exact List.mem_map.mpr ⟨id,member,rfl⟩
+  obtain ⟨index,bounded,numbered⟩ := List.mem_range'.mp rangeMember
+  simp only [Nat.one_mul] at numbered
+  apply written id <;> omega
+
+theorem zero_rows_do_not_call_insert (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (adopted : ∀ cursor, io.next cursor = originalNext cursor) :
+    SourceInitMetadataView.rowLoop io db 0#u64 reserve payload digest = .ok (.Ok ()) := by
+  apply ordered_original_writes_finish io db 0#u64 reserve payload digest adopted
+  intro id positive bounded
+  have zero : (0#u64).val = 0 := by rfl
+  omega
+
+theorem successful_row_enters_only_original_next (io : Ports) (db : SaveRows.Db) (reserve : U64)
+    (payload digest : Slice U8) (cursor after : Cursor) (id : U64)
+    (observed : io.next cursor = .ok (some id,after))
+    (written : SourceInitRowSpec.expected io db id payload digest reserve = .ok (.Ok ())) :
+    execute io cursor db reserve payload digest = execute io after db reserve payload digest := by
+  rw [given_original_row_step io db reserve payload digest cursor after id observed,written]
+  simp
+
+end
+end SandboxModel.Stage1Protocol.SourceInitLoop
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.actual_body_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.loop_unfold
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.finite_trace_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.no_value_finishes_without_insert
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.iterator_failure_precedes_row
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.iterator_nonreturn_precedes_row
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.original_range_has_exact_finite_trace
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.actual_loop_has_exact_ids
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.given_original_row_step
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.row_error_does_not_enter_next_iteration
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.row_failure_does_not_enter_next_iteration
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.row_nonreturn_does_not_enter_next_iteration
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.all_rows_success
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.ordered_original_writes_finish
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.zero_rows_do_not_call_insert
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceInitLoop.successful_row_enters_only_original_next

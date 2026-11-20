@@ -1,0 +1,164 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-init-loop",
+  "parent_prs": [
+    994
+  ],
+  "prior": {
+    "root": "SourceInitMetadata",
+    "physical_files": 96,
+    "audits": 442
+  },
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceInitLoopParent",
+      "physical_files": 98,
+      "full_audits": 468,
+      "own_modules": [
+        "SourceInitLoop.lean",
+        "SourceInitLoopParent.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceInitLoop.actual_body_contract",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.loop_unfold",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.finite_trace_contract",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.no_value_finishes_without_insert",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.iterator_failure_precedes_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.iterator_nonreturn_precedes_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.original_range_has_exact_finite_trace",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.actual_loop_has_exact_ids",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.given_original_row_step",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.row_error_does_not_enter_next_iteration",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.row_failure_does_not_enter_next_iteration",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.row_nonreturn_does_not_enter_next_iteration",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.all_rows_success",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.ordered_original_writes_finish",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.zero_rows_do_not_call_insert",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.successful_row_enters_only_original_next",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.original_next_last",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.original_next_finished",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.normal_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.normal_one_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.failing_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.failing_one_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.one_original_sequence",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.metadata_insert_enters_complete_sequence",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.accepted_public_parent_initializes_all_rows"
+      ]
+    },
+    {
+      "variant": "skip-last-row",
+      "formal_root": "SourceInitLoopNegative",
+      "physical_files": 100,
+      "full_audits": 472,
+      "own_modules": [
+        "SourceInitLoop.lean",
+        "SourceInitLoopParent.lean",
+        "SourceInitLoopWrongView.lean",
+        "SourceInitLoopNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceInitLoop.actual_body_contract",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.loop_unfold",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.finite_trace_contract",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.no_value_finishes_without_insert",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.iterator_failure_precedes_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.iterator_nonreturn_precedes_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.original_range_has_exact_finite_trace",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.actual_loop_has_exact_ids",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.given_original_row_step",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.row_error_does_not_enter_next_iteration",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.row_failure_does_not_enter_next_iteration",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.row_nonreturn_does_not_enter_next_iteration",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.all_rows_success",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.ordered_original_writes_finish",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.zero_rows_do_not_call_insert",
+        "SandboxModel.Stage1Protocol.SourceInitLoop.successful_row_enters_only_original_next",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.original_next_last",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.original_next_finished",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.normal_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.normal_one_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.failing_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.failing_one_row",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.one_original_sequence",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.metadata_insert_enters_complete_sequence",
+        "SandboxModel.Stage1Protocol.SourceInitLoopParent.accepted_public_parent_initializes_all_rows",
+        "SandboxModel.Stage1Protocol.SourceInitLoopNegative.unique_complete_sequence",
+        "SandboxModel.Stage1Protocol.SourceInitLoopNegative.wrong_skips_original_last",
+        "SandboxModel.Stage1Protocol.SourceInitLoopNegative.normal_control_still_succeeds",
+        "SandboxModel.Stage1Protocol.SourceInitLoopNegative.rejects_same_complete_contract"
+      ]
+    }
+  ],
+  "capture_policy": "revalidate and reuse #993 original capture; compile/extract real skip-last-row with the same fixed source, ports and options",
+  "native_candidate": {
+    "name": "stage1-source-init-loop",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "skip-last-row",
+      "adapted-skip-last-row"
+    ],
+    "tests": [
+      "controller::lifecycle_inbox::source_work::codec::source_init_loop_contract::source_init_loop_preserves_every_complete_reserved_row",
+      "controller::lifecycle_inbox::source_work::codec::source_init_metadata_contract::source_init_metadata_preserves_complete_initial_value",
+      "controller::lifecycle_inbox::source_work::codec::source_init_row_contract::source_init_row_keeps_complete_initial_insert",
+      "controller::lifecycle_inbox::source_work::codec::source_policy_read_contract::source_policy_read_normal_complete_policy_reaches_original_count",
+      "controller::lifecycle_inbox::source_work::codec::source_policy_read_contract::source_policy_read_rejects_invalid_operation_bound_before_count",
+      "controller::lifecycle_inbox::source_work::codec::source_policy_read_contract::source_policy_read_preserves_non_operation_validation"
+    ],
+    "expected": {
+      "original": {
+        "passed": 6,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 6,
+        "failed": 0
+      },
+      "skip-last-row": {
+        "passed": 5,
+        "failed": 1
+      },
+      "adapted-skip-last-row": {
+        "passed": 5,
+        "failed": 1
+      }
+    },
+    "rejection": "initial source rows must include every reserved id with complete values",
+    "restoration": "new original source/target after both mutants: compile and run all six exact tests",
+    "full_functional_required": true
+  },
+  "representation": {
+    "loop": "unchanged original body/loop/entry and complete #993 row specification, first errors and nonreturn preserved",
+    "ids": "all u64 row counts, exact List.range' 1 rows.val, empty range at zero, last value retained",
+    "next": "existing fixed Aeneas next_U64_spec and StepU64; pointwise thin binding adoption remains explicit",
+    "parent": "one sequence for metadata INSERT continuation; public parent initializes all rows under original read/encoding/SQL success conditions"
+  },
+  "remaining_providers": {
+    "V0": [
+      "existing RangeInclusive<u64>::next/IntoIterator and borrow binding adoption",
+      "existing tuple Params/Row/digest thin delegates adoption; production-to-isolated general equivalence"
+    ],
+    "V5": [
+      "actual SQL effects, same physical transaction/snapshot/durability",
+      "actual JSON/digest instances and complete durable initialization/database budget"
+    ],
+    "V7": [
+      "independent authentication/configuration provenance"
+    ],
+    "V6": [
+      "actual material/VM/physical facts"
+    ]
+  },
+  "production_candidate_equivalence_complete": false,
+  "public_registration_accepted": false,
+  "registration_mode": "independent actual projects; retain all inherited/common/counterexample files and audits; no partial-root fallback"
+}
