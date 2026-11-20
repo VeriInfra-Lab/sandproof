@@ -452,24 +452,34 @@ class RunningExpiryProbe:
             opid = 'op-'+pool['namespace']+'-'+str(self.running['local']['sandbox'])+'-'+str(op['id'])
             rows = conn.execute('SELECT action_json,dispatch_state,receipt_json FROM outbox WHERE sandbox_id=? AND operation_id=?',(native_id,opid)).fetchall()
             actions = [(json.loads(a,object_pairs_hook=unique_keys),s,r) for a,s,r in rows]
+            count,largest = conn.execute("SELECT count(*),max(length(action_json)) FROM outbox WHERE dispatch_state='dispatched' AND receipt_json IS NULL").fetchone()
+            if count>capacity['max_sql_rows'] or (largest is not None and largest>capacity['max_sql_value_bytes']):
+                raise ValueError('bounded global pending actions required before Stop attribution')
+            dispatched = conn.execute("SELECT action_json FROM outbox WHERE dispatch_state='dispatched' AND receipt_json IS NULL").fetchall()
         stops = [r for r in actions if 'StopVm' in r[0]['command']['logical']['command']]
         vm = self.running['context']['binding']
         expected = dict(sandbox=self.running['local']['sandbox'],generation=vm['generation'],vm=vm['vm'],epoch=state['epoch'])
         if (len(stops)!=1 or stops[0][1:]!=('dispatched',None)
-                or stops[0][0]['command']['logical']['command']['StopVm']!=expected
-                or stops[0][0]['identity']['epoch']!=state['epoch']):
+                or not equal(stops[0][0]['command']['logical']['command']['StopVm'],expected)
+                or not equal(stops[0][0]['identity']['epoch'],state['epoch'])):
             raise ValueError('exit87 was not the exact original unacknowledged Stop')
         identity = stops[0][0]['identity']
         original = self.before['restore']['activation']['identity']
         if (identity['sandbox']!=native_id or identity['operation']!=opid
-                or identity['generation']!=vm['generation']
+                or not equal(identity['generation'],vm['generation'])
                 or identity['owner']!=original['owner']
-                or identity['protocol_version']!=original['protocol_version']
+                or not equal(identity['protocol_version'],original['protocol_version'])
                 or identity['resource']!={'kind':'vm','id':self.running['source']['resource_id']}):
             raise ValueError('Stop has a foreign complete work identity')
         fence = original_json(Path(pool['node_state_dir'])/'fences'/(native_id+'.json'),16384)
-        if fence!={'epoch':state['epoch'],'terminal':True}:
+        if not equal(fence,{'epoch':state['epoch'],'terminal':True}):
             raise ValueError('actual terminal fence not present before the held Stop')
+        # The existing exit87 hook matches every StopVm on this Host. Bind
+        # its arrival to the full original action in the same SQL snapshot.
+        inflight = [json.loads(raw,object_pairs_hook=unique_keys) for (raw,) in dispatched]
+        global_stops = [a for a in inflight if 'StopVm' in a['command']['logical']['command']]
+        if len(global_stops)!=1 or not equal(global_stops[0],stops[0][0]):
+            raise ValueError('exit87 is not uniquely bound to the original dispatched Stop')
         # Reuse the full original manifest/file verifier while the VMM is alive.
         physical = self.runtime._materials(source['capture']['full'],source['capture'])
         if any(physical[k]!=self.running['running_backing'][k] for k in ('materials','manifest','completion','material_paths')):
