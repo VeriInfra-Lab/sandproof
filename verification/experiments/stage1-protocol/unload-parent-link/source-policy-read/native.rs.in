@@ -1,0 +1,89 @@
+#[cfg(test)]
+mod source_policy_read_contract {
+    use super::*;
+    use crate::controller::{checkpoint, tests_support::lifecycle_application as v3};
+
+    #[test]
+    fn source_policy_read_normal_complete_policy_reaches_original_count() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = v3::open(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let policy = checkpoint::config(connection).unwrap().unwrap();
+        policy.validate().unwrap();
+        assert_eq!(
+            u128::from(reserved_records(connection, 2).unwrap()),
+            2 * u128::from(policy.max_operations_per_sandbox - 2),
+            "source count must use the complete original stored policy"
+        );
+    }
+
+    #[test]
+    fn source_policy_read_rejects_invalid_operation_bound_before_count() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = v3::open(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let before = checkpoint::config(connection).unwrap().unwrap();
+        before.validate().unwrap();
+        for operations in [0, 1, 2, 129, u64::MAX] {
+            let mut policy = before.clone();
+            policy.max_operations_per_sandbox = operations;
+            let transaction = connection.unchecked_transaction().unwrap();
+            assert_eq!(
+                transaction
+                    .execute(
+                        "UPDATE controller_maintenance_config SET config_json=?1 WHERE id=1",
+                        [serde_json::to_vec(&policy).unwrap()],
+                    )
+                    .unwrap(),
+                1
+            );
+            let read = checkpoint::config(&transaction);
+            assert!(
+                matches!(&read, Err(JournalError::UnsupportedStore)),
+                "original policy read must reject the complete operation bound: {read:?}"
+            );
+            assert!(matches!(
+                reserved_records(&transaction, 0),
+                Err(JournalError::UnsupportedStore)
+            ));
+            transaction.rollback().unwrap();
+            assert_eq!(checkpoint::config(connection).unwrap().unwrap(), before);
+        }
+    }
+
+    #[test]
+    fn source_policy_read_preserves_non_operation_validation() {
+        let directory = tempfile::tempdir().unwrap();
+        let journal = v3::open(&directory.path().join("db"));
+        let connection = &journal.journal.connection;
+        let before = checkpoint::config(connection).unwrap().unwrap();
+        before.validate().unwrap();
+        let mut zero_retention = before.clone();
+        zero_retention.retention_ms = 0;
+        let mut missing_capacity = before.clone();
+        missing_capacity.capacity = None;
+        for policy in [zero_retention, missing_capacity] {
+            let transaction = connection.unchecked_transaction().unwrap();
+            assert_eq!(
+                transaction
+                    .execute(
+                        "UPDATE controller_maintenance_config SET config_json=?1 WHERE id=1",
+                        [serde_json::to_vec(&policy).unwrap()],
+                    )
+                    .unwrap(),
+                1
+            );
+            let read = checkpoint::config(&transaction);
+            assert!(
+                matches!(&read, Err(JournalError::UnsupportedStore)),
+                "original policy read must retain every maintenance validation: {read:?}"
+            );
+            assert!(matches!(
+                reserved_records(&transaction, 1),
+                Err(JournalError::UnsupportedStore)
+            ));
+            transaction.rollback().unwrap();
+            assert_eq!(checkpoint::config(connection).unwrap().unwrap(), before);
+        }
+    }
+}

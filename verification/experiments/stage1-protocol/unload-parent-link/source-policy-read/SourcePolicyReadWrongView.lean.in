@@ -1,0 +1,18 @@
+import SourcePolicyReadSpec
+
+open Aeneas Aeneas.Std Result ControlFlow
+open SandproofStage1RequestRust sandproof_controller_service
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourcePolicyReadWrongView
+private abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofStage1RequestRust.toStr text bounded
+local notation "JournalError.UnsupportedStore" => SandproofSourceRowSqlSelect.JournalError.UnsupportedStore
+abbrev controller.checkpoint.config.MaintenanceConfig := SourceRecordBoundsView.Policy
+abbrev controller.checkpoint.config.ReadConfigEffects :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.ReadConfigEffects
+
+-- ACTUAL WRONG READ
+
+end SandboxModel.Stage1Protocol.SourcePolicyReadWrongView

@@ -1,0 +1,127 @@
+import SourcePolicyReadSpec
+
+open Aeneas Aeneas.Std
+open SandproofStage1RequestRust sandproof_controller_service
+open sandproof_controller_service.controller.checkpoint.config
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourcePolicyRead
+noncomputable section
+open SourcePolicyReadSpec
+
+abbrev standardEffects (deserialize : DeserializeMaintenance) (decode : DecodeSlice) : ReadConfigEffects StandardConfigRead :=
+  StandardConfigRead.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects deserialize decode
+
+def policyRead (deserialize : DeserializeMaintenance) (decode : DecodeSlice) : SourceRecordBoundsView.PolicyRead :=
+  controller.checkpoint.config deserialize decode
+
+theorem actual_contract {E : Type} : InboxLoadConfig.FullConfigReadContract (read_using (E := E)) :=
+  InboxLoadConfig.full_config_read_contract
+
+theorem actual_effects_root {E : Type} (io : ReadConfigEffects E) (before : E) :
+    controller.checkpoint.proof_source_policy_effects io before = read_using io before := by rfl
+
+theorem actual_standard_root (deserialize : DeserializeMaintenance) (decode : DecodeSlice) (db : SaveRows.Db) :
+    controller.checkpoint.proof_source_policy_read deserialize decode db = policyRead deserialize decode db := by rfl
+
+theorem actual_standard_read (deserialize : DeserializeMaintenance) (decode : DecodeSlice) (db : SaveRows.Db) :
+    policyRead deserialize decode db = (do
+      let (reply, _) ← read_using (standardEffects deserialize decode) { connection := db }
+      .ok reply) := by rfl
+
+theorem standard_success_uses_validated_policy (deserialize : DeserializeMaintenance) (decode : DecodeSlice)
+    (db : SaveRows.Db) (policy : SourceRecordBoundsView.Policy)
+    (returned : policyRead deserialize decode db = .ok (.Ok (some policy))) :
+    ∃ after, read_using (standardEffects deserialize decode) { connection := db } = .ok (.Ok (some policy), after) ∧
+      MaintenanceConfig.validate policy = .ok (.Ok ()) ∧ SourceRecordCountSpec.BoundedPolicy policy := by
+  rw [actual_standard_read] at returned
+  obtain ⟨⟨reply, after⟩, raw, projected⟩ := bind_success_value _ _ _ returned
+  have same : reply = .Ok (some policy) := by simpa using projected
+  rw [same] at raw
+  obtain ⟨_, _, _, _, _, _, validated⟩ := read_success_provenance _ _ _ _ raw
+  exact ⟨after, raw, validated, validated_has_bound policy validated⟩
+
+theorem standard_success_uses_full_model (deserialize : DeserializeMaintenance) (decode : DecodeSlice)
+    (db : SaveRows.Db) (policy : SourceRecordBoundsView.Policy)
+    (returned : policyRead deserialize decode db = .ok (.Ok (some policy))) :
+    InboxLoadConfig.maintenanceResult policy = .ok (.Ok ()) := by
+  obtain ⟨_, _, validated, _⟩ := standard_success_uses_validated_policy deserialize decode db policy returned
+  rw [← InboxLoadConfig.maintenance_full_refines]
+  exact validated
+
+theorem original_count_from_standard_read (deserialize : DeserializeMaintenance) (decode : DecodeSlice)
+    (db : SaveRows.Db) (sessions : U16) (policy : SourceRecordBoundsView.Policy)
+    (found : policyRead deserialize decode db = .ok (.Ok (some policy))) :
+    ∃ rows, SourceRecordCountView.count (policyRead deserialize decode) db sessions = .ok (.Ok rows) ∧
+      rows.val = sessions.val * (policy.max_operations_per_sandbox.val - 2) ∧
+      sessions.val ≤ rows.val ∧ rows.val ≤ sessions.val * 126 := by
+  obtain ⟨_, _, _, bounded⟩ := standard_success_uses_validated_policy deserialize decode db policy found
+  exact SourceRecordCount.bounded_policy_returns_exact_count _ db sessions policy found bounded
+
+theorem original_loader_uses_validated_policy {Node : Type} {f : SourceKeyEncode.Fields}
+    (deserialize : DeserializeMaintenance) (decode : DecodeSlice) (scan : SourceRecordBoundsView.Scan f)
+    (db : SaveRows.Db) (config : SourceRecordBoundsView.Config Node) (cap : SourceRecordBoundsView.Capacity)
+    (policy : SourceRecordBoundsView.Policy) (reported : SourceRecordBoundsView.Bounds)
+    (found : policyRead deserialize decode db = .ok (.Ok (some policy)))
+    (queryReply : SourceRecordBoundsView.queryBounds db = .ok (.Ok reported)) :
+    ∃ reserve rows, SourceRecordBoundsView.reservation config.config 1#u64 = .ok reserve ∧
+      SourceRecordBoundsView.reserved (policyRead deserialize decode) db config.max_sessions = .ok (.Ok rows) ∧
+      reserve.val = SourceReservationSpec.total config.config 1#u64 ∧
+      rows.val = config.max_sessions.val * (policy.max_operations_per_sandbox.val - 2) ∧
+      SourceRecordBoundsView.loader (policyRead deserialize decode) scan db config cap =
+        SourceRecordBoundsContract.afterBounds scan db cap.max_sql_value_bytes reserve rows reported := by
+  obtain ⟨_, _, _, bounded⟩ := standard_success_uses_validated_policy deserialize decode db policy found
+  exact SourceRecordCount.original_guard_computes_both_numbers _ scan db config cap policy reported found bounded queryReply
+
+theorem standard_format_error (deserialize : DeserializeMaintenance) (decode : DecodeSlice)
+    (db : SaveRows.Db) (after : StandardConfigRead) (failure : SaveRows.Error)
+    (queryReply : (standardEffects deserialize decode).query_i64 {connection := db} InboxLoadConfig.formatStatement =
+      .ok (.Err failure, after)) : policyRead deserialize decode db = .ok (.Err failure) := by
+  rw [actual_standard_read, InboxLoadConfig.format_error _ _ _ _ queryReply]
+  simp
+
+theorem original_format_error_precedes_aggregate {Node : Type} {f : SourceKeyEncode.Fields}
+    (deserialize : DeserializeMaintenance) (decode : DecodeSlice) (scan : SourceRecordBoundsView.Scan f)
+    (db : SaveRows.Db) (config : SourceRecordBoundsView.Config Node) (cap : SourceRecordBoundsView.Capacity)
+    (after : StandardConfigRead) (failure : SaveRows.Error)
+    (queryReply : (standardEffects deserialize decode).query_i64 {connection := db} InboxLoadConfig.formatStatement =
+      .ok (.Err failure, after)) :
+    SourceRecordBoundsView.loader (policyRead deserialize decode) scan db config cap = .ok (.Err failure) :=
+  SourceRecordCount.original_policy_error_precedes_aggregate _ scan db config cap failure
+    (standard_format_error deserialize decode db after failure queryReply)
+
+theorem normal_decoded_read :
+    read_using (decoded InboxLoadConfig.Values.normal) () = .ok (.Ok (some InboxLoadConfig.Values.normal), ()) := by
+  rw [InboxLoadConfig.read_full_refines]
+  exact normal_expected
+
+def normalPolicy : SourceRecordBoundsView.PolicyRead := fun _ => do
+  let (reply, _) ← read_using (decoded InboxLoadConfig.Values.normal) ()
+  .ok reply
+
+theorem normal_decoded_count (db : SaveRows.Db) :
+    SourceRecordCountView.count normalPolicy db 1#u16 = .ok (.Ok 1#u64) := by
+  have found : normalPolicy db = .ok (.Ok (some InboxLoadConfig.Values.normal)) := by
+    simp only [normalPolicy, normal_decoded_read, bind_tc_ok]
+    rfl
+  apply (SourceRecordCount.success_iff normalPolicy db 1#u16 InboxLoadConfig.Values.normal 1#u64 found).mpr
+  exact ⟨by decide, by decide⟩
+
+end
+end SandboxModel.Stage1Protocol.SourcePolicyRead
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.actual_effects_root
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.actual_standard_root
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.actual_standard_read
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.standard_success_uses_validated_policy
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.original_count_from_standard_read
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.original_loader_uses_validated_policy
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.standard_format_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.original_format_error_precedes_aggregate
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.normal_decoded_read
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.normal_decoded_count
+
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePolicyRead.standard_success_uses_full_model
