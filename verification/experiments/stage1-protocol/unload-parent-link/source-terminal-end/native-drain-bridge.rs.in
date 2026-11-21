@@ -1,0 +1,29 @@
+// cfg(test) projections only; call the original private function.
+#[cfg(test)]
+pub(super) fn source_terminal_end_for_test(
+    record: &SourceWorkRecord,
+    stop: core::StopCoverage,
+    observation: TerminatedCaptureObservation,
+) -> Result<CaptureEndRecord, JournalError> {
+    let old = record
+        .capture
+        .as_ref()
+        .and_then(|capture| capture.end.as_ref());
+    terminal_end(old, stop, observation)
+}
+
+#[cfg(test)]
+pub(super) fn source_terminal_coordinates_for_test(
+    record: &SourceWorkRecord,
+) -> (core::StopCoverage, TerminatedCaptureObservation) {
+    let Some(CaptureEndRecord::Terminated {
+        stop, observation, ..
+    }) = record
+        .capture
+        .as_ref()
+        .and_then(|capture| capture.end.as_ref())
+    else {
+        panic!("the original application fixture must retain a Terminated end")
+    };
+    (*stop, (**observation).clone())
+}

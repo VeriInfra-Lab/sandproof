@@ -1,0 +1,82 @@
+import SourceTerminalEndWrong
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec SourceTerminalEndModel
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceTerminalEndNegative
+noncomputable section
+local instance negativeDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev wrong := SourceTerminalEndWrong.controller.lifecycle_inbox.source_work.full.drain.terminal_end
+
+theorem wrong_stop_ne (a b : Stop) :
+    core.cmp.PartialEq.ne.trait_default
+      SourceTerminalEndWrong.sandbox_controller_core.model.StopCoverage.Insts.CoreCmpPartialEqStopCoverage a b =
+        .ok (decide (a ≠ b)) := by
+  exact SourceTerminalEndProof.stop_ne a b
+
+theorem wrong_clone_end (value : End) :
+    SourceTerminalEndWrong.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCloneClone.clone value = .ok value := by
+  exact SourceTerminalEndProof.clone_end value
+
+theorem wrong_returns_saved (stop : Stop) (previous incoming : Observation) (prior : Option Prior) :
+    wrong (some (.Terminated stop previous prior)) stop incoming =
+      .ok (.Ok (.Terminated stop previous prior)) := by
+  simp [wrong,SourceTerminalEndWrong.controller.lifecycle_inbox.source_work.full.drain.terminal_end,
+    wrong_stop_ne,wrong_clone_end]
+
+theorem normal_replay_control (stop : Stop) (observation : Observation) (prior : Option Prior) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end
+      (some (.Terminated stop observation prior)) stop observation =
+        .ok (.Ok (.Terminated stop observation prior)) ∧
+    wrong (some (.Terminated stop observation prior)) stop observation =
+        .ok (.Ok (.Terminated stop observation prior)) := by
+  exact ⟨SourceTerminalEndProof.replay_keeps_complete_prior stop observation prior,
+    wrong_returns_saved stop observation observation prior⟩
+
+theorem wrong_still_rejects_stop (previousStop stop : Stop) (previous incoming : Observation)
+    (prior : Option Prior) (different : previousStop ≠ stop) :
+    wrong (some (.Terminated previousStop previous prior)) stop incoming = .ok (.Err .Conflict) := by
+  simp [wrong,SourceTerminalEndWrong.controller.lifecycle_inbox.source_work.full.drain.terminal_end,
+    wrong_stop_ne,different]
+
+theorem observation_counterexample (stop : Stop) (previous incoming : Observation) (prior : Option Prior)
+    (different : previous ≠ incoming) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end
+      (some (.Terminated stop previous prior)) stop incoming = .ok (.Err .Conflict) ∧
+    wrong (some (.Terminated stop previous prior)) stop incoming =
+      .ok (.Ok (.Terminated stop previous prior)) := by
+  exact ⟨SourceTerminalEndProof.observation_mismatch stop previous incoming prior different,
+    wrong_returns_saved stop previous incoming prior⟩
+
+theorem rejects_same_full_contract (stop : Stop) (previous incoming : Observation) (prior : Option Prior)
+    (different : previous ≠ incoming) : ¬SourceTerminalEndModel.Contract wrong := by
+  intro obeys
+  have same := obeys (some (.Terminated stop previous prior)) stop incoming
+  rw [wrong_returns_saved stop previous incoming prior] at same
+  simp [outcome,different] at same
+
+def gate_inode (observation : Observation) : U64 :=
+  match observation with
+  | .StoppedAndDrained _ _ _ _ _ _ _ _ inode => inode
+
+theorem inode_counterexample (stop : Stop) (previous incoming : Observation) (prior : Option Prior)
+    (different : gate_inode previous ≠ gate_inode incoming) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end
+      (some (.Terminated stop previous prior)) stop incoming = .ok (.Err .Conflict) ∧
+    wrong (some (.Terminated stop previous prior)) stop incoming =
+      .ok (.Ok (.Terminated stop previous prior)) := by
+  apply observation_counterexample stop previous incoming prior
+  intro same
+  exact different (congrArg gate_inode same)
+
+end
+end SandboxModel.Stage1Protocol.SourceTerminalEndNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndNegative.wrong_stop_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndNegative.wrong_clone_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndNegative.wrong_returns_saved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndNegative.normal_replay_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndNegative.wrong_still_rejects_stop
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndNegative.observation_counterexample
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndNegative.rejects_same_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndNegative.inode_counterexample

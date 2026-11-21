@@ -1,0 +1,213 @@
+// Real source/API/SQL fixtures and controlled Host; no real VM or writer fact.
+fn source_terminal_fixture(path: &Path, kind: u8) -> (ControllerJournal, SourceWorkRecord) {
+    let (journal, source) = if kind == 1 {
+        let (mut journal, _) = ready(path);
+        let observed = observed_for_full(&mut journal);
+        let accepted = journal
+            .admit_lifecycle_full_capture::<Evidence>(
+                &observed.work,
+                &v3::context(),
+                &full_request(&observed),
+                10,
+                &mut NeverCrash,
+            )
+            .unwrap();
+        journal
+            .record_lifecycle_capture_never_released(
+                &accepted.work,
+                &v3::context(),
+                &mut NeverCrash,
+            )
+            .unwrap();
+        (journal, accepted)
+    } else {
+        let (mut journal, state, source) = sealed_before_end(path);
+        if kind == 2 {
+            let saved = journal
+                .lifecycle_capture_record(source.source_sandbox())
+                .unwrap()
+                .unwrap();
+            journal
+                .record_lifecycle_capture_request_end(
+                    &source.work,
+                    &v3::context(),
+                    actual_api_end(&saved),
+                    &mut NeverCrash,
+                )
+                .unwrap();
+        } else if kind == 3 {
+            let _terminal = destroy(&mut journal);
+            drop(journal);
+            state.lock().unwrap().terminal_drain_gate = Some((7, 11));
+            let app = v3::application(path, state, false);
+            app.establish_lifecycle_host_epoch().unwrap();
+            assert!(
+                app.advance_current_workflow(source.source_sandbox())
+                    .unwrap()
+            );
+            drop(app);
+            journal = v3::open(path);
+        } else {
+            assert_eq!(kind, 0);
+        }
+        (journal, source)
+    };
+    let record = journal
+        .lifecycle_capture_record(source.source_sandbox())
+        .unwrap()
+        .unwrap();
+    let image = full::source_continuation_end_for_test(&record);
+    match kind {
+        0 => assert!(image.is_null()),
+        1 => assert_eq!(image["state"], "never_released"),
+        2 => assert_eq!(image["state"], "worker_ended"),
+        3 => assert_eq!(image["state"], "terminated"),
+        _ => unreachable!(),
+    }
+    (journal, record)
+}
+
+#[test]
+fn source_terminal_end_carries_all_original_prior_shapes() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, ended) = source_terminal_fixture(&dir.path().join("terminal.db"), 3);
+    let (stop, observation) = full::source_terminal_coordinates_for_test(&ended);
+    for kind in 0..3 {
+        let (journal, record) =
+            source_terminal_fixture(&dir.path().join(format!("prior-{kind}.db")), kind);
+        let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+        let before = source_retire_sql_rows(&journal.journal.connection);
+        let old = full::source_continuation_end_for_test(&record);
+        let next =
+            full::source_terminal_record_for_test(&record, stop, observation.clone()).unwrap();
+        let image = full::source_continuation_end_for_test(&next);
+        assert_eq!(image["state"], "terminated");
+        assert_eq!(image["stop"], serde_json::to_value(stop).unwrap());
+        assert_eq!(
+            image["observation"],
+            serde_json::to_value(&observation).unwrap()
+        );
+        assert_eq!(
+            image["prior"], old,
+            "preserve the complete original prior end value"
+        );
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+        assert_eq!(
+            codec::load(&journal.journal.connection).unwrap().unwrap(),
+            current
+        );
+    }
+}
+
+#[test]
+fn source_terminal_end_replay_keeps_complete_prior_and_checks_every_stop_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, ended) = source_terminal_fixture(&dir.path().join("terminal.db"), 3);
+    let (stop, observation) = full::source_terminal_coordinates_for_test(&ended);
+    for kind in [1, 2] {
+        let (journal, record) =
+            source_terminal_fixture(&dir.path().join(format!("replay-{kind}.db")), kind);
+        let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+        let before = source_retire_sql_rows(&journal.journal.connection);
+        let saved =
+            full::source_terminal_record_for_test(&record, stop, observation.clone()).unwrap();
+        let image = full::source_continuation_end_for_test(&saved);
+        assert!(!image["prior"].is_null());
+        let replay =
+            full::source_terminal_record_for_test(&saved, stop, observation.clone()).unwrap();
+        assert_eq!(full::source_continuation_end_for_test(&replay), image);
+        for field in 0..5 {
+            let mut changed = stop;
+            match field {
+                0 => {
+                    changed.operation.sandbox.0 =
+                        changed.operation.sandbox.0.checked_add(1).unwrap()
+                }
+                1 => {
+                    changed.operation.operation.0 =
+                        changed.operation.operation.0.checked_add(1).unwrap()
+                }
+                2 => changed.epoch = changed.epoch.checked_add(1).unwrap(),
+                3 => changed.attempt = changed.attempt.checked_add(1).unwrap(),
+                4 => changed.result.0 = changed.result.0.checked_add(1).unwrap(),
+                _ => unreachable!(),
+            }
+            assert!(matches!(
+                full::source_terminal_record_for_test(&saved, changed, observation.clone()),
+                Err(JournalError::Conflict)
+            ));
+        }
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+        assert_eq!(
+            codec::load(&journal.journal.connection).unwrap().unwrap(),
+            current
+        );
+    }
+}
+
+#[test]
+fn source_terminal_end_replay_checks_all_original_observation_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, saved) = source_terminal_fixture(&dir.path().join("observation.db"), 3);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let (stop, observation) = full::source_terminal_coordinates_for_test(&saved);
+    for field in [8, 0, 1, 2, 3, 4, 5, 6, 7] {
+        let mut changed = observation.clone();
+        let crate::capture::TerminatedCaptureObservation::StoppedAndDrained {
+            work_binding,
+            full_work_binding,
+            seal_action,
+            stop_action,
+            source,
+            worker,
+            host_slot,
+            helper_gate_device,
+            helper_gate_inode,
+        } = &mut changed;
+        match field {
+            0 | 1 => {
+                let digest = if field == 0 {
+                    work_binding
+                } else {
+                    full_work_binding
+                };
+                let mut bytes = *digest.as_bytes();
+                bytes[0] ^= 1;
+                *digest = ContentDigest::from_sha256(bytes);
+            }
+            2 => {
+                seal_action.identity.attempt = seal_action.identity.attempt.checked_add(1).unwrap()
+            }
+            3 => {
+                stop_action.identity.attempt = stop_action.identity.attempt.checked_add(1).unwrap()
+            }
+            4 => source.pid = source.pid.checked_add(1).unwrap(),
+            5 => {
+                assert!(worker.is_some());
+                *worker = None;
+            }
+            6 => {
+                host_slot.expected_previous = if host_slot.expected_previous.is_some() {
+                    None
+                } else {
+                    Some(core::VmId::new(987654))
+                }
+            }
+            7 => *helper_gate_device = helper_gate_device.checked_add(1).unwrap(),
+            8 => *helper_gate_inode = helper_gate_inode.checked_add(1).unwrap(),
+            _ => unreachable!(),
+        }
+        assert_ne!(changed, observation);
+        let result = full::source_terminal_record_for_test(&saved, stop, changed);
+        assert!(
+            matches!(result, Err(JournalError::Conflict)),
+            "terminal replay must compare all original observation fields: field={field}, result={result:?}"
+        );
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    }
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}

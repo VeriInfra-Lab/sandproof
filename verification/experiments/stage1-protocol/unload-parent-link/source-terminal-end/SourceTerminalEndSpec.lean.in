@@ -1,0 +1,31 @@
+import SourceTerminalEndView
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceTerminalEndModel
+noncomputable section
+local instance modelDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev End := controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord
+abbrev Prior := controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd
+abbrev Stop := sandbox_controller_core.model.StopCoverage
+abbrev Observation := capture.terminated.TerminatedCaptureObservation
+
+def outcome (old : Option End) (stop : Stop) (observation : Observation) :
+    Result (core.result.Result End Journal) :=
+  match old with
+  | none => .ok (.Ok (.Terminated stop observation none))
+  | some (.NeverReleased binding action) =>
+      .ok (.Ok (.Terminated stop observation (some (.NeverReleased binding action))))
+  | some (.WorkerEnded previous) =>
+      .ok (.Ok (.Terminated stop observation (some (.WorkerEnded previous))))
+  | some saved@(.Terminated previousStop previous _) =>
+      if previousStop = stop ∧ previous = observation then .ok (.Ok saved)
+      else .ok (.Err .Conflict)
+
+def Contract (root : Option End → Stop → Observation → Result (core.result.Result End Journal)) : Prop :=
+  ∀ old stop observation, root old stop observation = outcome old stop observation
+
+end
+end SandboxModel.Stage1Protocol.SourceTerminalEndModel

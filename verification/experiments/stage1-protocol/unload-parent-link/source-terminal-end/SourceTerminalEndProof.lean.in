@@ -1,0 +1,194 @@
+import SourceTerminalEndSpec
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec SourceTerminalEndModel
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceTerminalEndProof
+noncomputable section
+local instance proofDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem stop_eq (a b : Stop) :
+    SourceTerminalEndActual.sandbox_controller_core.model.StopCoverage.Insts.CoreCmpPartialEqStopCoverage.eq a b = .ok (decide (a=b)) := by
+  exact SourceRetireEquality.stop_coverage_eq a b
+
+theorem observation_eq (a b : Observation) :
+    SourceTerminalEndActual.capture.terminated.TerminatedCaptureObservation.Insts.CoreCmpPartialEqTerminatedCaptureObservation.eq a b = .ok (decide (a=b)) := by
+  exact SourceRetireEquality.terminated_eq a b
+
+theorem clone_action (value : sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) :
+    SourceTerminalEndActual.sandproof_protocol.WorkAction.Insts.CoreCloneClone.clone SourceTerminalEndActual.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone value = .ok value := by
+  exact SourceMaterialChargeProof.clone_work_action value
+
+theorem clone_process (value : capture.SourceProcessIdentity) :
+    SourceTerminalEndActual.capture.SourceProcessIdentity.Insts.CoreCloneClone.clone value = .ok value := by
+  exact SourceMaterialChargeProof.clone_capture_source_process_identity value
+
+theorem clone_worker (value : capture.launch.CaptureWorkerBinding) :
+    SourceTerminalEndActual.capture.launch.CaptureWorkerBinding.Insts.CoreCloneClone.clone value = .ok value := by
+  exact SourceMaterialChargeProof.clone_capture_capture_worker_binding value
+
+theorem clone_digest (value : sandproof_protocol.lifecycle.digest.ContentDigest) :
+    SourceTerminalEndActual.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCloneClone.clone value = .ok value := by
+  exact SourceMaterialChargeProof.clone_wire_content_digest value
+
+theorem clone_optional_action (value : Option (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId)) :
+    SourceRetireLibrary.optionClone (core.core.clone.CloneBox
+      (SourceTerminalEndActual.sandproof_protocol.WorkAction.Insts.CoreCloneClone
+        SourceTerminalEndActual.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone)) value = .ok value := by
+  apply SourceMaterialChargeProof.clone_option
+  intro item
+  exact clone_action item
+
+theorem clone_stop (value : Stop) :
+    SourceTerminalEndActual.sandbox_controller_core.model.StopCoverage.Insts.CoreCloneClone.clone value = .ok value := by rfl
+
+theorem clone_host (value : host_contract.HostSlotContext) :
+    SourceTerminalEndActual.host_contract.HostSlotContext.Insts.CoreCloneClone.clone value = .ok value := by rfl
+
+theorem clone_end_outcome (value : capture.CaptureRequestEndOutcome) :
+    SourceTerminalEndActual.capture.CaptureRequestEndOutcome.Insts.CoreCloneClone.clone value = .ok value := by
+  cases value <;> simp [SourceTerminalEndActual.capture.CaptureRequestEndOutcome.Insts.CoreCloneClone.clone,lift]
+
+theorem clone_end_observation (value : capture.CaptureRequestEndObservation) :
+    SourceTerminalEndActual.capture.CaptureRequestEndObservation.Insts.CoreCloneClone.clone value = .ok value := by
+  cases value
+  simp [SourceTerminalEndActual.capture.CaptureRequestEndObservation.Insts.CoreCloneClone.clone,
+    clone_action,clone_digest,clone_worker,clone_process,clone_end_outcome]
+
+theorem clone_terminated_observation (value : Observation) :
+    SourceTerminalEndActual.capture.terminated.TerminatedCaptureObservation.Insts.CoreCloneClone.clone value = .ok value := by
+  cases value
+  simp [SourceTerminalEndActual.capture.terminated.TerminatedCaptureObservation.Insts.CoreCloneClone.clone,
+    clone_action,clone_digest,clone_worker,clone_process,clone_host,
+    SourceMaterialChargeProof.clone_option,lift]
+
+theorem clone_prior (value : Prior) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCloneClone.clone value = .ok value := by
+  cases value <;>
+    simp [SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCloneClone.clone,
+      clone_digest,clone_optional_action,clone_end_observation]
+
+theorem clone_end (value : End) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCloneClone.clone value = .ok value := by
+  cases value <;>
+    simp [SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCloneClone.clone,
+      clone_digest,clone_optional_action,clone_end_observation,clone_stop,clone_terminated_observation,
+      SourceMaterialChargeProof.clone_option,clone_prior]
+
+theorem stop_ne (a b : Stop) :
+    core.cmp.PartialEq.ne.trait_default
+      SourceTerminalEndActual.sandbox_controller_core.model.StopCoverage.Insts.CoreCmpPartialEqStopCoverage a b =
+        .ok (decide (a ≠ b)) := by
+  simp [core.cmp.PartialEq.ne.trait_default,core.cmp.PartialEq.ne.default,
+    SourceTerminalEndActual.sandbox_controller_core.model.StopCoverage.Insts.CoreCmpPartialEqStopCoverage,
+    stop_eq]
+
+theorem observation_ne (a b : Observation) :
+    core.cmp.PartialEq.ne.trait_default
+      SourceTerminalEndActual.capture.terminated.TerminatedCaptureObservation.Insts.CoreCmpPartialEqTerminatedCaptureObservation a b =
+        .ok (decide (a ≠ b)) := by
+  simp [core.cmp.PartialEq.ne.trait_default,core.cmp.PartialEq.ne.default,
+    observation_eq]
+
+theorem actual_contract (old : Option End) (stop : Stop) (observation : Observation) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end old stop observation = outcome old stop observation := by
+  cases old with
+  | none => rfl
+  | some value =>
+    cases value <;>
+      simp [SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end,outcome,
+        clone_optional_action,clone_end_observation,clone_end,
+        stop_ne,observation_ne]
+    split_ifs <;> simp_all
+
+theorem actual_full_contract :
+    Contract SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end := by
+  exact actual_contract
+
+theorem initial (stop : Stop) (observation : Observation) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end none stop observation =
+      .ok (.Ok (.Terminated stop observation none)) := rfl
+
+theorem carry_never_released (binding : sandproof_protocol.lifecycle.digest.ContentDigest)
+    (action : Option (sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId))
+    (stop : Stop) (observation : Observation) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end
+      (some (.NeverReleased binding action)) stop observation =
+        .ok (.Ok (.Terminated stop observation (some (.NeverReleased binding action)))) := by
+  rw [actual_contract]
+  rfl
+
+theorem carry_worker_ended (previous : capture.CaptureRequestEndObservation)
+    (stop : Stop) (observation : Observation) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end
+      (some (.WorkerEnded previous)) stop observation =
+        .ok (.Ok (.Terminated stop observation (some (.WorkerEnded previous)))) := by
+  rw [actual_contract]
+  rfl
+
+theorem replay_keeps_complete_prior (stop : Stop) (observation : Observation) (prior : Option Prior) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end
+      (some (.Terminated stop observation prior)) stop observation =
+        .ok (.Ok (.Terminated stop observation prior)) := by
+  rw [actual_contract]
+  simp [outcome]
+
+theorem stop_mismatch (previousStop stop : Stop) (previous observation : Observation) (prior : Option Prior)
+    (different : previousStop ≠ stop) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end
+      (some (.Terminated previousStop previous prior)) stop observation = .ok (.Err .Conflict) := by
+  rw [actual_contract]
+  simp [outcome,different]
+
+theorem observation_mismatch (stop : Stop) (previous observation : Observation) (prior : Option Prior)
+    (different : previous ≠ observation) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end
+      (some (.Terminated stop previous prior)) stop observation = .ok (.Err .Conflict) := by
+  rw [actual_contract]
+  simp [outcome,different]
+
+theorem actual_comparison_order (previousStop stop : Stop) (previous observation : Observation) (prior : Option Prior) :
+    SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.drain.terminal_end
+      (some (.Terminated previousStop previous prior)) stop observation =
+        (do
+          let stopDifferent ← core.cmp.PartialEq.ne.trait_default
+            SourceTerminalEndActual.sandbox_controller_core.model.StopCoverage.Insts.CoreCmpPartialEqStopCoverage previousStop stop
+          if stopDifferent then .ok (.Err .Conflict)
+          else
+            let observationDifferent ← core.cmp.PartialEq.ne.trait_default
+              SourceTerminalEndActual.capture.terminated.TerminatedCaptureObservation.Insts.CoreCmpPartialEqTerminatedCaptureObservation
+              previous observation
+            if observationDifferent then .ok (.Err .Conflict)
+            else
+              let saved ← SourceTerminalEndActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCloneClone.clone
+                (.Terminated previousStop previous prior)
+              .ok (.Ok saved)) := rfl
+
+end
+end SandboxModel.Stage1Protocol.SourceTerminalEndProof
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.stop_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.observation_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_action
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_process
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_worker
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_optional_action
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_stop
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_host
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_end_observation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_terminated_observation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.actual_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_end_outcome
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.stop_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.observation_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.initial
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.carry_never_released
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.carry_worker_ended
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.replay_keeps_complete_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.stop_mismatch
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.observation_mismatch
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalEndProof.actual_comparison_order
