@@ -186,7 +186,7 @@ def stage1_native_labels(profile='full'):
     """Fixed full, Create or convergence scope; no caller-selected cases."""
     registered = stage1_registration()
     labels = tuple(registered.native_labels(profile))
-    counts = {'full': 78, 'create-delivery': 12, 'protocol-convergence': 22}
+    counts = {'full': 79, 'create-delivery': 12, 'protocol-convergence': 22}
     if profile not in counts:
         raise ValueError('unknown fixed native profile: ' + str(profile))
     count = counts[profile]

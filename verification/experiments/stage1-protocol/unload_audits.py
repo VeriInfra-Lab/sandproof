@@ -38,8 +38,15 @@ def check_parent_audits(root, result):
         expected = PARENT_AUDIT_INPUTS[case]
         if case != 'revision':
             expected = common | expected
-        names = {audit for path in expected
-                 for audit in AUDIT.findall((package / (path + '.lean.in')).read_text())}
+        names = set()
+        for path in sorted(expected):
+            template = package / (path + '.lean.in')
+            page = Path(path).name + '.lean'
+            physical_hashes = [sha for name, sha in actual.get('files', {}).items()
+                               if Path(name).name == page]
+            if physical_hashes != [digest(template)]:
+                raise ValueError('missing or changed actual parent audit page: ' + page)
+            names.update(AUDIT.findall(template.read_text()))
         if (actual.get('complete') is not True
                 or not re.fullmatch(r'[0-9a-f]{64}', actual.get('service_log_sha256', ''))
                 or not names <= set(actual.get('audits', ())) or not actual.get('files')):
