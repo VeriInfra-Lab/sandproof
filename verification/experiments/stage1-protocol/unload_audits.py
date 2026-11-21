@@ -1,5 +1,6 @@
 """The four fixed unload audit packages and their original inputs."""
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
@@ -144,16 +145,32 @@ def package_audits(templates, package):
     return files
 
 
-def capture_hashes(root, package):
-    def read(name):
-        return json.loads((root / HERE / package / name).read_text())
-
-    if package == 'unload-startup-source':
-        evidence = read('evidence.json')['msra']
-        return {name: evidence[name + '_llbc_sha256'] for name in ('parent', 'startup_joint')}
-    if package == 'unload-base-provenance':
-        return read('evidence.json')['llbc_sha256']
-    profile = read('capture-profile.json')
-    if package == 'unload-continued-observation':
-        return {'original': profile['llbc_sha256'], 'final': profile['final_capture']['llbc_sha256']}
-    return {name: row['llbc_sha256'] for name, row in profile['captures'].items()}
+def check_current_captures(root, folder, result, evidence):
+    spec = importlib.util.spec_from_file_location('current_unload_captures',
+                                                 root/HERE/'unload_current_capture.py')
+    capture = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(capture)
+    artifacts = folder/'artifacts'
+    leaves = result['current_captures']
+    if set(leaves) != set(capture.NAMES):
+        raise ValueError('missing current Unload leaf captures')
+    for case, files in leaves.items():
+        path = artifacts/'current-captures'/case
+        if files != capture.admit(root, path, case, digest) or any(
+                evidence.get(str(path/name)) != sha for name, sha in files.items()):
+            raise ValueError('missing current Unload leaf raw evidence: ' + case)
+    pair = artifacts/'revision-pair.json'
+    if evidence.get(str(pair)) != digest(pair):
+        raise ValueError('missing current Unload revision comparison')
+    for case in ('base-revision', 'parent'):
+        path = artifacts/('revision-' + case)
+        receipt = path/'result.json'
+        row = json.loads(receipt.read_bytes())
+        if (evidence.get(str(receipt)) != digest(receipt) or not row['complete']
+                or row['head'] != result['commit'] or row['tree'] != result['tree']):
+            raise ValueError('current Unload revision came from another source: ' + case)
+        fields = {'actual.llbc': row['ir_sha256'], 'source.tar': result['source_sha256']}
+        fields.update({command['label'] + '.log': command['log_sha256'] for command in row['commands']})
+        fields.update({'generated/' + name: sha for name, sha in row['generated'].items()})
+        if any(evidence.get(str(path/name)) != sha for name, sha in fields.items()):
+            raise ValueError('incomplete current Unload revision raw evidence: ' + case)

@@ -101,7 +101,7 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
 
 `stage1-unload-parent-transaction` 检查首次卸载的事务开始、认证与解码顺序、保存和提交顺序。当前 Rust 的 base 读取由同一事务和原本地身份提供 revision，成功路径同时保留原记录、原账本及已有启动计划的证明。原生入口保留正确版、调序错误版和恢复原版，形式入口核对实际抽取、物化文件及原始诊断。同一条定理在分项页和总页中的审计分别检查。具体输入和边界见[首次卸载父调用](unload-parent-link/README.md)。
 
-运行完整入口前，`SANDPROOF_UNLOAD_CAPTURE_EVIDENCE` 指向原 LLBC 目录。目录按四个包名分组，文件名是各包 `capture_hashes` 中的键加 `.llbc`。原摘要来自各包已有的 `evidence.json` 或 `capture-profile.json`，输入和原输出都按现有冻结清单核对。公共结果绑定与当前输入匹配的原生回执、Lean 文件、内核日志和服务诊断。单独的证明包仍可按各自说明复现。
+完整入口从同一候选的原生源码归档重抽七个卸载读取、编码和选取视图，保留各自的原始 LLBC、生成物和命令日志。七个视图除生成注释中的源码位置外，逐份核对已复核的定义；父路径和 base 读取另按当前 revision 的原始抽取与配对入口检查。四包原 44 份实际证明页和 103 条审计在这个组合上逐包核对。历史原始证据保留各自版本。单独的证明包仍可按各自说明复现。
 
 仅在 `inbox-record-total` 对同一变体实际完成父 `inbox-append` 的全部文件、审计及额外
 准入后，登记这一次包含关系，省去该父入口的重复执行；原 append 原生错误版照常保留。

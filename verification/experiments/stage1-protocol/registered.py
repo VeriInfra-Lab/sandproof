@@ -979,8 +979,9 @@ def _check_actual(result, job):
         return
     if job['name'] == UNLOAD.LABEL:
         if (result.get('kind') != UNLOAD.KIND or result.get('frozen_inputs') != UNLOAD.frozen_inputs(ROOT)
-                or not re.fullmatch(r'[0-9a-f]{64}', result.get('native_result_sha256', ''))):
-            raise ValueError('missing original unload source or native receipt')
+                or any(not re.fullmatch(r'[0-9a-f]{64}', result.get(key, ''))
+                       for key in ('native_result_sha256', 'source_sha256'))):
+            raise ValueError('missing current unload source or native receipt')
         if set(result.get('cases', {})) != set(UNLOAD.PACKAGES):
             raise ValueError('missing or extra original unload package')
         templates = audit_templates(ROOT)
@@ -1531,11 +1532,7 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                for name in evidence):
         raise ValueError('missing original raw LLBC evidence')
     if job['name'] == UNLOAD.LABEL:
-        for package in UNLOAD.PACKAGES:
-            for name, expected in UNLOAD.capture_hashes(ROOT, package).items():
-                capture = folder/'artifacts'/package/(name+'.llbc')
-                if evidence.get(str(capture)) != expected:
-                    raise ValueError('missing or changed original unload capture: ' + str(capture))
+        UNLOAD.check_current_captures(ROOT, folder, result, evidence)
     if job['name'] == UNLOAD.PARENT_LABEL:
         UNLOAD.check_parent_audits(ROOT, result, folder)
         UNLOAD.check_parent_captures(folder, result, evidence)

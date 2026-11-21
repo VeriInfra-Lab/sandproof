@@ -857,7 +857,7 @@ class Registration(OriginalReadPlanFixture):
         with patch.object(unload, 'frozen_inputs', return_value={}):
             with self.assertRaisesRegex(ValueError, 'original unload package'):
                 registered._check_actual(dict(complete=True, kind=unload.KIND, cases={},
-                    frozen_inputs={}, native_result_sha256='a'*64), job)
+                    frozen_inputs={}, native_result_sha256='a'*64, source_sha256='b'*64), job)
 
     def test_full_unload_dispatch_uses_its_driver_and_passes_the_existing_lock(self):
         unload = registered.UNLOAD
