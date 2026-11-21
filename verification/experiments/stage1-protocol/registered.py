@@ -975,7 +975,7 @@ def _check_actual(result, job):
         if any(not re.fullmatch(r'[0-9a-f]{64}', result.get(key, ''))
                for key in ('source_sha256', 'native_result_sha256')):
             raise ValueError('missing original parent transaction input or formal case')
-        UNLOAD.check_parent_audits(ROOT, result)
+        UNLOAD.check_parent_audits(ROOT, result, None)
         return
     if job['name'] == UNLOAD.LABEL:
         if (result.get('kind') != UNLOAD.KIND or result.get('frozen_inputs') != UNLOAD.frozen_inputs(ROOT)
@@ -1537,6 +1537,7 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                 if evidence.get(str(capture)) != expected:
                     raise ValueError('missing or changed original unload capture: ' + str(capture))
     if job['name'] == UNLOAD.PARENT_LABEL:
+        UNLOAD.check_parent_audits(ROOT, result, folder)
         UNLOAD.check_parent_captures(folder, result, evidence)
     commands = list(_kernel_commands(result))
     views = list(_actual_views(result))

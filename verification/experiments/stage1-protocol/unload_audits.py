@@ -29,7 +29,7 @@ PACKAGES = {
 }
 
 
-def check_parent_audits(root, result):
+def check_parent_audits(root, result, folder):
     if result.get('kind') != PARENT_LABEL or tuple(result.get('cases', {})) != PARENT_CASES:
         raise ValueError('missing actual parent transaction formal cases')
     package = root / HERE / 'unload-parent-link'
@@ -42,9 +42,19 @@ def check_parent_audits(root, result):
         for path in sorted(expected):
             template = package / (path + '.lean.in')
             page = Path(path).name + '.lean'
-            physical_hashes = [sha for name, sha in actual.get('files', {}).items()
-                               if Path(name).name == page]
-            if physical_hashes != [digest(template)]:
+            files = [(name, sha) for name, sha in actual.get('files', {}).items()
+                     if Path(name).name == page]
+            if len(files) != 1:
+                raise ValueError('missing or changed actual parent audit page: ' + page)
+            name, sha = files[0]
+            if path == 'revision-transport/RevisionReadyTransport':
+                # This page appends the template to the materialized carrier definitions.
+                if folder is not None:
+                    materialized = folder / case / 'project' / name
+                    if (digest(materialized) != sha
+                            or not materialized.read_bytes().endswith(template.read_bytes())):
+                        raise ValueError('missing actual revision transport declarations')
+            elif sha != digest(template):
                 raise ValueError('missing or changed actual parent audit page: ' + page)
             names.update(AUDIT.findall(template.read_text()))
         if (actual.get('complete') is not True

@@ -209,7 +209,7 @@ def run_formal(output, result, identity, receipt_path, native_archive, native_ma
         actual = checker.actual_files(project, sorted(files), folder, env, run)
         registered._saved_physical_view(actual, project, folder / 'physical-files', result['commands'])
         result['cases'][case] = dict(actual, complete=True)
-    check_parent_audits(ROOT, result)
+    check_parent_audits(ROOT, result, output)
 
 
 def validate_native_result(receipt, identity):
