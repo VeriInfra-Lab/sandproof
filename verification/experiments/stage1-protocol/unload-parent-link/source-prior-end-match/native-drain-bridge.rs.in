@@ -1,0 +1,10 @@
+// Append only to a disposable native cfg(test) view. Decode a plain prior value
+// then call the actual private root; do not mutate the journal or reconstruct it.
+#[cfg(test)]
+pub(in crate::controller::lifecycle_inbox::source_work) fn source_prior_matches_for_test(
+    record: &SourceWorkRecord,
+    value: serde_json::Value,
+) -> Result<bool, JournalError> {
+    let prior: PriorCaptureEnd = serde_json::from_value(value)?;
+    prior_matches(record, &prior)
+}

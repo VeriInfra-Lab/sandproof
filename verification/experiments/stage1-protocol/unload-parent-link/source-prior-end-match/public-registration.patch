@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-prior-end-match 通过原完整后置守卫的透明helper适配连接固定 b0d791cc 的 prior_matches 值合同，复用#1006完整callee/Full绑定并保留缺capture/action/worker和JSON首错；同一Contract否定实际遗漏completed/NoRequest门的错误。完整入口目标175/905与177/912。
++> 原生37项四视图及恢复交ning。原未适配函数的后端合流失败和完整生产/staging一般等价另列，不能据局部值匹配推出实际退出、权限或耐久；具体库采用、完整父调用/事务/JSON/认证和物理责任保持开放。公共登记/覆盖仅交候选。
+ ## V3 首次卸载使用同一条原执行记录

@@ -1,0 +1,117 @@
+// Decoded original values plus real API/SQLite fixtures. The controlled Host
+// and passing matcher do not establish an actual worker/request/exit fact.
+#[test]
+fn source_prior_end_missing_capture_is_rejected_for_both_prior_tags() {
+    let directory = tempfile::tempdir().unwrap();
+    for kind in [1, 2] {
+        let (journal, record) = source_terminal_fixture(
+            &directory.path().join(format!("prior-absent-{kind}.db")),
+            kind,
+        );
+        let before = source_retire_sql_rows(&journal.journal.connection);
+        let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+        let value = full::source_continuation_end_for_test(&record);
+        let mut absent = record.clone();
+        absent.capture = None;
+        assert!(matches!(
+            full::drain::source_prior_matches_for_test(&absent, value),
+            Err(JournalError::CorruptStore)
+        ));
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+        assert_eq!(
+            codec::load(&journal.journal.connection).unwrap().unwrap(),
+            current
+        );
+    }
+}
+
+#[test]
+fn source_prior_end_never_released_retains_absence_binding_and_full_action() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&directory.path().join("prior-never.db"), 1);
+    let (_, worker_record) = source_terminal_fixture(&directory.path().join("prior-action.db"), 2);
+    let other_action = actual_api_end(&worker_record).action;
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let original = full::source_continuation_end_for_test(&record);
+    assert!(full::drain::source_prior_matches_for_test(&record, original.clone()).unwrap());
+    for field in 0..4 {
+        let mut changed = record.clone();
+        let mut prior = original.clone();
+        match field {
+            0 => {
+                changed.capture.as_mut().unwrap().worker =
+                    worker_record.capture.as_ref().unwrap().worker.clone()
+            }
+            1 => {
+                changed.capture.as_mut().unwrap().completed =
+                    Some(ContentDigest::from_sha256([0x5a; 32]))
+            }
+            2 => {
+                prior["full_work_binding"] =
+                    serde_json::to_value(ContentDigest::from_sha256([0x6b; 32])).unwrap()
+            }
+            3 => {
+                if prior["seal_action"].is_null() {
+                    prior["seal_action"] = serde_json::to_value(&other_action).unwrap();
+                } else {
+                    prior["seal_action"]["identity"]["epoch"] = serde_json::json!(
+                        prior["seal_action"]["identity"]["epoch"]
+                            .as_u64()
+                            .unwrap()
+                            .checked_add(1)
+                            .unwrap()
+                    );
+                }
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !full::drain::source_prior_matches_for_test(&changed, prior).unwrap(),
+            "NeverReleased original field={field}"
+        );
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_prior_end_completed_capture_rejects_original_no_request() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&directory.path().join("prior-worker.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let original = full::source_continuation_end_for_test(&record);
+    assert!(record.capture.as_ref().unwrap().completed.is_some());
+    assert!(full::drain::source_prior_matches_for_test(&record, original.clone()).unwrap());
+    let mut missing_action = record.clone();
+    missing_action.capture.as_mut().unwrap().action = None;
+    missing_action.capture.as_mut().unwrap().worker = None;
+    assert!(matches!(
+        full::drain::source_prior_matches_for_test(&missing_action, original.clone()),
+        Err(JournalError::CorruptStore)
+    ));
+    let mut missing_worker = record.clone();
+    missing_worker.capture.as_mut().unwrap().worker = None;
+    assert!(matches!(
+        full::drain::source_prior_matches_for_test(&missing_worker, original.clone()),
+        Err(JournalError::CorruptStore)
+    ));
+    let mut no_request = original.clone();
+    no_request["observation"]["outcome"] = serde_json::json!({"kind": "no_request"});
+    let mut incomplete = record.clone();
+    incomplete.capture.as_mut().unwrap().completed = None;
+    assert!(full::drain::source_prior_matches_for_test(&incomplete, no_request.clone()).unwrap());
+    assert!(
+        !full::drain::source_prior_matches_for_test(&record, no_request).unwrap(),
+        "prior end matching must reject completed capture with NoRequest"
+    );
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}

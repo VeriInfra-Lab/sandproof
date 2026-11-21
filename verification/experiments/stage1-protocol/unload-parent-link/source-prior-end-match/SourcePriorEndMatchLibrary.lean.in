@@ -1,0 +1,19 @@
+import SourcePriorEndMatchSpec
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourcePriorEndMatchActual
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq := SourceRequestEndMatchActual.alloc.string.String.Insts.CoreCmpPartialEqString.eq
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq := @SourceRequestEndMatchActual.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+def core.ops.range.RangeInclusive.contains := @SourceRequestEndMatchActual.core.ops.range.RangeInclusive.contains
+def core.option.Option.as_ref := @SourceRetireLibrary.optionRef
+def core.option.Option.as_deref := @SourceMetadataView.optionalDeref
+end SandboxModel.Stage1Protocol.SourcePriorEndMatchActual
+
+namespace SandboxModel.Stage1Protocol.SourcePriorEndMatchWrongActual
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq := SourceRequestEndMatchActual.alloc.string.String.Insts.CoreCmpPartialEqString.eq
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq := @SourceRequestEndMatchActual.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+def core.ops.range.RangeInclusive.contains := @SourceRequestEndMatchActual.core.ops.range.RangeInclusive.contains
+def core.option.Option.as_ref := @SourceRetireLibrary.optionRef
+def core.option.Option.as_deref := @SourceMetadataView.optionalDeref
+end SandboxModel.Stage1Protocol.SourcePriorEndMatchWrongActual

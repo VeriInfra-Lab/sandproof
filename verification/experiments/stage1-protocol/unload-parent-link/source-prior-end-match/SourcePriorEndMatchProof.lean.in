@@ -1,0 +1,185 @@
+import SourcePriorEndMatchView
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourcePriorEndMatchModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourcePriorEndMatchProof
+noncomputable section
+local instance proofDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev Capture := controller.lifecycle_inbox.source_work.full.CaptureWork
+abbrev Observation := SourceRequestEndMatchModel.Observation
+abbrev Action := SourceRequestEndMatchModel.Action
+abbrev Worker := SourceRequestEndMatchModel.Worker
+abbrev Digest := SourceRequestEndMatchModel.Digest
+
+theorem requirement_accessor (work : controller.lifecycle_inbox.source_work.SourceWork) :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.SourceWork.impl.requirement work =
+      .ok work.requirement := rfl
+
+theorem binding_refines (io : Ports) (full : SourceRequestEndMatchModel.Full) :
+    SourcePriorEndMatchActual.capture.work.FullCaptureWorkRequest.binding_digest io full =
+      SourceRequestEndMatchModel.binding io full := SourceRequestEndMatchProof.binding_refines io full
+
+theorem request_match_refines (io : Ports) (observed : Observation) (action : Action)
+    (full : SourceRequestEndMatchModel.Full) (source : SourceRequestEndMatchModel.Requirement) (worker : Worker) :
+    SourcePriorEndMatchActual.capture.CaptureRequestEndObservation.matches io observed action full source worker =
+      SourceRequestEndMatchModel.outcome io observed action full source worker :=
+  SourceRequestEndMatchProof.actual_contract io observed action full source worker
+
+theorem digest_eq (left right : Digest) :
+    SourcePriorEndMatchActual.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq
+      left right = .ok (decide (left = right)) := SourceRequestEndMatchProof.digest_eq left right
+
+theorem option_action_eq (left right : Option Action) :
+    SourcePriorEndMatchActual.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      (core.cmp.PartialEqShared
+        (SourcePriorEndMatchActual.sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction
+          SourcePriorEndMatchActual.sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId))
+      left right = .ok (decide (left = right)) := SourceRetireEquality.option_action_eq left right
+
+theorem option_action_deref (value : Option Action) :
+    SourcePriorEndMatchActual.core.option.Option.as_deref (core.ops.deref.DerefBoxInst Action) value = .ok value := by
+  cases value <;>
+    simp [SourcePriorEndMatchActual.core.option.Option.as_deref, SourceMetadataView.optionalDeref,
+      core.ops.deref.DerefBoxInst, alloc.boxed.Box.deref]
+
+/-- The original complete clause is transparent. Its completed Bool argument
+    is supplied at the original post-match short-circuit position. -/
+theorem guard_refines (completed : Bool) (observed : Observation) :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_completed_no_request
+      completed observed = .ok (completed && match observed.outcome with
+        | .NoRequest => true
+        | .Returned _ => false) := by
+  cases completed <;> cases tag : observed.outcome <;>
+    simp [SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_completed_no_request, tag]
+
+theorem actual_contract (io : Ports) (record : Record) (prior : Prior) :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io record prior =
+      outcome io record prior := by
+  unfold SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches outcome
+  simp only [SourcePriorEndMatchActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, bind_tc_ok]
+  cases captured : record.capture with
+  | none =>
+    simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | some saved =>
+    simp only [core.option.Option.ok_or, bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch]
+    cases prior with
+    | NeverReleased digest action =>
+      cases hasWorker : saved.worker <;> cases hasCompleted : saved.completed <;>
+        simp [core.option.Option.is_none, binding_refines]
+      unfold SourceRetireSpec.tryJournal
+      apply congrArg (fun next => SourceRequestEndMatchModel.binding io saved.full >>= next)
+      funext encoded
+      cases encoded <;>
+        simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+          SourcePriorEndMatchActual.JournalErrorFromJson.from_json,
+          digest_eq, option_action_deref, option_action_eq]
+      split_ifs <;> simp_all
+    | WorkerEnded observed =>
+      cases hasAction : saved.action with
+      | none =>
+        simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | some action =>
+        simp only [bind_tc_ok, requirement_accessor]
+        cases hasWorker : saved.worker with
+        | none =>
+          simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | some worker =>
+          simp only [bind_tc_ok, request_match_refines]
+          unfold SourceRetireSpec.tryJournal
+          apply congrArg (fun next => SourceRequestEndMatchModel.outcome io observed action saved.full record.work.requirement worker >>= next)
+          funext matched
+          cases matched with
+          | Err error =>
+            simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+              SourcePriorEndMatchActual.JournalErrorFromJson.from_json]
+          | Ok matched =>
+            cases matched <;> simp [guard_refines]
+            rfl
+
+theorem complete_contract (io : Ports) :
+    Contract io (SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io) :=
+  actual_contract io
+
+theorem missing_capture_first (io : Ports) (record : Record) (prior : Prior)
+    (absent : record.capture = none) :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io record prior =
+      .ok (.Err .CorruptStore) := by
+  rw [actual_contract]
+  simp [outcome, absent]
+
+theorem never_worker_before_binding (io : Ports) (record : Record) (saved : Capture)
+    (digest : Digest) (action : Option Action) (captured : record.capture = some saved)
+    (present : saved.worker.isSome) :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io
+      record (.NeverReleased digest action) = .ok (.Ok false) := by
+  rw [actual_contract]
+  simp [outcome, captured, present]
+
+theorem never_completed_before_binding (io : Ports) (record : Record) (saved : Capture)
+    (digest : Digest) (action : Option Action) (captured : record.capture = some saved)
+    (present : saved.completed.isSome) :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io
+      record (.NeverReleased digest action) = .ok (.Ok false) := by
+  rw [actual_contract]
+  simp [outcome, captured, present]
+
+theorem missing_action_before_match (io : Ports) (record : Record) (saved : Capture) (observed : Observation)
+    (captured : record.capture = some saved) (absent : saved.action = none) :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io
+      record (.WorkerEnded observed) = .ok (.Err .CorruptStore) := by
+  rw [actual_contract]
+  simp [outcome, captured, absent]
+
+theorem missing_worker_before_match (io : Ports) (record : Record) (saved : Capture) (observed : Observation)
+    (action : Action) (captured : record.capture = some saved)
+    (present : saved.action = some action) (absent : saved.worker = none) :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io
+      record (.WorkerEnded observed) = .ok (.Err .CorruptStore) := by
+  rw [actual_contract]
+  simp [outcome, captured, present, absent]
+
+theorem callee_error_before_completed_gate (io : Ports) (record : Record) (saved : Capture)
+    (observed : Observation) (action : Action) (worker : Worker) (error : SourceRequestEndMatchModel.JsonError)
+    (captured : record.capture = some saved) (hasAction : saved.action = some action)
+    (hasWorker : saved.worker = some worker)
+    (failed : SourceRequestEndMatchModel.outcome io observed action saved.full record.work.requirement worker = .ok (.Err error)) :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io
+      record (.WorkerEnded observed) = .ok (.Err (.Json error)) := by
+  rw [actual_contract]
+  simp [outcome, captured, hasAction, hasWorker, SourceRetireSpec.tryJournal, failed]
+
+theorem completed_no_request_rejected (io : Ports) (record : Record) (saved : Capture)
+    (observed : Observation) (action : Action) (worker : Worker)
+    (captured : record.capture = some saved) (hasAction : saved.action = some action)
+    (hasWorker : saved.worker = some worker) (completed : saved.completed.isSome)
+    (tag : observed.outcome = .NoRequest)
+    (matched : SourceRequestEndMatchModel.outcome io observed action saved.full record.work.requirement worker = .ok (.Ok true)) :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io
+      record (.WorkerEnded observed) = .ok (.Ok false) := by
+  rw [actual_contract]
+  simp [outcome, captured, hasAction, hasWorker, SourceRetireSpec.tryJournal, matched, completed, tag]
+
+end
+end SandboxModel.Stage1Protocol.SourcePriorEndMatchProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.requirement_accessor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.binding_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.request_match_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.digest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.option_action_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.option_action_deref
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.guard_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.missing_capture_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.never_worker_before_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.never_completed_before_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.missing_action_before_match
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.missing_worker_before_match
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.callee_error_before_completed_gate
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchProof.completed_no_request_rejected

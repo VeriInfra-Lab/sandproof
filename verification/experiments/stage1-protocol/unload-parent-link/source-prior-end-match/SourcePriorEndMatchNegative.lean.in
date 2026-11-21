@@ -1,0 +1,110 @@
+import SourcePriorEndMatchWrong
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourcePriorEndMatchModel SourcePriorEndMatchValues
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourcePriorEndMatchNegative
+noncomputable section
+local instance negativeDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev wrong := SourcePriorEndMatchWrongActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches
+
+def clear_completed (record : Record) : Record :=
+  { record with capture := record.capture.map fun saved => { saved with completed := none } }
+
+private theorem wrong_request_match (ports : Ports) (observed : SourceRequestEndMatchModel.Observation)
+    (action : SourceRequestEndMatchModel.Action) (full : SourceRequestEndMatchModel.Full)
+    (source : SourceRequestEndMatchModel.Requirement) (worker : SourceRequestEndMatchModel.Worker) :
+    SourcePriorEndMatchWrongActual.capture.CaptureRequestEndObservation.matches ports observed action full source worker =
+      SourceRequestEndMatchModel.outcome ports observed action full source worker :=
+  SourcePriorEndMatchProof.request_match_refines ports observed action full source worker
+
+private theorem wrong_requirement (work : controller.lifecycle_inbox.source_work.SourceWork) :
+    SourcePriorEndMatchWrongActual.controller.lifecycle_inbox.source_work.SourceWork.impl.requirement work =
+      .ok work.requirement := rfl
+
+/-- A relation between actual generated roots, scoped to WorkerEnded. The
+    original complete Contract is still the only property under rejection. -/
+theorem actual_worker_relation (ports : Ports) (saved : Record) (observed : SourceRequestEndMatchModel.Observation) :
+    wrong ports saved (.WorkerEnded observed) =
+      SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches ports
+        (clear_completed saved) (.WorkerEnded observed) := by
+  rw [SourcePriorEndMatchProof.actual_contract]
+  unfold wrong SourcePriorEndMatchWrongActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches
+    outcome clear_completed
+  simp only [SourcePriorEndMatchWrongActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, bind_tc_ok]
+  cases captured : saved.capture with
+  | none =>
+    simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | some capture =>
+    simp only [Option.map_some, core.option.Option.ok_or, bind_tc_ok,
+      core.result.Result.Insts.CoreOpsTry.branch]
+    cases hasAction : capture.action with
+    | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | some action =>
+      simp only [bind_tc_ok, wrong_requirement]
+      cases hasWorker : capture.worker with
+      | none => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | some worker =>
+        simp only [bind_tc_ok, wrong_request_match]
+        unfold SourceRetireSpec.tryJournal
+        apply congrArg (fun next => SourceRequestEndMatchModel.outcome ports observed action capture.full saved.work.requirement worker >>= next)
+        funext matched
+        cases matched with
+        | Err error =>
+          simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+            SourcePriorEndMatchWrongActual.JournalErrorFromJson.from_json]
+        | Ok matched => cases matched <;> simp
+
+theorem never_released_unchanged (ports : Ports) (saved : Record)
+    (digest : SourceRequestEndMatchModel.Digest) (action : Option SourceRequestEndMatchModel.Action) :
+    wrong ports saved (.NeverReleased digest action) =
+      SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches ports
+        saved (.NeverReleased digest action) := by
+  rfl
+
+theorem normal_never_control : wrong io neverRecord never = .ok (.Ok true) := by
+  change wrong io neverRecord (.NeverReleased _ _) = _
+  rw [never_released_unchanged]
+  exact SourcePriorEndMatchValues.normal_never_released
+
+theorem normal_worker_control : wrong io record returned = .ok (.Ok true) := by
+  change wrong io record (.WorkerEnded _) = _
+  rw [actual_worker_relation, SourcePriorEndMatchProof.actual_contract]
+  simp [outcome, clear_completed, record, captured, SourceRetireSpec.tryJournal,
+    SourceRequestEndMatchModel.outcome, SourceRequestEndMatchModel.binding,
+    io, SourceRequestEndMatchValues.io, SourceRequestEndMatchValues.observation,
+    SourceRequestEndMatchValues.requirement, SourceRequestEndMatchModel.StatusAllowed]
+
+theorem incomplete_no_request_control : wrong io incomplete noRequest = .ok (.Ok true) := by
+  change wrong io incomplete (.WorkerEnded _) = _
+  rw [actual_worker_relation]
+  exact SourcePriorEndMatchValues.incomplete_no_request_control
+
+theorem actual_completed_no_request_accepted : wrong io record noRequest = .ok (.Ok true) := by
+  change wrong io record (.WorkerEnded _) = _
+  rw [actual_worker_relation]
+  exact SourcePriorEndMatchValues.incomplete_no_request_control
+
+theorem violates_same_complete_contract : ¬Contract io (wrong io) := by
+  intro contract
+  have promised := contract record noRequest
+  rw [actual_completed_no_request_accepted] at promised
+  simp [outcome, record, captured, noRequest, SourceRetireSpec.tryJournal,
+    SourceRequestEndMatchModel.outcome, SourceRequestEndMatchModel.binding,
+    io, SourceRequestEndMatchValues.io, SourceRequestEndMatchValues.observation,
+    SourceRequestEndMatchValues.requirement, SourceRequestEndMatchModel.StatusAllowed] at promised
+
+end
+end SandboxModel.Stage1Protocol.SourcePriorEndMatchNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchNegative.actual_worker_relation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchNegative.never_released_unchanged
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchNegative.normal_never_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchNegative.normal_worker_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchNegative.incomplete_no_request_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchNegative.actual_completed_no_request_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchNegative.violates_same_complete_contract
