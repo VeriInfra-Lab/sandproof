@@ -1,8 +1,8 @@
 {
   "kind": "actual-create-standard-read-and-rebind-review",
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
-    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
+    "controller-service/src/controller/lifecycle_inbox.rs": "4d87f72906bb2ba5ec541b8969ecd90cf7caf74280dd42e5e6e6bbd0488888a8",
+    "controller-service/src/controller/transaction.rs": "100391ccee63bd0e481ac7828971c2ac8eb97e781330fc6eb92a399c9d5f6bde",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
     "controller-core/src/store.rs": "56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3"
   },
@@ -20,7 +20,7 @@
     "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
     "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
-    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7"
+    "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892"
   },
   "templates": {
     "FunsExternal.lean.in": "ff1df8c22d30902ed5e755c35181b692f8d24c4000604458cd7e3f83d8ba1814",
@@ -979,5 +979,10 @@
       }
     ],
     "manifest_is_proof_evidence": false
+  },
+  "current_candidate_input_review": {
+    "base": "095fcb413168ad8e227931db8d5e02a23cbb1df7",
+    "full_original_acceptance_required": true,
+    "basis": "The real StandardCreateAttachment type and both effect implementation bodies, the WorldTransaction and CommittedWorld fields, WorldTransaction.world and Deref match the old source byte for byte. Changes to the owning transaction entry, commit, and Drop are outside these borrowed-usepoint contracts. The original source-closure admission and each original mutant remain required in the full run."
   }
 }
