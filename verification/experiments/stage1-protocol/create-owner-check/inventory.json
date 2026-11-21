@@ -833,13 +833,13 @@
           "code": "clippy::unnecessary_wraps",
           "message": "this function's return value is unnecessarily wrapped by `Result`",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 500
+          "line": 471
         },
         {
           "code": "clippy::unnecessary_wraps",
           "message": "this function's return value is unnecessarily wrapped by `Result`",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 500
+          "line": 471
         }
       ]
     },
@@ -859,13 +859,13 @@
           "code": "clippy::unnecessary_wraps",
           "message": "this function's return value is unnecessarily wrapped by `Result`",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 500
+          "line": 471
         },
         {
           "code": "clippy::unnecessary_wraps",
           "message": "this function's return value is unnecessarily wrapped by `Result`",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 500
+          "line": 471
         }
       ]
     },
@@ -901,13 +901,13 @@
           "code": "clippy::manual_let_else",
           "message": "this could be rewritten as `let...else`",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 524
+          "line": 495
         },
         {
           "code": "clippy::manual_let_else",
           "message": "this could be rewritten as `let...else`",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 524
+          "line": 495
         }
       ]
     },
