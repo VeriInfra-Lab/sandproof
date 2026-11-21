@@ -1,0 +1,63 @@
+import SourceMaterialChargeWrong
+import SourceMaterialChargeCases
+
+open Aeneas Aeneas.Std Result
+open SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol
+open SourceRetireTypes SourceRetireActual SourceRetireSpec
+open SourceMaterialChargeSpec SourceMaterialChargeProof SourceMaterialChargeCases
+set_option autoImplicit false
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceMaterialChargeNegative
+noncomputable section
+abbrev wrong := @SourceMaterialChargeWrong.controller.lifecycle_inbox.source_work.retirement.material_charge
+variable {Tree : Type → Type → Type} (io : SourceRetireLibrary.Ports Tree)
+variable (record : Record) (captured : Captured) (plan : Plan) (settlement : Settlement)
+variable (stateBytes requestBytes releaseBytes : Bytes)
+variable (ready : Ready io record captured plan settlement stateBytes requestBytes releaseBytes)
+include ready
+
+theorem wrong_ready : wrong io record = .ok (.Ok 0#u64) := by
+  have bounded := original_bounded io record captured plan settlement stateBytes requestBytes releaseBytes ready
+  have requested := original_request io record captured plan settlement stateBytes requestBytes releaseBytes ready
+  have binding := original_binding io record captured plan settlement stateBytes requestBytes releaseBytes ready
+  have digested := original_plan_digest io record captured plan settlement stateBytes requestBytes releaseBytes ready
+  have closed := original_closure io record captured plan settlement stateBytes requestBytes releaseBytes ready
+  have small : ¬plan.bytes.slice.val.length > 16384 := by have := ready.planBound; omega
+  simp [wrong,SourceMaterialChargeWrong.controller.lifecycle_inbox.source_work.retirement.material_charge,
+    ready.captureSome,ready.retirement,bounded,
+    controller.lifecycle_inbox.source_work.retirement.plan,SourceRetireLibrary.vectorEmpty,
+    ready.nonempty,alloc.vec.Vec.len,alloc.vec.Vec.val,UScalar.lt_equiv,
+    SourceRetireActual.capture.retirement.MATERIAL_RETIREMENT_PLAN_MAX_BYTES,small,
+    requested,binding,digested,core.result.Result.Insts.CoreOpsTry.branch,
+    digest_ne,SourceRetireLibrary.optionRef,ready.noRestore,restore_material_use,closed,
+    ready.settlementWork,ready.settlementPlan]
+
+theorem normal_control (same : settlement.released_material_bytes = captured.reserved_material_bytes) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge io record = .ok (.Ok 0#u64) ∧
+      wrong io record = .ok (.Ok 0#u64) := by
+  exact ⟨normal_settled io record captured plan settlement stateBytes requestBytes releaseBytes ready same,
+    wrong_ready io record captured plan settlement stateBytes requestBytes releaseBytes ready⟩
+
+theorem wrong_accepts_bad_bytes (different : settlement.released_material_bytes ≠ captured.reserved_material_bytes) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge io record = .ok (.Err .CorruptStore) ∧
+      wrong io record = .ok (.Ok 0#u64) := by
+  exact ⟨wrong_released_bytes_rejected io record captured plan settlement stateBytes requestBytes releaseBytes ready different,
+    wrong_ready io record captured plan settlement stateBytes requestBytes releaseBytes ready⟩
+
+theorem rejects_same_full_contract (different : settlement.released_material_bytes ≠ captured.reserved_material_bytes) :
+    ¬ Contract io (wrong io) := by
+  intro accepted
+  have same := accepted record
+  rw [wrong_ready io record captured plan settlement stateBytes requestBytes releaseBytes ready] at same
+  rw [expected_ready io record captured plan settlement stateBytes requestBytes releaseBytes ready] at same
+  simp [different] at same
+
+end
+end SandboxModel.Stage1Protocol.SourceMaterialChargeNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeNegative.wrong_ready
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeNegative.normal_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeNegative.wrong_accepts_bad_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeNegative.rejects_same_full_contract

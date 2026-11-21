@@ -1,0 +1,103 @@
+// Finite decoded-record controls using original Rust, real JSON and SQLite.
+// Controlled Host release facts do not establish physical material closure.
+#[test]
+fn source_material_charge_no_capture_requires_empty_retirement_and_release() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, _) = settled_terminal(&directory.path().join("charge.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let mut record = current.records.first().unwrap().clone();
+    record.capture = None;
+    record.retirement = None;
+    assert!(matches!(
+        retirement::material_charge(&record),
+        Err(JournalError::CorruptStore)
+    ));
+    record.material_release = retirement::MaterialReleaseFacts::empty();
+    assert_eq!(retirement::material_charge(&record).unwrap(), 0);
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+}
+
+#[test]
+fn source_material_charge_retiring_zero_does_not_mean_settled() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, _) = settled_terminal(&directory.path().join("charge.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let mut record = current.records.first().unwrap().clone();
+    let plan = match record.retirement.as_ref().unwrap() {
+        retirement::MaterialRetirementState::Settled { plan, .. } => plan.clone(),
+        _ => panic!("the original fixture must have settled its full material plan"),
+    };
+    record.retirement = Some(retirement::MaterialRetirementState::Retiring { plan });
+    let reserved = record.capture.as_ref().unwrap().reserved_material_bytes;
+    assert!(reserved > 0);
+    assert_eq!(retirement::material_charge(&record).unwrap(), reserved);
+    assert!(!retirement::is_settled(&record));
+    record.capture.as_mut().unwrap().reserved_material_bytes = 0;
+    assert_eq!(retirement::material_charge(&record).unwrap(), 0);
+    assert!(!retirement::is_settled(&record));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+}
+
+#[test]
+fn source_material_charge_settlement_matches_every_original_byte() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, _) = settled_terminal(&directory.path().join("charge.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let original = current.records.first().unwrap().clone();
+    assert!(retirement::is_settled(&original));
+    assert_eq!(retirement::material_charge(&original).unwrap(), 0);
+    for field in 0..3 {
+        let mut changed = original.clone();
+        let settlement = match changed.retirement.as_mut().unwrap() {
+            retirement::MaterialRetirementState::Settled { settlement, .. } => settlement,
+            _ => unreachable!(),
+        };
+        if field == 0 {
+            let mut bytes = *settlement.work_binding.as_bytes();
+            bytes[0] ^= 1;
+            settlement.work_binding = ContentDigest::from_sha256(bytes);
+        } else if field == 1 {
+            let mut bytes = *settlement.plan_binding.as_bytes();
+            bytes[0] ^= 1;
+            settlement.plan_binding = ContentDigest::from_sha256(bytes);
+        } else {
+            settlement.released_material_bytes =
+                settlement.released_material_bytes.checked_add(1).unwrap();
+        }
+        let result = retirement::material_charge(&changed);
+        if field < 2 {
+            assert!(matches!(result, Err(JournalError::CorruptStore)));
+        } else {
+            assert!(
+                matches!(result, Err(JournalError::CorruptStore)),
+                "material settlement must match every released byte of the original capture: {result:?}"
+            );
+        }
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    }
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_material_charge_state_size_is_rejected_before_plan_shape() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, _) = settled_terminal(&directory.path().join("charge.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let mut record = current.records.first().unwrap().clone();
+    match record.retirement.as_mut().unwrap() {
+        retirement::MaterialRetirementState::Settled { plan, .. } => plan.bytes = vec![0; 40_000],
+        _ => unreachable!(),
+    }
+    assert!(matches!(
+        retirement::material_charge(&record),
+        Err(JournalError::MaintenanceCapacity)
+    ));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+}

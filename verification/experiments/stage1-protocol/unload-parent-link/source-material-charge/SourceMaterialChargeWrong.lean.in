@@ -1,0 +1,26 @@
+import SourceMaterialChargeProof
+
+open Aeneas Aeneas.Std Result
+open SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol
+open SourceRetireTypes SourceRetireActual
+set_option autoImplicit false
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceMaterialChargeWrong
+noncomputable section
+variable {Tree : Type → Type → Type} (io : SourceRetireLibrary.Ports Tree)
+local notation "controller.lifecycle_inbox.source_work.retirement.bounded" => SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.bounded io
+local notation "controller.lifecycle_inbox.source_work.retirement.request" => SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.request
+local notation "capture.retirement.CaptureMaterialRetirementRequest.binding_digest" => SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.binding_digest io
+local notation "controller.lifecycle_inbox.source_work.retirement.closure.validate_bindings" => SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.closure.validate_bindings io
+local notation "controller.lifecycle_inbox.source_work.digest" => SourceRetireActual.controller.lifecycle_inbox.source_work.digest
+local notation "controller.lifecycle_inbox.source_work.retirement.material_charge.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRestoreClaimBool" => SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRestoreClaimBool
+local notation "core.option.Option.as_ref" => SourceRetireLibrary.optionRef
+local notation "alloc.vec.Vec.is_empty" => SourceRetireLibrary.vectorEmpty
+local notation "capture.retirement.MATERIAL_RETIREMENT_PLAN_MAX_BYTES" => _root_.SandboxModel.Stage1Protocol.SourceRetireActual.capture.retirement.MATERIAL_RETIREMENT_PLAN_MAX_BYTES
+
+-- ACTUAL WRONG MATERIAL CHARGE
+
+end
+end SandboxModel.Stage1Protocol.SourceMaterialChargeWrong
