@@ -1,0 +1,93 @@
+import SourceFullWorkGuardSpec
+
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes
+open SourceFullWorkGuardModel SandproofFoundationsRust.IdentifierLibrary
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceFullWorkGuardPause
+noncomputable section
+local instance modelDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem node_eq (a b : sandproof_protocol.internal.NodeIdentity) :
+    SourceFullWorkGuardActual.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq a b =
+      .ok (decide (a = b)) := by
+  exact SourceWorkMatch.RequestEquality.node_eq a b
+
+theorem deployment_eq (a b : sandproof_protocol.DeploymentId) :
+    SourceFullWorkGuardActual.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq a b =
+      .ok (decide (a = b)) := by
+  simp [SourceFullWorkGuardActual.sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    SourceFullWorkGuardActual.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SourceFullWorkGuardStd.alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem kind_eq (a b : sandproof_protocol.ResourceKind) :
+    SourceFullWorkGuardActual.sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq a b =
+      .ok (decide (a = b)) := by
+  exact SourceWorkMatch.Scalars.wire_resource_kind_eq a b
+
+theorem graphic_refines (byte : U8) :
+    SourceFullWorkGuardActual.core.num.U8.is_ascii_graphic byte = .ok (graphicByte byte) := by
+  simp only [SourceFullWorkGuardActual.core.num.U8.is_ascii_graphic, graphicByte]
+  split <;> simp_all
+
+theorem callback_refines (byte : U8) :
+    SourceFullWorkGuardActual.capture.work.PauseWorkRequest.valid.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+      () byte = .ok (graphicByte byte, ()) := by
+  simp [SourceFullWorkGuardActual.capture.work.PauseWorkRequest.valid.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut,
+    graphic_refines]
+
+theorem all_refines (bytes : List U8) :
+    ∃ rest, allBytes
+      SourceFullWorkGuardActual.capture.work.PauseWorkRequest.valid.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+      () bytes = .ok (bytes.all graphicByte, rest) := by
+  induction bytes with
+  | nil => exact ⟨[], rfl⟩
+  | cons byte tail ih =>
+    obtain ⟨rest, accepted⟩ := ih
+    cases checked : graphicByte byte with
+    | false => exact ⟨tail, by simp [allBytes, callback_refines, checked]⟩
+    | true => exact ⟨rest, by simp [allBytes, callback_refines, checked, accepted]⟩
+
+theorem actual_contract (value : Pause) (bounded : PauseRepresentable value) :
+    SourceFullWorkGuardActual.capture.work.PauseWorkRequest.valid value =
+      .ok (decide (PauseAllowed value)) := by
+  obtain ⟨rest, checked⟩ := all_refines (stringBytes value.source.boot_id)
+  have hbounded : StringRepresentable value.source.boot_id := bounded
+  cases hexpected : value.binding.operation.expected <;>
+    simp [SourceFullWorkGuardActual.capture.work.PauseWorkRequest.valid,
+      node_eq, deployment_eq, kind_eq,
+      SourceFullWorkGuardActual.alloc.string.String.is_empty,
+      SourceFullWorkGuardActual.alloc.string.String.len,
+      SourceFullWorkGuardActual.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+      SourceFullWorkGuardStd.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+      SourceFullWorkGuardStd.core.str.Str.is_empty,
+      SourceFullWorkGuardStd.core.str.Str.len,
+      SourceFullWorkGuardActual.core.str.Str.bytes,
+      SourceFullWorkGuardStd.core.str.Str.bytes,
+      SourceFullWorkGuardActual.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+      SourceFullWorkGuardStd.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+      SourceFullWorkGuardActual.sandproof_protocol.lifecycle.PROTOCOL_VERSION,
+      hbounded, checked, hexpected, SourceWorkMatch.RequestEquality.ok_and,
+      PauseAllowed, HasVersion, Nat.pos_iff_ne_zero]
+  all_goals
+    split_ifs <;> simp_all
+    apply Bool.eq_iff_iff.mpr
+    simp
+
+theorem complete_contract :
+    PauseContract SourceFullWorkGuardActual.capture.work.PauseWorkRequest.valid :=
+  actual_contract
+
+end
+end SandboxModel.Stage1Protocol.SourceFullWorkGuardPause
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardPause.node_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardPause.deployment_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardPause.kind_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardPause.graphic_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardPause.callback_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardPause.all_refines
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardPause.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardPause.complete_contract

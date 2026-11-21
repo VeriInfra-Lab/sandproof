@@ -1,0 +1,13 @@
+import SourceTerminalEndProof
+import SandproofFoundations.IdentifierLibrary
+
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceFullWorkGuardTypes
+abbrev core.str.iter.Bytes := SandproofFoundationsRust.core.str.iter.Bytes
+
+-- ACTUAL CURRENT MANIFEST ERROR AND PAUSE CALLBACK TYPE
+
+end SandboxModel.Stage1Protocol.SourceFullWorkGuardTypes

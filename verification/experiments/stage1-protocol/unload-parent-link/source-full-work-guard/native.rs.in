@@ -1,0 +1,209 @@
+// Original typed request and actual controller/API/SQL fixture; validity is
+// representation only and grants no execution, capture or resource permission.
+fn full_work_guard_fixture(
+    path: &Path,
+) -> (ControllerJournal, crate::capture::FullCaptureWorkRequest) {
+    let (mut journal, _) = ready(path);
+    let observed = observed_for_full(&mut journal);
+    let request = full_request(&observed);
+    assert!(
+        request.valid(),
+        "the original normal Full fixture must be valid"
+    );
+    (journal, request)
+}
+
+#[test]
+fn full_work_guard_accepts_original_normal_and_keeps_unchecked_values_unprivileged() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, request) = full_work_guard_fixture(&directory.path().join("normal.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let mut changed = request.clone();
+    changed.pause.source_work_binding = ContentDigest::from_sha256([0x5a; 32]);
+    changed.pause.source_resource.id = "other-vm".try_into().unwrap();
+    changed.pause.binding.operation.session = "other-session".try_into().unwrap();
+    changed.pause.binding.operation.key.owner = "other-owner".try_into().unwrap();
+    changed.pause.binding.operation.expected = ExpectedSession::Version(999);
+    changed.compatibility.tool = ContentDigest::from_sha256([0x11; 32]);
+    changed.compatibility.cpu = ContentDigest::from_sha256([0x12; 32]);
+    changed.compatibility.devices = ContentDigest::from_sha256([0x13; 32]);
+    changed.compatibility.image_configuration = ContentDigest::from_sha256([0x14; 32]);
+    assert!(changed.valid());
+    // These are deliberately different ordinary values. Acceptance here is
+    // not evidence that the original action/source/manifest was authorized.
+    assert_ne!(changed, request);
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn full_work_guard_checks_all_original_pause_fields_and_graphic_byte_bounds() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, request) = full_work_guard_fixture(&directory.path().join("pause.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    for field in 0..10 {
+        let mut changed = request.clone();
+        let pause = &mut changed.pause;
+        match field {
+            0 => {
+                pause.binding.operation.protocol_version = pause
+                    .binding
+                    .operation
+                    .protocol_version
+                    .checked_add(1)
+                    .unwrap()
+            }
+            1 => {
+                pause.binding.operation.node.deployment_id = "other-deployment".try_into().unwrap()
+            }
+            2 => pause.binding.operation.node.node_id = "other-node".try_into().unwrap(),
+            3 => {
+                pause.binding.operation.node.node_generation = pause
+                    .binding
+                    .operation
+                    .node
+                    .node_generation
+                    .checked_next()
+                    .unwrap()
+            }
+            4 => pause.binding.operation.key.deployment = "other-deployment".try_into().unwrap(),
+            5 => pause.binding.operation.expected = ExpectedSession::Absent,
+            6 => pause.source_resource.kind = sandproof_protocol::ResourceKind::Workspace,
+            7 => pause.source.pid = 0,
+            8 => pause.source.start_time_ticks = 0,
+            9 => pause.source.boot_id.clear(),
+            _ => unreachable!(),
+        }
+        assert_ne!(changed, request);
+        assert!(
+            !changed.pause.valid(),
+            "Pause validity must check field={field}"
+        );
+        assert!(
+            !changed.valid(),
+            "Full validity must retain Pause guard field={field}"
+        );
+    }
+    for boot in [
+        String::new(),
+        "a".repeat(129),
+        " ".into(),
+        "\u{7f}".into(),
+        "é".into(),
+        "a\0b".into(),
+    ] {
+        let mut changed = request.clone();
+        changed.pause.source.boot_id = boot;
+        assert!(!changed.pause.valid());
+        assert!(!changed.valid());
+    }
+    for boot in ["!".to_owned(), "~".to_owned(), "a".repeat(128)] {
+        let mut changed = request.clone();
+        changed.pause.source.boot_id = boot;
+        assert!(changed.pause.valid());
+        assert!(changed.valid());
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn full_work_guard_checks_profile_shape_signed_sizes_and_timeout_boundaries() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, request) = full_work_guard_fixture(&directory.path().join("limits.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    for field in 0..5 {
+        let mut changed = request.clone();
+        match field {
+            0 => changed.compatibility.snapshot_format = 0,
+            1 => changed.compatibility.writable_drives.clear(),
+            2 => {
+                let mut extra = changed.compatibility.writable_drives[0].clone();
+                extra.drive_id = "data".try_into().unwrap();
+                extra.jail_relative_path = "data.ext4".into();
+                changed.compatibility.writable_drives.push(extra);
+                assert!(changed.compatibility.validate().is_ok());
+            }
+            3 => {
+                changed.compatibility.writable_drives[0].drive_id = "data".try_into().unwrap();
+                assert!(changed.compatibility.validate().is_ok());
+            }
+            4 => {
+                changed.compatibility.writable_drives[0].jail_relative_path = "data.ext4".into();
+                assert!(changed.compatibility.validate().is_ok());
+            }
+            _ => unreachable!(),
+        }
+        assert!(
+            !changed.valid(),
+            "Full validity must check profile/shape field={field}"
+        );
+    }
+    let maximum = u64::try_from(i64::MAX).unwrap();
+    let overflow = maximum.checked_add(1).unwrap();
+    for field in 0..3 {
+        let samples: &[u64] = if field == 0 {
+            &[1, maximum, overflow, u64::MAX]
+        } else {
+            &[0, 1, maximum, overflow, u64::MAX]
+        };
+        for &value in samples {
+            let mut changed = request.clone();
+            match field {
+                0 => changed.state_bytes = value,
+                1 => changed.memory_bytes = value,
+                2 => changed.disk_bytes = value,
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                changed.valid(),
+                value > 0 && value <= maximum,
+                "signed size field={field}, value={value}"
+            );
+        }
+    }
+    for api in [999, 1000, 300_000, 300_001] {
+        let mut changed = request.clone();
+        changed.api_timeout_ms = api;
+        changed.worker_timeout_ms = api;
+        assert_eq!(changed.valid(), (1000..=300_000).contains(&api));
+    }
+    for worker in [999, 1000, 300_000, 300_001] {
+        let mut changed = request.clone();
+        changed.api_timeout_ms = 1000;
+        changed.worker_timeout_ms = worker;
+        assert_eq!(changed.valid(), (1000..=300_000).contains(&worker));
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn full_work_guard_rejects_zero_state_bytes() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, mut request) = full_work_guard_fixture(&directory.path().join("zero-state.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    request.state_bytes = 0;
+    assert!(
+        !request.valid(),
+        "full work validity must reject zero state bytes"
+    );
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}

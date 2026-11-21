@@ -1,0 +1,65 @@
+import SourceFullWorkGuardWrong
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes
+open SourceFullWorkGuardModel SourceFullWorkGuardValues
+open SandproofFoundationsRust.IdentifierLibrary
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceFullWorkGuardNegative
+noncomputable section
+
+theorem evaluated (bytes : U64) (bounded : (bytes.val : Int) ≤ I64.max) :
+    SourceFullWorkGuardWrongActual.capture.work.FullCaptureWorkRequest.valid
+      { full with state_bytes := bytes } = .ok true := by
+  have accepted_pause : SourceFullWorkGuardActual.capture.work.PauseWorkRequest.valid pause = .ok true := by
+    rw [SourceFullWorkGuardPause.actual_contract pause pause_representable]
+    simp [pause_allowed]
+  have accepted_profile : SourceFullWorkGuardActual.sandproof_protocol.lifecycle.manifest.VmCompatibility.validate profile =
+      .ok (.Ok ()) := by
+    rw [SourceFullWorkGuardManifestProfile.profile_refines profile profile_representable]
+    simp [profile_allowed]
+  have id_bounded : StringRepresentable "rootfs" := by
+    exact full_representable.2.2 ⟨"rootfs", "rootfs.ext4"⟩ (by simp [full, profile])
+  have one_length : alloc.vec.Vec.len profile.writable_drives = 1#usize := by rfl
+  have selected := SourceFullWorkGuardProof.indexed_drive profile.writable_drives
+    (⟨"rootfs", "rootfs.ext4"⟩ : Drive) rfl
+  have one_fits : (1 : Int) ≤ I64.max := by scalar_tac
+  simp only [SourceFullWorkGuardWrongActual.capture.work.FullCaptureWorkRequest.valid,
+    full, accepted_pause, accepted_profile, core.result.Result.is_ok, bind_tc_ok, ↓reduceIte]
+  simp only [one_length, ↓reduceIte, selected, bind_tc_ok]
+  simp [
+    SourceFullWorkGuardActual.sandproof_protocol.ResourceId.as_str,
+    SourceFullWorkGuardActual.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+    SourceFullWorkGuardStd.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+    SourceFullWorkGuardActual.Str.Insts.CoreCmpPartialEqStr.eq,
+    SourceFullWorkGuardStd.Str.Insts.CoreCmpPartialEqStr.eq,
+    SourceFullWorkGuardActual.alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq,
+    SourceFullWorkGuardStd.alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq,
+    SourceFullWorkGuardProof.literal_bytes, id_bounded,
+    SourceFullWorkGuardActual.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from,
+    SourceRecordBoundsView.toSigned, bounded, one_fits,
+    core.ops.range.RangeInclusive.new, SourceFullWorkGuardProof.range_refines]
+
+theorem normal_control :
+    SourceFullWorkGuardWrongActual.capture.work.FullCaptureWorkRequest.valid full = .ok true := by
+  simpa [full] using evaluated (1#u64) (by scalar_tac)
+
+theorem actual_empty_state_accepted :
+    SourceFullWorkGuardWrongActual.capture.work.FullCaptureWorkRequest.valid emptyState = .ok true := by
+  exact evaluated (0#u64) (by scalar_tac)
+
+theorem violates_same_full_contract :
+    ¬ FullContract SourceFullWorkGuardWrongActual.capture.work.FullCaptureWorkRequest.valid := by
+  intro contract
+  have promised := contract emptyState empty_state_representable
+  simp [actual_empty_state_accepted, empty_state_rejected_by_same_contract] at promised
+
+end
+end SandboxModel.Stage1Protocol.SourceFullWorkGuardNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardNegative.evaluated
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardNegative.normal_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardNegative.actual_empty_state_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardNegative.violates_same_full_contract

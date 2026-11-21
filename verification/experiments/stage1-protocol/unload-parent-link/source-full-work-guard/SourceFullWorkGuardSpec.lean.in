@@ -1,0 +1,61 @@
+import SourceFullWorkGuardManifestProfile
+
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes
+open SandproofFoundationsRust.IdentifierLibrary
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceFullWorkGuardModel
+noncomputable section
+local instance modelDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+abbrev Pause := capture.work.PauseWorkRequest
+abbrev Full := capture.work.FullCaptureWorkRequest
+abbrev Profile := sandproof_protocol.lifecycle.manifest.VmCompatibility
+abbrev Drive := sandproof_protocol.lifecycle.manifest.WritableDrive
+abbrev Expected := sandproof_protocol.lifecycle.identity.ExpectedSession
+
+def HasVersion (value : Expected) : Prop := ∃ version, value = .Version version
+def graphicByte (value : U8) : Bool := decide (33 ≤ value.val ∧ value.val ≤ 126)
+
+/-- Ordinary Rust value/borrow representation only, not a valid-work hypothesis. -/
+def PauseRepresentable (value : Pause) : Prop := StringRepresentable value.source.boot_id
+
+def PauseAllowed (value : Pause) : Prop :=
+  value.binding.operation.protocol_version = 4#u16 ∧
+  value.binding.operation.node = value.node ∧
+  value.binding.operation.key.deployment = value.node.deployment_id ∧
+  HasVersion value.binding.operation.expected ∧
+  value.source_resource.kind = .Vm ∧
+  0 < value.source.pid.val ∧ 0 < value.source.start_time_ticks.val ∧
+  0 < (stringBytes value.source.boot_id).length ∧
+  (stringBytes value.source.boot_id).length ≤ 128 ∧
+  (stringBytes value.source.boot_id).all graphicByte = true
+
+def FullRepresentable (value : Full) : Prop :=
+  PauseRepresentable value.pause ∧
+  SourceFullWorkGuardManifestProfile.Representable value.compatibility ∧
+  ∀ drive ∈ value.compatibility.writable_drives.val, StringRepresentable drive.drive_id
+
+def RootDrive (drives : alloc.vec.Vec Drive) : Prop :=
+  ∃ drive, drives.val = [drive] ∧
+    stringBytes drive.drive_id = stringBytes "rootfs" ∧
+    stringBytes drive.jail_relative_path = stringBytes "rootfs.ext4"
+
+def Sized (value : U64) : Prop := 0 < value.val ∧ (value.val : Int) ≤ I64.max
+
+def FullAllowed (value : Full) : Prop :=
+  PauseAllowed value.pause ∧
+  SourceFullWorkGuardManifestProfile.ValidProfile value.compatibility ∧
+  RootDrive value.compatibility.writable_drives ∧
+  Sized value.state_bytes ∧ Sized value.memory_bytes ∧ Sized value.disk_bytes ∧
+  1000 ≤ value.api_timeout_ms.val ∧ value.api_timeout_ms.val ≤ 300000 ∧
+  value.api_timeout_ms.val ≤ value.worker_timeout_ms.val ∧ value.worker_timeout_ms.val ≤ 300000
+
+def PauseContract (root : Pause → Result Bool) : Prop :=
+  ∀ value, PauseRepresentable value → root value = .ok (decide (PauseAllowed value))
+def FullContract (root : Full → Result Bool) : Prop :=
+  ∀ value, FullRepresentable value → root value = .ok (decide (FullAllowed value))
+
+end
+end SandboxModel.Stage1Protocol.SourceFullWorkGuardModel

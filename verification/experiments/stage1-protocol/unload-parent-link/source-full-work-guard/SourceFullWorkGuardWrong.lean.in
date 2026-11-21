@@ -1,0 +1,14 @@
+import SourceFullWorkGuardValues
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes SourceFullWorkGuardActual
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+noncomputable section
+namespace SandboxModel.Stage1Protocol.SourceFullWorkGuardWrongActual
+abbrev toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SourceFullWorkGuardActual.toStr text bounded
+
+-- ACTUAL WRONG FULL GUARD
+end SandboxModel.Stage1Protocol.SourceFullWorkGuardWrongActual
