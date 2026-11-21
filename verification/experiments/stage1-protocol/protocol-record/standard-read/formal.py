@@ -32,6 +32,7 @@ CURRENT_PROVIDER_FILES = (
     'verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean',
     'verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean',
     'verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean',
+    str(HERE/'generated/SandproofStandardRecord/CodecTypes.lean'),
 )
 CURRENT_GENERATED = (
     str(HERE/'generated/SandproofStandardRecord/Types.lean'),

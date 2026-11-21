@@ -125,8 +125,14 @@
     },
     "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/TypesExternal.lean": {
       "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/TypesExternal.lean.in",
-      "source_sha256": "2dbebe8b05a1406603fbbe0e83ef064455dd615417fc341cc05d0f37b4e9d63b",
-      "sha256": "2dbebe8b05a1406603fbbe0e83ef064455dd615417fc341cc05d0f37b4e9d63b"
+      "source_sha256": "0750324493f8f67e15ef16b22f40ec7b766f8713b07cb2ad0cd7e8d814fe757c",
+      "sha256": "b93c51ae301a6834863b248b0c9377d31582e594dc4e4189ece47c24dd28c273",
+      "replace": [
+        [
+          "import SandproofSqliteStatements.TypesExternal",
+          "import SandproofSqliteStatements.TypesExternal\nimport SandproofStandardRecord.CodecTypes"
+        ]
+      ]
     },
     "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean": {
       "source": "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
@@ -347,6 +353,11 @@
       "source": "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
       "source_sha256": "54992966b4aedfcf4fe18cd00e344502f118ed822f8ab415965cb1e2e6e3a8b9",
       "sha256": "54992966b4aedfcf4fe18cd00e344502f118ed822f8ab415965cb1e2e6e3a8b9"
+    },
+    "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/CodecTypes.lean": {
+      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/CodecTypes.lean.in",
+      "source_sha256": "7058bbc7b3025fee8fe8d1920151897aad94d1b2ac4cc1bb8e70b71071eca6d9",
+      "sha256": "7058bbc7b3025fee8fe8d1920151897aad94d1b2ac4cc1bb8e70b71071eca6d9"
     }
   }
 }
