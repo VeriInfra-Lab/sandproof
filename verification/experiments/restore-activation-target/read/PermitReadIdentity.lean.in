@@ -1,0 +1,155 @@
+import SandproofRestorePermitFinalize.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofRestorePermitFinalizeRust
+
+namespace SandboxModel.Stage1Protocol.RestoreActivationTarget.ReadIdentity
+
+abbrev Permit := capture.restore.RestoreActivationPermit
+abbrev ReadTransaction := rusqlite.transaction.Transaction
+abbrev Journal := controller.ControllerJournal
+
+/-- The existing single-read observation uses the raw transaction's own
+connection. The actual generated PRAGMA body supplies this exact SQL and
+the callback below supplies its original unit bind and signed column zero. -/
+def observedVersion (connection : rusqlite.Connection) :=
+  SandproofSqliteSession.queryI64 connection.base.reads.current.single
+    (SandproofRestorePermitFinalizeRust.toStr "PRAGMA data_version") ()
+
+private theorem original_column
+    (value : SandproofSqliteSession.RawValue) :
+    I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result (observedValue value) =
+      SandproofSqliteSession.i64Column value := by
+  cases value <;> rfl
+
+private theorem original_callback (state : Unit) (row : rusqlite.row.Row) :
+    controller.transaction.data_version.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error.call_once
+        state row =
+      SandproofSqliteSession.rowGet SandproofSqliteSession.index
+        SandproofSqliteSession.i64Column row 0#usize := by
+  unfold controller.transaction.data_version.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error.call_once
+  unfold rusqlite.row.Row.get
+  simp only [original_column]
+
+theorem actual_data_version_uses_existing_query (connection : rusqlite.Connection) :
+    controller.transaction.data_version connection = (do
+      let reply ← observedVersion connection
+      match reply with
+      | .Ok version => .ok (.Ok version)
+      | .Err error => .ok (.Err (.Sqlite error))) := by
+  have query :
+      rusqlite.Connection.query_row Tuple.Insts.RusqliteParamsParams
+        controller.transaction.data_version.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error
+        connection (SandproofRestorePermitFinalizeRust.toStr "PRAGMA data_version") () () =
+      observedVersion connection := by
+    have call :
+        controller.transaction.data_version.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error.call_once =
+          (fun (_ : Unit) row => SandproofSqliteSession.rowGet SandproofSqliteSession.index
+            SandproofSqliteSession.i64Column row 0#usize) := by
+      funext state row
+      exact original_callback state row
+    change SandproofSqliteSession.queryRow SandproofSqliteSession.bindUnit
+      controller.transaction.data_version.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error.call_once
+      connection.base.reads.current.single
+      (SandproofRestorePermitFinalizeRust.toStr "PRAGMA data_version") () () = _
+    rw [call]
+    rfl
+  unfold controller.transaction.data_version
+  rw [query]
+  congr 1
+  funext reply
+  cases reply <;> simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalError.Insts.CoreConvertFromError.from]
+
+theorem actual_identity_success_iff
+    (world : controller.transaction.CommittedWorld) (conn : rusqlite.Connection) :
+    controller.transaction.CommittedWorld.check_identity world conn = .ok (.Ok ()) ↔
+      observedVersion conn = .ok (.Ok world.data_version) := by
+  unfold controller.transaction.CommittedWorld.check_identity
+  rw [actual_data_version_uses_existing_query]
+  generalize observedVersion conn = result
+  cases result with
+  | ret reply =>
+    cases reply with
+    | Ok version =>
+      by_cases matching : version = world.data_version
+      · simp [matching]
+      · generalize controller.transaction.CommittedWorld.invalidate world = invalidated
+        cases invalidated <;> simp [matching, SandproofStage1RequestRust.core.result.Result.and]
+    | Err error =>
+      generalize controller.transaction.CommittedWorld.invalidate world = invalidated
+      cases invalidated <;> simp [SandproofStage1RequestRust.core.result.Result.and]
+  | div => simp
+  | vis effect continuation => simp
+
+theorem actual_identity_and_read_commit_success_iff
+    (journal : Journal) (tx : ReadTransaction) (candidate returned : Permit) :
+    controller.lifecycle_inbox.source_work.restore.proof_finalize_read_permit journal tx candidate =
+        .ok (.Ok returned) ↔
+      observedVersion tx.conn = .ok (.Ok journal.committed_world.data_version) ∧
+      rusqlite.transaction.Transaction.commit tx = .ok (.Ok ()) ∧ returned = candidate := by
+  unfold controller.lifecycle_inbox.source_work.restore.proof_finalize_read_permit
+  simp only [rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    SandproofParentCommitRust.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    bind_tc_ok]
+  rw [← actual_identity_success_iff]
+  generalize controller.transaction.CommittedWorld.check_identity journal.committed_world tx.conn = identity
+  cases identity with
+  | ret identityReply =>
+    cases identityReply with
+    | Ok value =>
+      cases value
+      generalize rusqlite.transaction.Transaction.commit tx = commit
+      cases commit with
+      | ret reply =>
+        cases reply with
+        | Ok u =>
+          cases u
+          simp [core.result.Result.Insts.CoreOpsTry.branch, eq_comm]
+        | Err error =>
+          simp [core.result.Result.Insts.CoreOpsTry.branch,
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+            JournalError.Insts.CoreConvertFromError.from]
+      | div => simp [core.result.Result.Insts.CoreOpsTry.branch]
+      | vis effect continuation => simp [core.result.Result.Insts.CoreOpsTry.branch]
+    | Err error =>
+      simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | div => simp
+  | vis effect continuation => simp
+
+theorem actual_finalize_read_rejects_mismatched_version
+    (journal : Journal) (tx : ReadTransaction) (permit : Permit) (read : I64)
+    (observed : observedVersion tx.conn = .ok (.Ok read))
+    (different : read ≠ journal.committed_world.data_version)
+    (invalidate : journal.committed_world.invalidate = .ok ()) :
+    controller.lifecycle_inbox.source_work.restore.proof_finalize_read_permit journal tx permit =
+      .ok (.Err .CorruptStore) := by
+  simp [controller.lifecycle_inbox.source_work.restore.proof_finalize_read_permit,
+    SandproofParentCommitRust.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    controller.transaction.CommittedWorld.check_identity, actual_data_version_uses_existing_query,
+    observed, different, invalidate, SandproofStage1RequestRust.core.result.Result.and,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem actual_finalize_read_propagates_query_error
+    (journal : Journal) (tx : ReadTransaction) (permit : Permit) (error : rusqlite.error.Error)
+    (observed : observedVersion tx.conn = .ok (.Err error))
+    (invalidate : journal.committed_world.invalidate = .ok ()) :
+    controller.lifecycle_inbox.source_work.restore.proof_finalize_read_permit journal tx permit =
+      .ok (.Err (.Sqlite error)) := by
+  simp [controller.lifecycle_inbox.source_work.restore.proof_finalize_read_permit,
+    SandproofParentCommitRust.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    controller.transaction.CommittedWorld.check_identity, actual_data_version_uses_existing_query,
+    observed, invalidate, SandproofStage1RequestRust.core.result.Result.and,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+end SandboxModel.Stage1Protocol.RestoreActivationTarget.ReadIdentity
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.ReadIdentity.actual_data_version_uses_existing_query
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.ReadIdentity.actual_identity_success_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.ReadIdentity.actual_identity_and_read_commit_success_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.ReadIdentity.actual_finalize_read_rejects_mismatched_version
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.ReadIdentity.actual_finalize_read_propagates_query_error

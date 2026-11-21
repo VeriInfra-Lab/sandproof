@@ -1,0 +1,20 @@
+import SandproofParentCommit.Types
+import SandproofStage1Request.TypesExternal
+import SandproofStorage.PermitFileType
+
+namespace SandproofRestorePermitFinalizeRust
+
+abbrev F64 := SandproofFoundationsRust.F64
+abbrev core.cell.RefCell := SandproofStage1RequestRust.core.cell.RefCell
+abbrev core.cell.RefMut := SandproofStage1RequestRust.core.cell.RefMut
+abbrev core.io.error.Error := SandproofSqliteRust.core.io.error.Error
+abbrev std.fs.File := SandproofStorageRust.std.fs.File
+abbrev rusqlite.error.Error := SandproofSqliteRust.rusqlite.error.Error
+abbrev rusqlite.Connection := SandproofParentCommitRust.rusqlite.Connection
+abbrev rusqlite.row.Row := SandproofSqliteSession.Row
+abbrev rusqlite.statement.Statement := SandproofSqliteSession.RowStatement
+abbrev rusqlite.types.from_sql.FromSqlError := SandproofLoadBlobRust.rusqlite.types.from_sql.FromSqlError
+abbrev rusqlite.transaction.Transaction := SandproofParentCommitRust.rusqlite.transaction.Transaction
+abbrev serde_json.error.Error := SandproofSqliteRust.serde_json.error.Error
+
+end SandproofRestorePermitFinalizeRust

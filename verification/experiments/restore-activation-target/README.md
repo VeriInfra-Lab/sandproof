@@ -1,9 +1,9 @@
 # LC-P7 恢复激活的发送目标
 
 固定生产输入为 integration `1b15872a07568f9f34aad514a64673ac328c7ee8`，
-源码树 `42b4f7fda5df6c10c9310f78b9edec6bbb98048a`。本包交付原许可载体
-的字段保持定理，并记录 B 侧从 SQLite 许可读取到实际写入的源码核对。
-真实发送目标的证明仍缺一条宿主身份关系。
+源码树 `42b4f7fda5df6c10c9310f78b9edec6bbb98048a`。本包交付许可载体和原读侧
+的局部定理，并记录 B 侧从 SQLite 许可读取到实际写入的源码核对。
+原 `find` 的实现对应、读侧各分段的组合及真实发送目标的宿主身份关系仍有待提供。
 
 ## 持久记录如何成为可用许可
 
@@ -164,6 +164,42 @@ unset RUSTFLAGS
 用同一 Lean 服务核对实际文件诊断和公理审计。保留实际展开的三个原方法，
 并从 `translation.json` 拒绝空结果或 opaque 定义。
 
+## 可独立复现的原许可读侧
+
+| Lean 入口 | 适用范围 |
+| --- | --- |
+| [PermitReadSelection](read/PermitReadSelection.lean.in) | A 的原 SQL 查询和游标顺序将给定的原槽位连接到返回记录向量。逻辑首匹配等价于命中且此前无命中。Rust `Iterator::find` 的实现对应仍待提供。 |
+| [PermitReadWork](read/PermitReadWork.lean.in) | 原 work 重建成功且与请求全文相等时，保留七个序列化字段。给定原 activation marker 匹配及摘要结果，原 action clone 和许可方法保留完整 action 与同一摘要。 |
+| [PermitReadReturn](read/PermitReadReturn.lean.in) | 原 `tx.commit()?; Ok(permit)` 正常返回需要同一事务提交成功。返回原传入许可，SQLite 提交错误传播。给定已核对的 marker 和原许可构造，返回 action 与摘要为原值。 |
+| [PermitReadIdentity](read/PermitReadIdentity.lean.in) | 从原事务自己的连接执行 `PRAGMA data_version`、核对 journal 版本、提交同一事务并返回传入许可。原 invalidation 正常返回时，版本错配返回 `CorruptStore`，查询错误返回原 `Sqlite(error)`。未对缓存的物理写后状态作结论。 |
+
+[固定输入清单](read/inputs.json)记录生产树、有生成体的各视图、固定工具和全部证明模板。
+查询复用 A 的固定[查询提供方](https://github.com/VeriInfra-Lab/sandproof/tree/c05bac6a83b9d102a75060f0769a81ca9058d9e6/verification/experiments/restore-claim)，
+work 沿用 #766 的生成类型和原克隆合同，事务边界按 #770 的
+[物化清单](https://github.com/VeriInfra-Lab/sandproof/blob/9b82954c68c85bb9c95831865fed7a278d455cb5/verification/experiments/create-transaction-link/current/materialization.json)
+取回原依赖。每次装载都重新核对原生成文件与外部接口模板的 SHA-256。
+读取事务和 work 两个生成入口来自同一固定 Rust 源码，身份视图另保留其真实 journal 和事务类型。
+[原收据索引](read/original-receipts.json)保留各自的执行身份和原始清单摘要。
+
+在证明机取回三个固定 Git 对象，使用项目已核准的重任务锁、离线 Cargo 缓存和 Lean 服务。
+`A_QUERY_GENERATED` 指向 A 的已封口 `--source-query` 运行下的
+`source-query/generated`。需要重新生成时，使用 A 固定提交的
+`verify-decisions.sh --source-query`，保留原模块的全部验收。
+`EXTRACT_OUT` 和 `CHECK_OUT` 须分别指向未创建的私有目录。
+
+```bash
+case_dir=verification/experiments/restore-activation-target/read
+git fetch --no-tags origin c05bac6a83b9d102a75060f0769a81ca9058d9e6
+bash "$case_dir/extract.sh" "$EXTRACT_OUT" "$HEAVY_LOCK" "$CHARON" "$AENEAS"
+bash "$case_dir/check.sh" "$CHECK_OUT" "$HEAVY_LOCK" "$LAKE_PACKAGES" "$LEAN_MCP_ENV" \
+  "$BWRAP" "$A_QUERY_GENERATED" "$EXTRACT_OUT/work/generated" "$EXTRACT_OUT/identity/generated"
+```
+
+若 B 的原两份抽取保留完整，可以将其 `generated` 目录直接传给第二条命令。
+该命令用独立视图构建四份证明并由同一 Lean 服务检查实际文件与公理依赖。
+它不将历史原生结果转签为本树执行，也不登记公共正式验收。
+原 `C/A` 持久写侧、实际 `find`、请求全文比较、摘要计算与宿主发送的完整组合仍待交接。
+
 ## 拟验收性质与依赖
 
 以下为待实现的定理接口，`sent` 表示在已连接的 stream 上尝试写激活请求的事件，
@@ -215,6 +251,12 @@ restore_activation_sends_only_original
   [#907](https://github.com/VeriInfra-Lab/sandproof/pull/907) ·
   [#908](https://github.com/VeriInfra-Lab/sandproof/pull/908) ·
   [#832 原 KVM 报告](https://github.com/VeriInfra-Lab/sandproof/pull/832#issuecomment-6920410625)
+- 原实机场景支持使用 [受管存储工具](../../../tools/single_host_storage.py) 创建新独占
+  XFS 文件卷。存储安装收据、经独立批准的静态部署收据和本次内核配额读回是三份输入。
+  当前缺本场景的受保护独立部署配置。由实机主管提供并批准一份绑定精确候选的配置，
+  包含通过原 `deployment_directory` 检查的独立卷目录、原 fixture 与 capture profile、
+  固定资产指纹和原 HostLease 工作位。执行者可据此生成新卷和两类收据，再用原场景观察。
+  旧实机配置的部分路径已不可用。普通 CI 卷和证明共享卷各保留其原用途。
 - ning 在固定生产输入实跑原生检查 24 项。Runtime 3 项、Node 19 项、SQLite 原许可
   继续与准备只读各 1 项均通过。Runtime 丢回复测试走受控回调。读侧读事务提交错误
   另有上述 1 项原生对照。未新增 KVM 执行。
@@ -223,7 +265,8 @@ restore_activation_sends_only_original
   许可读根在 Charon 的转换后类型检查出现 Iterator trait clause 不匹配。
   `activate_same_loaded_candidate` 的 LLBC 成功生成，但原 Aeneas 在
   `snapshot_restore.rs:48–50` 拒绝其错误构造参数。隔离该构造的可见性后仍报错。
-  发送根和许可读根缺可导入的 Lean 生成体，尚无实际发送同性质的正误版证书。
+  完整发送根和含真实 `find` 的完整许可读根仍缺可导入的 Lean 生成体。
+  上述原读侧分段已有各自生成体；尚无实际发送同性质的正误版证书。
 - 许可载体已在 ning 通过内核、Lean 服务和三项标准依赖审计。公共登记保持独立。
   身份连续性提供方
   和透明抽取就绪后，公共集成需要登记此包的原生用例、正式入口、实际文件、审计及

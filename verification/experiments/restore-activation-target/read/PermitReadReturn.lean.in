@@ -1,0 +1,74 @@
+import SandproofRestoreWork.Funs
+import PermitReadWork
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofRestoreWorkRust
+open SandboxModel.Stage1Protocol.RestoreWork
+open SandboxModel.Stage1Protocol.RestoreWork.NewCloning
+open SandproofRestoreWorkRust.controller.lifecycle_inbox.source_work
+
+namespace SandboxModel.Stage1Protocol.RestoreActivationTarget
+
+abbrev Permit := capture.restore.RestoreActivationPermit
+abbrev ReadTransaction := rusqlite.transaction.Transaction
+
+theorem actual_read_tail_success_iff
+    (tx : ReadTransaction) (candidate returned : Permit) :
+    restore.proof_return_permit_after_identity tx candidate = .ok (.Ok returned) ↔
+      rusqlite.transaction.Transaction.commit tx = .ok (.Ok ()) ∧ returned = candidate := by
+  generalize observed : rusqlite.transaction.Transaction.commit tx = outcome
+  cases outcome with
+  | ret result =>
+    cases result with
+    | Ok value =>
+      cases value
+      simp [restore.proof_return_permit_after_identity, observed,
+        core.result.Result.Insts.CoreOpsTry.branch, eq_comm]
+    | Err error =>
+      simp [restore.proof_return_permit_after_identity, observed,
+        core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        JournalError.Insts.CoreConvertFromError.from]
+  | div =>
+    simp [restore.proof_return_permit_after_identity, observed]
+  | vis effect cont =>
+    simp [restore.proof_return_permit_after_identity, observed]
+
+theorem actual_read_tail_sqlite_error
+    (tx : ReadTransaction) (candidate : Permit) (error : rusqlite.error.Error)
+    (observed : rusqlite.transaction.Transaction.commit tx = .ok (.Err error)) :
+    restore.proof_return_permit_after_identity tx candidate = .ok (.Err (.Sqlite error)) := by
+  simp [restore.proof_return_permit_after_identity, observed,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalError.Insts.CoreConvertFromError.from]
+
+/-- Given the independently connected upstream checks and digest result, an
+actual success of the original return suffix exposes the original marker
+action and the identical digest, and implies success of the same commit. -/
+theorem returned_read_permit_has_original_fields
+    (tx : ReadTransaction) (claim : restore.RestoreClaim) (original supplied : Action)
+    (digest : Digest) (candidate returned : Permit)
+    (saved : claim.activation = some original)
+    (actionChecked : claim.activation = some supplied)
+    (constructed : (do
+      let action ← sandproof_protocol.WorkAction.Insts.CoreCloneClone.clone
+        sandbox_controller_core.model.EffectId.Insts.CoreCloneClone supplied
+      capture.restore.RestoreActivationPermit.after_dispatch_commit action digest) = .ok candidate)
+    (success : restore.proof_return_permit_after_identity tx candidate = .ok (.Ok returned)) :
+    rusqlite.transaction.Transaction.commit tx = .ok (.Ok ()) ∧
+      returned.action = original ∧ returned.work_binding = digest := by
+  obtain ⟨commit, samePermit⟩ := (actual_read_tail_success_iff tx candidate returned).mp success
+  have sameAction : supplied = original := Option.some.inj (actionChecked.symm.trans saved)
+  subst supplied
+  rw [sandproof_protocol_WorkAction_clone_exact _ _ sandbox_controller_core_model_EffectId_clone_exact] at constructed
+  have fields : candidate = ⟨original, digest⟩ := by
+    simpa [capture.restore.RestoreActivationPermit.after_dispatch_commit, eq_comm] using constructed
+  rw [samePermit, fields]
+  exact ⟨commit, rfl, rfl⟩
+
+end SandboxModel.Stage1Protocol.RestoreActivationTarget
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.actual_read_tail_success_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.actual_read_tail_sqlite_error
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.returned_read_permit_has_original_fields
