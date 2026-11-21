@@ -130,7 +130,7 @@
   },
   "InboxParentCarriers.lean": {
     "raw_sha256": "29d7352d59dc123f3a9e3e7ac46899dea577f60fe71fac4f0081ac86a25ca4e0",
-    "view_sha256": "34dec135edf5fe1d08557f351d16132b8c3b28520a757eb29f106dd2d5686784",
+    "view_sha256": "b837c8cbbef84d58a19baadd99adbda5edecfdc56fbaf0f3fa5932ab289086ae",
     "edits": [
       {
         "offset": 18591,
@@ -139,8 +139,8 @@
       },
       {
         "offset": 18845,
-        "before": "@[simp] private theorem mapVec_cast_cancel (h : α = β) (xs : alloc.vec.Vec α) :\n",
-        "after": "@[simp] omit [SandproofUnloadFirstObservation.Representations] in\nprivate theorem mapVec_cast_cancel (h : α = β) (xs : alloc.vec.Vec α) :\n"
+        "before": "",
+        "after": "omit [SandproofUnloadFirstObservation.Representations] in\n"
       },
       {
         "offset": 19256,
