@@ -1,0 +1,8 @@
+// To append only inside full.rs in a disposable cfg(test) source view.
+#[cfg(test)]
+pub(super) fn source_seal_end_for_test(
+    record: &SourceWorkRecord,
+    action: &sandproof_protocol::WorkAction<core::EffectId>,
+) -> Result<core::capture::CaptureSealEnd, JournalError> {
+    end::seal_end(record, action)
+}

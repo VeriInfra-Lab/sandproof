@@ -1,0 +1,71 @@
+import SourceSealEndSpec
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec SourceSealEndModel
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceSealEndProof
+noncomputable section
+local instance proofDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem command_accessor (value : sandbox_controller_core.model.EffectId) :
+    SourceRetireActual.sandbox_controller_core.model.EffectId.command value = .ok value.logical.command := rfl
+
+theorem check_pair {A : Type} (p q : Prop) [Decidable p] [Decidable q] (yes no : A) :
+    (if p then if q then yes else no else no) = (if p ∧ q then yes else no) := by
+  by_cases present : p <;> simp [present]
+
+theorem actual_contract (record : Record) (action : Action) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.seal_end record action = outcome record action := by
+  have scalarEqual (left right : U64) : left.val = right.val ↔ left = right :=
+    ⟨UScalar.eq_of_val_eq,fun same => congrArg UScalar.val same⟩
+  cases command : action.command.logical.command <;>
+    simp [SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.seal_end,
+      SourceRetireActual.sandbox_controller_core.model.EffectId.command,
+      outcome,checks,command,core.cmp.PartialEq.ne.trait_default,core.cmp.PartialEq.ne.default,
+      SourceWorkMatch.Scalars.core_sandbox_id_eq,SourceWorkMatch.CoreEffects.optional_vm_eq,
+      scalarEqual]
+  simp only [check_pair]
+  split_ifs <;> rfl
+
+
+theorem actual_full_contract :
+    Contract SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.seal_end := by
+  intro record action
+  exact actual_contract record action
+
+variable (record : Record) (action : Action) (sandbox : sandbox_controller_core.ids.SandboxId)
+variable (epoch generation : U64) (vm : sandbox_controller_core.ids.VmId)
+variable (workspace : sandbox_controller_core.ids.FsId) (snapshot : sandbox_controller_core.ids.SnapshotId)
+variable (manifest : sandbox_controller_core.model.SnapshotManifestRef)
+variable (command : action.command.logical.command =
+  .SealSnapshot sandbox epoch generation vm workspace snapshot manifest)
+
+include command
+
+theorem normal_seal (bound : checks record action sandbox epoch generation vm) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.seal_end record action =
+      .ok (.Ok (⟨action.command.attempt,workspace,snapshot,manifest⟩ : SealEnd)) := by
+  rw [actual_contract]
+  simp [outcome,command,bound]
+
+theorem source_generation_mismatch (different : generation ≠ record.work.anchor.native.generation) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.seal_end record action = .ok (.Err .CorruptStore) := by
+  rw [actual_contract]
+  have invalid : ¬checks record action sandbox epoch generation vm := by
+    intro accepted
+    exact different accepted.2.1
+  simp [outcome,command,invalid]
+
+end
+end SandboxModel.Stage1Protocol.SourceSealEndProof
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSealEndProof.command_accessor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSealEndProof.actual_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSealEndProof.check_pair
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSealEndProof.actual_full_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSealEndProof.normal_seal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSealEndProof.source_generation_mismatch

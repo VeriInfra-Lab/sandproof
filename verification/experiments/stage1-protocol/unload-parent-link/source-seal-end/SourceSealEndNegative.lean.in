@@ -1,0 +1,65 @@
+import SourceSealEndWrong
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec SourceSealEndModel SourceSealEndProof
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceSealEndNegative
+noncomputable section
+local instance negativeDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev wrong := SourceSealEndWrong.controller.lifecycle_inbox.source_work.full.end.seal_end
+
+def remaining (record : Record) (action : Action) (sandbox : sandbox_controller_core.ids.SandboxId)
+    (epoch generation : U64) (vm : sandbox_controller_core.ids.VmId) : Prop :=
+  sandbox = record.work.anchor.local.sandbox ∧ some vm = record.work.anchor.native.current_vm ∧
+  action.identity.epoch = epoch ∧ action.identity.generation = generation ∧
+  action.identity.attempt = action.command.attempt
+
+variable (record : Record) (action : Action) (sandbox : sandbox_controller_core.ids.SandboxId)
+variable (epoch generation : U64) (vm : sandbox_controller_core.ids.VmId)
+variable (workspace : sandbox_controller_core.ids.FsId) (snapshot : sandbox_controller_core.ids.SnapshotId)
+variable (manifest : sandbox_controller_core.model.SnapshotManifestRef)
+variable (command : action.command.logical.command =
+  .SealSnapshot sandbox epoch generation vm workspace snapshot manifest)
+include command
+
+theorem wrong_ready (others : remaining record action sandbox epoch generation vm) :
+    wrong record action = .ok (.Ok (⟨action.command.attempt,workspace,snapshot,manifest⟩ : SealEnd)) := by
+  simp [wrong,SourceSealEndWrong.controller.lifecycle_inbox.source_work.full.end.seal_end,
+    SourceRetireActual.sandbox_controller_core.model.EffectId.command,command,
+    core.cmp.PartialEq.ne.trait_default,core.cmp.PartialEq.ne.default,
+    SourceWorkMatch.Scalars.core_sandbox_id_eq,SourceWorkMatch.CoreEffects.optional_vm_eq,
+    others.1,others.2.1,others.2.2.1,others.2.2.2.1,others.2.2.2.2]
+
+theorem normal_control (bound : checks record action sandbox epoch generation vm) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.seal_end record action =
+      .ok (.Ok (⟨action.command.attempt,workspace,snapshot,manifest⟩ : SealEnd)) ∧
+        wrong record action = .ok (.Ok (⟨action.command.attempt,workspace,snapshot,manifest⟩ : SealEnd)) := by
+  have others : remaining record action sandbox epoch generation vm :=
+    ⟨bound.1,bound.2.2.1,bound.2.2.2.1,bound.2.2.2.2.1,bound.2.2.2.2.2⟩
+  exact ⟨normal_seal record action sandbox epoch generation vm workspace snapshot manifest command bound,
+    wrong_ready record action sandbox epoch generation vm workspace snapshot manifest command others⟩
+
+theorem wrong_accepts_different_source_generation (others : remaining record action sandbox epoch generation vm)
+    (different : generation ≠ record.work.anchor.native.generation) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.seal_end record action = .ok (.Err .CorruptStore) ∧
+      wrong record action = .ok (.Ok (⟨action.command.attempt,workspace,snapshot,manifest⟩ : SealEnd)) := by
+  exact ⟨source_generation_mismatch record action sandbox epoch generation vm workspace snapshot manifest command different,
+    wrong_ready record action sandbox epoch generation vm workspace snapshot manifest command others⟩
+
+theorem rejects_same_full_contract (others : remaining record action sandbox epoch generation vm)
+    (different : generation ≠ record.work.anchor.native.generation) : ¬ Contract wrong := by
+  intro obeys
+  have same := obeys record action
+  rw [wrong_ready record action sandbox epoch generation vm workspace snapshot manifest command others] at same
+  have original := source_generation_mismatch record action sandbox epoch generation vm workspace snapshot manifest command different
+  rw [SourceSealEndProof.actual_contract] at original
+  rw [original] at same
+  simp at same
+
+end
+end SandboxModel.Stage1Protocol.SourceSealEndNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSealEndNegative.wrong_ready
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSealEndNegative.normal_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSealEndNegative.wrong_accepts_different_source_generation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSealEndNegative.rejects_same_full_contract

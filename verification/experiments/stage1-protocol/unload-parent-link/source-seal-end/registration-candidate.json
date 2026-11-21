@@ -1,0 +1,126 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "parent_prs": [
+    999
+  ],
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-seal-end",
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceSealEndProof",
+      "physical_files": 139,
+      "full_audits": 767,
+      "own_modules": [
+        "SourceSealEndSpec.lean",
+        "SourceSealEndView.lean",
+        "SourceSealEndProof.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.command_accessor",
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.check_pair",
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.actual_full_contract",
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.normal_seal",
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.source_generation_mismatch"
+      ]
+    },
+    {
+      "variant": "ignore-source-generation",
+      "formal_root": "SourceSealEndNegative",
+      "physical_files": 141,
+      "full_audits": 771,
+      "own_modules": [
+        "SourceSealEndSpec.lean",
+        "SourceSealEndView.lean",
+        "SourceSealEndProof.lean",
+        "SourceSealEndWrong.lean",
+        "SourceSealEndNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.command_accessor",
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.check_pair",
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.actual_full_contract",
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.normal_seal",
+        "SandboxModel.Stage1Protocol.SourceSealEndProof.source_generation_mismatch",
+        "SandboxModel.Stage1Protocol.SourceSealEndNegative.wrong_ready",
+        "SandboxModel.Stage1Protocol.SourceSealEndNegative.normal_control",
+        "SandboxModel.Stage1Protocol.SourceSealEndNegative.wrong_accepts_different_source_generation",
+        "SandboxModel.Stage1Protocol.SourceSealEndNegative.rejects_same_full_contract"
+      ]
+    }
+  ],
+  "formal_development_entry": "check.py",
+  "public_registration_accepted": false,
+  "production_candidate_equivalence_complete": false,
+  "whole_receipt_proved": false,
+  "native_candidate": {
+    "name": "stage1-source-seal-end",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "ignore-source-generation",
+      "adapted-ignore-source-generation"
+    ],
+    "tests": [
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_requires_transaction_even_for_empty_expected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_empty_transaction_does_not_load_missing_schema",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_clears_only_complete_original_slot_and_keeps_reservation",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_same_key_with_changed_complete_record_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_unsettled_material_keeps_complete_source_row",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_zero_row_compare_and_set_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_duplicate_preserves_first_update_until_explicit_rollback",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_no_capture_requires_empty_retirement_and_release",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_retiring_zero_does_not_mean_settled",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_settlement_matches_every_original_byte",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_state_size_is_rejected_before_plan_shape",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_checks_all_seven_original_request_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_missing_record_precedes_request_errors",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_keeps_the_first_matching_record_error",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_selects_complete_work_instead_of_only_its_binding",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_keeps_complete_output_without_assuming_capture_presence",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_checks_all_six_original_identity_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_rejects_non_seal_commands"
+    ],
+    "expected": {
+      "original": {
+        "passed": 18,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 18,
+        "failed": 0
+      },
+      "ignore-source-generation": {
+        "passed": 17,
+        "failed": 1
+      },
+      "adapted-ignore-source-generation": {
+        "passed": 17,
+        "failed": 1
+      }
+    },
+    "rejection": "seal end must retain every original sandbox, source generation, VM and action binding",
+    "restoration": "independent original after both wrong views:18/18",
+    "compiled": false,
+    "tests_executed": false
+  },
+  "providers": {
+    "standard Option equality": "existing SourceWorkMatch.CoreEffects.optional_vm_eq and exact V0 per-symbol contract",
+    "whole parent/source lookup/borrow and transaction": "V3/V5/coordinator, open",
+    "durable storage and commit outcome": "V5, open",
+    "actual files/VM/sealing/writer exit": "V6, open",
+    "independent authentication context": "V7, open"
+  },
+  "remaining": [
+    "whole original source lookup/borrow/receipt and parent call",
+    "complete end record validation and Writer exit",
+    "production/staging general equivalence and standard library adoption",
+    "public native/ordinary/root suite registration and coverage adoption",
+    "authorization,transaction/durability,JSON/network and physical resource facts"
+  ]
+}

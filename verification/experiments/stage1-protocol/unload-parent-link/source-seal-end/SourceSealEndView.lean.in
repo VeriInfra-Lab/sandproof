@@ -1,0 +1,12 @@
+import SourceRetirementQuestionProof
+
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRetireTypes
+-- ACTUAL SEAL END TYPE
+end SandboxModel.Stage1Protocol.SourceRetireTypes
+namespace SandboxModel.Stage1Protocol.SourceRetireActual
+-- ACTUAL SEAL END FUNCTIONS
+end SandboxModel.Stage1Protocol.SourceRetireActual
