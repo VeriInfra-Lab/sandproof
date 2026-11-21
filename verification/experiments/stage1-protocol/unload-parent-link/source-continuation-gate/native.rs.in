@@ -1,0 +1,124 @@
+// Original typed records and actual SQL/API fixtures with controlled Host.
+// Classification of saved values does not attest real writer/VM exit.
+#[test]
+fn source_continuation_gate_missing_capture_and_end_are_false() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, source) = sealed_before_end(&directory.path().join("gate-empty.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let record = journal
+        .lifecycle_capture_record(source.source_sandbox())
+        .unwrap()
+        .unwrap();
+    let mut without_capture = record.clone();
+    without_capture.capture = None;
+    assert!(!full::source_continuation_allowed_for_test(
+        &without_capture
+    ));
+    let without_end = full::source_continuation_without_end_for_test(&record);
+    assert_eq!(
+        full::source_continuation_end_for_test(&without_end),
+        serde_json::Value::Null
+    );
+    assert!(!full::source_continuation_allowed_for_test(&without_end));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_continuation_gate_accepts_both_original_saved_normal_ends() {
+    for worker_ended in [false, true] {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("gate-normal.db");
+        let (mut journal, source) = if worker_ended {
+            let (journal, _, source) = sealed_before_end(&path);
+            (journal, source)
+        } else {
+            let (mut journal, _) = ready(&path);
+            let observed = observed_for_full(&mut journal);
+            let accepted = journal
+                .admit_lifecycle_full_capture::<Evidence>(
+                    &observed.work,
+                    &v3::context(),
+                    &full_request(&observed),
+                    10,
+                    &mut NeverCrash,
+                )
+                .unwrap();
+            (journal, accepted)
+        };
+        let sandbox = source.source_sandbox();
+        if worker_ended {
+            let saved = journal.lifecycle_capture_record(sandbox).unwrap().unwrap();
+            journal
+                .record_lifecycle_capture_request_end(
+                    &source.work,
+                    &v3::context(),
+                    actual_api_end(&saved),
+                    &mut NeverCrash,
+                )
+                .unwrap();
+        } else {
+            journal
+                .record_lifecycle_capture_never_released(
+                    &source.work,
+                    &v3::context(),
+                    &mut NeverCrash,
+                )
+                .unwrap();
+        }
+        let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+        let before = source_retire_sql_rows(&journal.journal.connection);
+        let record = journal.lifecycle_capture_record(sandbox).unwrap().unwrap();
+        let kind = if worker_ended {
+            "worker_ended"
+        } else {
+            "never_released"
+        };
+        assert_eq!(
+            full::source_continuation_end_for_test(&record)["state"],
+            kind
+        );
+        assert!(full::source_continuation_allowed_for_test(&record));
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+        assert_eq!(
+            codec::load(&journal.journal.connection).unwrap().unwrap(),
+            current
+        );
+    }
+}
+
+#[test]
+fn source_continuation_gate_refuses_original_terminated_end() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("gate-terminated.db");
+    let (mut journal, state, source) = sealed_before_end(&path);
+    let sandbox = source.source_sandbox();
+    let _terminal = destroy(&mut journal);
+    drop(journal);
+    state.lock().unwrap().terminal_drain_gate = Some((7, 11));
+    let app = v3::application(&path, state.clone(), false);
+    app.establish_lifecycle_host_epoch().unwrap();
+    assert!(app.advance_current_workflow(sandbox).unwrap());
+    drop(app);
+    let journal = v3::open(&path);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let record = journal.lifecycle_capture_record(sandbox).unwrap().unwrap();
+    assert_eq!(
+        full::source_continuation_end_for_test(&record)["state"],
+        "terminated"
+    );
+    assert!(
+        !full::source_continuation_allowed_for_test(&record),
+        "terminated saved end must not pass the original continuation classifier"
+    );
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}

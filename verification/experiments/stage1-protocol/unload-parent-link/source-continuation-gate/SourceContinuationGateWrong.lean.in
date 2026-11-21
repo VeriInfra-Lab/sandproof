@@ -1,0 +1,10 @@
+import SourceContinuationGateProof
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec SourceRetireActual SourceContinuationGateModel
+set_option autoImplicit false
+set_option linter.unusedVariables false
+
+namespace SandboxModel.Stage1Protocol.SourceContinuationGateWrong
+-- ACTUAL WRONG CONTINUATION CALLBACK DICTIONARY AND ROOT
+end SandboxModel.Stage1Protocol.SourceContinuationGateWrong

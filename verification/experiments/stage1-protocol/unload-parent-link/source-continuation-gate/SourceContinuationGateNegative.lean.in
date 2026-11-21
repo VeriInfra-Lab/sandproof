@@ -1,0 +1,53 @@
+import SourceContinuationGateWrong
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec SourceContinuationGateModel
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceContinuationGateNegative
+abbrev wrong := SourceContinuationGateWrong.controller.lifecycle_inbox.source_work.full.end.continuation_allowed
+
+theorem normal_control (record : Record) (normal : allowed record = true) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed record = .ok true ∧
+      wrong record = .ok true := by
+  constructor
+  · rw [SourceContinuationGateProof.actual_contract,normal]
+  · cases present : record.capture with
+    | none => simp [allowed,present] at normal
+    | some capture =>
+      cases ending : capture.end with
+      | none => simp [allowed,present,ending] at normal
+      | some endValue =>
+        cases endValue <;> simp [allowed,present,ending] at normal <;>
+          simp [wrong,SourceContinuationGateWrong.controller.lifecycle_inbox.source_work.full.end.continuation_allowed,SourceRetireActual.core.option.Option.as_ref,SourceRetireLibrary.optionRef,core.option.Option.is_some_and,SourceContinuationGateWrong.controller.lifecycle_inbox.source_work.full.end.continuation_allowed.closure.Insts.CoreOpsFunctionFnOnceTupleSharedCaptureWorkBool.call_once,present,ending]
+
+theorem wrong_accepts_terminated (record : Record) (capture : Capture)
+    (present : record.capture = some capture)
+    (ending : ∃ stop observation prior, capture.end = some (.Terminated stop observation prior)) :
+    wrong record = .ok true := by
+  rcases ending with ⟨stop,observation,prior,ending⟩
+  simp [wrong,SourceContinuationGateWrong.controller.lifecycle_inbox.source_work.full.end.continuation_allowed,SourceRetireActual.core.option.Option.as_ref,SourceRetireLibrary.optionRef,core.option.Option.is_some_and,SourceContinuationGateWrong.controller.lifecycle_inbox.source_work.full.end.continuation_allowed.closure.Insts.CoreOpsFunctionFnOnceTupleSharedCaptureWorkBool.call_once,present,ending]
+
+theorem terminated_counterexample (record : Record) (capture : Capture)
+    (present : record.capture = some capture)
+    (ending : ∃ stop observation prior, capture.end = some (.Terminated stop observation prior)) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed record = .ok false ∧
+      wrong record = .ok true := by
+  exact ⟨SourceContinuationGateProof.terminated_refused record capture present ending,
+    wrong_accepts_terminated record capture present ending⟩
+
+theorem rejects_same_full_contract (record : Record) (capture : Capture)
+    (present : record.capture = some capture)
+    (ending : ∃ stop observation prior, capture.end = some (.Terminated stop observation prior)) :
+    ¬SourceContinuationGateModel.Contract wrong := by
+  intro obeys
+  have same := obeys record
+  rw [wrong_accepts_terminated record capture present ending,
+    terminated record capture present ending] at same
+  simp at same
+
+end SandboxModel.Stage1Protocol.SourceContinuationGateNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateNegative.normal_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateNegative.wrong_accepts_terminated
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateNegative.terminated_counterexample
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateNegative.rejects_same_full_contract
