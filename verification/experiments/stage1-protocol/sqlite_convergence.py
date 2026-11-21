@@ -242,54 +242,54 @@ def current_native(output, root):
     packet = output/'native-packet'
     (packet/'correct').mkdir(parents=True)
     (packet/'fault').mkdir()
-    with tempfile.TemporaryDirectory(prefix='sqlite-current-native-') as scratch:
-        work = Path(scratch)
-        cache = work/'receipt-cache'
-        cache.mkdir()
-        parent_cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
-        shutil.copyfile(parent_cache/'runtime.json', cache/'runtime.json')
-        used = cache/'used.jsonl'
-        environment = dict(os.environ, SANDPROOF_NATIVE_EVIDENCE=str(cache),
-                           SANDPROOF_NATIVE_USED=str(used))
-        correct, fault = work/'correct', work/'fault'
-        for label, entry, destination, args in (
-                ('native-correct', 'native.py', correct, []),
-                ('native-fault', 'negative.py', fault, ['--native-only',
-                    '--correct-replay', work/'unused', '--tool-root', '/unused-in-native-mode'])):
-            with (output/(label+'.log')).open('xb') as log:
-                subprocess.run([sys.executable, root/HERE/entry, '--source-base', root,
-                    '--destination', destination, *args], cwd=root, env=environment,
-                    stdout=log, stderr=subprocess.STDOUT, check=True)
-        if head(correct/'source') != revision or head(fault/'source') != revision:
-            raise ValueError('native SQLite test checkout changed')
-        if rust_inputs(correct/'source') != rust_inputs(root):
-            raise ValueError('current correct SQLite Rust closure differs')
-        used_lines = used.read_text()
-        used_entry, = map(json.loads, used_lines.splitlines())
-        entry = cache/'commands'/used_entry['identity']
-        receipt = read(entry/'receipt.json')
-        if (used_entry['reused'] is not False or digest(receipt['key']) != entry.name
-                or load_success(entry, receipt['key']) != receipt
-                or receipt['key']['runtime'] != read(parent_cache/'runtime.json')
-                or receipt['key']['rust'] != rust_inputs(fault/'source')
-                or sha(entry/'receipt.json') != used_entry['sha256']
-                or (entry/'command.log').read_bytes() !=
-                    (fault/'evidence/native-rejected.log').read_bytes()):
-            raise ValueError('current SQLite native fault command receipt differs')
-        for name in PACKET:
-            if name.startswith('correct/'):
-                shutil.copy2(correct/'evidence'/Path(name).name, packet/name)
-        for name in ('receipt.json', 'command.log'):
-            shutil.copy2(entry/name, packet/'fault'/name)
-        write(packet/'fault/summary.json', dict(complete=True, driver_exit_code=0,
-            production_commit=revision, driver_commit=revision, actual_cargo_exit=receipt['actual_exit'],
-            original_assertion_rejected=True, formal_tools_invoked=False,
-            mutated_memo_sha256=sha(fault/'source'/MEMO), unchanged_source_files=len(profile['source_files'])-1,
-            used_receipts=used_lines, log_sha256=sha(packet/'fault/command.log')))
+    work = Path(tempfile.mkdtemp(prefix='native-work-', dir=output))
+    cache = work/'receipt-cache'
+    cache.mkdir()
+    parent_cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
+    shutil.copyfile(parent_cache/'runtime.json', cache/'runtime.json')
+    used = cache/'used.jsonl'
+    environment = dict(os.environ, SANDPROOF_NATIVE_EVIDENCE=str(cache),
+                       SANDPROOF_NATIVE_USED=str(used))
+    correct, fault = work/'correct', work/'fault'
+    for label, entry, destination, args in (
+            ('native-correct', 'native.py', correct, []),
+            ('native-fault', 'negative.py', fault, ['--native-only',
+                '--correct-replay', work/'unused', '--tool-root', '/unused-in-native-mode'])):
+        with (output/(label+'.log')).open('xb') as log:
+            subprocess.run([sys.executable, root/HERE/entry, '--source-base', root,
+                '--destination', destination, *args], cwd=root, env=environment,
+                stdout=log, stderr=subprocess.STDOUT, check=True)
+    if head(correct/'source') != revision or head(fault/'source') != revision:
+        raise ValueError('native SQLite test checkout changed')
+    if rust_inputs(correct/'source') != rust_inputs(root):
+        raise ValueError('current correct SQLite Rust closure differs')
+    used_lines = used.read_text()
+    used_entry, = map(json.loads, used_lines.splitlines())
+    entry = cache/'commands'/used_entry['identity']
+    receipt = read(entry/'receipt.json')
+    if (used_entry['reused'] is not False or digest(receipt['key']) != entry.name
+            or load_success(entry, receipt['key']) != receipt
+            or receipt['key']['runtime'] != read(parent_cache/'runtime.json')
+            or receipt['key']['rust'] != rust_inputs(fault/'source')
+            or sha(entry/'receipt.json') != used_entry['sha256']
+            or (entry/'command.log').read_bytes() !=
+                (fault/'evidence/native-rejected.log').read_bytes()):
+        raise ValueError('current SQLite native fault command receipt differs')
+    for name in PACKET:
+        if name.startswith('correct/'):
+            shutil.copy2(correct/'evidence'/Path(name).name, packet/name)
+    for name in ('receipt.json', 'command.log'):
+        shutil.copy2(entry/name, packet/'fault'/name)
+    write(packet/'fault/summary.json', dict(complete=True, driver_exit_code=0,
+        production_commit=revision, driver_commit=revision, actual_cargo_exit=receipt['actual_exit'],
+        original_assertion_rejected=True, formal_tools_invoked=False,
+        mutated_memo_sha256=sha(fault/'source'/MEMO), unchanged_source_files=len(profile['source_files'])-1,
+        used_receipts=used_lines, log_sha256=sha(packet/'fault/command.log')))
     result = dict(convergence_entry='sqlite-commit', complete=True, mode='native',
         source_commit=revision, native_executed_here=True, actuals=[],
         packet={name:sha(packet/name) for name in PACKET})
     result['reuse_evidence'] = check_native(result, root, output)
+    shutil.rmtree(work)
     return result
 
 
