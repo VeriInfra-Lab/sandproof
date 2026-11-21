@@ -1,0 +1,61 @@
+import SandboxModel.Lifecycle.Protocol.RestoreWork.Core
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofRestoreWorkRust
+open SandboxModel.Stage1Protocol.RestoreWork
+open SandboxModel.Stage1Protocol.RestoreWork.NewCloning
+open SandproofRestoreWorkRust.controller.lifecycle_inbox.source_work
+
+namespace SandboxModel.Stage1Protocol.RestoreActivationTarget
+
+/-- Complete value projection at the original serde call in
+RestoreWorkRequest::binding_digest. This does not model serde or SHA. -/
+def restoreDigestInputs (request : Request) :=
+  (request.intent, request.source, request.committed.work, request.committed.manifest_digest,
+    request.committed.seal_action, request.operation, request.generation)
+
+/-- A successful return of the original work builder and the full request
+equality supply every original input of the digest call. -/
+theorem reconstructed_work_matches_all_digest_inputs
+    (record : SourceWorkRecord) (claim : restore.RestoreClaim) (captured : full.CaptureWork)
+    (manifest : Digest) (sealAction : Action) (rebuilt requested : Request)
+    (hasClaim : record.restore = some claim) (hasCapture : record.capture = some captured)
+    (inUse : claim.material_use = true) (completed : captured.completed = some manifest)
+    (sealed : captured.action = some sealAction)
+    (read : restore.work record = .ok (.Ok rebuilt)) (same : rebuilt = requested) :
+    restoreDigestInputs requested =
+      (claim.intent, record.work.requirement, captured.full, manifest, sealAction,
+        claim.local.operation, claim.generation) := by
+  have original := work_refines record
+  rw [read] at original
+  have assembledWork : rebuilt = assembled record claim captured manifest sealAction := by
+    have value := Result.ok_injective original
+    simpa [expected, hasClaim, hasCapture, inUse, completed, sealed] using value
+  simp [← same, assembledWork, restoreDigestInputs, assembled]
+
+/-- The actual action clone, permit constructor and accessors retain the
+selected marker and supplied digest in this single generated type view. -/
+theorem matching_activation_marker_reaches_actual_permit
+    (claim : restore.RestoreClaim) (original supplied : Action) (digest : Digest)
+    (saved : claim.activation = some original)
+    (sameAction : claim.activation = some supplied) :
+    (do
+      let action ← sandproof_protocol.WorkAction.Insts.CoreCloneClone.clone
+        sandbox_controller_core.model.EffectId.Insts.CoreCloneClone supplied
+      let permit ← capture.restore.RestoreActivationPermit.after_dispatch_commit action digest
+      let recoveredAction ← capture.restore.RestoreActivationPermit.impl.action permit
+      let recoveredDigest ← capture.restore.RestoreActivationPermit.impl.work_binding permit
+      pure (recoveredAction, recoveredDigest)) = .ok (original, digest) := by
+  have same : supplied = original := Option.some.inj (sameAction.symm.trans saved)
+  subst supplied
+  rw [sandproof_protocol_WorkAction_clone_exact _ _ sandbox_controller_core_model_EffectId_clone_exact]
+  simp [capture.restore.RestoreActivationPermit.after_dispatch_commit,
+    capture.restore.RestoreActivationPermit.impl.action,
+    capture.restore.RestoreActivationPermit.impl.work_binding]
+  change (Prod.mk original <$> (pure digest : Result Digest)) = pure (original, digest)
+  simp
+
+end SandboxModel.Stage1Protocol.RestoreActivationTarget
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.reconstructed_work_matches_all_digest_inputs
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.matching_activation_marker_reaches_actual_permit

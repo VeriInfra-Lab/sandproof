@@ -1,0 +1,17 @@
+name = "sandbox-model"
+version = "0.1.0"
+defaultTargets = ["PermitCarrier"]
+
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
+
+[[lean_lib]]
+name = "SandproofRestoreActivationCarrier"
+
+[[lean_lib]]
+name = "SandboxModel"
+
+[[lean_lib]]
+name = "PermitCarrier"

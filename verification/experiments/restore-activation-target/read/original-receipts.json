@@ -1,0 +1,52 @@
+{
+  "description": "Original execution inventory fingerprints. Raw logs stay in protected evidence storage. This index does not grant reuse of a formal batch receipt.",
+  "query_provider": {
+    "source_commit": "c05bac6a83b9d102a75060f0769a81ca9058d9e6",
+    "inventory": "final-receipt.sha256",
+    "sha256": "068172b809ebee8bc74fc8ecfd374a86bcd7e69fce8372ac5550bf10f753bd91"
+  },
+  "selection": {
+    "inventory": "final-inventory.sha256",
+    "sha256": "11028e8b8bba2cecc4082cac4741b33bb9010b9f4d13d1078c4e1d7142257332",
+    "kernel_and_service": "passed",
+    "theorems": ["first_matching_intent_iff_index", "query_result_and_first_match_condition"]
+  },
+  "work": {
+    "inventory": "final-inventory.sha256",
+    "sha256": "c60471fdb04d655e27c4d97973db1d733f1b7578068cfe9a1a7fa8833a153c25",
+    "kernel_and_service": "passed",
+    "theorems": ["reconstructed_work_matches_all_digest_inputs", "matching_activation_marker_reaches_actual_permit"]
+  },
+  "work_and_return": {
+    "inventory": "final-inventory.sha256",
+    "sha256": "c44e9c8b8cb975b2454c7d9e39960b515c1caf2794950e80d52511f7bca8168d",
+    "kernel_and_service": "passed",
+    "theorems": ["actual_read_tail_success_iff", "actual_read_tail_sqlite_error", "returned_read_permit_has_original_fields"]
+  },
+  "identity_extraction": {
+    "inventory": "final-inventory.sha256",
+    "sha256": "0c8da9375f1a729591af8072d003ecd78e29cbb07666ad6063a4695f2bc37d5b"
+  },
+  "identity": {
+    "inventory": "final-inventory.sha256",
+    "sha256": "c5f1edba61889b060dfec9769cccb007e0b7ff11ab0d524361a6b552120530bc",
+    "service_log_sha256": "3e7b2a62dfbd2b0900d5a6c9a43c23b4d2236de8e1abb9a3141d76c6b849a099",
+    "kernel_and_service": "passed",
+    "theorems": [
+      "actual_data_version_uses_existing_query",
+      "actual_identity_success_iff",
+      "actual_identity_and_read_commit_success_iff",
+      "actual_finalize_read_rejects_mismatched_version",
+      "actual_finalize_read_propagates_query_error"
+    ]
+  },
+  "sqlite_native_test": {
+    "inventory": "sha256sums",
+    "sha256": "8134d7783752444448f45abb6fe7732759d603725462adebbfa1f5d7edca612d",
+    "actual_tests_passed": 1
+  },
+  "kvm_preflight": {
+    "log_sha256": "4f934900b7eee4d2c1dd4f567ddcfa887ef3a53701ce67e3bdd4d992d4b62854",
+    "scenario_started": false
+  }
+}

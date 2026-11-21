@@ -1,0 +1,56 @@
+import SandproofRestorePermitFinalize.Types
+import SandproofParentCommit.FunsExternal
+import SandproofStage1Request.PermitIdentityOps
+import SandproofSqliteSession.RecordQueryProviders
+
+open Aeneas Aeneas.Std
+namespace SandproofRestorePermitFinalizeRust
+
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofParentCommitRust.toStr text bounded
+abbrev core.cell.RefCell.borrow_mut := @SandproofStage1RequestRust.core.cell.RefCell.borrow_mut
+abbrev core.cell.RefMut.Insts.CoreOpsDerefDerefMut.deref_mut :=
+  @SandproofStage1RequestRust.core.cell.RefMut.Insts.CoreOpsDerefDerefMut.deref_mut
+abbrev core.result.Result.and := @SandproofStage1RequestRust.core.result.Result.and
+set_option linter.style.nameCheck false in
+abbrev Tuple.Insts.RusqliteParamsParams.__bind_in := SandproofSqliteSession.bindUnit
+abbrev Usize.Insts.RusqliteRowRowIndex.idx := SandproofSqliteSession.index
+abbrev rusqlite.transaction.Transaction.commit := SandproofParentCommitRust.rusqlite.transaction.Transaction.commit
+abbrev rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref :=
+  SandproofParentCommitRust.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref
+
+def observedValue : SandproofSqliteSession.RawValue → rusqlite.types.value_ref.ValueRef
+  | .Null => .Null
+  | .Integer value => .Integer value
+  | .Real value => .Real value
+  | .Text value => .Text value
+  | .Blob value => .Blob value
+
+def sharedValue : rusqlite.types.value_ref.ValueRef → SandproofSqliteSession.RawValue
+  | .Null => .Null
+  | .Integer value => .Integer value
+  | .Real value => .Real value
+  | .Text value => .Text value
+  | .Blob value => .Blob value
+
+def I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+    (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result I64 rusqlite.types.from_sql.FromSqlError) :=
+  SandproofSqliteSession.i64Column (sharedValue value)
+
+def rusqlite.row.Row.get {I T : Type} (indices : rusqlite.row.RowIndex I)
+    (values : rusqlite.types.from_sql.FromSql T) (row : rusqlite.row.Row)
+    (position : I) : Result (core.result.Result T rusqlite.error.Error) :=
+  SandproofSqliteSession.rowGet indices.idx
+    (fun value => values.column_result (observedValue value)) row position
+
+def rusqlite.Connection.query_row {T P F : Type} (parameters : rusqlite.params.Params P)
+    (callback : core.ops.function.FnOnce F rusqlite.row.Row
+      (core.result.Result T rusqlite.error.Error))
+    (connection : rusqlite.Connection) (sql : Str) (values : P) (closure : F) :
+    Result (core.result.Result T rusqlite.error.Error) :=
+  SandproofSqliteSession.queryRow parameters.__bind_in callback.call_once
+    connection.base.reads.current.single sql values closure
+
+end SandproofRestorePermitFinalizeRust
