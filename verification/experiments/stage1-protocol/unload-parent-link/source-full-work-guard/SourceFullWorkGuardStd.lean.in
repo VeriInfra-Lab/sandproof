@@ -1,0 +1,7 @@
+import SourceFullWorkGuardTypes
+open Aeneas Aeneas.Std SandproofFoundationsRust
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceFullWorkGuardStd
+abbrev core.str.iter.Bytes := SandproofFoundationsRust.core.str.iter.Bytes
+-- EXACT EXISTING STANDARD VALUE BINDINGS
+end SandboxModel.Stage1Protocol.SourceFullWorkGuardStd

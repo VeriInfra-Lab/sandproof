@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-full-work-guard 在固定 b0d791cc 上直接连接原 Full/Pause 的全部已解码值接受条件，复用原一般 profile/path 证明及同一套实际类型；同一个 FullContract 拒绝实际只删 state_bytes>0 的错误。完整入口目标158文件/850审计与160/854，继承#1003的145/804。
++> 原生28项四视图和恢复交 ning；String.len/is_empty 精确调用采用、整个 staging 一般等价、当前意图/来源/父调用/事务/耐久、完整manifest文件集、JSON/认证与物理事实仍开放。仅交公共登记/覆盖候选，值校验true不授权。
+ ## V3 首次卸载使用同一条原执行记录

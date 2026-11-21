@@ -1,0 +1,129 @@
+"""Prepare four complete native views and twenty-eight shared assertions; never test."""
+import argparse
+from hashlib import sha256
+import importlib.util
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tarfile
+
+HERE = Path(__file__).resolve().parent
+PARENT = HERE.parent / 'source-terminal-end'
+sys.path.insert(0, str(HERE.parent / 'source-remove-retired'))
+
+
+def module(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    value = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(value)
+    return value
+
+
+capture = module('source_full_work_guard_native_capture', HERE / 'capture.py')
+parent_native = module('source_full_work_guard_parent_native', PARENT / 'native.py')
+base_native = parent_native.base_native
+VARIANTS = ('original', 'adapted-original', 'allow-empty-state', 'adapted-allow-empty-state')
+OWN_TESTS = (
+    'full_work_guard_accepts_original_normal_and_keeps_unchecked_values_unprivileged',
+    'full_work_guard_checks_all_original_pause_fields_and_graphic_byte_bounds',
+    'full_work_guard_checks_profile_shape_signed_sizes_and_timeout_boundaries',
+    'full_work_guard_rejects_zero_state_bytes',
+)
+EXPECTED_TESTS = (*parent_native.EXPECTED_TESTS, *OWN_TESTS)
+REJECTION = 'full work validity must reject zero state bytes'
+
+
+def digest(path):
+    return sha256(path.read_bytes()).hexdigest()
+
+
+def prepare(output, variant):
+    os.umask(0o077)
+    if variant not in VARIANTS:
+        raise ValueError('unknown Full/Pause guard native view')
+    fixture_paths = [HERE.parent / name / 'native.rs.in' for name in
+                     ('source-remove-retired', 'source-material-charge', 'source-retirement-question', 'source-seal-end', 'source-continuation-gate', 'source-terminal-end')]
+    parent_fixture = b'\n'.join(path.read_bytes() for path in fixture_paths)
+    own_fixture = (HERE / 'native.rs.in').read_bytes()
+    fixture = parent_fixture + b'\n' + own_fixture
+    full = Path('controller-service/src/controller/lifecycle_inbox/source_work/full.rs')
+    drain = full.parent / 'full/drain.rs'
+    bridges = {
+        capture.retire.ports.RETIREMENT: (HERE.parent / 'source-retirement-question/native-bridge.rs.in').read_bytes(),
+        full: b'\n'.join((HERE.parent / name / 'native-bridge.rs.in').read_bytes()
+                           for name in ('source-seal-end', 'source-continuation-gate', 'source-terminal-end')),
+        drain: (PARENT / 'native-drain-bridge.rs.in').read_bytes(),
+    }
+    if tuple(re.findall(rb'#\[test\]\s+fn\s+(\w+)\(', fixture)) != tuple(n.encode() for n in EXPECTED_TESTS):
+        raise ValueError('all24 parent and four current assertions are mandatory')
+    if (REJECTION.encode() not in own_fixture
+            or bridges[drain].count(b'    terminal_end(old, stop, observation)\n') != 1
+            or bridges[full].count(b'    end::seal_end(record, action)\n') != 1
+            or bridges[full].count(b'    end::continuation_allowed(record)\n') != 1
+            or bridges[capture.retire.ports.RETIREMENT].count(b'    find(sources, question)\n') != 1):
+        raise ValueError('all original parent bridges and current validity rejection are mandatory')
+    output.mkdir(mode=0o700)
+    archive = output / 'source.tar'
+    with archive.open('xb') as stream:
+        subprocess.run(['git', 'archive', capture.retire.SOURCE], cwd=capture.retire.REPO, stdout=stream, check=True)
+    if digest(archive) != capture.retire.ARCHIVE:
+        raise ValueError('the exact complete fixed production archive is required')
+    source = output / 'source'
+    source.mkdir(mode=0o700)
+    with tarfile.open(archive) as inputs:
+        inputs.extractall(source, filter='data')
+    original = base_native.inventory(source)
+    actual = variant.removeprefix('adapted-')
+    if variant.startswith('adapted-'):
+        capture.reconstruct(archive, source, actual)
+        with tarfile.open(archive) as inputs:
+            (source / capture.retire.LIB).write_bytes(inputs.extractfile(str(capture.retire.LIB)).read())
+        targets = tuple(path for path in capture.STAGED if path != capture.retire.LIB)
+    else:
+        path = source / capture.END
+        path.write_text(capture.mutate(path.read_text(), actual))
+        targets = (capture.END,)
+    for path, bridge in bridges.items():
+        target = source / path
+        target.write_bytes(target.read_bytes() + b'\n' + bridge)
+    targets = tuple(dict.fromkeys((*targets, *bridges)))
+    pre_format = {str(path): digest(source / path) for path in targets}
+    for path in targets:
+        subprocess.run(['rustfmt', '--edition', '2024', str(source / path)], cwd=source, check=True)
+    formatted = {str(path): digest(source / path) for path in targets}
+    tests = source / base_native.TESTS
+    tests.write_bytes(tests.read_bytes() + b'\n' + fixture)
+    subprocess.run(['rustfmt', '--edition', '2024', str(tests)], cwd=source, check=True)
+    installed = base_native.inventory(source)
+    changed = {name for name in original if original[name] != installed[name]}
+    required = {str(base_native.TESTS), *(str(path) for path in bridges)}
+    if variant.startswith('adapted-'):
+        required.update(str(path) for path in capture.BASE_STAGED if path != capture.retire.LIB)
+    if actual != 'original':
+        required.add(str(capture.END))
+    allowed = {str(path) for path in (*targets, base_native.TESTS)}
+    if (original.keys() != installed.keys() or not required <= changed <= allowed
+            or installed[str(capture.retire.LIB)] != original[str(capture.retire.LIB)]):
+        raise ValueError('only exact original staging/mutation, three test bridge files and shared fixtures may change')
+    result = dict(prepared=True, compiled=False, tests_executed=False,
+        source=capture.retire.SOURCE, tree=capture.retire.TREE, archive=capture.retire.ARCHIVE, variant=variant,
+        driver=digest(Path(__file__)), capture_driver=digest(HERE / 'capture.py'),
+        parent_driver=digest(PARENT / 'native.py'), adapter_driver=digest(capture.PARENT / 'extract.py'),
+        ports_driver=digest(capture.PARENT / 'ports.py'),
+        parent_fixture=sha256(parent_fixture).hexdigest(), own_fixture=sha256(own_fixture).hexdigest(),
+        bridges={str(path): sha256(body).hexdigest() for path, body in bridges.items()},
+        fixture=sha256(fixture).hexdigest(), tests=list(EXPECTED_TESTS),
+        pre_format=pre_format, formatted=formatted, changed=sorted(changed), original=original, installed=installed)
+    (output / 'input.json').write_text(json.dumps(result, indent=2) + '\n')
+    print(variant, 'twenty-eight identical original assertions prepared; compilation/tests pending')
+
+
+if __name__ == '__main__':
+    cli = argparse.ArgumentParser(description=__doc__)
+    cli.add_argument('--variant', choices=VARIANTS, required=True)
+    cli.add_argument('--output', type=Path, required=True)
+    args = cli.parse_args()
+    prepare(args.output.resolve(), args.variant)

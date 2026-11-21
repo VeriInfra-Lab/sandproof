@@ -1,0 +1,106 @@
+import SourceFullWorkGuardPause
+import SandboxModel.Foundations.ByteArray
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes
+open SourceFullWorkGuardModel SandproofFoundationsRust.IdentifierLibrary
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceFullWorkGuardProof
+noncomputable section
+local instance modelDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem signed_refines (value : U64) :
+    (do
+      let converted ← SourceFullWorkGuardActual.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from value
+      core.result.Result.is_ok converted) =
+      .ok (decide ((value.val : Int) ≤ I64.max)) := by
+  simp [SourceFullWorkGuardActual.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from,
+    SourceRecordBoundsView.toSigned, core.result.Result.is_ok]
+  split <;> simp_all
+
+theorem range_refines (lo hi value : U64) :
+    SourceFullWorkGuardActual.core.ops.range.RangeInclusive.contains
+      core.cmp.PartialOrdU64 core.cmp.PartialOrdU64 core.cmp.PartialOrdU64
+      ⟨lo, hi, false⟩ value = .ok (decide (lo.val ≤ value.val ∧ value.val ≤ hi.val)) := by
+  exact InboxLoadMaintenance.range_u64_refines lo hi value
+
+theorem one_drive (drives : alloc.vec.Vec Drive) :
+    drives.val.length = 1 ↔ ∃ drive, drives.val = [drive] := by
+  cases members : drives.val with
+  | nil => simp
+  | cons drive rest => cases rest <;> simp
+
+theorem indexed_drive (drives : alloc.vec.Vec Drive) (drive : Drive)
+    (one : drives.val = [drive]) :
+    alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Drive) drives 0#usize = .ok drive := by
+  simp [alloc.vec.Vec.index, alloc.vec.Vec.val, Slice.index_usize] at one ⊢
+  simp [one]
+
+theorem literal_bytes (text : String) (bounded : text.toByteArray.size ≤ U32.max) :
+    (SourceFullWorkGuardActual.toStr text bounded).val = stringBytes text := by
+  simp only [SourceFullWorkGuardActual.toStr, SandproofSourceRowSqlSelect.toStr,
+    Aeneas.Std.toStr, Slice.from_val, stringBytes,
+    SandboxModel.Foundations.byteArray_toList_data]
+  rfl
+
+theorem actual_contract (value : Full) (bounded : FullRepresentable value) :
+    SourceFullWorkGuardActual.capture.work.FullCaptureWorkRequest.valid value =
+      .ok (decide (FullAllowed value)) := by
+  unfold SourceFullWorkGuardActual.capture.work.FullCaptureWorkRequest.valid
+  rw [SourceFullWorkGuardPause.actual_contract value.pause bounded.1]
+  simp only [bind_tc_ok]
+  by_cases pauseAllowed : PauseAllowed value.pause
+  · simp only [pauseAllowed, decide_true, ↓reduceIte]
+    rw [SourceFullWorkGuardManifestProfile.profile_refines value.compatibility bounded.2.1]
+    by_cases profileAllowed : SourceFullWorkGuardManifestProfile.ValidProfile value.compatibility
+    · simp only [profileAllowed, ↓reduceIte, bind_tc_ok, core.result.Result.is_ok]
+      by_cases singleton : value.compatibility.writable_drives.val.length = 1
+      · obtain ⟨drive, members⟩ := (one_drive value.compatibility.writable_drives).mp singleton
+        have at_drive := indexed_drive value.compatibility.writable_drives drive members
+        have drive_member : drive ∈ value.compatibility.writable_drives.val := by simp [members]
+        have id_bounded := bounded.2.2 drive drive_member
+        have length_one : alloc.vec.Vec.len value.compatibility.writable_drives = 1#usize := by
+          scalar_tac
+        simp only [length_one, ↓reduceIte, at_drive, bind_tc_ok]
+        simp [
+          SourceFullWorkGuardActual.sandproof_protocol.ResourceId.as_str,
+          SourceFullWorkGuardActual.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+          SourceFullWorkGuardStd.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+          SourceFullWorkGuardActual.Str.Insts.CoreCmpPartialEqStr.eq,
+          SourceFullWorkGuardStd.Str.Insts.CoreCmpPartialEqStr.eq,
+          SourceFullWorkGuardActual.alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq,
+          SourceFullWorkGuardStd.alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq,
+          literal_bytes,
+          SourceFullWorkGuardActual.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from,
+          SourceRecordBoundsView.toSigned,
+          core.ops.range.RangeInclusive.new, range_refines,
+          id_bounded, pauseAllowed, profileAllowed,
+          FullAllowed, RootDrive, Sized, members, Nat.pos_iff_ne_zero]
+        split_ifs <;> simp_all
+      · have length_not_one : alloc.vec.Vec.len value.compatibility.writable_drives ≠ 1#usize := by
+          scalar_tac
+        have no_root : ¬ RootDrive value.compatibility.writable_drives := by
+          rintro ⟨drive, members, _⟩
+          simp [members] at singleton
+        simp [length_not_one, FullAllowed, no_root]
+    · simp [profileAllowed, core.result.Result.is_ok, FullAllowed]
+  · simp [pauseAllowed, FullAllowed]
+
+theorem complete_contract :
+    FullContract SourceFullWorkGuardActual.capture.work.FullCaptureWorkRequest.valid :=
+  actual_contract
+
+end
+end SandboxModel.Stage1Protocol.SourceFullWorkGuardProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardProof.signed_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardProof.range_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardProof.one_drive
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardProof.indexed_drive
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardProof.complete_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardProof.literal_bytes

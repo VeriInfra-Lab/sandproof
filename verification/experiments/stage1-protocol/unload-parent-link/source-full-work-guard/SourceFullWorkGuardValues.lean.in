@@ -1,0 +1,93 @@
+import SourceFullWorkGuardProof
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes
+open SourceFullWorkGuardModel
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceFullWorkGuardValues
+open SourceWorkMatch.Values
+
+/-- A decoded value witness; the digest constants do not compute hashes. -/
+def pause : Pause :=
+  ⟨⟨request.request.binding, 101#u64, 1#u64⟩, digest, node, ⟨.Vm, "vm"⟩, source⟩
+
+def profile : Profile :=
+  ⟨1#u16, digest, digest, digest, digest,
+    alloc.vec.Vec.from [⟨"rootfs", "rootfs.ext4"⟩] (by scalar_tac)⟩
+
+def full : Full := ⟨pause, profile, 1#u64, 1#u64, 1#u64, 1000#u64, 1000#u64⟩
+def emptyState : Full := { full with state_bytes := 0#u64 }
+
+theorem pause_representable : PauseRepresentable pause := by
+  change SandproofFoundationsRust.IdentifierLibrary.StringRepresentable "boot"
+  simp only [SandproofFoundationsRust.IdentifierLibrary.StringRepresentable,
+    SandproofFoundationsRust.IdentifierLibrary.stringBytes, List.length_map]
+  change 4 ≤ Usize.max
+  scalar_tac
+
+theorem profile_representable : SourceFullWorkGuardManifestProfile.Representable profile := by
+  intro drive member
+  have same : drive = (⟨"rootfs", "rootfs.ext4"⟩ : Drive) := by simpa [profile] using member
+  subst drive
+  change SandproofFoundationsRust.IdentifierLibrary.StringRepresentable "rootfs.ext4"
+  simp only [SandproofFoundationsRust.IdentifierLibrary.StringRepresentable,
+    SandproofFoundationsRust.IdentifierLibrary.stringBytes, List.length_map]
+  change 11 ≤ Usize.max
+  scalar_tac
+
+theorem full_representable : FullRepresentable full := by
+  refine ⟨pause_representable, profile_representable, ?_⟩
+  intro drive member
+  have same : drive = (⟨"rootfs", "rootfs.ext4"⟩ : Drive) := by simpa [full, profile] using member
+  subst drive
+  change SandproofFoundationsRust.IdentifierLibrary.StringRepresentable "rootfs"
+  simp only [SandproofFoundationsRust.IdentifierLibrary.StringRepresentable,
+    SandproofFoundationsRust.IdentifierLibrary.stringBytes, List.length_map]
+  change 6 ≤ Usize.max
+  scalar_tac
+
+theorem pause_allowed : PauseAllowed pause := by
+  refine ⟨rfl, rfl, rfl, ⟨1#u64, rfl⟩, rfl, ?_, ?_, ?_, ?_, ?_⟩ <;> decide
+
+theorem profile_allowed : SourceFullWorkGuardManifestProfile.ValidProfile profile := by
+  refine ⟨by decide, by decide, by decide, ?_⟩
+  intro index after within drive at_drive
+  change index < 1 at within
+  have zero : index = 0 := by omega
+  subst index
+  have same : drive = (⟨"rootfs", "rootfs.ext4"⟩ : Drive) := by simpa [profile] using at_drive.symm
+  subst drive
+  refine ⟨by decide, ?_⟩
+  intro earlier after before
+  omega
+
+theorem full_allowed : FullAllowed full := by
+  have size_one : Sized (1#u64) := by
+    constructor <;> scalar_tac
+  refine ⟨pause_allowed, profile_allowed, ⟨⟨"rootfs", "rootfs.ext4"⟩, rfl, rfl, rfl⟩,
+    size_one, size_one, size_one, ?_, ?_, ?_, ?_⟩ <;> decide
+
+theorem normal_accepted :
+    SourceFullWorkGuardActual.capture.work.FullCaptureWorkRequest.valid full = .ok true := by
+  rw [SourceFullWorkGuardProof.actual_contract full full_representable]
+  simp [full_allowed]
+
+theorem empty_state_representable : FullRepresentable emptyState := full_representable
+
+theorem empty_state_rejected_by_same_contract : ¬ FullAllowed emptyState := by
+  intro accepted
+  have positive := accepted.2.2.2.1.1
+  change (0 : Nat) < 0 at positive
+  omega
+
+end SandboxModel.Stage1Protocol.SourceFullWorkGuardValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardValues.pause_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardValues.profile_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardValues.full_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardValues.pause_allowed
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardValues.profile_allowed
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardValues.full_allowed
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardValues.normal_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardValues.empty_state_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullWorkGuardValues.empty_state_rejected_by_same_contract

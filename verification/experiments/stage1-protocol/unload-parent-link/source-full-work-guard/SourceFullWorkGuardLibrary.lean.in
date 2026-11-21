@@ -1,0 +1,40 @@
+import SourceFullWorkGuardTypes
+import SourceFullWorkGuardStd
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol SourceFullWorkGuardTypes
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceFullWorkGuardActual
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+def I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from := SourceRetireLibrary.signed
+def Str.Insts.CoreCmpPartialEqStr.eq := SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.Str.Insts.CoreCmpPartialEqStr.eq
+def alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq :=
+  SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq :=
+  SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.alloc.string.String.Insts.CoreCmpPartialEqString.eq
+def alloc.string.String.Insts.CoreOpsDerefDerefStr.deref :=
+  SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+
+-- Same proposed normal-domain String call bindings already present in the
+-- inbox-config-validation template; exact call adoption remains explicit.
+def alloc.string.String.len (value : String) : Result Usize := do
+  let text ← SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.core.str.Str.len text
+def alloc.string.String.is_empty (value : String) : Result Bool := do
+  let text ← SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.core.str.Str.is_empty text
+
+def alloc.vec.Vec.is_empty := @SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.alloc.vec.Vec.is_empty
+def core.ops.range.RangeInclusive.contains :=
+  @SandproofStage1RequestRust.core.ops.range.RangeInclusive.contains
+def core.str.Str.as_bytes (value : Str) : Result (Slice U8) := .ok value
+def core.str.Str.bytes := SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.core.str.Str.bytes
+def core.str.Str.is_empty := SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.core.str.Str.is_empty
+def core.str.Str.len := SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.core.str.Str.len
+def core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all :=
+  @SandboxModel.Stage1Protocol.SourceFullWorkGuardStd.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all
+end SandboxModel.Stage1Protocol.SourceFullWorkGuardActual
