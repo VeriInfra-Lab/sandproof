@@ -150,9 +150,39 @@ theorem read_revision_precedes_allocator_error (reads : BeforeRevision tx ns wor
   rw [revision_then_allocator reads id key revision idOk textOk queried nonnegative]
   simp only [finishCandidate, cloned, failed, bind_tc_ok]
 
+/-- After the original row has been read and its revision validated, the
+    current result preserves the request, selected entry and native view
+    used by the original source proof. The revision and allocator counter
+    come from their respective reads. -/
+theorem successful_read_preserves_original_fields
+    (reads : BeforeRevision tx ns world intent context)
+    (id : sandproof_protocol.SandboxId) (key : Str) (revision : I64) (counter : U64)
+    (candidate : ReadyCandidate)
+    (idOk : ops.sandboxId ns reads.localBinding.sandbox = .ok (.Ok id))
+    (textOk : ops.sandboxIdText id = .ok key)
+    (queried : revisionQuery reads.connection key = .ok (.Ok revision))
+    (nonnegative : 0 ≤ revision.val)
+    (cloned : ops.cloneIntent intent = .ok intent)
+    (allocator : ops.inputHighWater reads.connection = .ok (.Ok counter))
+    (returned : base_snapshot tx ns world intent context = .ok (.Ok candidate)) :
+    candidate.view.request = intent ∧
+      candidate.view.current_request = reads.entry.intent ∧
+      candidate.view.«local» = some reads.localBinding ∧
+      candidate.view.historical_result = reads.history ∧
+      candidate.view.native = some reads.native ∧
+      candidate.view.readiness = reads.ready ∧
+      candidate.native_revision = some (IScalar.hcast .U64 revision) ∧
+      candidate.view.native_input_high_water = counter := by
+  rw [revision_then_allocator reads id key revision idOk textOk queried nonnegative] at returned
+  simp only [finishCandidate, cloned, allocator, bind_tc_ok, Result.ok.injEq,
+    core.result.Result.Ok.injEq] at returned
+  subst candidate
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
 end RevisionReadSuccess
 
 #audit_controller_proof RevisionReadSuccess.revision_then_allocator
 #audit_controller_proof RevisionReadSuccess.absent_local_skips_revision
 #audit_controller_proof RevisionReadSuccess.absent_world_record_skips_revision
 #audit_controller_proof RevisionReadSuccess.read_revision_precedes_allocator_error
+#audit_controller_proof RevisionReadSuccess.successful_read_preserves_original_fields

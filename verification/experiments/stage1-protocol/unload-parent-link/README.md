@@ -167,6 +167,10 @@ bash scripts/python-entry.sh "$package/diagnose.py" \
   非负有符号值到 `Option U64` 的转换。读取成功后，原分配器错误仍原样返回。
   本地绑定缺失与绑定存在但 World 记录缺失分别核对，均跳过 revision 查询并保留该
   分支的完整结果。后段等式也保留原 clone 或分配器的外层失败和非返回。
+- `RevisionReadSuccess.successful_read_preserves_original_fields` 给出正常读取后
+  可供来源证明使用的字段等式。在原读取、revision 校验及分配器成功的条件下，结果
+  保留原请求、当前条目、绑定、历史结果、原生视图和 readiness。revision 与分配器
+  计数分别取各自的读取结果，原来源读取和物理事务对应仍由各提供方落实。
 - 在同一父调用，正常 revision 与分配器值各进入自己的字段。原 base 返回缺
   `native` 的候选时，真实父函数返回 `CorruptStore`，后续观察请求编码不被求值。
 - `BeforeRevision` 和原父调用前缀逐操作记录所需返回，保留 V4/V5 已登记生产义务。
