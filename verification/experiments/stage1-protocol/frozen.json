@@ -157,7 +157,7 @@
     "verification/experiments/stage1-protocol/NegativeValidation.lean.in": "89a966d2d867f9365167027f6b9cc9746c27b7e0203487de402ffb603612a855",
     "verification/experiments/stage1-protocol/README.md": "943d99aead18f4696b8b120fa730c26b97af447cfd093f254b12e77a25754653",
     "verification/experiments/stage1-protocol/archive.py": "1611afa3391d94277b5bf1662c7cfceaac06dfcf2f2fd8d796db4f5a29de21d6",
-    "verification/experiments/stage1-protocol/component.py": "228ca1e3c82fc4386b103a1a26113ac90a27f722240663433b5c39b3cdd9dcaf",
+    "verification/experiments/stage1-protocol/component.py": "8dbd6841523549fd1ed2bbef6155c4ac4b8d1646e8a0919c8f075ab125e812c1",
     "verification/experiments/stage1-protocol/extract.py": "d909845a913cb85a4f4a4fea85c707d9d4a604555226c4278dca82374ddf7a15",
     "verification/experiments/stage1-protocol/formal.py": "59878b437b00bf4e2e36c32b315482e87147cf4f9255bebffbcf4a726697cc6d",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",

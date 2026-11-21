@@ -153,7 +153,7 @@
     "verification/experiments/stage1-protocol/terminal-binding/roots.rs.in": "4eb94c981d8bd6ec3cee2ea082195f0674c3310f09e4423e3b2f47c8a5ff0115",
     "verification/experiments/stage1-protocol/inbox-renewal-session/fragments.json": "0b4df089d01d9eb35cd6cd567ac182bdd0042de7b176954c09bf577baf342156",
     "verification/experiments/stage1-protocol/formal.py": "59878b437b00bf4e2e36c32b315482e87147cf4f9255bebffbcf4a726697cc6d",
-    "verification/experiments/stage1-protocol/registered.py": "2ddadc5d5da27e407a5bedc525228e8252e7abc3affc1ec98a20fa8809f01411",
+    "verification/experiments/stage1-protocol/registered.py": "d8a0861c4d291ecca92d4d3025f3852f6f1bbf41aff7670511e9fdbb30d4437b",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
     "tools/proof_batch.py": "e8c5cab7e5c13ce7eef157ff23c37b761a90ad1f49a8bc43da2ea482cf36887c",
     "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",

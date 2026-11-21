@@ -572,6 +572,29 @@ class Registration(OriginalReadPlanFixture):
         self.assertEqual(parent['cases'], [
             'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision', 'parent-link'])
 
+    def test_full_dispatch_assigns_convergence_children_disjoint_four_cpu_slots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            names = {'standard-blob', 'standard-record-read'}
+            plan = [job for job in registered.formal_plan(output) if job['name'] in names]
+            self.assertEqual({job['name'] for job in plan}, names)
+            launched = threading.Barrier(2)
+
+            def stop_before_driver(*args, **options):
+                launched.wait(timeout=10)
+                raise ValueError('controlled dispatch diagnostic')
+
+            with patch.object(registered.os, 'sched_getaffinity', return_value=set(range(8)), create=True), \
+                    patch.object(registered, '_launch_job', side_effect=stop_before_driver) as launch:
+                rows, failures = registered.execute_formal_jobs(
+                    registered.ROOT, output, plan, {}, {}, jobs=2, profile='full')
+            self.assertEqual(rows, [])
+            self.assertEqual(set(failures), names)
+            self.assertTrue(all(row['error'] == "ValueError('controlled dispatch diagnostic')"
+                                for row in failures.values()))
+            self.assertCountEqual([call.kwargs for call in launch.call_args_list], [
+                {'cpu_affinity': (0, 1, 2, 3)}, {'cpu_affinity': (4, 5, 6, 7)}])
+
     def test_unload_parent_requires_each_actual_page_for_repeated_audits(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -1250,6 +1250,11 @@ def profile_is_convergence_job(job):
     return job.get('profile') == CONVERGENCE.PROFILE
 
 
+def requires_formal_cpu_slot(job):
+    return (job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS)
+            or any(key in job for key in ('create_package', 'convergence_package', 'convergence_extra')))
+
+
 def _job_description(job):
     names = ('name', 'driver', 'args', 'native', 'cases', 'actual_files',
              'create_package', 'convergence_package', 'convergence_extra', 'profile', 'expected_kind', 'inventory_sha256', 'views')
@@ -1501,7 +1506,7 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                 evidence[str(origin)] = _sha(origin)
         evidence[str(result_path.resolve())] = _sha(result_path)
         evidence[str(log.resolve())] = _sha(log)
-        if profile_is_convergence_job(job):
+        if requires_formal_cpu_slot(job):
             admission = log.parent/'cpu-admission.json'
             _check_cpu_admission(admission)
             evidence[str(admission.resolve())] = _sha(admission)
@@ -1558,7 +1563,7 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
     if log.is_symlink() or not log.is_file():
         raise ValueError('missing original command log')
     evidence[str(log.resolve())] = _sha(log)
-    if job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS) or 'create_package' in job or profile_is_convergence_job(job):
+    if requires_formal_cpu_slot(job):
         admission = log.parent/'cpu-admission.json'
         _check_cpu_admission(admission)
         evidence[str(admission.resolve())] = _sha(admission)
@@ -1638,7 +1643,7 @@ def _reuse_job(helper, job, context, previous):
         if _checkpoint_evidence(helper, job, result, result_path,
                 Path(receipt['command_log'])) != receipt['evidence']:
             raise ValueError('original evidence inventory changed')
-        if job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS) or 'create_package' in job or profile_is_convergence_job(job):
+        if requires_formal_cpu_slot(job):
             admission = Path(receipt['command_log']).parent/'cpu-admission.json'
             if (previous.get('cpu_admission') != _check_cpu_admission(admission)
                     or previous.get('cpu_admission_path') != str(admission)
@@ -1694,13 +1699,13 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
     env = dict(os.environ, SANDPROOF_FORMAL_CACHE=str(directory/'runtime-cache'),
                CARGO_TARGET_DIR=str(directory/'cargo-target'), PYTHONDONTWRITEBYTECODE='1')
     transport = dict(pass_fds=pass_fds) if pass_fds else {}
-    if job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS) or 'create_package' in job or profile_is_convergence_job(job):
+    if requires_formal_cpu_slot(job):
         transport.update(cpu_affinity=cpu_affinity, cpu_admission=directory/'cpu-admission.json')
     argv = _invoke(root, driver, args, env, log=directory/'command.log', **transport)
     row = dict(name=job['name'], argv=argv, result_path=str(Path(job['output'])/'result.json'),
                 seconds=time.monotonic()-started, command_log=str(directory/'command.log'),
                 runtime_seed_sha256=seed_sha256)
-    if job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS) or 'create_package' in job or profile_is_convergence_job(job):
+    if requires_formal_cpu_slot(job):
         admission = directory/'cpu-admission.json'
         row.update(cpu_admission=_check_cpu_admission(admission, cpu_affinity),
                    cpu_admission_path=str(admission), cpu_admission_sha256=_sha(admission))
@@ -1726,8 +1731,8 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
                 or Path(job['output']).resolve() != (output/job['name']).resolve()
                 or Path(job['output']).exists()):
             raise ValueError('job must use its original descriptor and new private output')
-    slots = (_cpu_slots(profile, jobs) if profile == CONVERGENCE.PROFILE
-             or any('create_package' in j for j in plan) else [None]*jobs)
+    slots = (_cpu_slots(profile, jobs) if any(requires_formal_cpu_slot(job) for job in plan)
+             else [None]*jobs)
     helper, shared = _execution_helper(root), _shared()
     context_path = output/'execution-inputs.json'
     shared.write_json(context_path, context)
@@ -1755,8 +1760,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
             while pending and len(inflight) < jobs and not stopped:
                 job = pending.pop(0)
                 slot = free_slots.pop(0)
-                options = (dict(cpu_affinity=slots[slot]) if job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS) or 'create_package' in job
-                           or profile_is_convergence_job(job) else {})
+                options = dict(cpu_affinity=slots[slot]) if requires_formal_cpu_slot(job) else {}
                 if profile_is_convergence_job(job):
                     options['original_readback'] = not recompute
                 future = executor.submit(_launch_job, root, job, output/'execution'/job['name'], paths,
