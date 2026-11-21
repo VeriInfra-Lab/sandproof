@@ -1,0 +1,45 @@
+import SourceRetirementQuestionView
+import SourceRetirementQuestionSpec
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec SourceMaterialChargeSpec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRetirementQuestionModel
+noncomputable section
+local instance tailPropDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+open SourceRetireActual SourceRetireEquality SourceWorkMatch
+
+theorem request_eq (a b : Request) :
+    SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.Insts.CoreCmpPartialEqCaptureMaterialRetirementRequest.eq a b = .ok (decide (a=b)) := by
+  cases a; cases b
+  simp [SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.Insts.CoreCmpPartialEqCaptureMaterialRetirementRequest.eq,
+    capture.retirement.CaptureMaterialRetirementRequest.mk.injEq,
+    SourceWorkMatch.Scalars.core_sandbox_id_eq,SourceRetireEquality.full_request_eq,
+    SourceWorkMatch.SourceData.requirement_eq,SourceRetireEquality.option_action_eq,
+    SourceRetireEquality.option_worker_eq,SourceRetireEquality.option_digest_eq,RequestEquality.ok_and]
+
+theorem actual_tail_contract (record : Record)
+    (question : SourceRetireTypes.controller.lifecycle_inbox.source_work.retirement.MaterialRetirementQuestion) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.check_question_record record question =
+      selected record question.request := by
+  simp only [SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.check_question_record,
+    SourceMaterialChargeProof.request_contract]
+  cases original : requestValue record <;>
+    simp [original,selected,core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      core.cmp.PartialEq.ne.trait_default,core.cmp.PartialEq.ne.default,request_eq]
+
+
+theorem actual_full_tail_contract (source : controller.lifecycle_inbox.source_work.SourceWork) :
+    Contract (fun record wanted =>
+      SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.check_question_record record ⟨source,wanted⟩) := by
+  intro record wanted
+  exact actual_tail_contract record ⟨source,wanted⟩
+
+end
+end SandboxModel.Stage1Protocol.SourceRetirementQuestionModel
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.request_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.actual_tail_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.actual_full_tail_contract

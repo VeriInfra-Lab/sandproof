@@ -1,0 +1,179 @@
+// Actual original find, decoded rows, real JSON/SQLite and a controlled Host.
+// The formal slice starts after selection; these finite native controls do
+// not close the general iterator, transaction, authentication or VM proofs.
+fn source_question_original(record: &SourceWorkRecord) -> retirement::MaterialRetirementQuestion {
+    let capture = record.capture.as_ref().unwrap();
+    retirement::MaterialRetirementQuestion {
+        source: record.work.clone(),
+        request: crate::capture::CaptureMaterialRetirementRequest::from_source(
+            record.work.anchor.local.sandbox,
+            record.work.anchor.native.generation,
+            capture.full.clone(),
+            record.work.requirement.clone(),
+            capture.action.clone(),
+            capture.worker.clone(),
+            capture.completed,
+        ),
+    }
+}
+
+fn source_question_changed_request(
+    original: &retirement::MaterialRetirementQuestion,
+    field: usize,
+) -> crate::capture::CaptureMaterialRetirementRequest {
+    let request = &original.request;
+    let mut sandbox = request.sandbox();
+    let mut generation = request.generation();
+    let mut full = request.full().clone();
+    let mut source = request.source().clone();
+    let mut seal = request.seal_action().cloned();
+    let mut worker = request.worker().cloned();
+    let mut manifest = request.manifest_digest();
+    match field {
+        0 => sandbox.0 = sandbox.0.checked_add(1).unwrap(),
+        1 => generation = generation.checked_add(1).unwrap(),
+        2 => full.api_timeout_ms = full.api_timeout_ms.checked_add(1).unwrap(),
+        3 => {
+            source.limits.max_configuration_bytes = source
+                .limits
+                .max_configuration_bytes
+                .checked_add(1)
+                .unwrap();
+        }
+        4 => {
+            assert!(seal.is_some());
+            seal = None;
+        }
+        5 => {
+            assert!(worker.is_some());
+            worker = None;
+        }
+        6 => {
+            assert!(manifest.is_some());
+            manifest = None;
+        }
+        _ => unreachable!(),
+    }
+    crate::capture::CaptureMaterialRetirementRequest::from_source(
+        sandbox, generation, full, source, seal, worker, manifest,
+    )
+}
+
+#[test]
+fn source_question_checks_all_seven_original_request_fields() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, _) = settled_terminal(&directory.path().join("question.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let original = current.records.first().unwrap();
+    let question = source_question_original(original);
+    let selected = retirement::source_question_lookup_for_test(&current, &question).unwrap();
+    assert_eq!(selected, original);
+    assert!(std::ptr::eq(selected, original));
+    for field in 0..7 {
+        let mut changed = question.clone();
+        changed.request = source_question_changed_request(&question, field);
+        assert_ne!(changed.request, question.request);
+        let result = retirement::source_question_lookup_for_test(&current, &changed);
+        assert!(
+            matches!(result, Err(JournalError::Conflict)),
+            "retirement question must match all seven original request fields: field={field}, result={result:?}"
+        );
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    }
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_question_missing_record_precedes_request_errors() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, _) = settled_terminal(&directory.path().join("question.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let original = current.records.first().unwrap().clone();
+    let mut question = source_question_original(&original);
+    question.request = source_question_changed_request(&question, 1);
+    let mut sources = current.clone();
+    sources.records.clear();
+    assert!(matches!(
+        retirement::source_question_lookup_for_test(&sources, &question),
+        Err(JournalError::Conflict)
+    ));
+    let mut no_capture = original;
+    no_capture.capture = None;
+    sources.records.push(no_capture);
+    assert!(matches!(
+        retirement::source_question_lookup_for_test(&sources, &question),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_question_keeps_the_first_matching_record_error() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, _) = settled_terminal(&directory.path().join("question.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let original = current.records.first().unwrap().clone();
+    let question = source_question_original(&original);
+    let mut first = original.clone();
+    first.capture = None;
+    let mut sources = current.clone();
+    sources.records = vec![first, original];
+    assert_eq!(sources.records[0].work, sources.records[1].work);
+    assert!(matches!(
+        retirement::source_question_lookup_for_test(&sources, &question),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_question_selects_complete_work_instead_of_only_its_binding() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, _) = settled_terminal(&directory.path().join("question.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let original = current.records.first().unwrap().clone();
+    let question = source_question_original(&original);
+    let mut same_key = original.clone();
+    same_key.work.requirement.limits.max_configuration_bytes = same_key
+        .work
+        .requirement
+        .limits
+        .max_configuration_bytes
+        .checked_add(1)
+        .unwrap();
+    assert_eq!(
+        same_key.work.requirement.work_binding,
+        original.work.requirement.work_binding
+    );
+    assert_ne!(same_key.work, original.work);
+    let mut sources = current.clone();
+    sources.records = vec![same_key];
+    assert!(matches!(
+        retirement::source_question_lookup_for_test(&sources, &question),
+        Err(JournalError::Conflict)
+    ));
+    sources.records.push(original);
+    let selected = retirement::source_question_lookup_for_test(&sources, &question).unwrap();
+    assert_eq!(selected, &sources.records[1]);
+    assert!(std::ptr::eq(selected, &sources.records[1]));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}

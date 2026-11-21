@@ -1,0 +1,86 @@
+import SourceRetirementQuestionWrong
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec SourceMaterialChargeSpec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRetirementQuestionModel
+noncomputable section
+local instance wrongPropDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev Question := SourceRetireTypes.controller.lifecycle_inbox.source_work.retirement.MaterialRetirementQuestion
+
+def sandboxOnly (record : Record) (wanted : Request) : Result (core.result.Result Record Journal) :=
+  match requestValue record with
+  | none => .ok (.Err .UnresolvedAction)
+  | some original => if original.sandbox = wanted.sandbox then .ok (.Ok record) else .ok (.Err .Conflict)
+
+theorem wrong_calculation (record : Record) (question : Question) :
+    SourceRetirementQuestionWrong.controller.lifecycle_inbox.source_work.retirement.check_question_record record question =
+      sandboxOnly record question.request := by
+  have scalarEqual (left right : U64) : left.val = right.val ↔ left = right :=
+    ⟨UScalar.eq_of_val_eq,fun same => congrArg UScalar.val same⟩
+  simp only [SourceRetirementQuestionWrong.controller.lifecycle_inbox.source_work.retirement.check_question_record,
+    SourceMaterialChargeProof.request_contract]
+  cases original : requestValue record <;>
+    simp [original,sandboxOnly,core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SourceRetirementQuestionWrong.capture.retirement.CaptureMaterialRetirementRequest.impl.sandbox,
+      core.cmp.PartialEq.ne.trait_default,core.cmp.PartialEq.ne.default,
+      SourceWorkMatch.Scalars.core_sandbox_id_eq,scalarEqual]
+
+theorem normal_control (record : Record) (captured : Captured) (present : record.capture = some captured) :
+    let question : Question :=
+      ⟨record.work,⟨record.work.anchor.local.sandbox,record.work.anchor.native.generation,
+        captured.full,record.work.requirement,captured.action,captured.worker,captured.completed⟩⟩
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.check_question_record record question = .ok (.Ok record) ∧
+      SourceRetirementQuestionWrong.controller.lifecycle_inbox.source_work.retirement.check_question_record record question = .ok (.Ok record) := by
+  dsimp only
+  rw [actual_tail_contract,wrong_calculation]
+  simp [selected,sandboxOnly,requestValue,present]
+
+theorem wrong_accepts_changed_generation (record : Record) (captured : Captured)
+    (present : record.capture = some captured) (generation : U64)
+    (different : generation ≠ record.work.anchor.native.generation) :
+    ∃ question : Question,
+      SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.check_question_record record question = .ok (.Err .Conflict) ∧
+        SourceRetirementQuestionWrong.controller.lifecycle_inbox.source_work.retirement.check_question_record record question = .ok (.Ok record) := by
+  let original : Request := ⟨record.work.anchor.local.sandbox,record.work.anchor.native.generation,
+    captured.full,record.work.requirement,captured.action,captured.worker,captured.completed⟩
+  let wanted : Request := {original with generation := generation}
+  let question : Question := ⟨record.work,wanted⟩
+  have mismatch : original ≠ wanted := by
+    intro same
+    have fields := congrArg (fun request : Request => request.generation) same
+    exact different fields.symm
+  refine ⟨question,?_,?_⟩
+  · rw [actual_tail_contract]
+    change selected record wanted = .ok (.Err .Conflict)
+    simp only [selected,requestValue,present,Option.map_some]
+    exact if_neg mismatch
+  · rw [wrong_calculation]
+    simp [sandboxOnly,requestValue,present,question,original,wanted]
+
+
+theorem rejects_same_full_contract (record : Record) (captured : Captured)
+    (present : record.capture = some captured) (generation : U64)
+    (different : generation ≠ record.work.anchor.native.generation) :
+    ¬ (∀ source : controller.lifecycle_inbox.source_work.SourceWork,
+      Contract (fun record wanted =>
+        SourceRetirementQuestionWrong.controller.lifecycle_inbox.source_work.retirement.check_question_record record ⟨source,wanted⟩)) := by
+  intro obeys
+  obtain ⟨question,correct,wrong⟩ := wrong_accepts_changed_generation record captured present generation different
+  have same : SourceRetirementQuestionWrong.controller.lifecycle_inbox.source_work.retirement.check_question_record record question =
+      selected record question.request := by
+    cases question with
+    | mk source wanted => exact obeys source record wanted
+  rw [wrong] at same
+  rw [← actual_tail_contract record question,correct] at same
+  simp at same
+
+end
+end SandboxModel.Stage1Protocol.SourceRetirementQuestionModel
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.wrong_calculation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.normal_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.wrong_accepts_changed_generation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.rejects_same_full_contract

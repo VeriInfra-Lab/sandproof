@@ -1,0 +1,8 @@
+import SourceRetirementQuestionProof
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec SourceMaterialChargeSpec
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceRetirementQuestionWrong
+open SourceRetireActual
+-- ACTUAL WRONG VALIDATION
+end SandboxModel.Stage1Protocol.SourceRetirementQuestionWrong
