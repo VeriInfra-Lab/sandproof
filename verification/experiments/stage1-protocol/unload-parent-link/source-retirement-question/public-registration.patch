@@ -1,0 +1,21 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,18 @@
++## V3 已选来源记录的完整退休请求候选
++
++固定生产 `b0d791ccc4d4e058b710dbf8f46766652b2853df`，接续 #998。
++隔离原 find 的完整 request/不匹配/返回段，对任意已解码记录和请求满足同一个
++Contract。无捕获先报 UnresolvedAction；存在捕获时，sandbox、generation、full、
++source、seal_action、worker、manifest_digest 七字段全部相等才返回同一完整记录，
++不匹配报 Conflict。完整派生比较复用原全部嵌套值证明和父请求构造，不以样例替代。
++真实 Rust 只比较 sandbox 的错误体实际编译/抽取后，被相同完整合同否定；相同正常
++输入两版接受，改代请求正确拒绝、错误接受。普通值库条件保留，不授予授权或退休资格。
++
++本片从已选记录开始。原 Iterator::find 仍因固定工具的 lifetime constraint 抽取
++失败；原查找首错/首次完整 SourceWork/返回借用及父调用来源未形式闭合，未隐藏为业务
++opaque 或替代扫描。V0/主控协调原切片查找的窄库接口，V3 接实际完整比较和原调用。
++原生四版十五项及恢复、完整普通/公共批次仍交 ning/主控；有限原生对照不代替一般证明。
++整个隔离等价、V5 原行/OLD World/事务/未知提交/耐久、V6 物理及 V7 独立认证仍开放。
++[完整输入、同合同正反与提供方](../verification/experiments/stage1-protocol/unload-parent-link/source-retirement-question/README.md)。
++
+ ## V3 首次卸载使用同一条原执行记录

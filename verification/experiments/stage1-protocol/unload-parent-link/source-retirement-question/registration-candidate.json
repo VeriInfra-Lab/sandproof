@@ -1,0 +1,146 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "parent_prs": [
+    998
+  ],
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-retirement-question",
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceRetirementQuestionProof",
+      "physical_files": 136,
+      "full_audits": 761,
+      "own_modules": [
+        "SourceRetirementQuestionSpec.lean",
+        "SourceRetirementQuestionView.lean",
+        "SourceRetirementQuestionProof.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.seven_fields_iff",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.no_capture_first",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.exact_request",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.complete_mismatch",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.original_request_absent",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.original_request_present",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.request_eq",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.actual_tail_contract",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.actual_full_tail_contract"
+      ]
+    },
+    {
+      "variant": "sandbox-only-request",
+      "formal_root": "SourceRetirementQuestionNegative",
+      "physical_files": 138,
+      "full_audits": 765,
+      "own_modules": [
+        "SourceRetirementQuestionSpec.lean",
+        "SourceRetirementQuestionView.lean",
+        "SourceRetirementQuestionProof.lean",
+        "SourceRetirementQuestionWrong.lean",
+        "SourceRetirementQuestionNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.seven_fields_iff",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.no_capture_first",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.exact_request",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.complete_mismatch",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.original_request_absent",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.original_request_present",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.request_eq",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.actual_tail_contract",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.actual_full_tail_contract",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.wrong_calculation",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.normal_control",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.wrong_accepts_changed_generation",
+        "SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.rejects_same_full_contract"
+      ]
+    }
+  ],
+  "formal_development_entry": "check.py",
+  "public_registration_accepted": false,
+  "production_candidate_equivalence_complete": false,
+  "original_find_proved": false,
+  "native_candidate": {
+    "name": "stage1-source-retirement-question",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "sandbox-only-request",
+      "adapted-sandbox-only-request"
+    ],
+    "tests": [
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_requires_transaction_even_for_empty_expected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_empty_transaction_does_not_load_missing_schema",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_clears_only_complete_original_slot_and_keeps_reservation",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_same_key_with_changed_complete_record_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_unsettled_material_keeps_complete_source_row",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_zero_row_compare_and_set_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_duplicate_preserves_first_update_until_explicit_rollback",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_no_capture_requires_empty_retirement_and_release",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_retiring_zero_does_not_mean_settled",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_settlement_matches_every_original_byte",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_state_size_is_rejected_before_plan_shape",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_checks_all_seven_original_request_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_missing_record_precedes_request_errors",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_keeps_the_first_matching_record_error",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_selects_complete_work_instead_of_only_its_binding"
+    ],
+    "expected": {
+      "original": {
+        "passed": 15,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 15,
+        "failed": 0
+      },
+      "sandbox-only-request": {
+        "passed": 14,
+        "failed": 1
+      },
+      "adapted-sandbox-only-request": {
+        "passed": 14,
+        "failed": 1
+      }
+    },
+    "rejection": "retirement question must match all seven original request fields",
+    "restoration": "after both wrong views, independently prepare/build original and execute all fifteen exact tests:15/15",
+    "full_functional_required": true
+  },
+  "representation": {
+    "record": "same actual complete SourceWorkRecord and seven-field CaptureMaterialRetirementRequest; no parallel protocol model",
+    "correct": "exact selected-record tail: original request first, UnresolvedAction before complete-request Conflict, matching returns same complete record",
+    "property": "same Contract for every record/request and every question.source; source selection is not assumed or inferred by this tail",
+    "negative": "actual Rust sandbox-only tail, same normal input accepted and changed-generation input rejected only by original full Contract",
+    "scope": "ordinary decoded-value fragment; no general original lookup/borrow origin, JSON/TLS, transaction, authentication or physical-retirement conclusion"
+  },
+  "remaining_providers": {
+    "V0": [
+      "exact original String/Vec/Option/Bool/clone comparison adoption under the existing ordinary-value/normal-allocation contracts",
+      "coordinate original shared slice::Iter.find first-match and returned-borrow/source interface; no new assumed whole-lookup contract in this packet"
+    ],
+    "V3": [
+      "original find/first complete SourceWork predicate/selected-record origin/returned-borrow and actual parent call; fixed-tool original HRTB failure retained",
+      "whole production-to-isolated general equivalence and exact original call wiring; current tail does not recheck question.source"
+    ],
+    "V5": [
+      "legitimate original rows/OLD World/physical snapshot/same transaction/history/unknown commit/durability; values do not establish these"
+    ],
+    "V6": [
+      "actual material/writer/VM/files/physical release and permission to retire or delete"
+    ],
+    "V7": [
+      "independent authenticated context/configuration origin; equality does not authorize"
+    ]
+  },
+  "public_remaining": [
+    "ning four actual native views plus independent correct restoration",
+    "current complete Linux functional entry and coordinator-owned public proof batch",
+    "coordinator adoption of public native/formal/root/coverage candidates",
+    "unclosed original find and named library/source/transaction/authentication/physical obligations"
+  ]
+}

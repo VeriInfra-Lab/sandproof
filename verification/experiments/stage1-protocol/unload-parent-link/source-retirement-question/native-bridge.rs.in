@@ -1,0 +1,8 @@
+// Test visibility only: call the complete original lookup without replacing it.
+#[cfg(test)]
+pub(super) fn source_question_lookup_for_test<'a>(
+    sources: &'a codec::Sources,
+    question: &MaterialRetirementQuestion,
+) -> Result<&'a SourceWorkRecord, JournalError> {
+    find(sources, question)
+}

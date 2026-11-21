@@ -1,0 +1,65 @@
+import SourceMaterialChargeCases
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol
+open SourceRetireTypes SourceRetireSpec SourceMaterialChargeSpec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRetirementQuestionModel
+noncomputable section
+local instance propDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev Captured := controller.lifecycle_inbox.source_work.full.CaptureWork
+
+def selected (record : Record) (wanted : Request) : Result (core.result.Result Record Journal) :=
+  match requestValue record with
+  | none => .ok (.Err .UnresolvedAction)
+  | some original => if original = wanted then .ok (.Ok record) else .ok (.Err .Conflict)
+
+def Contract (root : Record → Request → Result (core.result.Result Record Journal)) : Prop :=
+  ∀ record wanted, root record wanted = selected record wanted
+
+theorem seven_fields_iff (left right : Request) :
+    left = right ↔ left.sandbox = right.sandbox ∧ left.generation = right.generation ∧
+      left.full = right.full ∧ left.source = right.source ∧ left.seal_action = right.seal_action ∧
+      left.worker = right.worker ∧ left.manifest_digest = right.manifest_digest := by
+  cases left
+  cases right
+  simp only [capture.retirement.CaptureMaterialRetirementRequest.mk.injEq]
+
+theorem no_capture_first (record : Record) (wanted : Request) (absent : record.capture = none) :
+    selected record wanted = .ok (.Err .UnresolvedAction) := by
+  simp [selected,requestValue,absent]
+
+theorem exact_request (record : Record) (captured : Captured) (present : record.capture = some captured) :
+    selected record ⟨record.work.anchor.local.sandbox,record.work.anchor.native.generation,
+      captured.full,record.work.requirement,captured.action,captured.worker,captured.completed⟩ = .ok (.Ok record) := by
+  simp [selected,requestValue,present]
+
+theorem complete_mismatch (record : Record) (wanted : Request) (captured : Captured)
+    (present : record.capture = some captured)
+    (different : (⟨record.work.anchor.local.sandbox,record.work.anchor.native.generation,
+      captured.full,record.work.requirement,captured.action,captured.worker,captured.completed⟩ : Request) ≠ wanted) :
+    selected record wanted = .ok (.Err .Conflict) := by
+  simp [selected,requestValue,present,different]
+
+theorem original_request_absent (record : Record) (absent : record.capture = none) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.request record = .ok (.Err .UnresolvedAction) := by
+  rw [SourceMaterialChargeProof.request_contract]
+  simp [requestValue,absent]
+
+theorem original_request_present (record : Record) (captured : Captured) (present : record.capture = some captured) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.request record =
+      .ok (.Ok (⟨record.work.anchor.local.sandbox,record.work.anchor.native.generation,
+        captured.full,record.work.requirement,captured.action,captured.worker,captured.completed⟩ : Request)) := by
+  rw [SourceMaterialChargeProof.request_contract]
+  simp [requestValue,present]
+
+end
+end SandboxModel.Stage1Protocol.SourceRetirementQuestionModel
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.seven_fields_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.no_capture_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.exact_request
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.complete_mismatch
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.original_request_absent
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRetirementQuestionModel.original_request_present
