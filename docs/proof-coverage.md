@@ -21,6 +21,8 @@ Refs #14、#641。相对 integration `b60078c288a86a99219a4cd67bf2797dc36997ab`�
 该接线及锁外身份保持尚未证明，不由旧串行恢复入口的证明或普通测试自动背书。
 未扩展原谓词支持的操作种类；未知 Resume/Pause Stop 的其它交错不因此声称完成。
 
+相对 `eef8abc3`，`revoke_capture_eligibility` 将局部绑定命名为 `handoff`，使生成的 Lean 能解析模块 `capture` 中的 `CaptureHandoff.terminate`。该改名已在源文件相同的隔离副本通过原 20 个正确版入口的抽取及 `CaptureCaller.Funs` 编译。补偿与材料退休的组合证明仍待完成。
+
 ## 单机存储第一阶段整合与公共登记
 
 Refs #775、#776、#777、#778、#780、#781。本批功能代码与实机候选

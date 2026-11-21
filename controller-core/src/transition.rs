@@ -479,8 +479,8 @@ fn revoke_capture_eligibility(world: &World, next: &mut World, sandbox: SandboxI
     for (key, stored) in world.operation_plans.entries() {
         if key.sandbox == sandbox && stored.capture.is_some() {
             let mut plan = stored.clone();
-            if let Some(capture) = plan.capture {
-                plan.capture = Some(capture.terminate());
+            if let Some(handoff) = plan.capture {
+                plan.capture = Some(handoff.terminate());
             }
             next.operation_plans.put(*key, plan);
         }
