@@ -99,6 +99,8 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
 
 完整 V3 另登记 `stage1-unload-audits`。它覆盖首次卸载的启动回执、原执行记录、继续卸载的回执扫描和原 Create 选项编码。普通机按原夹具验证四个断言、两个已编译的错误版本及恢复后的同一断言；首次卸载的两个证明包共用同一个原生夹具。形式端分别重建各包的原 Lean 工程，并检查全部 44 份带审计命令的文件和 103 条审计声明。
 
+`stage1-unload-parent-transaction` 检查首次卸载的事务开始、认证与解码顺序、保存和提交顺序。当前 Rust 的 base 读取由同一事务和原本地身份提供 revision，成功路径同时保留原记录、原账本及已有启动计划的证明。原生入口保留正确版、调序错误版和恢复原版，形式入口核对实际抽取、物化文件及原始诊断。同一条定理在分项页和总页中的审计分别检查。具体输入和边界见[首次卸载父调用](unload-parent-link/README.md)。
+
 运行完整入口前，`SANDPROOF_UNLOAD_CAPTURE_EVIDENCE` 指向原 LLBC 目录。目录按四个包名分组，文件名是各包 `capture_hashes` 中的键加 `.llbc`。原摘要来自各包已有的 `evidence.json` 或 `capture-profile.json`，输入和原输出都按现有冻结清单核对。公共结果绑定与当前输入匹配的原生回执、Lean 文件、内核日志和服务诊断。单独的证明包仍可按各自说明复现。
 
 仅在 `inbox-record-total` 对同一变体实际完成父 `inbox-append` 的全部文件、审计及额外
