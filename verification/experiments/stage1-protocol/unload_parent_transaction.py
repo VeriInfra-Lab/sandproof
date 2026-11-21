@@ -20,6 +20,7 @@ CASES = {
     'prefix-reordered': 'UnloadFrontierReordered',
     'finish': 'UnloadFinish',
     'finish-reordered': 'UnloadFinishReordered',
+    'revision': 'RevisionParentCall',
 }
 AUTH_TEST = 'proof_first_unload_prepare_orders_inbox_authentication_and_source_decode'
 COMMIT_TEST = 'proof_first_prepare_after_commit_error_preserves_original_durable_work'
@@ -33,9 +34,10 @@ REJECTIONS = {
 NATIVE_VIEWS = ('original', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'restored')
 
 sys.path.insert(0, str(PACKAGE))
-from check_revision_pair import git, source_identity
+from check_revision_pair import check_pair, git, source_identity
 import finish_capture
 import frontier_capture
+import prepare_revision_call
 import prepare_unload_finish
 import prepare_unload_frontier
 import prepare_world_begin
@@ -106,12 +108,15 @@ def run_native(output, result):
                                             fixture_sha256=digest(target))
 
 
-def run_formal(output, result, identity, receipt_path):
+def run_formal(output, result, identity, receipt_path, native_archive, native_manifest):
     registered = load(ROOT / HERE / 'registered.py')
     runtime = load(ROOT / HERE / 'formal_runtime.py')
     checker = load(ROOT / HERE / 'formal.py')
     receipt = json.loads(receipt_path.read_bytes())
     validate_native_result(receipt, identity)
+    archive = load(ROOT / HERE / 'archive.py').verify(native_archive, native_manifest)
+    if archive['commit'] != identity['head'] or archive['tree'] != identity['tree']:
+        raise ValueError('parent transaction archive belongs to a different candidate')
     result['native_result_sha256'] = digest(receipt_path)
     artifacts = output / 'artifacts'
     captures = artifacts / 'captures'
@@ -122,9 +127,17 @@ def run_formal(output, result, identity, receipt_path):
     packages, mcp = runtime.package_root(ROOT), runtime.tool_root(ROOT) / 'lean-mcp'
     begin = captures / 'begin'
     env = dict(os.environ, LEAN_NUM_THREADS='4', LEAN_STACK_SIZE_KB='65536')
-    command(result, env, ROOT, captures, 'begin',
-            [sys.executable, PACKAGE / 'capture.py', '--mode', 'world-begin',
-             '--source-commit', identity['head'], '--lock', lock, '--output', begin])
+    revisions = {name: captures / ('revision-' + name) for name in ('base-revision', 'parent')}
+    for mode, folder in {'world-begin': begin, **revisions}.items():
+        command(result, env, ROOT, captures, folder.name,
+                [sys.executable, PACKAGE / 'capture.py', '--mode', mode,
+                 '--source-commit', identity['head'], '--lock', lock, '--output', folder])
+    report = json.loads((ROOT / HERE / 'unload-startup-source/capture-profile.json').read_bytes())
+    parent = dict(report['parent'], namespace=prepare_revision_call.PARENT,
+                  subdir=prepare_revision_call.PARENT)
+    fixed = json.loads((ROOT / 'verification/foundations-environment.json').read_bytes())
+    pair = check_pair(revisions['base-revision'], revisions['parent'], identity, parent, fixed['target'])
+    write_json(captures / 'revision-pair.json', pair)
     frontiers = {name: captures / ('frontier-' + name) for name in ('prefix', 'parent', 'reordered')}
     for name, folder in frontiers.items():
         if probe_prepare_iterators.probe('json-boundary', folder, tools, lock, False,
@@ -150,6 +163,11 @@ def run_formal(output, result, identity, receipt_path):
         project = folder / 'project'
         if case == 'begin':
             prepare_world_begin.prepare(begin, project, packages, mcp, identity=identity)
+        elif case == 'revision':
+            prepare_revision_call.prepare_call(
+                revisions['base-revision'] / 'generated' / prepare_revision_call.BASE,
+                revisions['parent'] / 'generated' / prepare_revision_call.PARENT,
+                packages, mcp, project, identity=identity)
         elif case.startswith('prefix'):
             wrong = case.endswith('reordered')
             prepare_unload_frontier.materialize(frontiers['reordered' if wrong else 'prefix'],
@@ -159,9 +177,15 @@ def run_formal(output, result, identity, receipt_path):
             prepare_unload_finish.materialize(finishes[mode], finishes['parent'],
                 frontiers['prefix'], frontiers['parent'], begin, project, packages, mcp, mode, identity=identity)
         plan = json.loads((project / 'plan.json').read_bytes())
-        if plan['root'] != root or plan['source'] != identity['head']:
+        if case == 'revision':
+            roots, source = plan['roots'], plan['source_commit']
+            files = {name.replace('.', '/') + '.lean': row['sha256']
+                     for name, row in plan['modules'].items()}
+        else:
+            roots, source, files = [plan['root']], plan['source'], plan['files']
+        if roots != [root] or source != identity['head']:
             raise ValueError('wrong materialized root or commit: ' + case)
-        if any(digest(project / name) != checksum for name, checksum in plan['files'].items()):
+        if any(digest(project / name) != checksum for name, checksum in files.items()):
             raise ValueError('materialized proof differs from its checked inputs')
         shutil.copyfile(ROOT/'tools/proof_services.py', project/'tools/proof_services.py')
         (project / 'artifacts').mkdir()
@@ -170,7 +194,7 @@ def run_formal(output, result, identity, receipt_path):
             command(result, env, cwd, logs, label, argv)
 
         run(project, folder, 'build', ['lake', 'build', root])
-        actual = checker.actual_files(project, sorted(plan['files']), folder, env, run)
+        actual = checker.actual_files(project, sorted(files), folder, env, run)
         registered._saved_physical_view(actual, project, folder / 'physical-files', result['commands'])
         result['cases'][case] = dict(actual, complete=True)
     check_parent_audits(ROOT, result)
@@ -178,7 +202,8 @@ def run_formal(output, result, identity, receipt_path):
 
 def validate_native_result(receipt, identity):
     if (receipt.get('kind') != KIND or receipt.get('complete') is not True
-            or receipt.get('commit') != identity['head'] or receipt.get('tree') != identity['tree']):
+            or receipt.get('commit') != identity['head'] or receipt.get('tree') != identity['tree']
+            or receipt.get('source_sha256') != identity['source_archive_sha256']):
         raise ValueError('missing current parent transaction native evidence')
     views = receipt.get('native_views', {})
     if list(views) != list(NATIVE_VIEWS) or views['original'] != views['restored']:
@@ -211,7 +236,9 @@ def main():
             run_native(output, result)
         else:
             evidence = native_case(LABEL, ROOT, None, scope='stage1-protocol')
-            run_formal(output, result, identity, registered._original_file(evidence, 'result.json'))
+            files = [registered._original_file(evidence, name)
+                     for name in ('result.json', 'source.tar', 'source-manifest.json')]
+            run_formal(output, result, identity, *files)
         assert_current(result)
         result['complete'] = True
     finally:

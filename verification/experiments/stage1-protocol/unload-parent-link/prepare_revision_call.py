@@ -56,7 +56,7 @@ def base_effects(legacy, sql, literal):
     return replace_once(legacy, f'end {BASE}', definitions + f'\nend {BASE}')
 
 
-def prepare_call(base, parent, packages, lean_mcp, output):
+def prepare_call(base, parent, packages, lean_mcp, output, *, identity=None):
     inventory = json.loads((PACKAGE / 'inputs.json').read_bytes())
 
     def original(path):
@@ -68,7 +68,13 @@ def prepare_call(base, parent, packages, lean_mcp, output):
         raw = directory / 'Funs.lean'
         if raw.is_symlink() or not raw.is_file():
             raise ValueError('original regular Funs.lean required')
-        files[f'{namespace}/Funs.lean'] = apply_view(raw.read_bytes(), inventory['generated_funs'][namespace])
+        body = apply_view(raw.read_bytes(), inventory['generated_funs'][namespace])
+        if namespace == BASE:
+            # Rename the admitted dictionary projection and its handwritten
+            # counterpart. The checked original generated body is kept intact.
+            prefix = 'ArrayT1.Insts.RusqliteParamsParams.'
+            body = replace_once(body.decode(), prefix + '__bind_in', prefix + 'bindIn').encode()
+        files[f'{namespace}/Funs.lean'] = body
     files[f'{BASE}/FunsExternal.lean'] = base_effects(
         original(BASE_PROOF / BASE / 'FunsExternal.lean.in'),
         (PACKAGE / 'RevisionSqlOperations.lean.in').read_text(),
@@ -94,6 +100,8 @@ def prepare_call(base, parent, packages, lean_mcp, output):
                             f'{PARENT}.FunsExternal', f'{PARENT}.Funs', *PROOFS]
     plan['modules'].update({name: dict(sha256=sha(data)) for name, data in files.items()})
     plan['roots'] = ['RevisionParentCall']
+    if identity is not None:
+        plan.update(source_commit=identity['head'], source_tree=identity['tree'])
     plan_file.write_text(json.dumps(plan, indent=2) + '\n')
 
 

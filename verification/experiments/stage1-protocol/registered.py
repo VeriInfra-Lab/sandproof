@@ -1536,6 +1536,8 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                 capture = folder/'artifacts'/package/(name+'.llbc')
                 if evidence.get(str(capture)) != expected:
                     raise ValueError('missing or changed original unload capture: ' + str(capture))
+    if job['name'] == UNLOAD.PARENT_LABEL:
+        UNLOAD.check_parent_captures(folder, result, evidence)
     commands = list(_kernel_commands(result))
     views = list(_actual_views(result))
     if job['actual_files'] and not views:

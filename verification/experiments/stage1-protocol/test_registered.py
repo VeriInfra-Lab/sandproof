@@ -60,7 +60,7 @@ class CreateDelivery(OriginalReadPlanFixture):
         with patch.dict(os.environ, SANDPROOF_STAGE1_PROFILE='create-delivery',
                         SANDPROOF_STAGE1_ONLY='create-selection'):
             full = registered.formal_plan(Path('/unused'))
-            self.assertEqual(len(full), 167)
+            self.assertEqual(len(full), 168)
             self.assertEqual(len(registered.native_labels()), 79)
         jobs = self.plan()
         definition = registered.create_profile()
@@ -569,7 +569,8 @@ class Registration(OriginalReadPlanFixture):
         self.assertIn('skip-capture-binding', manifest['cases'])
         parent = next(j for j in jobs if j['name'] == 'stage1-unload-parent-transaction')
         self.assertEqual(parent['native'], ['stage1-unload-parent-transaction'])
-        self.assertEqual(parent['cases'], ['begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered'])
+        self.assertEqual(parent['cases'], [
+            'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision'])
 
     def test_total_only_subsumes_same_variant_append_formal(self):
         jobs = registered.formal_plan(Path('/unused'))
