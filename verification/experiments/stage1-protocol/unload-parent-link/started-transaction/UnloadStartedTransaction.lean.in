@@ -1,0 +1,123 @@
+import SandproofStage1Request.Funs
+import SandproofParentRead.WorldRead
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.UnloadStartedTransaction
+
+open SandboxModel.InboxTransaction.CurrentWorldRead
+
+abbrev World := SandproofStage1RequestRust.sandbox_controller_core.model.World
+abbrev Raw := SandproofStage1RequestRust.rusqlite.transaction.Transaction
+abbrev Committed := sandproof_controller_service.controller.transaction.CommittedWorld
+abbrev StartedOwner := sandproof_controller_service.controller.transaction.WorldTransaction
+abbrev makeOwner := sandproof_controller_service.controller.transaction.WorldTransaction.from_started_transaction
+abbrev readVersion := sandproof_controller_service.controller.transaction.data_version
+abbrev checkIdentity := sandproof_controller_service.controller.transaction.CommittedWorld.check_identity
+
+def initialOwner (tx : Raw) (committed : Committed) (start : U64) (world : World) : StartedOwner :=
+  { transaction := some tx, committed, candidate := ⟨some world, 0⟩, input_start := start }
+
+theorem original_owner_checks_its_transaction
+    (tx : Raw) (committed : Committed) (start : U64) (world : World) :
+    makeOwner tx committed start world = (do
+      let checked ← checkIdentity committed tx.conn
+      match checked with
+      | .Ok _ => .ok (.Ok (initialOwner tx committed start world))
+      | .Err error => .ok (.Err error)) := by
+  unfold makeOwner sandproof_controller_service.controller.transaction.WorldTransaction.from_started_transaction
+  simp [core.cell.RefCell.new,
+    sandproof_controller_service.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+    core.option.Option.expect, Result.ofOption, initialOwner]
+  apply congrArg (fun next => checkIdentity committed tx.conn >>= next)
+  funext checked
+  cases checked <;> simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem started_matching_version
+    (tx : Raw) (committed : Committed) (start : U64) (world : World)
+    (read : readVersion tx.conn = .ok (.Ok committed.data_version)) :
+    makeOwner tx committed start world = .ok (.Ok (initialOwner tx committed start world)) := by
+  rw [original_owner_checks_its_transaction]
+  simp [checkIdentity, sandproof_controller_service.controller.transaction.CommittedWorld.check_identity,
+    readVersion] at read ⊢
+  simp [read]
+
+theorem started_changed_version
+    (tx : Raw) (committed : Committed) (start : U64) (world : World) (version : I64)
+    (read : readVersion tx.conn = .ok (.Ok version)) (changed : version ≠ committed.data_version)
+    (unborrowed : committed.value.beforeBorrowCount = 0) :
+    makeOwner tx committed start world = .ok (.Err .CorruptStore) := by
+  rw [original_owner_checks_its_transaction]
+  simp [checkIdentity, sandproof_controller_service.controller.transaction.CommittedWorld.check_identity,
+    readVersion] at read ⊢
+  simp [read, changed, sandproof_controller_service.controller.transaction.CommittedWorld.invalidate,
+    core.cell.RefCell.borrow_mut, unborrowed, core.cell.RefMut.Insts.CoreOpsDerefDerefMut.deref_mut,
+    core.result.Result.and]
+
+theorem started_preserves_read_error
+    (tx : Raw) (committed : Committed) (start : U64) (world : World)
+    (error : sandproof_controller_service.JournalError)
+    (read : readVersion tx.conn = .ok (.Err error))
+    (unborrowed : committed.value.beforeBorrowCount = 0) :
+    makeOwner tx committed start world = .ok (.Err error) := by
+  rw [original_owner_checks_its_transaction]
+  simp [checkIdentity, sandproof_controller_service.controller.transaction.CommittedWorld.check_identity,
+    readVersion] at read ⊢
+  simp [read, sandproof_controller_service.controller.transaction.CommittedWorld.invalidate,
+    core.cell.RefCell.borrow_mut, unborrowed, core.cell.RefMut.Insts.CoreOpsDerefDerefMut.deref_mut,
+    core.result.Result.and]
+
+abbrev versionMapper :=
+  sandproof_controller_service.controller.transaction.data_version.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultI64Error
+
+def versionQuery (connection : rusqlite.Connection) :
+    Result (core.result.Result I64 rusqlite.error.Error) :=
+  rusqlite.Connection.query_row Tuple.Insts.RusqliteParamsParams versionMapper
+    connection (SandproofStage1RequestRust.toStr "PRAGMA data_version") () ()
+
+theorem version_mapper_reads_column_zero (row : rusqlite.row.Row) :
+    versionMapper.call_once () row =
+      rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex
+        I64.Insts.RusqliteTypesFrom_sqlFromSql row 0#usize := by
+  rfl
+
+theorem started_preserves_sqlite_version_error
+    (tx : Raw) (committed : Committed) (start : U64) (world : World)
+    (error : rusqlite.error.Error) (queried : versionQuery tx.conn = .ok (.Err error))
+    (unborrowed : committed.value.beforeBorrowCount = 0) :
+    makeOwner tx committed start world = .ok (.Err (.Sqlite error)) := by
+  apply started_preserves_read_error tx committed start world (.Sqlite error) _ unborrowed
+  unfold readVersion sandproof_controller_service.controller.transaction.data_version
+  unfold versionQuery at queried
+  simp [queried, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalErrorFromSqlite.from]
+
+theorem started_owner_keeps_candidate_and_source
+    (tx : Raw) (committed : Committed) (start : U64) (world : World)
+    (after : StartedOwner) (read : readVersion tx.conn = .ok (.Ok committed.data_version))
+    (accepted : makeOwner tx committed start world = .ok (.Ok after)) :
+    after.transaction = some tx ∧ after.committed = committed ∧ after.input_start = start ∧
+      (ownerView after).transaction = some (rawView tx) ∧
+      readWorld (ownerView after) = .ok world := by
+  rw [started_matching_version tx committed start world read] at accepted
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq] at accepted
+  subst after
+  refine ⟨rfl, rfl, rfl, rfl, world_from_same_candidate _ world ?_⟩
+  refine ⟨?_, rfl⟩
+  change SandproofParentReadRust.NormalWorldBorrow 0
+  decide
+
+end SandboxModel.Stage1Protocol.UnloadStartedTransaction
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadStartedTransaction.original_owner_checks_its_transaction
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadStartedTransaction.started_matching_version
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadStartedTransaction.started_changed_version
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadStartedTransaction.started_preserves_read_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadStartedTransaction.version_mapper_reads_column_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadStartedTransaction.started_preserves_sqlite_version_error
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadStartedTransaction.started_owner_keeps_candidate_and_source

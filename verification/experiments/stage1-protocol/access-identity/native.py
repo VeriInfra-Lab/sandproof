@@ -67,7 +67,8 @@ def run(archive, output, target):
     record = dict(kind='access-identity-native-component', archive_sha256=sha(archive),
                   full_acceptance=False, variants={}, commands=[])
     env = dict(os.environ, CARGO_TARGET_DIR=str(target), CARGO_NET_OFFLINE='true',
-        CARGO_INCREMENTAL='0', CARGO_BUILD_JOBS='4', RUST_TEST_THREADS='1', CARGO_TERM_COLOR='never')
+        CARGO_INCREMENTAL='0', CARGO_BUILD_JOBS='4', RUST_TEST_THREADS='1', CARGO_TERM_COLOR='never',
+        PYTHONDONTWRITEBYTECODE='1')
     for name in ('RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS', 'LD_PRELOAD', 'LD_LIBRARY_PATH'):
         env.pop(name, None)
 

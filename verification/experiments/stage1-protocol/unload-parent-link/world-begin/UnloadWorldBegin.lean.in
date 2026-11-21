@@ -1,0 +1,147 @@
+import SandproofUnloadWorldBegin.Funs
+
+open Aeneas Aeneas.Std SandproofUnloadWorldBegin
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.UnloadWorldBegin
+
+open UnloadStartedTransaction
+
+abbrev Conn := SandproofUnloadWorldBegin.rusqlite.Connection
+abbrev Memo := controller.transaction.CommittedWorld
+abbrev begin := controller.transaction.WorldTransaction.begin
+abbrev inputKind := SandproofUnloadWorldBegin.toStr "input"
+abbrev inputScope := SandproofUnloadWorldBegin.toStr ""
+
+theorem world_error_precedes_later_calls (conn : Conn) (memo : Memo) (error : JournalError)
+    (read : conn.calls.world (committedView memo) conn.base = .ok (.Err error)) :
+    begin conn memo = .ok (.Err error, conn) := by
+  unfold begin controller.transaction.WorldTransaction.begin
+  simp [controller.transaction.CommittedWorld.world, read,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem preparation_error_precedes_sqlite (conn : Conn) (memo : Memo) (world : World)
+    (prepared : SandproofStage1RequestRust.rusqlite.Connection) (error : JournalError)
+    (read : conn.calls.world (committedView memo) conn.base = .ok (.Ok world))
+    (prepare : conn.calls.prepareWrite conn.base world (committedView memo) =
+      .ok (.Err error, prepared)) :
+    begin conn memo = .ok (.Err error, ⟨prepared, conn.calls⟩) := by
+  unfold begin controller.transaction.WorldTransaction.begin
+  simp [controller.transaction.CommittedWorld.world, controller.checkpoint.prepare_write,
+    read, prepare, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem sqlite_error_preserves_payload_and_returned_connection (conn : Conn) (memo : Memo)
+    (world : World) (prepared after : SandproofStage1RequestRust.rusqlite.Connection)
+    (error : SandproofUnloadWorldBegin.rusqlite.error.Error)
+    (read : conn.calls.world (committedView memo) conn.base = .ok (.Ok world))
+    (prepare : conn.calls.prepareWrite conn.base world (committedView memo) =
+      .ok (.Ok (), prepared))
+    (opened : conn.calls.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Err error, after)) :
+    begin conn memo = .ok (.Err (.Sqlite error), ⟨after, conn.calls⟩) := by
+  unfold begin controller.transaction.WorldTransaction.begin
+  simp [controller.transaction.CommittedWorld.world, controller.checkpoint.prepare_write,
+    rusqlite.transaction.Connection.transaction_with_behavior, read, prepare, opened,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SandproofStage1RequestRust.JournalErrorFromSqlite.from]
+
+theorem allocator_error_precedes_owner_construction (conn : Conn) (memo : Memo) (world : World)
+    (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (raw : Raw)
+    (error : JournalError)
+    (read : conn.calls.world (committedView memo) conn.base = .ok (.Ok world))
+    (prepare : conn.calls.prepareWrite conn.base world (committedView memo) =
+      .ok (.Ok (), prepared))
+    (opened : conn.calls.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Ok raw, after))
+    (frontier : conn.calls.readAllocator raw.conn inputKind inputScope = .ok (.Err error)) :
+    begin conn memo = .ok (.Err error, ⟨after, conn.calls⟩) := by
+  unfold begin controller.transaction.WorldTransaction.begin
+  simp [controller.transaction.CommittedWorld.world, controller.checkpoint.prepare_write,
+    rusqlite.transaction.Connection.transaction_with_behavior,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    controller.allocators.input_high_water, controller.allocators.read, read, prepare, opened,
+    frontier, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem begin_passes_original_inputs_to_started_owner (conn : Conn) (memo : Memo) (world : World)
+    (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (raw : Raw) (start : U64)
+    (read : conn.calls.world (committedView memo) conn.base = .ok (.Ok world))
+    (prepare : conn.calls.prepareWrite conn.base world (committedView memo) =
+      .ok (.Ok (), prepared))
+    (opened : conn.calls.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Ok raw, after))
+    (frontier : conn.calls.readAllocator raw.conn inputKind inputScope = .ok (.Ok start)) :
+    begin conn memo = (do
+      let reply ← makeOwner raw (committedView memo) start world
+      match reply with
+      | .Ok owner => .ok (.Ok (startedView conn.calls owner), ⟨after, conn.calls⟩)
+      | .Err error => .ok (.Err error, ⟨after, conn.calls⟩)) := by
+  unfold begin controller.transaction.WorldTransaction.begin
+  simp [controller.transaction.CommittedWorld.world, controller.checkpoint.prepare_write,
+    rusqlite.transaction.Connection.transaction_with_behavior,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    controller.allocators.input_high_water, controller.allocators.read,
+    controller.transaction.WorldTransaction.from_started_transaction, read, prepare, opened,
+    frontier, core.result.Result.Insts.CoreOpsTry.branch]
+  apply congrArg (fun next => makeOwner raw (committedView memo) start world >>= next)
+  funext reply
+  cases reply <;> simp
+
+theorem begin_success_keeps_original_owner (conn : Conn) (memo : Memo) (world : World)
+    (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (raw : Raw) (start : U64)
+    (read : conn.calls.world (committedView memo) conn.base = .ok (.Ok world))
+    (prepare : conn.calls.prepareWrite conn.base world (committedView memo) =
+      .ok (.Ok (), prepared))
+    (opened : conn.calls.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Ok raw, after))
+    (frontier : conn.calls.readAllocator raw.conn inputKind inputScope = .ok (.Ok start))
+    (version : readVersion raw.conn = .ok (.Ok (committedView memo).data_version)) :
+    begin conn memo = .ok (.Ok (startedView conn.calls (initialOwner raw (committedView memo)
+      start world)), ⟨after, conn.calls⟩) := by
+  rw [begin_passes_original_inputs_to_started_owner conn memo world prepared after raw start read prepare opened frontier,
+    started_matching_version raw (committedView memo) start world version]
+  simp
+
+theorem owner_view_recovers_original_fields (calls : BeginCalls) (raw : Raw) (memo : Memo)
+    (start : U64) (world : World) :
+    originalOwner (startedView calls (initialOwner raw (committedView memo) start world)) =
+      initialOwner raw (committedView memo) start world := by
+  cases memo
+  rfl
+
+theorem changed_version_prevents_begin_from_returning_an_owner (conn : Conn) (memo : Memo) (world : World)
+    (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (raw : Raw) (start : U64)
+    (version : I64)
+    (read : conn.calls.world (committedView memo) conn.base = .ok (.Ok world))
+    (prepare : conn.calls.prepareWrite conn.base world (committedView memo) =
+      .ok (.Ok (), prepared))
+    (opened : conn.calls.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Ok raw, after))
+    (frontier : conn.calls.readAllocator raw.conn inputKind inputScope = .ok (.Ok start))
+    (observed : readVersion raw.conn = .ok (.Ok version)) (changed : version ≠ memo.data_version)
+    (unborrowed : memo.value.beforeBorrowCount = 0) :
+    begin conn memo = .ok (.Err .CorruptStore, ⟨after, conn.calls⟩) := by
+  rw [begin_passes_original_inputs_to_started_owner conn memo world prepared after raw start read prepare opened frontier,
+    started_changed_version raw (committedView memo) start world version observed changed unborrowed]
+  simp
+
+open SandboxModel.InboxTransaction.CurrentWorldRead (ownerView rawView readWorld) in
+theorem reads_candidate_on_the_original_transaction (calls : BeginCalls) (raw : Raw) (memo : Memo)
+    (start : U64) (world : World)
+    (observed : readVersion raw.conn = .ok (.Ok (committedView memo).data_version)) :
+    let owner := originalOwner (startedView calls (initialOwner raw (committedView memo) start world))
+    (ownerView owner).transaction = some (rawView raw) ∧ readWorld (ownerView owner) = .ok world := by
+  simp only [owner_view_recovers_original_fields]
+  exact (started_owner_keeps_candidate_and_source raw (committedView memo) start world
+    (initialOwner raw (committedView memo) start world) observed
+    (started_matching_version raw (committedView memo) start world observed)).2.2.2
+
+end SandboxModel.Stage1Protocol.UnloadWorldBegin
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadWorldBegin.world_error_precedes_later_calls
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadWorldBegin.preparation_error_precedes_sqlite
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadWorldBegin.sqlite_error_preserves_payload_and_returned_connection
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadWorldBegin.allocator_error_precedes_owner_construction
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadWorldBegin.begin_passes_original_inputs_to_started_owner
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadWorldBegin.begin_success_keeps_original_owner
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadWorldBegin.owner_view_recovers_original_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadWorldBegin.changed_version_prevents_begin_from_returning_an_owner
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadWorldBegin.reads_candidate_on_the_original_transaction

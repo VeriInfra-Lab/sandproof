@@ -9,6 +9,7 @@ open sandbox_controller_core
 open sandproof_controller_service.controller
 
 abbrev Effects := lifecycle_inbox.recording.StandardRecord
+abbrev Codec := lifecycle_inbox.recording.RecordCodec
 abbrev World := model.World
 abbrev WorldTx := transaction.WorldTransaction
 abbrev Local := internal_inbox.model.InternalLocalBinding
@@ -16,10 +17,10 @@ abbrev Slot := maintenance.slots.HostSlotRecord
 abbrev SlotId := maintenance.slots.HostSlotId
 abbrev Sandbox := ids.SandboxId
 abbrev readWorld := transaction.WorldTransaction.world
-abbrev readReleasing := lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.releasing
-abbrev readCurrent := lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.current_operation
-abbrev slotCallback := lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairHostSlotIdHostSlotRecordBool
-abbrev slotsCallback := lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool
+abbrev readReleasing {D : Type} (codec : Codec D) := lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.releasing codec
+abbrev readCurrent {D : Type} (codec : Codec D) := lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.current_operation codec
+abbrev slotCallback {D : Type} (codec : Codec D) := lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairHostSlotIdHostSlotRecordBool codec
+abbrev slotsCallback {D : Type} (codec : Codec D) := lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool codec
 
 def CandidateAt (tx : WorldTx) (world : World) : Prop :=
   NormalWorldBorrow tx.candidate.beforeBorrowCount ∧ tx.candidate.value = some world
@@ -37,8 +38,8 @@ def slotMatches (sandbox : Sandbox) (row : SlotId × Slot) : Bool :=
     | .Releasing => true
     | _ => false
 
-theorem actual_slot_callback (sandbox : Sandbox) (row : SlotId × Slot) :
-    slotCallback.call_mut sandbox row = .ok (slotMatches sandbox row, sandbox) := by
+theorem actual_slot_callback (codec : Codec D) (sandbox : Sandbox) (row : SlotId × Slot) :
+    (slotCallback codec).call_mut sandbox row = .ok (slotMatches sandbox row, sandbox) := by
   rcases row with ⟨key, slot⟩
   by_cases same : slot.binding.sandbox = sandbox <;>
     cases phase : slot.phase <;>
@@ -61,11 +62,11 @@ theorem anyList_of_unchanged_callback {T F : Type}
       · exact ⟨count + 1, by simp [anyList, law, matched, restEq, List.any_cons]⟩
       · exact ⟨1, by simp [anyList, law, matched, List.any_cons]⟩
 
-theorem actual_slots_callback (sandbox : Sandbox) (state : maintenance.MaintenanceState) :
+theorem actual_slots_callback (codec : Codec D) (sandbox : Sandbox) (state : maintenance.MaintenanceState) :
     lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool.call_once
-      sandbox state = .ok (state.slots.entries.val.any (slotMatches sandbox)) := by
-  obtain ⟨count, checked⟩ := anyList_of_unchanged_callback slotCallback sandbox
-    (slotMatches sandbox) (actual_slot_callback sandbox) state.slots.entries.val
+      codec sandbox state = .ok (state.slots.entries.val.any (slotMatches sandbox)) := by
+  obtain ⟨count, checked⟩ := anyList_of_unchanged_callback (slotCallback codec) sandbox
+    (slotMatches sandbox) (actual_slot_callback codec sandbox) state.slots.entries.val
   simp [
     lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool.call_once,
     maintenance.MaintenanceState.host_slots, store.Store.impl.entries,
@@ -77,9 +78,9 @@ def expectedReleasing (world : World) (sandbox : Sandbox) : Bool :=
   | none => false
   | some state => state.slots.entries.val.any (slotMatches sandbox)
 
-theorem actual_releasing (effects : Effects) (binding : Local) (world : World)
+theorem actual_releasing (codec : Codec D) (effects : Effects D) (binding : Local) (world : World)
     (present : CandidateAt effects.tx world) :
-    readReleasing effects binding = .ok (expectedReleasing world binding.sandbox, effects) := by
+    readReleasing codec effects binding = .ok (expectedReleasing world binding.sandbox, effects) := by
   simp only [readReleasing,
     lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.releasing,
     world_from_same_candidate effects.tx world present, bind_tc_ok]
@@ -114,9 +115,9 @@ def expectedCurrent (world : World) (sandbox : Sandbox) : Option ids.OperationId
   ((SandboxModel.Foundations.tableLookup sandbox world.sandboxes.entries.val).bind
     (fun row => row.current_operation)).map (fun operation => operation.id)
 
-theorem actual_current_operation (effects : Effects) (sandbox : Sandbox) (world : World)
+theorem actual_current_operation (codec : Codec D) (effects : Effects D) (sandbox : Sandbox) (world : World)
     (present : CandidateAt effects.tx world) :
-    readCurrent effects sandbox = .ok (expectedCurrent world sandbox, effects) := by
+    readCurrent codec effects sandbox = .ok (expectedCurrent world sandbox, effects) := by
   simp only [readCurrent,
     lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.current_operation,
     world_from_same_candidate effects.tx world present, bind_tc_ok,

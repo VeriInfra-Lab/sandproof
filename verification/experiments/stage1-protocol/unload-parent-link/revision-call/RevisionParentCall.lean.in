@@ -1,0 +1,171 @@
+import RevisionReadyTransport
+import RevisionReadErrors
+import RevisionReadSuccess
+import RevisionParentPrefix
+
+open Aeneas Aeneas.Std Result
+
+namespace RevisionParentCall
+open SandproofUnloadFirstObservation
+open RevisionReadyTransport RevisionParentPrefix
+
+variable [p : Representations]
+variable (Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation : Type)
+
+variable (ops : @SandproofUnloadBaseSnapshot.Operations (baseRepresentations Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation))
+variable (readiness : (BReadiness Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation) → PReadiness)
+
+/-- Install the actual generated reader, keeping the parent transaction,
+    namespace, World, original execution intent and context in their order. -/
+def readActual (tx : rusqlite.transaction.Transaction) (ns : Str)
+    (world : sandbox_controller_core.model.World) (intent : Intent)
+    (context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext) :
+    Result (core.result.Result PReady PError) := do
+  let result ← @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot.base_snapshot
+    (baseRepresentations Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation)
+    ops tx ns world
+    (toBaseIntent Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation intent) context
+  match result with
+  | .Ok ready =>
+    .ok (.Ok (fromBaseReady Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation readiness ready))
+  | .Err error =>
+    .ok (.Err (fromBaseError Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation error))
+
+@[reducible] def install (calls : ParentCalls) : ParentCalls :=
+  { calls with
+    transactionConnection := ops.deref
+    readBaseSnapshot := readActual Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation ops readiness }
+
+theorem shares_transaction_connection
+    (calls : ParentCalls) (tx : rusqlite.transaction.Transaction) :
+    (install Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation ops readiness calls).transactionConnection tx = ops.deref tx :=
+  rfl
+
+theorem actual_base_success_at_parent_call
+    (calls : ParentCalls) (tx : rusqlite.transaction.Transaction) (ns : Str)
+    (world : sandbox_controller_core.model.World) (intent : Intent)
+    (context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext)
+    (candidate : (BReady Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation))
+    (returned : @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot.base_snapshot
+      (baseRepresentations Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation) ops tx ns world (toBaseIntent Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation intent) context = .ok (.Ok candidate)) :
+    (install Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation ops readiness calls).readBaseSnapshot tx ns world intent context =
+      .ok (.Ok (fromBaseReady Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation readiness candidate)) := by
+  change readActual Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord
+    LifecycleReadyObservation ops readiness tx ns world intent context = _
+  unfold readActual
+  rw [returned]
+  simp only [bind_tc_ok]
+
+theorem actual_base_error_stops_parent (calls : ParentCalls) :
+    letI : ParentCalls := install Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation ops readiness calls
+    ∀ {E : Type} {host : host_contract.HostEvidence E} {serde : serde_core.de.DeserializeOwned E}
+      {tx : rusqlite.transaction.Transaction} {ns : Str} {intent : Intent}
+      {now : I64} {input : SourceSnapshot} (reads : Selected host serde tx ns intent now input)
+      (error : (BError Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation)),
+      @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot.base_snapshot
+        (baseRepresentations Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation) ops tx ns input.world (toBaseIntent Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation reads.originEntry.intent) reads.context = .ok (.Err error) →
+      NoQuestion host serde tx ns intent now input (fromBaseError Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation error) := by
+  letI : ParentCalls := install Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord LifecycleReadyObservation ops readiness calls
+  intro E host serde tx ns intent now input reads error returned
+  apply base_error_skips_question reads
+  change readActual Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord
+    LifecycleReadyObservation ops readiness tx ns input.world reads.originEntry.intent reads.context = _
+  unfold readActual
+  rw [returned]
+  simp only [bind_tc_ok]
+
+theorem actual_negative_revision_stops_parent (calls : ParentCalls) :
+    let base := baseRepresentations Row Statement ToSqlOutput ValueRef FromSqlError
+      SandboxRecord LifecycleReadyObservation
+    letI : ParentCalls := install Row Statement ToSqlOutput ValueRef FromSqlError
+      SandboxRecord LifecycleReadyObservation ops readiness calls
+    ∀ {E : Type} {host : host_contract.HostEvidence E} {serde : serde_core.de.DeserializeOwned E}
+      {tx : rusqlite.transaction.Transaction} {ns : Str} {intent : Intent}
+      {now : I64} {input : SourceSnapshot} (reads : Selected host serde tx ns intent now input)
+      (baseReads : @RevisionReadErrors.BeforeRevision base ops tx ns input.world
+        (toBaseIntent Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord
+          LifecycleReadyObservation reads.originEntry.intent) reads.context)
+      (id : @SandproofUnloadBaseSnapshot.sandproof_protocol.SandboxId base) (key : Str) (revision : I64),
+      ops.sandboxId ns baseReads.localBinding.sandbox = .ok (.Ok id) →
+      ops.sandboxIdText id = .ok key →
+      @RevisionReadErrors.revisionQuery base ops baseReads.connection key = .ok (.Ok revision) →
+      revision.val < 0 →
+      NoQuestion host serde tx ns intent now input JournalError.CorruptStore := by
+  letI : ParentCalls := install Row Statement ToSqlOutput ValueRef FromSqlError
+    SandboxRecord LifecycleReadyObservation ops readiness calls
+  intro base E host serde tx ns intent now input reads baseReads id key revision idOk textOk queried negative
+  letI : @SandproofUnloadBaseSnapshot.Operations base := ops
+  have failed := RevisionReadErrors.revision_negative_error baseReads id key revision
+    idOk textOk queried negative
+  exact actual_base_error_stops_parent Row Statement ToSqlOutput ValueRef FromSqlError
+    SandboxRecord LifecycleReadyObservation ops readiness calls reads .CorruptStore failed
+
+theorem actual_revision_success_at_parent_call (calls : ParentCalls)
+    (tx : rusqlite.transaction.Transaction) (ns : Str)
+    (world : sandbox_controller_core.model.World) (intent : Intent)
+    (context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext) :
+    let base := baseRepresentations Row Statement ToSqlOutput ValueRef FromSqlError
+      SandboxRecord LifecycleReadyObservation
+    let selected := toBaseIntent Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord
+      LifecycleReadyObservation intent
+    ∀ (reads : @RevisionReadErrors.BeforeRevision base ops tx ns world selected context)
+      (id : @SandproofUnloadBaseSnapshot.sandproof_protocol.SandboxId base)
+      (key : Str) (revision : I64) (counter : U64),
+      ops.sandboxId ns reads.localBinding.sandbox = .ok (.Ok id) →
+      ops.sandboxIdText id = .ok key →
+      @RevisionReadErrors.revisionQuery base ops reads.connection key = .ok (.Ok revision) →
+      0 ≤ revision.val →
+      ops.cloneIntent selected = .ok selected →
+      ops.inputHighWater reads.connection = .ok (.Ok counter) →
+      ∃ ready : PReady,
+        (install Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord
+          LifecycleReadyObservation ops readiness calls).readBaseSnapshot tx ns world intent context =
+            .ok (.Ok ready) ∧
+        ready.native_revision = some (IScalar.hcast .U64 revision) ∧
+        ready.native_revision.map (fun value => (value.val : Int)) = some revision.val ∧
+        ready.view.native_input_high_water = counter := by
+  intro base selected reads id key revision counter idOk textOk queried nonnegative cloned high
+  letI : @SandproofUnloadBaseSnapshot.Operations base := ops
+  have result := RevisionReadSuccess.revision_then_allocator reads id key revision
+    idOk textOk queried nonnegative
+  simp only [RevisionReadSuccess.finishCandidate, cloned, high, bind_tc_ok] at result
+  refine ⟨_, actual_base_success_at_parent_call Row Statement ToSqlOutput ValueRef FromSqlError
+    SandboxRecord LifecycleReadyObservation ops readiness calls tx ns world intent context _ result,
+    rfl, ?_, rfl⟩
+  change some ((IScalar.hcast .U64 revision).val : Int) = some revision.val
+  have castExact := IScalar.hcast_inBounds_spec .U64 revision (by scalar_tac)
+  exact congrArg some (by simpa [lift, WP.spec_ok] using castExact)
+
+theorem actual_base_without_native_stops_parent (calls : ParentCalls) :
+    let base := baseRepresentations Row Statement ToSqlOutput ValueRef FromSqlError
+      SandboxRecord LifecycleReadyObservation
+    letI : ParentCalls := install Row Statement ToSqlOutput ValueRef FromSqlError
+      SandboxRecord LifecycleReadyObservation ops readiness calls
+    ∀ {E : Type} {host : host_contract.HostEvidence E} {serde : serde_core.de.DeserializeOwned E}
+      {tx : rusqlite.transaction.Transaction} {ns : Str} {intent : Intent}
+      {now : I64} {input : SourceSnapshot} (reads : Selected host serde tx ns intent now input)
+      (candidate : @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot.ReadyCandidate base),
+      @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot.base_snapshot
+        base ops tx ns input.world (toBaseIntent Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord
+          LifecycleReadyObservation reads.originEntry.intent) reads.context = .ok (.Ok candidate) →
+      candidate.view.native = none →
+      NoQuestion host serde tx ns intent now input JournalError.CorruptStore := by
+  letI : ParentCalls := install Row Statement ToSqlOutput ValueRef FromSqlError
+    SandboxRecord LifecycleReadyObservation ops readiness calls
+  intro base E host serde tx ns intent now input reads candidate result missing
+  let converted := fromBaseReady Row Statement ToSqlOutput ValueRef FromSqlError SandboxRecord
+    LifecycleReadyObservation readiness candidate
+  apply missing_native_skips_question reads converted
+  · exact actual_base_success_at_parent_call Row Statement ToSqlOutput ValueRef FromSqlError
+      SandboxRecord LifecycleReadyObservation ops readiness calls tx ns input.world reads.originEntry.intent
+      reads.context candidate result
+  · simp only [converted, fromBaseReady, missing, Option.map_none]
+
+end RevisionParentCall
+
+#audit_controller_proof RevisionParentCall.shares_transaction_connection
+#audit_controller_proof RevisionParentCall.actual_base_success_at_parent_call
+#audit_controller_proof RevisionParentCall.actual_base_error_stops_parent
+#audit_controller_proof RevisionParentCall.actual_negative_revision_stops_parent
+#audit_controller_proof RevisionParentCall.actual_revision_success_at_parent_call
+#audit_controller_proof RevisionParentCall.actual_base_without_native_stops_parent

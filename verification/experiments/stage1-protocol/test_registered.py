@@ -60,8 +60,8 @@ class CreateDelivery(OriginalReadPlanFixture):
         with patch.dict(os.environ, SANDPROOF_STAGE1_PROFILE='create-delivery',
                         SANDPROOF_STAGE1_ONLY='create-selection'):
             full = registered.formal_plan(Path('/unused'))
-            self.assertEqual(len(full), 167)
-            self.assertEqual(len(registered.native_labels()), 78)
+            self.assertEqual(len(full), 168)
+            self.assertEqual(len(registered.native_labels()), 79)
         jobs = self.plan()
         definition = registered.create_profile()
         self.assertEqual([j['name'] for j in jobs], list(registered.CREATE_CASES))
@@ -520,8 +520,8 @@ class Registration(OriginalReadPlanFixture):
                 registered._cpu_slots('protocol-convergence', workers, range(4*workers-1))
 
     def test_native_keys_are_the_original_formal_prerequisites(self):
-        self.assertEqual(len(registered.NATIVE_CASES), 78)
-        self.assertEqual(len(set(registered.NATIVE_CASES)), 78)
+        self.assertEqual(len(registered.NATIVE_CASES), 79)
+        self.assertEqual(len(set(registered.NATIVE_CASES)), 79)
         self.assertEqual(registered.native_labels(), registered.NATIVE_CASES)
         for path in HERE.glob('inbox-*/formal.py'):
             calls = [node for node in ast.walk(ast.parse(path.read_text()))
@@ -553,7 +553,7 @@ class Registration(OriginalReadPlanFixture):
     def test_full_independent_positive_and_negative_schedule(self):
         jobs = registered.formal_plan(Path('/unused'))
         names = {job['name'] for job in jobs}
-        self.assertEqual(len(jobs), 167)
+        self.assertEqual(len(jobs), 168)
         self.assertEqual(len(jobs), len(names))
         self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
             'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
@@ -567,6 +567,28 @@ class Registration(OriginalReadPlanFixture):
         manifest = next(j for j in jobs if j['name'] == 'manifest-validation')
         self.assertEqual(len(manifest['cases']), 6)
         self.assertIn('skip-capture-binding', manifest['cases'])
+        parent = next(j for j in jobs if j['name'] == 'stage1-unload-parent-transaction')
+        self.assertEqual(parent['native'], ['stage1-unload-parent-transaction'])
+        self.assertEqual(parent['cases'], [
+            'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision', 'parent-link'])
+
+    def test_unload_parent_requires_each_actual_page_for_repeated_audits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = registered.HERE / 'unload-parent-link'
+            (root / package).mkdir(parents=True)
+            theorem = 'UnloadParent.example'
+            leaf, total = (str(package / (name + '.lean.in')) for name in ('Leaf', 'Total'))
+            for name in (leaf, total):
+                (root / name).write_text(f'#audit_controller_proof {theorem}\n')
+            templates = {leaf: [theorem], total: [theorem]}
+            files = {'Leaf.lean': registered._sha(root / leaf)}
+            actual = {'files': files, 'audits': [theorem]}
+            coverage = registered.UNLOAD.parent_audit_pages
+            self.assertEqual(coverage(root, templates, [actual], {}),
+                             {'pages': 2, 'declarations': 2, 'missing': [total]})
+            files['Total.lean'] = registered._sha(root / total)
+            self.assertEqual(coverage(root, templates, [actual], {})['missing'], [])
 
     def test_total_only_subsumes_same_variant_append_formal(self):
         jobs = registered.formal_plan(Path('/unused'))
@@ -835,7 +857,7 @@ class Registration(OriginalReadPlanFixture):
         with patch.object(unload, 'frozen_inputs', return_value={}):
             with self.assertRaisesRegex(ValueError, 'original unload package'):
                 registered._check_actual(dict(complete=True, kind=unload.KIND, cases={},
-                    frozen_inputs={}, native_result_sha256='a'*64), job)
+                    frozen_inputs={}, native_result_sha256='a'*64, source_sha256='b'*64), job)
 
     def test_full_unload_dispatch_uses_its_driver_and_passes_the_existing_lock(self):
         unload = registered.UNLOAD

@@ -20,7 +20,7 @@ theorem header_to_current {E : Type} (io : InboxLoadEffects E) (validate : Inbox
     loadView io validate budget state = currentView io validate budget afterSource := by
   simp only [loadView, first, attempt_ok, second, third]
   simp [LIFECYCLE_STORE_FORMAT_VERSION]
-  have currentLiteral : ((23#64)#iscalar : I64).val = 23 := by decide
+  have currentLiteral : ((24#64)#iscalar : I64).val = 24 := by decide
   split <;> simp_all [IScalar.eq_equiv]
 
 theorem current_to_capacity {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)

@@ -1,0 +1,82 @@
+import SourceParentLink
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink
+
+@[reducible] def encodingRepresentations (base : SandproofCreateOptionsEncoded.Representations) :
+    SandproofCreateOptionsEncoded.Representations :=
+  { base with serdeError := _root_.serde_json.error.Error }
+
+@[reducible] def bindOptions (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+    (encode : SandproofCreateOptionsEncoded.Operations) →
+    (parent : SandproofUnloadFirstObservation.ParentCalls) →
+    (ops : @SandproofUnloadOptionsRead.Operations (optionsRepresentations options)) →
+    SandproofUnloadFirstObservation.ParentCalls :=
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+  fun encode parent ops =>
+  { parent with
+    transactionConnection := fun tx => .ok tx.conn
+    readCreateOptions := @SandproofUnloadOptionsRead.controller.admission.read_create_options
+      (optionsRepresentations options) (SourceOptionsEncodedLink.install (optionsBase options) ops)
+    encodeCreateOptions := encode.render }
+
+theorem options_reader_is_same_connection (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+    ∀ (encode : SandproofCreateOptionsEncoded.Operations)
+      (parent : SandproofUnloadFirstObservation.ParentCalls)
+      (ops : @SandproofUnloadOptionsRead.Operations (optionsRepresentations options))
+      (tx : SandproofOriginalSourceRowsRust.rusqlite.transaction.Transaction),
+      (bindOptions encoding base options encode parent ops).transactionConnection tx = .ok tx.conn := by
+  intros
+  rfl
+
+open SourceOptionsEncodedActual in
+theorem parent_options_compare_complete_original_blob
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+    letI : SandproofUnloadOptionsRead.Representations := optionsRepresentations options
+    ∀ (encode : SandproofCreateOptionsEncoded.Operations),
+    letI : SandproofCreateOptionsEncoded.Operations := encode
+    ∀ (parent : SandproofUnloadFirstObservation.ParentCalls)
+      (ops : SandproofUnloadOptionsRead.Operations)
+      (tx : SandproofOriginalSourceRowsRust.rusqlite.transaction.Transaction)
+      (ns : Str) (sandbox : SandproofOriginalSourceRowsRust.sandbox_controller_core.ids.SandboxId)
+      (value : SandproofCreateOptionsEncoded.host_contract.CreateOptions)
+      (stored rendered : alloc.vec.Vec U8),
+      templateValid value = .ok true →
+      representable value.env_vars → representable value.metadata →
+      value.env_vars.all (allowedField true) = true →
+      value.metadata.all (allowedField false) = true →
+      encode.render value = .ok (.Ok rendered) → rendered.val.length ≤ 65536 →
+      letI : SandproofUnloadOptionsRead.Operations := SourceOptionsEncodedLink.install (optionsBase options) ops
+      ∀ id : SourceOptionsRead.Identified ns sandbox,
+      SourceOptionsRead.storedOptions tx.conn id.text = .ok (.Ok stored) →
+      SandproofUnloadOptionsRead.serde_json.de.from_slice
+        SandproofUnloadOptionsRead.host_contract.CreateOptions.Insts.Serde_coreDeDeserialize
+        (alloc.vec.Vec.deref stored) = .ok (.Ok value) →
+      (bindOptions encoding base options encode parent ops).readCreateOptions tx.conn ns sandbox =
+        .ok (if rendered = stored then .Ok value else .Err .InvalidCreateOptions) := by
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+  letI : SandproofUnloadOptionsRead.Representations := optionsRepresentations options
+  intro encode
+  letI : SandproofCreateOptionsEncoded.Operations := encode
+  intro parent ops tx ns sandbox value stored rendered template env metadata envOK metadataOK serialize within
+  exact SourceOptionsEncodedLink.actual_read_uses_bounded_encoder (optionsBase options) ops tx.conn
+    ns sandbox value stored rendered template env metadata envOK metadataOK serialize within
+
+end SandboxModel.Stage1Protocol.UnloadParentLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.options_reader_is_same_connection
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.parent_options_compare_complete_original_blob
