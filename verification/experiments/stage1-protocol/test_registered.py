@@ -763,6 +763,39 @@ class Registration(OriginalReadPlanFixture):
             with self.assertRaisesRegex(ValueError, 'crate test inventory'):
                 registered._crate_native(registered.ROOT, Path(temporary)/'output', 'envelope-schema')
 
+    def test_full_native_accepted_parser_inherits_lock_and_four_cpus(self):
+        label = 'stage1-accepted-json-parser'
+        driver, = [row for row in registered.NATIVE_DRIVERS if row[0] == label]
+
+        def native_case(name, source, output, action, *, scope):
+            self.assertEqual(scope, 'stage1-protocol')
+            if name == label:
+                action()
+            return {}
+
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.object(registered, 'validate_registration'), \
+                patch.object(registered, 'check_create_sources'), \
+                patch.object(registered, 'NATIVE_DRIVERS', (driver,)), \
+                patch.object(registered, 'CRATE_CASES', ()), \
+                patch.object(registered, '_shared', return_value=SimpleNamespace(native_case=native_case)), \
+                patch.object(registered, '_original_file', return_value=Path('/unused/source.tar')), \
+                patch.object(registered, '_read', return_value=dict(development_complete=True)), \
+                patch.object(registered, '_invoke') as invoke, \
+                patch.object(registered.os, 'sched_getaffinity', return_value={4, 5, 6, 7, 8, 9}, create=True):
+            root = Path(temporary)
+            lock = root/'existing.lock'
+            with lock.open('w+') as inherited, patch.dict(os.environ, {
+                    'SANDPROOF_ACCEPTANCE_ROLE': 'native', 'CARGO_TARGET_DIR': temporary,
+                    'SANDPROOF_PROOF_HEAVY_LOCK': str(lock),
+                    'SANDPROOF_PROOF_HEAVY_LOCK_FD': str(inherited.fileno())}):
+                registered.run_native(registered.ROOT, root)
+                output = root/'stage1-registered'/label
+                invoke.assert_called_once_with(registered.ROOT, Path(driver[1]),
+                    ['--output', output, '--lock', str(lock), '--lock-fd', str(inherited.fileno())],
+                    pass_fds=(inherited.fileno(),), cpu_affinity=[4, 5, 6, 7],
+                    cpu_admission=output.with_name(label+'-cpu-admission.json'))
+
     def prepared_fixture(self, temporary):
         root = Path(temporary)/'root'
         root.mkdir()

@@ -671,8 +671,9 @@ def run_native(root, work, *, profile='full', scope=None):
         args = ['--output', output]
         if label in ('stage1-sqlite-commit', 'source-live', *CPU_PINNED_UNLOAD_JOBS):
             args.insert(0, 'native')
+        accepted_parser = label == 'stage1-accepted-json-parser'
         native_pass_fds = ()
-        if Path(driver).parent.name in CONVERGENCE.LOCKED_NATIVE:
+        if accepted_parser or Path(driver).parent.name in CONVERGENCE.LOCKED_NATIVE:
             path = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK')
             descriptor = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK_FD')
             if path is None or descriptor is None:
@@ -687,12 +688,12 @@ def run_native(root, work, *, profile='full', scope=None):
             args += ['--source-archive', archive, '--target', target]
 
         success_field = ('success' if needs_archive else 'development_complete'
-                         if label == 'stage1-accepted-json-parser' else 'complete')
+                         if accepted_parser else 'complete')
         def action(driver=Path(driver), args=args, output=output, pass_fds=native_pass_fds,
-                   success_field=success_field):
+                   success_field=success_field, accepted_parser=accepted_parser):
             affinity = None
             admission = None
-            if profile == CONVERGENCE.PROFILE or driver.parent.name in CONVERGENCE.CASES:
+            if accepted_parser or profile == CONVERGENCE.PROFILE or driver.parent.name in CONVERGENCE.CASES:
                 allowed = sorted(os.sched_getaffinity(0))
                 if len(allowed) < CREATE_CPUS_PER_JOB:
                     raise ValueError('convergence native child requires four admitted CPUs')
