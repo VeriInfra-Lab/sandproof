@@ -8703,15 +8703,17 @@
     "source": "controller-service/src/controller/lifecycle_inbox/recording.rs",
     "line": 17,
     "column": 5,
-    "source_sha256": "a5d2fcfb89f371a6ea6e2f8d34f26627ba135199200cc9fb3164aa98d5c5b155",
+    "source_sha256": "fe5819c16228243153c6a8fc24ad02370719720f256e7778c2819f650e8b3fbc",
     "primary_count": 1,
     "cargo_errors": [
       "error: could not compile `sandproof-controller-service` (lib) due to 1 previous error",
       "error: could not compile `sandproof-controller-service` (lib test) due to 1 previous error"
     ],
     "origin": {
-      "execution_commit": "5e5ebc11a4450192e72bf7b1a6da76153fb783b3",
-      "clippy_log_sha256": "b32db275c0f4da891caeb7848ee4626a82677103025074d683d7cb1a1cec3f71",
+      "execution_commit": "5fcaa06e179fca766edff804addf1df125c3edf7",
+      "clippy_log_sha256": "75a90cd554765a5bb04c99726110724147b6054898af091d44d5688f02987166",
+      "test_log_sha256": "48c574d0ff462b8350a8def8f61987f4dff0278b676f9a23f281d32098b2ec6c",
+      "original_result_sha256": "35f4c4f9d8575a4ff28ba6c23cda43105d5fb396813274c0ed24d662402eddb6",
       "original_component_complete": false,
       "business_assertion_rejected": true
     }
