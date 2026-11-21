@@ -98,7 +98,8 @@ def prepare_call(base, parent, packages, lean_mcp, output, *, identity=None):
     plan = json.loads(plan_file.read_bytes())
     plan['build_order'] += [f'{BASE}.FunsExternal', f'{BASE}.Funs',
                             f'{PARENT}.FunsExternal', f'{PARENT}.Funs', *PROOFS]
-    plan['modules'].update({name: dict(sha256=sha(data)) for name, data in files.items()})
+    plan['modules'].update({name.removesuffix('.lean').replace('/', '.'): dict(sha256=sha(data))
+                            for name, data in files.items()})
     plan['roots'] = ['RevisionParentCall']
     if identity is not None:
         plan.update(source_commit=identity['head'], source_tree=identity['tree'])

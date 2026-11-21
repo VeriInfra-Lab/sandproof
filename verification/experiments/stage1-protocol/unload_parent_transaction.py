@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import sys
 import tarfile
@@ -88,15 +89,23 @@ def run_native(output, result):
         view = output / name
         view.mkdir()
         business.write_text(bodies[name])
+        compile_log = command(result, env, project, view, 'compile',
+                              [*cargo, '--no-run', '--message-format=json'])
+        artifacts = [json.loads(line) for line in compile_log.splitlines() if line.startswith('{')]
+        binary, = [item for item in artifacts
+                   if item.get('reason') == 'compiler-artifact'
+                   and item['target']['name'] == 'sandproof_controller_service'
+                   and item['target']['src_path'] == str(project / 'controller-service/src/lib.rs')
+                   and item['profile']['test'] and item['executable']]
+        executable = Path(binary['executable'])
+        if binary['fresh'] is not False or not executable.is_relative_to(output / 'target'):
+            raise ValueError('parent transaction test did not freshly compile the current Rust variant: ' + name)
+        executable_sha256 = digest(executable)
         expected_failure = REJECTIONS.get(name)
-        if expected_failure:
-            command(result, env, project, view, 'compile', [*cargo, '--no-run'])
-            names = (expected_failure[0],)
-        else:
-            names = TESTS
+        names = (expected_failure[0],) if expected_failure else TESTS
         for test in names:
             text = command(result, env, project, view, test,
-                           [*cargo, TEST_ROOT + test, '--', '--exact', '--nocapture', '--test-threads=1'],
+                           [executable, TEST_ROOT + test, '--exact', '--nocapture', '--test-threads=1'],
                            expected=101 if expected_failure else 0)
             if expected_failure:
                 if (expected_failure[1] not in text or 'test result: FAILED. 0 passed; 1 failed;' not in text
@@ -104,8 +113,11 @@ def run_native(output, result):
                     raise ValueError('wrong parent did not reach the original rejection: ' + test)
             elif f'test {TEST_ROOT}{test} ... ok' not in text or 'test result: ok. 1 passed; 0 failed;' not in text:
                 raise ValueError('missing original parent result: ' + test)
+        if digest(executable) != executable_sha256 or business.read_text() != bodies[name]:
+            raise ValueError('parent transaction test executable or source changed: ' + name)
         result['native_views'][name] = dict(tests=list(names), rust_sha256=digest(business),
-                                            fixture_sha256=digest(target))
+                                            fixture_sha256=digest(target),
+                                            executable_sha256=executable_sha256)
 
 
 def run_formal(output, result, identity, receipt_path, native_archive, native_manifest):
@@ -206,11 +218,14 @@ def validate_native_result(receipt, identity):
             or receipt.get('source_sha256') != identity['source_archive_sha256']):
         raise ValueError('missing current parent transaction native evidence')
     views = receipt.get('native_views', {})
-    if list(views) != list(NATIVE_VIEWS) or views['original'] != views['restored']:
+    if list(views) != list(NATIVE_VIEWS) or any(
+            views['original'].get(key) != views['restored'].get(key)
+            for key in ('rust_sha256', 'fixture_sha256', 'tests')):
         raise ValueError('missing parent transaction variants or original restoration')
     for name, view in views.items():
         tests = [REJECTIONS[name][0]] if name in REJECTIONS else list(TESTS)
-        if view['tests'] != tests:
+        if view['tests'] != tests or any(not re.fullmatch(r'[0-9a-f]{64}', view.get(key, ''))
+                                         for key in ('rust_sha256', 'fixture_sha256', 'executable_sha256')):
             raise ValueError('parent transaction native assertions differ: ' + name)
 
 
