@@ -1,0 +1,165 @@
+-- Decoded-value specification, exact typed library calls and checked local connections.
+import SourceRetireCases
+
+open Aeneas Aeneas.Std Result
+open SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol
+open SourceRetireTypes SourceRetireActual SourceRetireSpec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceMaterialChargeSpec
+noncomputable section
+local instance propDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev State := controller.lifecycle_inbox.source_work.retirement.MaterialRetirementState
+abbrev Plan := controller.lifecycle_inbox.source_work.retirement.MaterialRetirementPlan
+abbrev Closure := controller.lifecycle_inbox.source_work.retirement.MaterialRetirementClosure
+abbrev Request := SourceRetireTypes.capture.retirement.CaptureMaterialRetirementRequest
+
+def saved : State → Plan
+  | .Retiring plan => plan
+  | .Settled plan _ => plan
+
+def complete (record : Record) : Prop :=
+  record.material_release.producer.isSome ∧
+    (record.restore.isSome → record.material_release.consumer.isSome)
+
+def requestValue (record : Record) : Option Request :=
+  record.capture.map fun captured =>
+    ⟨record.work.anchor.local.sandbox,record.work.anchor.native.generation,
+      captured.full,record.work.requirement,captured.action,captured.worker,captured.completed⟩
+
+variable {Tree : Type → Type → Type} (io : SourceRetireLibrary.Ports Tree)
+
+def requestBinding (request : Request) : Result (core.result.Result Key Journal) :=
+  tryJournal SourceRetireTypes.JournalError.Json
+    (io.bindingJson request.sandbox request.generation request.full request.source
+      request.seal_action request.worker request.manifest_digest) fun bytes => do
+    let digest ← io.bindingDigest bytes.slice
+    .ok (.Ok digest)
+
+def restoreBinding (record : Record) : Result (core.result.Result (Option Key) Journal) :=
+  match record.restore with
+  | none => .ok (.Ok none)
+  | some claim =>
+    tryJournal SourceRetireTypes.JournalError.Json (io.restoreJson claim.intent claim.local claim.generation claim.activation) fun bytes => do
+      let digest ← SandproofSourceRowSqlSelect.controller.lifecycle_inbox.sha256.digest bytes.slice
+      .ok (.Ok (some digest))
+
+def closureBinding (record : Record) (closed : Closure) : Result (core.result.Result Unit Journal) :=
+  if ¬ complete record then .ok (.Err .CorruptStore)
+  else tryJournal SourceRetireTypes.JournalError.Json (io.releaseJson record.material_release) fun bytes => do
+    let release ← SandproofSourceRowSqlSelect.controller.lifecycle_inbox.sha256.digest bytes.slice
+    if closed.release_binding ≠ release then .ok (.Err .CorruptStore)
+    else tryJournal id (restoreBinding io record) fun restore =>
+      if closed.restore_binding ≠ restore then .ok (.Err .CorruptStore)
+      else .ok (.Ok ())
+
+def boundedState (state : State) : Result (core.result.Result Unit Journal) :=
+  tryJournal SourceRetireTypes.JournalError.Json (io.stateJson state) fun bytes =>
+    if bytes.slice.val.length > 69632 then .ok (.Err .MaintenanceCapacity)
+    else .ok (.Ok ())
+
+def charge (record : Record) : Result (core.result.Result U64 Journal) :=
+  match record.capture with
+  | none =>
+    if record.retirement.isNone ∧ record.material_release.producer.isNone ∧ record.material_release.consumer.isNone
+    then .ok (.Ok 0#u64) else .ok (.Err .CorruptStore)
+  | some captured =>
+    match record.retirement with
+    | none => .ok (.Ok captured.reserved_material_bytes)
+    | some state => tryJournal id (boundedState io state) fun _ =>
+      let plan := saved state
+      if plan.bytes.slice.val = [] ∨ plan.bytes.slice.val.length > 16384 then .ok (.Err .CorruptStore)
+      else match requestValue record with
+      | none => .ok (.Err .UnresolvedAction)
+      | some request => tryJournal id (requestBinding io request) fun work => do
+        if plan.work_binding ≠ work then .ok (.Err .CorruptStore)
+        else
+          let digest ← SandproofSourceRowSqlSelect.controller.lifecycle_inbox.sha256.digest plan.bytes.slice
+          if plan.plan_binding ≠ digest then .ok (.Err .CorruptStore)
+          else if record.restore.any (fun claim => claim.material_use) then .ok (.Err .CorruptStore)
+          else tryJournal id (closureBinding io record plan.closure) fun _ =>
+            match state with
+            | .Retiring _ => .ok (.Ok captured.reserved_material_bytes)
+            | .Settled _ settlement =>
+              if settlement.work_binding ≠ plan.work_binding ∨ settlement.plan_binding ≠ plan.plan_binding ∨
+                settlement.released_material_bytes ≠ captured.reserved_material_bytes
+              then .ok (.Err .CorruptStore) else .ok (.Ok 0#u64)
+
+
+/-- Same complete decoded-value property for actual correct and wrong roots. -/
+def Contract (root : Record → Result (core.result.Result U64 Journal)) : Prop :=
+  ∀ record, root record = charge io record
+
+
+theorem release_complete (record : Record) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.release.complete
+      record.material_release record.restore.isSome = .ok (decide (complete record)) := by
+  cases producer : record.material_release.producer <;>
+    cases restored : record.restore <;>
+    cases consumer : record.material_release.consumer <;>
+    simp [complete,SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.release.complete,
+      core.option.Option.is_some,producer,restored,consumer]
+
+theorem request_constructor (value : Request) :
+    SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.from_source
+      value.sandbox value.generation value.full value.source value.seal_action value.worker value.manifest_digest =
+        .ok value := by
+  cases value
+  rfl
+
+theorem record_max_bytes :
+    SourceRetireActual.capture.retirement.MATERIAL_RETIREMENT_RECORD_MAX_BYTES = .ok 69632#u64 := by
+  have casted : UScalar.cast .U64 16384#usize = 16384#u64 := by
+    apply UScalar.eq_of_val_eq
+    simp
+  obtain ⟨product, multiplied, productValue⟩ := WP.spec_imp_exists
+    (U64.mul_spec (x := 4#u64) (y := 16384#u64) (by scalar_tac))
+  have productEq : product = 65536#u64 := by scalar_tac
+  obtain ⟨total, added, totalValue⟩ := WP.spec_imp_exists
+    (U64.add_spec (x := 65536#u64) (y := 4096#u64) (by scalar_tac))
+  have totalEq : total = 69632#u64 := by scalar_tac
+  simp [SourceRetireActual.capture.retirement.MATERIAL_RETIREMENT_RECORD_MAX_BYTES,
+    SourceRetireActual.capture.retirement.MATERIAL_RETIREMENT_PLAN_MAX_BYTES,lift,
+    casted,multiplied,productEq,added,totalEq]
+
+theorem bounded_contract (state : State) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.bounded io state =
+      boundedState io state := by
+  unfold SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.bounded
+    boundedState SourceRetireSpec.tryJournal
+  apply congrArg (fun next => io.stateJson state >>= next)
+  funext encoded
+  cases encoded with
+  | Err failure =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SourceRetireActual.JournalErrorFromJson.from_json]
+  | Ok bytes =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,record_max_bytes,lift,
+      UScalar.lt_equiv,alloc.vec.Vec.val]
+
+
+theorem request_binding_all_fields (request : Request) :
+    tryJournal SourceRetireTypes.JournalError.Json
+      (SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.binding_digest io request)
+      (fun digest => .ok (.Ok digest)) = requestBinding io request := by
+  simp only [tryJournal,requestBinding,
+    SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.binding_digest,
+    bind_assoc_eq,SourceRetireSpec.vector_deref]
+  apply congrArg (fun next => io.bindingJson request.sandbox request.generation request.full request.source
+    request.seal_action request.worker request.manifest_digest >>= next)
+  funext encoded
+  cases encoded <;>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SourceRetireActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256]
+
+end
+end SandboxModel.Stage1Protocol.SourceMaterialChargeSpec
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeSpec.release_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeSpec.request_constructor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeSpec.record_max_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeSpec.bounded_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeSpec.request_binding_all_fields

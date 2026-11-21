@@ -1,0 +1,132 @@
+import SourceMaterialChargeProof
+
+open Aeneas Aeneas.Std Result
+open SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol
+open SourceRetireTypes SourceRetireActual SourceRetireSpec SourceMaterialChargeSpec SourceMaterialChargeProof
+set_option autoImplicit false
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceMaterialChargeCases
+noncomputable section
+abbrev Captured := controller.lifecycle_inbox.source_work.full.CaptureWork
+abbrev Settlement := controller.lifecycle_inbox.source_work.retirement.MaterialRetirementSettlement
+
+structure Ready {Tree : Type → Type → Type} (io : SourceRetireLibrary.Ports Tree)
+    (record : Record) (captured : Captured) (plan : Plan) (settlement : Settlement)
+    (stateBytes requestBytes releaseBytes : Bytes) : Prop where
+  captureSome : record.capture = some captured
+  retirement : record.retirement = some (.Settled plan settlement)
+  noRestore : record.restore = none
+  producer : record.material_release.producer.isSome
+  stateEncoded : io.stateJson (.Settled plan settlement) = .ok (.Ok stateBytes)
+  stateBound : stateBytes.slice.val.length ≤ 69632
+  nonempty : plan.bytes.slice.val ≠ []
+  planBound : plan.bytes.slice.val.length ≤ 16384
+  requestEncoded : io.bindingJson record.work.anchor.local.sandbox record.work.anchor.native.generation
+    captured.full record.work.requirement captured.action captured.worker captured.completed = .ok (.Ok requestBytes)
+  requestDigested : io.bindingDigest requestBytes.slice = .ok plan.work_binding
+  planDigested : plan.plan_binding = DigestByteBridge.referenceOutput plan.bytes.slice
+  releaseEncoded : io.releaseJson record.material_release = .ok (.Ok releaseBytes)
+  releaseDomain : releaseBytes.slice.val.length < 2^61
+  closedRelease : plan.closure.release_binding = DigestByteBridge.referenceOutput releaseBytes.slice
+  closedRestore : plan.closure.restore_binding = none
+  settlementWork : settlement.work_binding = plan.work_binding
+  settlementPlan : settlement.plan_binding = plan.plan_binding
+
+variable {Tree : Type → Type → Type} (io : SourceRetireLibrary.Ports Tree)
+variable (record : Record) (captured : Captured) (plan : Plan) (settlement : Settlement)
+variable (stateBytes requestBytes releaseBytes : Bytes)
+variable (ready : Ready io record captured plan settlement stateBytes requestBytes releaseBytes)
+
+theorem registered_digest (bytes : Slice U8) (short : bytes.val.length < 2^61) :
+    SandproofSourceRowSqlSelect.controller.lifecycle_inbox.sha256.digest bytes =
+      .ok (DigestByteBridge.referenceOutput bytes) := by
+  simp only [SandproofSourceRowSqlSelect.controller.lifecycle_inbox.sha256.digest,
+    SandproofStandardDigestRust.controller.lifecycle_inbox.sha256.digest,if_pos short]
+
+include ready
+
+theorem expected_ready :
+    charge io record = .ok (if settlement.released_material_bytes = captured.reserved_material_bytes
+      then .Ok 0#u64 else .Err .CorruptStore) := by
+  have planDomain : plan.bytes.slice.val.length < 2^61 := by have := ready.planBound; omega
+  have smallState : ¬stateBytes.slice.val.length > 69632 := by have := ready.stateBound; omega
+  have smallPlan : ¬plan.bytes.slice.val.length > 16384 := by have := ready.planBound; omega
+  simp [charge,ready.captureSome,ready.retirement,boundedState,tryJournal,ready.stateEncoded,
+    smallState,saved,ready.nonempty,smallPlan,requestValue,requestBinding,
+    ready.requestEncoded,ready.requestDigested,ready.planDigested,
+    registered_digest _ planDomain,ready.noRestore,closureBinding,complete,ready.producer,
+    ready.releaseEncoded,registered_digest _ ready.releaseDomain,
+    ready.closedRelease,restoreBinding,ready.closedRestore,
+    ready.settlementWork,ready.settlementPlan]
+  by_cases same : settlement.released_material_bytes = captured.reserved_material_bytes
+  · simp [same]
+  · have different : settlement.released_material_bytes.val ≠ captured.reserved_material_bytes.val := by
+      intro equal
+      exact same (UScalar.eq_of_val_eq equal)
+    simp [same,different]
+
+theorem actual_ready :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge io record =
+      .ok (if settlement.released_material_bytes = captured.reserved_material_bytes
+        then .Ok 0#u64 else .Err .CorruptStore) := by
+  rw [SourceMaterialChargeProof.actual_contract]
+  exact expected_ready io record captured plan settlement stateBytes requestBytes releaseBytes ready
+
+
+theorem normal_settled (same : settlement.released_material_bytes = captured.reserved_material_bytes) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge io record = .ok (.Ok 0#u64) := by
+  rw [actual_ready io record captured plan settlement stateBytes requestBytes releaseBytes ready]
+  simp [same]
+
+theorem wrong_released_bytes_rejected (different : settlement.released_material_bytes ≠ captured.reserved_material_bytes) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge io record = .ok (.Err .CorruptStore) := by
+  rw [actual_ready io record captured plan settlement stateBytes requestBytes releaseBytes ready]
+  simp [different]
+
+theorem original_bounded :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.bounded io (.Settled plan settlement) = .ok (.Ok ()) := by
+  rw [bounded_contract]
+  have small : ¬stateBytes.slice.val.length > 69632 := by have := ready.stateBound; omega
+  simp [boundedState,tryJournal,ready.stateEncoded,small]
+
+theorem original_request :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.request record =
+      .ok (.Ok (⟨record.work.anchor.local.sandbox,record.work.anchor.native.generation,
+        captured.full,record.work.requirement,captured.action,captured.worker,captured.completed⟩ : Request)) := by
+  rw [request_contract]
+  simp [requestValue,ready.captureSome]
+
+theorem original_binding :
+    SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.binding_digest io
+      ⟨record.work.anchor.local.sandbox,record.work.anchor.native.generation,
+        captured.full,record.work.requirement,captured.action,captured.worker,captured.completed⟩ = .ok (.Ok plan.work_binding) := by
+  simp [SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.binding_digest,
+    ready.requestEncoded,ready.requestDigested,core.result.Result.Insts.CoreOpsTry.branch,
+    SourceRetireSpec.vector_deref,SourceRetireActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256]
+
+theorem original_plan_digest :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.digest plan.bytes.deref = .ok plan.plan_binding := by
+  have small : plan.bytes.slice.val.length < 2^61 := by have := ready.planBound; omega
+  simp [source_digest,SourceRetireSpec.vector_deref,registered_digest _ small,ready.planDigested]
+
+theorem original_closure :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.closure.validate_bindings io record plan.closure = .ok (.Ok ()) := by
+  rw [closure_contract]
+  simp [closureBinding,complete,ready.producer,ready.noRestore,tryJournal,ready.releaseEncoded,
+    registered_digest _ ready.releaseDomain,ready.closedRelease,restoreBinding,ready.closedRestore]
+
+end
+end SandboxModel.Stage1Protocol.SourceMaterialChargeCases
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeCases.registered_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeCases.expected_ready
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeCases.actual_ready
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeCases.normal_settled
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeCases.wrong_released_bytes_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeCases.original_bounded
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeCases.original_request
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeCases.original_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeCases.original_plan_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeCases.original_closure

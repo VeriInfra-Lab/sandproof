@@ -1,0 +1,643 @@
+import SourceMaterialChargeSpec
+
+open Aeneas Aeneas.Std Result
+open SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol
+open SourceRetireTypes SourceRetireActual SourceRetireSpec SourceMaterialChargeSpec
+set_option autoImplicit false
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceMaterialChargeProof
+noncomputable section
+variable {Tree : Type → Type → Type} (io : SourceRetireLibrary.Ports Tree)
+
+theorem restore_binding_contract (record : Record) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.closure.restore_binding io record =
+      restoreBinding io record := by
+  cases restored : record.restore with
+  | none =>
+    simp [SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.closure.restore_binding,
+      SourceRetireLibrary.optionRef,SourceRetireLibrary.optionMap,SourceRetireLibrary.optionTranspose,
+      restoreBinding,restored]
+  | some claim =>
+    simp only [SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.closure.restore_binding,
+      SourceRetireLibrary.optionRef,SourceRetireLibrary.optionMap,restored,bind_tc_ok]
+    simp only [SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.closure.restore_binding.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRestoreClaimResultContentDigestJournalError.call_once,
+      restoreBinding,restored,tryJournal,bind_assoc_eq,SourceRetireSpec.vector_deref]
+    apply congrArg (fun next => io.restoreJson claim.intent claim.local claim.generation claim.activation >>= next)
+    funext encoded
+    cases encoded <;>
+      simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        SourceRetireActual.JournalErrorFromJson.from_json,
+        SourceRetireActual.controller.lifecycle_inbox.source_work.digest,
+        SourceRetireActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256,
+        SourceRetireLibrary.optionTranspose]
+
+
+theorem source_digest (bytes : Slice U8) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.digest bytes =
+      SandproofSourceRowSqlSelect.controller.lifecycle_inbox.sha256.digest bytes := by
+  simp [SourceRetireActual.controller.lifecycle_inbox.source_work.digest,
+    SourceRetireActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256]
+  change (SandproofSourceRowSqlSelect.controller.lifecycle_inbox.sha256.digest bytes >>= pure) = _
+  simp
+
+theorem digest_ne (a b : Key) :
+    core.cmp.PartialEq.ne.trait_default
+      sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest a b =
+      .ok (decide (a ≠ b)) := by
+  simp [core.cmp.PartialEq.ne.trait_default,core.cmp.PartialEq.ne.default,
+    SourceWorkMatch.Scalars.wire_content_digest_eq]
+
+theorem option_digest_ne (a b : Option Key) :
+    core.cmp.PartialEq.ne.trait_default
+      (core.option.Option.Insts.CoreCmpPartialEqOption
+        sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest) a b =
+      .ok (decide (a ≠ b)) := by
+  simp [core.cmp.PartialEq.ne.trait_default,core.cmp.PartialEq.ne.default,
+    SourceRetireEquality.option_digest_eq]
+
+theorem closure_contract (record : Record) (closed : Closure) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.closure.validate_bindings io record closed =
+      closureBinding io record closed := by
+  unfold SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.closure.validate_bindings
+  simp only [core.option.Option.is_some]
+  rw [release_complete]
+  by_cases ready : complete record
+  · simp only [ready,decide_true,bind_tc_ok,ite_true]
+    simp only [closureBinding,ready,not_true_eq_false,ite_false,tryJournal]
+    apply congrArg (fun next => io.releaseJson record.material_release >>= next)
+    funext encoded
+    cases encoded with
+    | Err failure =>
+      simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        SourceRetireActual.JournalErrorFromJson.from_json]
+    | Ok bytes =>
+      simp only [core.result.Result.Insts.CoreOpsTry.branch,bind_tc_ok,
+        SourceRetireSpec.vector_deref,source_digest]
+      apply congrArg (fun next => SandproofSourceRowSqlSelect.controller.lifecycle_inbox.sha256.digest bytes.slice >>= next)
+      funext released
+      rw [digest_ne]
+      by_cases same : closed.release_binding = released
+      · simp only [same,ne_eq,not_true_eq_false,decide_false,bind_tc_ok,ite_false]
+        rw [restore_binding_contract]
+        simp only [Bool.false_eq_true,ite_false]
+        apply congrArg (fun next => restoreBinding io record >>= next)
+        funext restored
+        cases restored with
+        | Err failure =>
+          simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | Ok value =>
+          simp [option_digest_ne]
+      · simp [same]
+  · simp [ready,closureBinding]
+
+
+theorem clone_option {T : Type} (dictionary : core.clone.Clone T)
+    (copies : ∀ value, dictionary.clone value = .ok value) (value : Option T) :
+    SourceRetireLibrary.optionClone dictionary value = .ok value := by
+  cases value <;> simp [SourceRetireLibrary.optionClone,copies]
+
+theorem clone_vector {T : Type} (dictionary : core.clone.Clone T)
+    (copies : ∀ value, dictionary.clone value = .ok value) (value : alloc.vec.Vec T) :
+    alloc.vec.CloneVec.clone dictionary value = .ok value := by
+  obtain ⟨copied,returned,same⟩ := WP.spec_imp_exists
+    (Slice.clone_spec (s := value.slice) (by intro item _; exact copies item))
+  simp [alloc.vec.CloneVec.clone,returned,←same]
+
+
+theorem clone_core_sandbox_id (value : sandbox_controller_core.ids.SandboxId) :
+    SourceRetireActual.sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.ids.SandboxId.Insts.CoreCloneClone.clone]
+
+
+theorem clone_core_vm_id (value : sandbox_controller_core.ids.VmId) :
+    SourceRetireActual.sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.ids.VmId.Insts.CoreCloneClone.clone]
+
+
+theorem clone_core_net_slot_id (value : sandbox_controller_core.ids.NetSlotId) :
+    SourceRetireActual.sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.ids.NetSlotId.Insts.CoreCloneClone.clone]
+
+
+theorem clone_core_fs_id (value : sandbox_controller_core.ids.FsId) :
+    SourceRetireActual.sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.ids.FsId.Insts.CoreCloneClone.clone]
+
+
+theorem clone_core_snapshot_id (value : sandbox_controller_core.ids.SnapshotId) :
+    SourceRetireActual.sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.ids.SnapshotId.Insts.CoreCloneClone.clone]
+
+
+theorem clone_core_file_policy_ref (value : sandbox_controller_core.model.FilePolicyRef) :
+    SourceRetireActual.sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.model.FilePolicyRef.Insts.CoreCloneClone.clone]
+
+
+theorem clone_core_snapshot_manifest_ref (value : sandbox_controller_core.model.SnapshotManifestRef) :
+    SourceRetireActual.sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.model.SnapshotManifestRef.Insts.CoreCloneClone.clone]
+
+
+theorem clone_core_restore_source (value : sandbox_controller_core.model.RestoreSource) :
+    SourceRetireActual.sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone.clone]
+
+
+theorem clone_core_protocol (value : sandbox_controller_core.model.Protocol) :
+    SourceRetireActual.sandbox_controller_core.model.Protocol.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.model.Protocol.Insts.CoreCloneClone.clone]
+
+
+theorem clone_core_endpoint (value : sandbox_controller_core.model.Endpoint) :
+    SourceRetireActual.sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone.clone,
+      clone_core_protocol,
+      SourceRetireLibrary.stringClone,
+      lift]
+
+
+theorem clone_core_ipv4_cidr (value : sandbox_controller_core.model.Ipv4Cidr) :
+    SourceRetireActual.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone.clone]
+
+
+theorem clone_core_network_policy (value : sandbox_controller_core.model.NetworkPolicy) :
+    SourceRetireActual.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone value = .ok value := by
+  have endpoints := clone_vector SourceRetireActual.sandbox_controller_core.model.Endpoint.Insts.CoreCloneClone
+    (by intro item; exact clone_core_endpoint item)
+  have cidrs := clone_vector SourceRetireActual.sandbox_controller_core.model.Ipv4Cidr.Insts.CoreCloneClone
+    (by intro item; exact clone_core_ipv4_cidr item)
+  cases value <;>
+  simp [SourceRetireActual.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone,
+      endpoints,
+      cidrs,
+      lift]
+
+
+theorem clone_core_command (value : sandbox_controller_core.model.Command) :
+    SourceRetireActual.sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone value = .ok value := by
+  have restores := clone_option SourceRetireActual.sandbox_controller_core.model.RestoreSource.Insts.CoreCloneClone
+    (by intro item; exact clone_core_restore_source item)
+  cases value <;>
+  simp [SourceRetireActual.sandbox_controller_core.model.Command.Insts.CoreCloneClone.clone,
+      restores,
+      clone_core_sandbox_id,
+      clone_core_vm_id,
+      clone_core_net_slot_id,
+      clone_core_fs_id,
+      clone_core_snapshot_id,
+      clone_core_file_policy_ref,
+      clone_core_snapshot_manifest_ref,
+      clone_core_network_policy,
+      lift]
+
+
+theorem clone_core_logical_effect_id (value : sandbox_controller_core.model.LogicalEffectId) :
+    SourceRetireActual.sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.model.LogicalEffectId.Insts.CoreCloneClone.clone,
+      clone_core_command]
+
+
+theorem clone_core_effect_id (value : sandbox_controller_core.model.EffectId) :
+    SourceRetireActual.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone.clone,
+      clone_core_logical_effect_id,
+      lift]
+
+
+theorem clone_wire_positive_counter (value : sandproof_protocol.internal.PositiveCounter) :
+    SourceRetireActual.sandproof_protocol.internal.PositiveCounter.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.internal.PositiveCounter.Insts.CoreCloneClone.clone]
+
+
+theorem clone_wire_node_id (value : sandproof_protocol.NodeId) :
+    SourceRetireActual.sandproof_protocol.NodeId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.NodeId.Insts.CoreCloneClone.clone,
+      SourceRetireLibrary.stringClone]
+
+
+theorem clone_wire_deployment_id (value : sandproof_protocol.DeploymentId) :
+    SourceRetireActual.sandproof_protocol.DeploymentId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.DeploymentId.Insts.CoreCloneClone.clone,
+      SourceRetireLibrary.stringClone]
+
+
+theorem clone_wire_node_identity (value : sandproof_protocol.internal.NodeIdentity) :
+    SourceRetireActual.sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.internal.NodeIdentity.Insts.CoreCloneClone.clone,
+      clone_wire_positive_counter,
+      clone_wire_node_id,
+      clone_wire_deployment_id]
+
+
+theorem clone_wire_resource_id (value : sandproof_protocol.ResourceId) :
+    SourceRetireActual.sandproof_protocol.ResourceId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.ResourceId.Insts.CoreCloneClone.clone,
+      SourceRetireLibrary.stringClone]
+
+
+theorem clone_wire_tenant_id (value : sandproof_protocol.TenantId) :
+    SourceRetireActual.sandproof_protocol.TenantId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.TenantId.Insts.CoreCloneClone.clone,
+      SourceRetireLibrary.stringClone]
+
+
+theorem clone_wire_sandbox_id (value : sandproof_protocol.SandboxId) :
+    SourceRetireActual.sandproof_protocol.SandboxId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.SandboxId.Insts.CoreCloneClone.clone,
+      SourceRetireLibrary.stringClone]
+
+
+theorem clone_wire_operation_id (value : sandproof_protocol.OperationId) :
+    SourceRetireActual.sandproof_protocol.OperationId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.OperationId.Insts.CoreCloneClone.clone,
+      SourceRetireLibrary.stringClone]
+
+
+theorem clone_wire_logical_action_id (value : sandproof_protocol.LogicalActionId) :
+    SourceRetireActual.sandproof_protocol.LogicalActionId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.LogicalActionId.Insts.CoreCloneClone.clone,
+      SourceRetireLibrary.stringClone]
+
+
+theorem clone_wire_resource_kind (value : sandproof_protocol.ResourceKind) :
+    SourceRetireActual.sandproof_protocol.ResourceKind.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.ResourceKind.Insts.CoreCloneClone.clone]
+
+
+theorem clone_wire_resource_ref (value : sandproof_protocol.ResourceRef) :
+    SourceRetireActual.sandproof_protocol.ResourceRef.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.ResourceRef.Insts.CoreCloneClone.clone,
+      clone_wire_resource_id,
+      clone_wire_resource_kind]
+
+
+theorem clone_wire_action_identity (value : sandproof_protocol.ActionIdentity) :
+    SourceRetireActual.sandproof_protocol.ActionIdentity.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.ActionIdentity.Insts.CoreCloneClone.clone,
+      clone_wire_tenant_id,
+      clone_wire_sandbox_id,
+      clone_wire_operation_id,
+      clone_wire_logical_action_id,
+      clone_wire_resource_ref,
+      lift]
+
+
+theorem clone_wire_content_digest (value : sandproof_protocol.lifecycle.digest.ContentDigest) :
+    SourceRetireActual.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCloneClone.clone]
+
+
+theorem clone_wire_session_id (value : sandproof_protocol.lifecycle.identity.SessionId) :
+    SourceRetireActual.sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCloneClone.clone,
+      clone_wire_sandbox_id]
+
+
+theorem clone_wire_incarnation_id (value : sandproof_protocol.lifecycle.identity.IncarnationId) :
+    SourceRetireActual.sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCloneClone.clone]
+
+
+theorem clone_wire_capture_id (value : sandproof_protocol.lifecycle.identity.CaptureId) :
+    SourceRetireActual.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCloneClone.clone]
+
+
+theorem clone_wire_request_window_id (value : sandproof_protocol.lifecycle.identity.RequestWindowId) :
+    SourceRetireActual.sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCloneClone.clone]
+
+
+theorem clone_wire_request_sequence (value : sandproof_protocol.lifecycle.identity.RequestSequence) :
+    SourceRetireActual.sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCloneClone.clone]
+
+
+theorem clone_wire_operation_key (value : sandproof_protocol.lifecycle.identity.OperationKey) :
+    SourceRetireActual.sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCloneClone.clone,
+      clone_wire_deployment_id,
+      clone_wire_tenant_id,
+      clone_wire_request_window_id,
+      clone_wire_request_sequence]
+
+
+theorem clone_wire_expected_session (value : sandproof_protocol.lifecycle.identity.ExpectedSession) :
+    SourceRetireActual.sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCloneClone.clone]
+
+
+theorem clone_wire_operation_binding (value : sandproof_protocol.lifecycle.identity.OperationBinding) :
+    SourceRetireActual.sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCloneClone.clone,
+      clone_wire_node_identity,
+      clone_wire_session_id,
+      clone_wire_operation_key,
+      clone_wire_expected_session,
+      lift]
+
+
+theorem clone_wire_capture_binding (value : sandproof_protocol.lifecycle.manifest.CaptureBinding) :
+    SourceRetireActual.sandproof_protocol.lifecycle.manifest.CaptureBinding.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.manifest.CaptureBinding.Insts.CoreCloneClone.clone,
+      clone_wire_incarnation_id,
+      clone_wire_capture_id,
+      clone_wire_operation_binding]
+
+
+theorem clone_wire_writable_drive (value : sandproof_protocol.lifecycle.manifest.WritableDrive) :
+    SourceRetireActual.sandproof_protocol.lifecycle.manifest.WritableDrive.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.manifest.WritableDrive.Insts.CoreCloneClone.clone,
+      clone_wire_resource_id,
+      SourceRetireLibrary.stringClone]
+
+
+theorem clone_wire_vm_compatibility (value : sandproof_protocol.lifecycle.manifest.VmCompatibility) :
+    SourceRetireActual.sandproof_protocol.lifecycle.manifest.VmCompatibility.Insts.CoreCloneClone.clone value = .ok value := by
+  have drives := clone_vector SourceRetireActual.sandproof_protocol.lifecycle.manifest.WritableDrive.Insts.CoreCloneClone
+    (by intro item; exact clone_wire_writable_drive item)
+  simp [SourceRetireActual.sandproof_protocol.lifecycle.manifest.VmCompatibility.Insts.CoreCloneClone.clone,
+      drives,
+      clone_wire_content_digest,
+      lift]
+
+
+theorem clone_capture_source_process_identity (value : capture.SourceProcessIdentity) :
+    SourceRetireActual.capture.SourceProcessIdentity.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.capture.SourceProcessIdentity.Insts.CoreCloneClone.clone,
+      SourceRetireLibrary.stringClone,
+      lift]
+
+
+theorem clone_capture_capture_worker_binding (value : capture.launch.CaptureWorkerBinding) :
+    SourceRetireActual.capture.launch.CaptureWorkerBinding.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.capture.launch.CaptureWorkerBinding.Insts.CoreCloneClone.clone,
+      clone_wire_content_digest,
+      clone_capture_source_process_identity]
+
+
+theorem clone_capture_source_observation_config (value : capture.source.SourceObservationConfig) :
+    SourceRetireActual.capture.source.SourceObservationConfig.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.capture.source.SourceObservationConfig.Insts.CoreCloneClone.clone,
+      lift]
+
+
+theorem clone_capture_host_epoch_registration (value : capture.HostEpochRegistration) :
+    SourceRetireActual.capture.HostEpochRegistration.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.capture.HostEpochRegistration.Insts.CoreCloneClone.clone,
+      clone_wire_content_digest,
+      SourceRetireLibrary.stringClone,
+      lift]
+
+
+theorem clone_capture_source_observation_requirement (value : capture.source.SourceObservationRequirement) :
+    SourceRetireActual.capture.source.SourceObservationRequirement.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.capture.source.SourceObservationRequirement.Insts.CoreCloneClone.clone,
+      clone_wire_node_identity,
+      clone_wire_resource_ref,
+      clone_wire_content_digest,
+      clone_capture_source_process_identity,
+      clone_capture_source_observation_config,
+      clone_capture_host_epoch_registration]
+
+
+theorem clone_capture_pause_work_request (value : capture.work.PauseWorkRequest) :
+    SourceRetireActual.capture.work.PauseWorkRequest.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.capture.work.PauseWorkRequest.Insts.CoreCloneClone.clone,
+      clone_wire_node_identity,
+      clone_wire_resource_ref,
+      clone_wire_content_digest,
+      clone_wire_capture_binding,
+      clone_capture_source_process_identity]
+
+
+theorem clone_capture_full_capture_work_request (value : capture.work.FullCaptureWorkRequest) :
+    SourceRetireActual.capture.work.FullCaptureWorkRequest.Insts.CoreCloneClone.clone value = .ok value := by
+  simp [SourceRetireActual.capture.work.FullCaptureWorkRequest.Insts.CoreCloneClone.clone,
+      clone_wire_vm_compatibility,
+      clone_capture_pause_work_request,
+      lift]
+
+
+theorem clone_work_action (value : sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId) :
+    SourceRetireActual.sandproof_protocol.WorkAction.Insts.CoreCloneClone.clone
+      SourceRetireActual.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone value = .ok value := by
+  simp [SourceRetireActual.sandproof_protocol.WorkAction.Insts.CoreCloneClone.clone,
+    clone_wire_action_identity,SourceRetireActual.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone,
+    clone_core_effect_id]
+
+theorem request_contract (record : Record) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.request record =
+      .ok (match requestValue record with
+        | none => .Err .UnresolvedAction
+        | some value => .Ok value) := by
+  have actions := clone_option
+    (SourceRetireActual.sandproof_protocol.WorkAction.Insts.CoreCloneClone
+      SourceRetireActual.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone)
+    (by intro item; exact clone_work_action item)
+  have workers := clone_option SourceRetireActual.capture.launch.CaptureWorkerBinding.Insts.CoreCloneClone
+    (by intro item; exact clone_capture_capture_worker_binding item)
+  cases captured : record.capture <;>
+    simp [SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.request,
+      SourceRetireLibrary.optionRef,core.option.Option.ok_or,requestValue,captured,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      clone_capture_full_capture_work_request,clone_capture_source_observation_requirement,
+      actions,workers,SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.from_source]
+
+theorem tryJournal_rewrap {A B E : Type} (convert : E → Journal)
+    (reply : Result (core.result.Result A E)) (next : A → Result (core.result.Result B Journal)) :
+    tryJournal id (tryJournal convert reply (fun value => .ok (.Ok value))) next =
+      tryJournal convert reply next := by
+  simp only [tryJournal,bind_assoc_eq]
+  apply congrArg (fun continuation => reply >>= continuation)
+  funext result
+  cases result <;> simp
+
+
+theorem request_binding_continuation {B : Type} (request : Request)
+    (next : Key → Result (core.result.Result B Journal)) :
+    tryJournal id (requestBinding io request) next =
+      tryJournal SourceRetireTypes.JournalError.Json
+        (SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.binding_digest io request) next := by
+  rw [←request_binding_all_fields,tryJournal_rewrap]
+
+theorem saved_plan (state : State) :
+    controller.lifecycle_inbox.source_work.retirement.plan state = .ok (saved state) := by
+  cases state <;> rfl
+
+theorem empty_release_iff (facts : controller.lifecycle_inbox.source_work.retirement.MaterialReleaseFacts) :
+    facts = ⟨none,none⟩ ↔ facts.producer.isNone ∧ facts.consumer.isNone := by
+  cases facts with
+  | mk producer consumer => cases producer <;> cases consumer <;> simp
+
+theorem restore_material_use (claim : Option controller.lifecycle_inbox.source_work.restore.RestoreClaim) :
+    core.option.Option.is_some_and
+      SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRestoreClaimBool
+      claim () = .ok (claim.any (fun value => value.material_use)) := by
+  cases claim <;>
+    simp [core.option.Option.is_some_and,
+      SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRestoreClaimBool.call_once]
+
+
+theorem actual_contract (record : Record) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge io record = charge io record := by
+  cases captured : record.capture with
+  | none =>
+    cases retired : record.retirement <;>
+      simp [SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge,
+        charge,captured,retired,core.option.Option.is_none,
+        SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.MaterialReleaseFacts.empty,
+        SourceRetireEquality.release_facts_eq,empty_release_iff]
+  | some captureRecord =>
+    cases retired : record.retirement with
+    | none =>
+      simp [SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge,
+        charge,captured,retired]
+    | some state =>
+      simp only [SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge,
+        charge,captured,retired]
+      rw [bounded_contract]
+      change (boundedState io state >>= _) = (boundedState io state >>= _)
+      apply congrArg (fun next => boundedState io state >>= next)
+      funext reply
+      cases reply with
+      | Err failure =>
+        simp [core.result.Result.Insts.CoreOpsTry.branch,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | Ok bounded =>
+        simp only [core.result.Result.Insts.CoreOpsTry.branch,bind_tc_ok]
+        rw [saved_plan]
+        simp only [bind_tc_ok]
+        by_cases empty : (saved state).bytes.slice.val = []
+        · simp [SourceRetireLibrary.vectorEmpty,empty]
+        · by_cases large : (saved state).bytes.slice.val.length > 16384
+          · simp [SourceRetireLibrary.vectorEmpty,empty,
+              alloc.vec.Vec.len,alloc.vec.Vec.val,UScalar.lt_equiv,
+              SourceRetireActual.capture.retirement.MATERIAL_RETIREMENT_PLAN_MAX_BYTES,large]
+          · simp [SourceRetireLibrary.vectorEmpty,empty,alloc.vec.Vec.len,alloc.vec.Vec.val,UScalar.lt_equiv,
+              SourceRetireActual.capture.retirement.MATERIAL_RETIREMENT_PLAN_MAX_BYTES,large]
+            rw [request_contract]
+            simp only [requestValue,captured,Option.map_some,bind_tc_ok,
+              ]
+            rw [request_binding_continuation]
+            let originalRequest : Request :=
+              ⟨record.work.anchor.local.sandbox,record.work.anchor.native.generation,
+                captureRecord.full,record.work.requirement,captureRecord.action,captureRecord.worker,captureRecord.completed⟩
+            change (SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.binding_digest io originalRequest >>= _) =
+              (SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.binding_digest io originalRequest >>= _)
+            apply congrArg (fun next => SourceRetireActual.capture.retirement.CaptureMaterialRetirementRequest.binding_digest io originalRequest >>= next)
+            funext reply
+            cases reply with
+            | Err failure =>
+              simp [
+                core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                SourceRetireActual.JournalErrorFromJson.from_json]
+            | Ok workBinding =>
+              simp only [bind_tc_ok]
+              rw [digest_ne]
+              by_cases sameWork : (saved state).work_binding = workBinding
+              · simp only [sameWork,ne_eq,not_true_eq_false,decide_false,bind_tc_ok,Bool.false_eq_true,ite_false]
+                simp only [SourceRetireSpec.vector_deref,source_digest]
+                apply congrArg (fun next => SandproofSourceRowSqlSelect.controller.lifecycle_inbox.sha256.digest (saved state).bytes.slice >>= next)
+                funext planBinding
+                rw [digest_ne]
+                by_cases samePlan : (saved state).plan_binding = planBinding
+                · simp only [samePlan,ne_eq,not_true_eq_false,decide_false,bind_tc_ok,Bool.false_eq_true,ite_false]
+                  simp only [SourceRetireLibrary.optionRef,bind_tc_ok,restore_material_use]
+                  by_cases held : record.restore.any (fun claim => claim.material_use) = true
+                  · simp [held]
+                  · simp only [held]
+                    rw [closure_contract]
+                    change (closureBinding io record (saved state).closure >>= _) = (closureBinding io record (saved state).closure >>= _)
+                    apply congrArg (fun next => closureBinding io record (saved state).closure >>= next)
+                    funext closed
+                    cases closed with
+                    | Err failure =>
+                      simp [
+                        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                    | Ok value =>
+                      simp only [bind_tc_ok]
+                      cases state <;> simp [digest_ne]
+                      all_goals split_ifs <;> simp_all
+                · simp [samePlan]
+              · simp [sameWork]
+
+
+theorem actual_full_contract :
+    Contract io (SourceRetireActual.controller.lifecycle_inbox.source_work.retirement.material_charge io) := by
+  intro record
+  exact actual_contract io record
+
+end
+end SandboxModel.Stage1Protocol.SourceMaterialChargeProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.restore_binding_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.source_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.digest_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.option_digest_ne
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.closure_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_option
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_vector
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_sandbox_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_vm_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_net_slot_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_fs_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_snapshot_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_file_policy_ref
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_snapshot_manifest_ref
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_restore_source
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_protocol
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_endpoint
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_ipv4_cidr
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_network_policy
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_command
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_logical_effect_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_core_effect_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_positive_counter
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_node_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_deployment_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_node_identity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_resource_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_tenant_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_sandbox_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_operation_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_logical_action_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_resource_kind
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_resource_ref
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_action_identity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_content_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_session_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_incarnation_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_capture_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_request_window_id
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_request_sequence
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_operation_key
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_expected_session
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_operation_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_capture_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_writable_drive
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_wire_vm_compatibility
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_capture_source_process_identity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_capture_capture_worker_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_capture_source_observation_config
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_capture_host_epoch_registration
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_capture_source_observation_requirement
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_capture_pause_work_request
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_capture_full_capture_work_request
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.clone_work_action
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.request_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.tryJournal_rewrap
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.request_binding_continuation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.saved_plan
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.empty_release_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.restore_material_use
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.actual_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceMaterialChargeProof.actual_full_contract
