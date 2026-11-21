@@ -1284,22 +1284,22 @@
           "code": "clippy::erasing_op",
           "message": "this operation will always return zero. This is likely not the intended outcome",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 663
+          "line": 655
         },
         {
           "code": "clippy::erasing_op",
           "message": "this operation will always return zero. This is likely not the intended outcome",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 663
+          "line": 655
         }
       ],
-      "expected_clippy_source_sha256": "6042a93e3078f422b1e7336271a42cc3e836579bad976abe24d95d965f72af32",
+      "expected_clippy_source_sha256": "a9c37cd545fa3c7fbdabf8074d09c9b9289daae7a8364ca36056ff2511ddd688",
       "expected_clippy_origin": {
         "kind": "single-mutant-diagnostic-not-acceptance",
-        "source_commit": "4e2982e94a386b4e240498eed944978a53061db3",
-        "original_result_sha256": "58fb5e5af382d39dd2fdfc95a0a895b0f52a8a073c3246339ff6d1eebcdd08c9",
-        "test_log_sha256": "c0aefa0a46900575ca288a94efcb7a187fbc95e0fd14e9c51ccef62e4367d456",
-        "clippy_log_sha256": "0117700a22cfe0d4e09e85647a117b8676e8428a46ab07354f6f3863635aeb44",
+        "source_commit": "14bb62c0ec8220867aa81a058720cd8827b02507",
+        "original_result_sha256": "3e03484986b996fa1aff24e45d37f026f14cbbe3cfe038acc93b4ee51cae66bf",
+        "test_log_sha256": "62c964e2f3a723c441a50c2c1350228e5250eeb32831946e85ac6ee4801bc59b",
+        "clippy_log_sha256": "71b46c20063cd929e911e8e66e862115f2c4c9bdd5d33a2ee978d9d2b391809a",
         "business_assertions_rejected": true,
         "original_component_complete": false
       }
