@@ -1,0 +1,225 @@
+import SourceSavedQuestionProof
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceSavedQuestionModel
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceSavedQuestionValues
+
+/-- Same decoded parent domain. These data definitions confer no authorization,
+    current World, durable provenance, physical gate, process or stop fact. -/
+def sealAction : Action :=
+  { SourceRequestEndMatchValues.action with
+    identity := { SourceRequestEndMatchValues.action.identity with
+      protocol_version := 1#u16, epoch := 1#u64, generation := 101#u64, attempt := 3#u64 },
+    command := ⟨⟨.SealSnapshot SourceFullBindingValues.saved.work.anchor.local.sandbox 1#u64 101#u64 5#u64 6#u64 7#u64 ⟨8#u64⟩⟩, 3#u64⟩ }
+def captured : controller.lifecycle_inbox.source_work.full.CaptureWork :=
+  { SourcePriorEndMatchValues.captured with action := some sealAction }
+def saved : Record := { SourceFullBindingValues.saved with capture := some captured }
+def identity : Identity := ⟨⟨saved.work.anchor.local.sandbox, captured.operation⟩, 1#u64, 101#u64, 5#u64⟩
+def slot : Slot :=
+  { SourceTerminalMatchValues.slot with
+    binding := { SourceTerminalMatchValues.slot.binding with
+      owner := saved.work.anchor.local.owner, sandbox := identity.key.sandbox } }
+def stop : Stop :=
+  { SourceTerminalMatchValues.stop with
+    operation := ⟨identity.key.sandbox, 4#u64⟩, attempt := 4#u64 }
+def stopAction : Action :=
+  { sealAction with
+    identity := { sealAction.identity with epoch := stop.epoch, attempt := stop.attempt },
+    command := ⟨⟨.StopVm identity.key.sandbox stop.epoch identity.generation identity.vm⟩, stop.attempt⟩ }
+def expected : Work :=
+  ⟨identity, sealAction, captured.full, saved.work.requirement, captured.worker, stopAction, stop, slot⟩
+def observation : Observation :=
+  SourceTerminalMatchValues.make SourceWorkMatch.Values.digest SourceWorkMatch.Values.digest
+    sealAction stopAction saved.work.requirement.source captured.worker slot
+
+def missingCapture : Record := { saved with capture := none }
+def missingAction : Record := { saved with capture := some { captured with action := none } }
+def conflictBeforeAction : Record :=
+  { saved with
+    capture := some { captured with full := SourceFullWorkGuardValues.emptyState, action := none } }
+def nonSeal : Record :=
+  { saved with capture := some { captured with action := some SourceRequestEndMatchValues.action } }
+def zeroInode : Observation :=
+  .StoppedAndDrained SourceWorkMatch.Values.digest SourceWorkMatch.Values.digest
+    sealAction stopAction saved.work.requirement.source captured.worker slot 7#u64 0#u64
+
+def oldStop : Stop := { stop with epoch := identity.epoch }
+def oldStopAction : Action :=
+  { stopAction with
+    identity := { stopAction.identity with epoch := oldStop.epoch },
+    command := ⟨⟨.StopVm identity.key.sandbox oldStop.epoch identity.generation identity.vm⟩, oldStop.attempt⟩ }
+def oldObservation : Observation :=
+  SourceTerminalMatchValues.make SourceWorkMatch.Values.digest SourceWorkMatch.Values.digest
+    sealAction oldStopAction saved.work.requirement.source captured.worker slot
+
+def gapStop : Stop := { stop with epoch := 11#u64 }
+def gapStopAction : Action :=
+  { stopAction with
+    identity := { stopAction.identity with epoch := gapStop.epoch },
+    command := ⟨⟨.StopVm identity.key.sandbox gapStop.epoch identity.generation identity.vm⟩, gapStop.attempt⟩ }
+def gapObservation : Observation :=
+  SourceTerminalMatchValues.make SourceWorkMatch.Values.digest SourceWorkMatch.Values.digest
+    sealAction gapStopAction saved.work.requirement.source captured.worker slot
+
+theorem represented : Representable saved := by
+  intro value present
+  have same : captured = value := Option.some.inj present
+  subst value
+  exact SourceFullBindingValues.represented
+
+theorem full_bound : FullBound saved captured.full := by
+  change SourceFullBindingModel.outcome SourceFullBindingValues.saved SourceFullBindingValues.full = .ok (.Ok ())
+  have normal := SourceFullBindingValues.normal
+  rw [SourceFullBindingProof.actual_contract _ _ SourceFullBindingValues.represented] at normal
+  exact normal
+
+theorem identity_outcome : identityOutcome saved = .Ok identity := by
+  classical
+  unfold identityOutcome
+  simp only [show saved.capture = some captured from rfl]
+  rw [if_pos full_bound]
+  change (if SourceSealEndModel.checks saved sealAction 1#u64 1#u64 101#u64 5#u64 then
+    (core.result.Result.Ok identity : core.result.Result Identity Journal) else .Err .CorruptStore) = .Ok identity
+  have checks : SourceSealEndModel.checks saved sealAction 1#u64 1#u64 101#u64 5#u64 :=
+    ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+  simp [checks]
+
+theorem normal_checks : StopChecks saved sealAction identity stop stopAction slot := by
+  have different : stop.operation ≠ identity.key := by
+    intro equal
+    have same := congrArg (fun key : sandbox_controller_core.model.OperationKey => key.operation) equal
+    change (4#u64) = 2#u64 at same
+    exact (by decide : (4#u64) ≠ 2#u64) same
+  exact ⟨rfl, rfl, different, by decide, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem normal_assembly_outcome : assembleOutcome saved stop stopAction slot = .Ok expected := by
+  simp [assembleOutcome, identity_outcome, show saved.capture = some captured from rfl,
+    show captured.action = some sealAction from rfl, normal_checks, expected]
+
+theorem normal :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      saved stop observation = .ok (.Ok expected) := by
+  rw [SourceSavedQuestionProof.actual_contract saved stop observation represented]
+  simp [outcome, observation, SourceTerminalMatchValues.make,
+    (by decide : (11#u64) ≠ 0#u64), normal_assembly_outcome]
+
+theorem gap_checks : StopChecks saved sealAction identity gapStop gapStopAction slot := by
+  exact ⟨rfl, rfl, normal_checks.2.2.1, by decide,
+    rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem gap_normal :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      saved gapStop gapObservation =
+      .ok (.Ok { expected with stop_action := gapStopAction, stop := gapStop }) := by
+  rw [SourceSavedQuestionProof.actual_contract saved gapStop gapObservation represented]
+  simp [outcome, gapObservation, SourceTerminalMatchValues.make, (by decide : (11#u64) ≠ 0#u64),
+    assembleOutcome, identity_outcome, show saved.capture = some captured from rfl,
+    show captured.action = some sealAction from rfl, gap_checks, expected]
+
+theorem old_checks_rejected : ¬StopChecks saved sealAction identity oldStop oldStopAction slot := by
+  intro accepted
+  have impossible : (1 : Nat) < 1 := accepted.2.2.2.1
+  omega
+
+theorem actual_old_epoch_rejected :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      saved oldStop oldObservation = .ok (.Err .CorruptStore) := by
+  rw [SourceSavedQuestionProof.actual_contract saved oldStop oldObservation represented]
+  simp [outcome, oldObservation, SourceTerminalMatchValues.make, (by decide : (11#u64) ≠ 0#u64),
+    assembleOutcome, identity_outcome, show saved.capture = some captured from rfl,
+    show captured.action = some sealAction from rfl, old_checks_rejected]
+
+theorem zero_inode_precedes_full_conflict :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      conflictBeforeAction stop zeroInode = .ok (.Err .CorruptStore) := by
+  apply SourceSavedQuestionProof.zero_inode_first
+  rfl
+
+theorem conflict_represented : Representable conflictBeforeAction := by
+  intro value present
+  have same : { captured with full := SourceFullWorkGuardValues.emptyState, action := none } = value :=
+    Option.some.inj present
+  subst value
+  exact SourceFullWorkGuardValues.empty_state_representable
+
+theorem conflict_not_bound : ¬FullBound conflictBeforeAction SourceFullWorkGuardValues.emptyState := by
+  have computed := SourceFullBindingProof.invalid_full_rejected conflictBeforeAction
+    SourceFullWorkGuardValues.emptyState SourceFullWorkGuardValues.empty_state_representable
+    SourceFullWorkGuardValues.empty_state_rejected_by_same_contract
+  rw [SourceFullBindingProof.actual_contract _ _ SourceFullWorkGuardValues.empty_state_representable] at computed
+  intro promised
+  unfold FullBound at promised
+  rw [computed] at promised
+  simp at promised
+
+theorem actual_full_conflict_before_missing_action :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      conflictBeforeAction stop observation = .ok (.Err .Conflict) := by
+  have identityBad : identityOutcome conflictBeforeAction = .Err .Conflict := by
+    classical
+    change (if FullBound conflictBeforeAction SourceFullWorkGuardValues.emptyState then
+      (core.result.Result.Err .UnresolvedAction : core.result.Result Identity Journal) else .Err .Conflict) = .Err .Conflict
+    simp [conflict_not_bound]
+  rw [SourceSavedQuestionProof.actual_contract conflictBeforeAction stop observation conflict_represented]
+  simp [outcome, observation, SourceTerminalMatchValues.make, (by decide : (11#u64) ≠ 0#u64),
+    assembleOutcome, identityBad]
+
+theorem missing_action_represented : Representable missingAction := by
+  intro value present
+  have same : { captured with action := none } = value := Option.some.inj present
+  subst value
+  exact SourceFullBindingValues.represented
+
+theorem actual_missing_action_after_full :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      missingAction stop observation = .ok (.Err .UnresolvedAction) := by
+  have bound : FullBound missingAction captured.full := full_bound
+  have identityBad : identityOutcome missingAction = .Err .UnresolvedAction := by
+    classical
+    change (if FullBound missingAction captured.full then (core.result.Result.Err .UnresolvedAction : core.result.Result Identity Journal) else .Err .Conflict) =
+      .Err .UnresolvedAction
+    simp [bound]
+  rw [SourceSavedQuestionProof.actual_contract missingAction stop observation missing_action_represented]
+  simp [outcome, observation, SourceTerminalMatchValues.make, (by decide : (11#u64) ≠ 0#u64),
+    assembleOutcome, identityBad]
+
+theorem non_seal_represented : Representable nonSeal := by
+  intro value present
+  have same : { captured with action := some SourceRequestEndMatchValues.action } = value :=
+    Option.some.inj present
+  subst value
+  exact SourceFullBindingValues.represented
+
+theorem actual_non_seal_rejected :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      nonSeal stop observation = .ok (.Err .CorruptStore) := by
+  have bound : FullBound nonSeal captured.full := full_bound
+  have identityBad : identityOutcome nonSeal = .Err .CorruptStore := by
+    classical
+    change (if FullBound nonSeal captured.full then (core.result.Result.Err .CorruptStore : core.result.Result Identity Journal) else .Err .Conflict) = .Err .CorruptStore
+    simp [bound]
+  rw [SourceSavedQuestionProof.actual_contract nonSeal stop observation non_seal_represented]
+  simp [outcome, observation, SourceTerminalMatchValues.make, (by decide : (11#u64) ≠ 0#u64),
+    assembleOutcome, identityBad]
+
+end SandboxModel.Stage1Protocol.SourceSavedQuestionValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.represented
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.full_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.identity_outcome
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.normal_checks
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.normal_assembly_outcome
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.gap_checks
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.gap_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.old_checks_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.actual_old_epoch_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.zero_inode_precedes_full_conflict
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.conflict_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.conflict_not_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.actual_full_conflict_before_missing_action
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.missing_action_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.actual_missing_action_after_full
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.non_seal_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionValues.actual_non_seal_rejected

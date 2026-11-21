@@ -1,0 +1,438 @@
+import SourceSavedQuestionView
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes SourceTerminalMatchTypes SourceSavedQuestionModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceSavedQuestionProof
+noncomputable section
+local instance proofDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem full_binding_refines (record : Record) (full : Full)
+    (represented : SourceFullBindingModel.Representable full) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.validate.full_binding record full =
+      SourceFullBindingModel.outcome record full := SourceFullBindingProof.actual_contract record full represented
+
+theorem full_binding_result (record : Record) (full : Full)
+    (represented : SourceFullBindingModel.Representable full) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.validate.full_binding record full =
+      .ok (if FullBound record full then .Ok () else .Err .Conflict) := by
+  rw [full_binding_refines record full represented]
+  unfold FullBound SourceFullBindingModel.outcome
+  cases record.work.anchor.request.request.operation <;> simp
+  split_ifs <;> rfl
+
+theorem requirement_accessor (work : controller.lifecycle_inbox.source_work.SourceWork) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.SourceWork.impl.requirement work =
+      .ok work.requirement := SourcePriorEndMatchProof.requirement_accessor work
+
+theorem command_accessor (action : sandbox_controller_core.model.EffectId) :
+    SourceSavedQuestionActual.sandbox_controller_core.model.EffectId.command action =
+      .ok action.logical.command := rfl
+
+theorem key_refines (record : Record) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.key record =
+      .ok (record.capture.map (fun captured =>
+        (⟨record.work.anchor.local.sandbox, captured.operation⟩ : sandbox_controller_core.model.OperationKey))) := by
+  unfold SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.key
+  cases found : record.capture <;>
+    simp [SourceSavedQuestionActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+      SourceSavedQuestionActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch,
+      SourceSavedQuestionActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual]
+
+theorem command_eq (a b : sandbox_controller_core.model.Command) :
+    SourceSavedQuestionActual.sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq a b =
+      .ok (decide (a = b)) := SourceWorkMatch.CoreEffects.command_eq a b
+
+theorem operation_key_eq (a b : sandbox_controller_core.model.OperationKey) :
+    SourceSavedQuestionActual.sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq a b =
+      .ok (decide (a = b)) := SourceWorkMatch.CoreData.operation_key_eq a b
+
+theorem wire_tenant_eq (a b : sandproof_protocol.TenantId) :
+    SourceSavedQuestionActual.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq a b =
+      .ok (decide (a = b)) := SourceWorkMatch.Scalars.wire_tenant_id_eq a b
+
+theorem wire_sandbox_eq (a b : sandproof_protocol.SandboxId) :
+    SourceSavedQuestionActual.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq a b =
+      .ok (decide (a = b)) := SourceWorkMatch.Scalars.wire_sandbox_id_eq a b
+
+theorem core_tenant_eq (a b : sandbox_controller_core.ids.TenantId) :
+    SourceSavedQuestionActual.sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq a b =
+      .ok (decide (a = b)) := SourceWorkMatch.Scalars.core_tenant_id_eq a b
+
+theorem core_sandbox_eq (a b : sandbox_controller_core.ids.SandboxId) :
+    SourceSavedQuestionActual.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq a b =
+      .ok (decide (a = b)) := SourceWorkMatch.Scalars.core_sandbox_id_eq a b
+
+theorem core_vm_eq (a b : sandbox_controller_core.ids.VmId) :
+    SourceSavedQuestionActual.sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq a b =
+      .ok (decide (a = b)) := SourceWorkMatch.Scalars.core_vm_id_eq a b
+
+theorem option_vm_eq (a b : Option sandbox_controller_core.ids.VmId) :
+    SourceSavedQuestionActual.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      SourceSavedQuestionActual.sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId a b =
+      .ok (decide (a = b)) := SourceWorkMatch.CoreEffects.optional_vm_eq a b
+
+theorem clone_action (action : Action) :
+    SourceSavedQuestionActual.sandproof_protocol.WorkAction.Insts.CoreCloneClone.clone
+      SourceSavedQuestionActual.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone action =
+      .ok action := SourceMaterialChargeProof.clone_work_action action
+
+theorem clone_full (full : Full) :
+    SourceSavedQuestionActual.capture.work.FullCaptureWorkRequest.Insts.CoreCloneClone.clone full =
+      .ok full := SourceMaterialChargeProof.clone_capture_full_capture_work_request full
+
+theorem clone_requirement (requirement : capture.source.SourceObservationRequirement) :
+    SourceSavedQuestionActual.capture.source.SourceObservationRequirement.Insts.CoreCloneClone.clone requirement =
+      .ok requirement := SourceMaterialChargeProof.clone_capture_source_observation_requirement requirement
+
+theorem clone_worker (worker : capture.launch.CaptureWorkerBinding) :
+    SourceSavedQuestionActual.capture.launch.CaptureWorkerBinding.Insts.CoreCloneClone.clone worker =
+      .ok worker := SourceMaterialChargeProof.clone_capture_capture_worker_binding worker
+
+theorem clone_optional_worker (worker : Option capture.launch.CaptureWorkerBinding) :
+    SourceSavedQuestionActual.core.option.Option.Insts.CoreCloneClone.clone
+      SourceSavedQuestionActual.capture.launch.CaptureWorkerBinding.Insts.CoreCloneClone worker = .ok worker := by
+  apply SourceMaterialChargeProof.clone_option
+  exact clone_worker
+
+theorem constructor_refines (id : Identity) (sealAction : Action) (full : Full)
+    (requirement : capture.source.SourceObservationRequirement)
+    (worker : Option capture.launch.CaptureWorkerBinding) (action : Action) (stop : Stop) (slot : Slot) :
+    SourceSavedQuestionActual.capture.terminated.TerminatedCaptureWorkRequest.from_source
+      id sealAction full requirement worker (action, stop) slot =
+      .ok (⟨id, sealAction, full, requirement, worker, action, stop, slot⟩ : Work) :=
+  SourceTerminalMatchProof.constructor_contract id sealAction full requirement worker (action, stop) slot
+
+theorem identity_actual_contract (record : Record) (represented : Representable record) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity record =
+      .ok (identityOutcome record) := by
+  unfold SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity identityOutcome
+  cases found : record.capture with
+  | none =>
+    simp [SourceSavedQuestionActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+      core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | some captured =>
+    simp only [SourceSavedQuestionActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+      bind_tc_ok, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch]
+    rw [full_binding_result record captured.full (represented captured found)]
+    simp only [bind_tc_ok]
+    by_cases bound : FullBound record captured.full
+    · simp only [bound, ↓reduceIte, bind_tc_ok]
+      cases actionFound : captured.action with
+      | none =>
+        simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | some action =>
+        simp only [bind_tc_ok]
+        rw [command_accessor]
+        simp only [bind_tc_ok]
+        cases command : action.command.logical.command <;> try rfl
+        rw [key_refines]
+        have scalarEqual (a b : U64) : a.val = b.val ↔ a = b :=
+          ⟨UScalar.eq_of_val_eq, fun same => congrArg UScalar.val same⟩
+        simp [found, SourceSealEndModel.checks,
+          core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+          core_sandbox_eq, option_vm_eq, scalarEqual]
+        simp only [SourceSealEndProof.check_pair]
+        split_ifs <;> rfl
+    · simp [bound, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+/-- The original parent returns before assembly; no representation, Full
+    validity, clone or constructor equation is needed for this branch. -/
+theorem zero_inode_first (record : Record) (stop : Stop) (observation : Observation)
+    (zero : match observation with
+      | .StoppedAndDrained _ _ _ _ _ _ _ _ inode => inode = 0#u64) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      record stop observation = .ok (.Err .CorruptStore) := by
+  cases observation with
+  | StoppedAndDrained wd fd sealAction action source worker slot device inode =>
+    change inode = 0#u64 at zero
+    simp [SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved, zero]
+
+/-- An original identity error propagates without any constructor or clone
+    law. This proves the actual early branch, not just the normative outcome. -/
+theorem assembly_identity_error (record : Record) (stop : Stop) (action : Action) (slot : Slot)
+    (error : Journal)
+    (failed : SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity
+      record = .ok (.Err error)) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.assemble
+      record stop action slot = .ok (.Err error) := by
+  unfold SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.assemble
+  rw [failed]
+  simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem from_saved_identity_error (record : Record) (stop : Stop) (observation : Observation)
+    (error : Journal)
+    (nonzero : match observation with
+      | .StoppedAndDrained _ _ _ _ _ _ _ _ inode => inode ≠ 0#u64)
+    (failed : SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity
+      record = .ok (.Err error)) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      record stop observation = .ok (.Err error) := by
+  cases observation with
+  | StoppedAndDrained wd fd sealAction action source worker slot device inode =>
+    change inode ≠ 0#u64 at nonzero
+    unfold SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+    simp only [nonzero, ↓reduceIte]
+    exact assembly_identity_error record stop action slot error failed
+
+theorem assembly_actual_contract (record : Record) (stop : Stop) (action : Action) (slot : Slot)
+    (represented : Representable record) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.assemble
+      record stop action slot = .ok (assembleOutcome record stop action slot) := by
+  unfold SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.assemble assembleOutcome
+  rw [identity_actual_contract record represented]
+  simp only [bind_tc_ok]
+  cases identityFound : identityOutcome record with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok id =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok,
+      SourceSavedQuestionActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+      core.option.Option.ok_or]
+    cases captureFound : record.capture with
+    | none =>
+      simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | some captured =>
+      simp only [bind_tc_ok]
+      cases actionFound : captured.action with
+      | none =>
+        simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | some sealAction =>
+        simp only [bind_tc_ok]
+        rw [command_accessor]
+        simp only [bind_tc_ok, clone_action, clone_full, requirement_accessor, clone_requirement,
+          clone_optional_worker, constructor_refines]
+        simp only [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+          command_eq, operation_key_eq, wire_tenant_eq, wire_sandbox_eq,
+          core_tenant_eq, core_sandbox_eq, core_vm_eq, bind_tc_ok]
+        have scalarEqual (a b : U64) : a.val = b.val ↔ a = b :=
+          ⟨UScalar.eq_of_val_eq, fun same => congrArg UScalar.val same⟩
+        by_cases accepted : StopChecks record sealAction id stop action slot
+        · simp only [accepted, ↓reduceIte]
+          rcases accepted with ⟨sameCommand, sameSandbox, differentKey, newer, commandAttempt,
+            identityAttempt, sameEpoch, sameGeneration, sameOwner, samePublicSandbox,
+            slotOwner, slotSandbox, slotGeneration, slotVm⟩
+          have afterEpoch : ¬stop.epoch.val ≤ id.epoch.val := by omega
+          simp [sameCommand, sameSandbox, differentKey, afterEpoch, commandAttempt,
+            identityAttempt, sameEpoch, sameGeneration, sameOwner, samePublicSandbox,
+            slotOwner, slotSandbox, slotGeneration, slotVm]
+        · simp only [accepted, ↓reduceIte]
+          simp only [StopChecks] at accepted
+          simp [scalarEqual]
+          intro sameCommand sameSandbox differentKey newer commandAttempt identityAttempt
+            sameEpoch sameGeneration sameOwner samePublicSandbox slotOwner slotSandbox
+            slotGeneration sameVm
+          apply accepted
+          exact ⟨sameCommand, sameSandbox, differentKey, newer, commandAttempt, identityAttempt,
+            sameEpoch, sameGeneration, sameOwner, samePublicSandbox, slotOwner, slotSandbox,
+            slotGeneration, UScalar.eq_of_val_eq sameVm⟩
+
+theorem actual_contract (record : Record) (stop : Stop) (observation : Observation)
+    (represented : Representable record) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      record stop observation = outcome record stop observation := by
+  cases observation with
+  | StoppedAndDrained wd fd sealAction action source worker slot device inode =>
+    unfold SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved outcome
+    by_cases zero : inode = 0#u64
+    · simp [zero]
+    · simp only [zero, ↓reduceIte]
+      exact assembly_actual_contract record stop action slot represented
+
+theorem complete_identity_contract :
+    IdentityContract SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity :=
+  identity_actual_contract
+
+theorem complete_assembly_contract :
+    AssemblyContract SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.assemble :=
+  assembly_actual_contract
+
+theorem complete_contract :
+    Contract SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved :=
+  actual_contract
+
+theorem missing_capture_identity (record : Record) (missing : record.capture = none) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity record =
+      .ok (.Err .CorruptStore) := by
+  simp [SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity,
+    SourceSavedQuestionActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, missing,
+    core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem missing_capture_from_saved (record : Record) (stop : Stop) (observation : Observation)
+    (missing : record.capture = none) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      record stop observation = .ok (.Err .CorruptStore) := by
+  cases observation with
+  | StoppedAndDrained wd fd sealAction action source worker slot device inode =>
+    unfold SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+    by_cases zero : inode = 0#u64
+    · simp [zero]
+    · simp only [zero, ↓reduceIte]
+      exact assembly_identity_error record stop action slot .CorruptStore
+        (missing_capture_identity record missing)
+
+theorem full_conflict_before_action (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (represented : Representable record) (found : record.capture = some captured)
+    (invalid : ¬FullBound record captured.full) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity record =
+      .ok (.Err .Conflict) := by
+  rw [identity_actual_contract record represented]
+  simp [identityOutcome, found, invalid]
+
+theorem from_saved_full_conflict_before_action (record : Record) (stop : Stop) (observation : Observation)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (represented : Representable record) (found : record.capture = some captured)
+    (invalid : ¬FullBound record captured.full)
+    (nonzero : match observation with
+      | .StoppedAndDrained _ _ _ _ _ _ _ _ inode => inode ≠ 0#u64) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      record stop observation = .ok (.Err .Conflict) :=
+  from_saved_identity_error record stop observation .Conflict nonzero
+    (full_conflict_before_action record captured represented found invalid)
+
+theorem missing_action_after_full (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (represented : Representable record) (found : record.capture = some captured)
+    (valid : FullBound record captured.full) (missing : captured.action = none) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity record =
+      .ok (.Err .UnresolvedAction) := by
+  rw [identity_actual_contract record represented]
+  simp [identityOutcome, found, valid, missing]
+
+theorem failed_seal_identity (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (action : Action)
+    (represented : Representable record) (found : record.capture = some captured)
+    (valid : FullBound record captured.full) (present : captured.action = some action)
+    (sandbox : sandbox_controller_core.ids.SandboxId) (epoch generation : U64)
+    (vm : sandbox_controller_core.ids.VmId) (workspace : sandbox_controller_core.ids.FsId)
+    (snapshot : sandbox_controller_core.ids.SnapshotId) (manifest : sandbox_controller_core.model.SnapshotManifestRef)
+    (command : action.command.logical.command =
+      .SealSnapshot sandbox epoch generation vm workspace snapshot manifest)
+    (invalid : ¬SourceSealEndModel.checks record action sandbox epoch generation vm) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity record =
+      .ok (.Err .CorruptStore) := by
+  rw [identity_actual_contract record represented]
+  simp [identityOutcome, found, valid, present, command, invalid]
+
+/-- No Full representation, clone or constructor law is used after the given
+    actual identity result. A bad original Stop/slot guard returns before the
+    actual constructor suffix, which remains unexpanded in this proof. -/
+theorem bad_stop_before_constructor (record : Record) (stop : Stop) (action : Action) (slot : Slot)
+    (id : Identity) (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (sealAction : Action)
+    (ready : SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity
+      record = .ok (.Ok id))
+    (found : record.capture = some captured) (present : captured.action = some sealAction)
+    (rejected : ¬StopChecks record sealAction id stop action slot) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.assemble
+      record stop action slot = .ok (.Err .CorruptStore) := by
+  unfold SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.assemble
+  rw [ready]
+  simp only [bind_tc_ok, core.result.Result.Insts.CoreOpsTry.branch,
+    SourceSavedQuestionActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+    found, present, core.option.Option.ok_or]
+  rw [command_accessor]
+  simp only [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    command_eq, operation_key_eq, wire_tenant_eq, wire_sandbox_eq,
+    core_tenant_eq, core_sandbox_eq, core_vm_eq, bind_tc_ok]
+  have scalarEqual (a b : U64) : a.val = b.val ↔ a = b :=
+    ⟨UScalar.eq_of_val_eq, fun same => congrArg UScalar.val same⟩
+  simp only [StopChecks] at rejected
+  simp [scalarEqual]
+  intro sameCommand sameSandbox differentKey newer commandAttempt identityAttempt
+    sameEpoch sameGeneration sameOwner samePublicSandbox slotOwner slotSandbox
+    slotGeneration sameVm
+  exact False.elim (rejected ⟨sameCommand, sameSandbox, differentKey, newer, commandAttempt,
+    identityAttempt, sameEpoch, sameGeneration, sameOwner, samePublicSandbox, slotOwner,
+    slotSandbox, slotGeneration, sameVm⟩)
+
+theorem failed_result_contains_no_request (record : Record) (stop : Stop) (observation : Observation)
+    (error : Journal)
+    (failed : SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      record stop observation = .ok (.Err error)) :
+    ¬∃ work, SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      record stop observation = .ok (.Ok work) := by
+  rintro ⟨work, accepted⟩
+  rw [failed] at accepted
+  simp at accepted
+
+theorem assembly_accepts_iff_complete (record : Record) (stop : Stop) (action : Action) (slot : Slot)
+    (work : Work) (represented : Representable record) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.assemble
+      record stop action slot = .ok (.Ok work) ↔
+      ∃ id captured sealAction,
+        identityOutcome record = .Ok id ∧ record.capture = some captured ∧
+        captured.action = some sealAction ∧ StopChecks record sealAction id stop action slot ∧
+        work = ⟨id, sealAction, captured.full, record.work.requirement, captured.worker, action, stop, slot⟩ := by
+  rw [assembly_actual_contract record stop action slot represented]
+  unfold assembleOutcome
+  cases identityFound : identityOutcome record with
+  | Err error => simp
+  | Ok id =>
+    cases captureFound : record.capture with
+    | none => simp
+    | some captured =>
+      cases actionFound : captured.action with
+      | none => simp [actionFound]
+      | some sealAction =>
+        by_cases checked : StopChecks record sealAction id stop action slot
+        all_goals simp [actionFound, checked, eq_comm]
+
+/-- Six observation fields are unread by the actual saved-question parent.
+    The same stop action, host slot and inode determine its entire result. -/
+theorem ignored_observation_fields (record : Record) (stop : Stop) (action : Action) (slot : Slot)
+    (inode deviceA deviceB : U64) (workA workB fullA fullB : SourceTerminalMatchModel.Digest)
+    (sealA sealB : Action) (sourceA sourceB : capture.SourceProcessIdentity)
+    (workerA workerB : Option capture.launch.CaptureWorkerBinding) :
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      record stop (.StoppedAndDrained workA fullA sealA action sourceA workerA slot deviceA inode) =
+    SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      record stop (.StoppedAndDrained workB fullB sealB action sourceB workerB slot deviceB inode) := rfl
+
+end
+end SandboxModel.Stage1Protocol.SourceSavedQuestionProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.full_binding_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.full_binding_result
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.requirement_accessor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.command_accessor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.key_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.command_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.operation_key_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.wire_tenant_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.wire_sandbox_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.core_tenant_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.core_sandbox_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.core_vm_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.option_vm_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.clone_action
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.clone_full
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.clone_requirement
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.clone_worker
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.clone_optional_worker
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.constructor_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.identity_actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.zero_inode_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.assembly_identity_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.from_saved_identity_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.assembly_actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.complete_identity_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.complete_assembly_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.missing_capture_identity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.missing_capture_from_saved
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.full_conflict_before_action
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.from_saved_full_conflict_before_action
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.missing_action_after_full
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.failed_seal_identity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.bad_stop_before_constructor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.failed_result_contains_no_request
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.assembly_accepts_iff_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionProof.ignored_observation_fields

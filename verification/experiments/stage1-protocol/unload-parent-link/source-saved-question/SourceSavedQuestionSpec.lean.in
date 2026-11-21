@@ -1,0 +1,97 @@
+import SourceFullBindingValues
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceSavedQuestionModel
+noncomputable section
+local instance specDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev Record := SourceFullBindingModel.Record
+abbrev Full := SourceFullBindingModel.Full
+abbrev Action := SourceTerminalMatchModel.Action
+abbrev Identity := SourceTerminalMatchModel.Identity
+abbrev Stop := SourceTerminalMatchModel.Stop
+abbrev Slot := SourceTerminalMatchModel.Slot
+abbrev Observation := SourceTerminalMatchModel.Observation
+abbrev Work := SourceTerminalMatchModel.Work
+abbrev Journal := SourceFullBindingModel.Journal
+abbrev Reply := core.result.Result Work Journal
+
+/-- Same parent ordinary Rust/borrow domain for the Full that may be checked.
+    A missing capture is an input case, not an assumed business invariant. -/
+def Representable (record : Record) : Prop :=
+  ∀ captured, record.capture = some captured → SourceFullBindingModel.Representable captured.full
+
+/-- Reuse the complete parent outcome; no independent weak request model. -/
+def FullBound (record : Record) (full : Full) : Prop :=
+  SourceFullBindingModel.outcome record full = .ok (.Ok ())
+
+/-- Ordered identity errors. Successful fields come from the original sealAction
+    command and original capture operation, not the supplied observation. -/
+def identityOutcome (record : Record) : core.result.Result Identity Journal :=
+  match record.capture with
+  | none => .Err .CorruptStore
+  | some captured =>
+    if FullBound record captured.full then
+      match captured.action with
+      | none => .Err .UnresolvedAction
+      | some action =>
+        match action.command.logical.command with
+        | .SealSnapshot sandbox epoch generation vm _ _ _ =>
+          if SourceSealEndModel.checks record action sandbox epoch generation vm then
+            .Ok ⟨⟨record.work.anchor.local.sandbox, captured.operation⟩, epoch, generation, vm⟩
+          else .Err .CorruptStore
+        | _ => .Err .CorruptStore
+    else .Err .Conflict
+
+/-- The fourteen original assembly comparisons. Strictly greater epochs may
+    contain gaps. Complete Stop command equality is distinct from all attempts,
+    public owner/sandbox comparisons and four local host binding comparisons. -/
+def StopChecks (record : Record) (sealAction : Action) (id : Identity) (stop : Stop)
+    (action : Action) (slot : Slot) : Prop :=
+  action.command.logical.command =
+    sandbox_controller_core.model.Command.StopVm id.key.sandbox stop.epoch id.generation id.vm ∧
+  stop.operation.sandbox = id.key.sandbox ∧ stop.operation ≠ id.key ∧
+  id.epoch.val < stop.epoch.val ∧
+  action.command.attempt = stop.attempt ∧ action.identity.attempt = stop.attempt ∧
+  action.identity.epoch = stop.epoch ∧ action.identity.generation = id.generation ∧
+  action.identity.owner = sealAction.identity.owner ∧ action.identity.sandbox = sealAction.identity.sandbox ∧
+  slot.binding.owner = record.work.anchor.local.owner ∧ slot.binding.sandbox = id.key.sandbox ∧
+  slot.binding.generation = id.generation ∧ slot.binding.vm = id.vm
+
+/-- An exact ordinary value result. Success retains all supplied stop/slot
+    fields and all original saved Full/source/worker/action fields. -/
+def assembleOutcome (record : Record) (stop : Stop) (action : Action) (slot : Slot) : Reply :=
+  match identityOutcome record with
+  | .Err error => .Err error
+  | .Ok id =>
+    match record.capture with
+    | none => .Err .CorruptStore
+    | some captured =>
+      match captured.action with
+      | none => .Err .CorruptStore
+      | some sealAction =>
+        if StopChecks record sealAction id stop action slot then
+          .Ok ⟨id, sealAction, captured.full, record.work.requirement, captured.worker, action, stop, slot⟩
+        else .Err .CorruptStore
+
+/-- Only inode, stop_action and host_slot are read from the observation here.
+    The original observation matcher is a separate already proved component. -/
+def outcome (record : Record) (stop : Stop) (observation : Observation) : Result Reply :=
+  match observation with
+  | .StoppedAndDrained _ _ _ action _ _ slot _ inode =>
+    .ok (if inode = 0#u64 then .Err .CorruptStore else assembleOutcome record stop action slot)
+
+def IdentityContract
+    (root : Record → Result (core.result.Result Identity Journal)) : Prop :=
+  ∀ record, Representable record → root record = .ok (identityOutcome record)
+
+def AssemblyContract (root : Record → Stop → Action → Slot → Result Reply) : Prop :=
+  ∀ record stop action slot, Representable record →
+    root record stop action slot = .ok (assembleOutcome record stop action slot)
+
+def Contract (root : Record → Stop → Observation → Result Reply) : Prop :=
+  ∀ record stop observation, Representable record → root record stop observation = outcome record stop observation
+
+end
+end SandboxModel.Stage1Protocol.SourceSavedQuestionModel
