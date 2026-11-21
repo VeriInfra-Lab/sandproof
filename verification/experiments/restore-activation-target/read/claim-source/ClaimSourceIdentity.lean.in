@@ -1,0 +1,133 @@
+import PermitReadSelection
+
+open Aeneas Aeneas.Std SandproofRestoreSourceQueryRust
+open SandproofRestoreSourceQueryRust.controller.lifecycle_inbox.source_work
+open SandproofRestoreSourceQueryRust.sandproof_protocol.lifecycle
+open SandboxModel.Stage1Protocol.RestoreActivationTarget
+
+namespace SandboxModel.Stage1Protocol.RestoreActivationTarget
+
+private abbrev Validation := Result (core.result.Result Unit JournalError)
+
+private theorem continue_after_rejection_test (test : Result Bool) (rest : Validation)
+    (success : (do
+      let rejected ← test
+      if rejected then .ok (core.result.Result.Err JournalError.CorruptStore) else rest) = .ok (.Ok ())) :
+    test = .ok false ∧ rest = .ok (.Ok ()) := by
+  cases test with
+  | ret value => cases value <;> simp_all
+  | div => simp at success
+  | vis => simp at success
+
+private theorem incarnation_eq (old expected : identity.IncarnationId) :
+    identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq old expected =
+      .ok (decide (old = expected)) := by
+  simp [identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq,
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq]
+
+private theorem capture_eq (old expected : identity.CaptureId) :
+    identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq old expected =
+      .ok (decide (old = expected)) := by
+  simp [identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq,
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq]
+
+private theorem session_ne (current original : identity.SessionId) :
+    core.cmp.PartialEq.ne.trait_default identity.SessionId.Insts.CoreCmpPartialEqSessionId current original =
+      .ok (decide (current ≠ original)) := by
+  by_cases h : current = original <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+      sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+      alloc.string.String.Insts.CoreCmpPartialEqString.eq, h]
+
+/-- The production `matches!` expression, isolated with its original
+borrowed request and unchanged comparisons, accepts exactly the given Unload. -/
+theorem original_unload_guard_exact (original : ResumeIntent)
+    (source : identity.IncarnationId) (capture : identity.CaptureId) :
+    restore.proof_original_unload_guard original source capture =
+      .ok (by classical exact decide (original.request.operation = .Unload source capture)) := by
+  classical
+  unfold restore.proof_original_unload_guard
+  cases original.request.operation <;> simp [incarnation_eq, capture_eq]
+  case Unload old oldId =>
+    by_cases sameSource : old = source <;>
+      by_cases sameCapture : oldId = capture <;> simp [sameSource, sameCapture]
+
+/-- The successful original identity check reached after the material-use
+guard retains the row's anchored Unload and the selected Resume identity. -/
+theorem validated_claim_binds_original_unload
+    (record : SourceWorkRecord) (claim : restore.RestoreClaim)
+    (intent : ResumeIntent) (source : identity.IncarnationId) (capture : identity.CaptureId)
+    (target : identity.IncarnationId) (manifest : digest.ContentDigest)
+    (matched : claim.intent = intent)
+    (resume : intent.request.operation = .Resume source capture target manifest)
+    (success : restore.proof_validate_claim_source record claim = .ok (.Ok ())) :
+    record.work.anchor.request.request.operation = .Unload source capture ∧
+      record.work.anchor.request.request.binding.session = intent.request.binding.session := by
+  have claimResume : claim.intent.request.operation = .Resume source capture target manifest :=
+    (congrArg (fun (request : ResumeIntent) => request.request.operation) matched).trans resume
+  have shape :
+      record.work.anchor.request.request.operation = .Unload source capture := by
+    unfold restore.proof_validate_claim_source at success
+    cases captured : record.capture with
+    | none =>
+      simp [captured, core.option.Option.as_ref, core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at success
+    | some facts =>
+      simp only [captured, core.option.Option.as_ref, core.option.Option.ok_or, bind_tc_ok,
+        core.result.Result.Insts.CoreOpsTry.branch, claimResume, SourceWork.request] at success
+      by_contra mismatch
+      simp [original_unload_guard_exact, mismatch] at success
+  refine ⟨shape, ?_⟩
+  have sameSession :
+      claim.intent.request.binding.session = record.work.anchor.request.request.binding.session := by
+    unfold restore.proof_validate_claim_source at success
+    cases captured : record.capture with
+    | none =>
+      simp [captured, core.option.Option.as_ref, core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at success
+    | some facts =>
+      simp only [captured, core.option.Option.as_ref, core.option.Option.ok_or, bind_tc_ok,
+        core.result.Result.Insts.CoreOpsTry.branch, claimResume, SourceWork.request,
+        original_unload_guard_exact, shape, decide_true, ↓reduceIte] at success
+      have afterDigest := (continue_after_rejection_test _ _ success).2
+      generalize identity.IncarnationId.checked_next source = next at afterDigest
+      cases next with
+      | ret arithmetic =>
+        cases arithmetic <;>
+          simp only [bind_tc_ok, core.result.Result.ok] at afterDigest <;>
+          have nextAccepted := (continue_after_rejection_test _ _ afterDigest).2 <;>
+          have sessionAccepted := (continue_after_rejection_test _ _ nextAccepted).1 <;>
+          simpa [session_ne] using sessionAccepted
+      | div => simp at afterDigest
+      | vis => simp at afterDigest
+  exact sameSession.symm.trans (congrArg (fun (request : ResumeIntent) => request.request.binding.session) matched)
+
+/-- Discharge the identity part of the query consumer's claimCapture premise
+for any row whose genuine identity cut succeeds on its own saved marker. -/
+theorem selected_query_row_has_original_capture
+    (row : SourceWorkRecord) (intent : ResumeIntent)
+    (source : identity.IncarnationId) (capture : identity.CaptureId)
+    (target : identity.IncarnationId) (manifest : digest.ContentDigest)
+    (resume : intent.request.operation = .Resume source capture target manifest)
+    (hit : matchesRestoreIntent intent row = true)
+    (validated : ∀ claim, row.restore = some claim →
+      restore.proof_validate_claim_source row claim = .ok (.Ok ())) :
+    (match row.work.anchor.request.request.operation with
+      | .Unload _ id => some id
+      | _ => none) = some capture := by
+  cases saved : row.restore with
+  | none => simp [matchesRestoreIntent, saved] at hit
+  | some claim =>
+    have matched : claim.intent = intent := by simpa [matchesRestoreIntent, saved] using hit
+    have original := (validated_claim_binds_original_unload row claim intent source capture target manifest
+      matched resume (validated claim saved)).1
+    simp [original]
+
+end SandboxModel.Stage1Protocol.RestoreActivationTarget
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.original_unload_guard_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.validated_claim_binds_original_unload
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.selected_query_row_has_original_capture

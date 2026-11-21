@@ -180,6 +180,7 @@ work 沿用 #766 的生成类型和原克隆合同，事务边界按 #770 的
 取回原依赖。每次装载都重新核对原生成文件与外部接口模板的 SHA-256。
 读取事务和 work 两个生成入口来自同一固定 Rust 源码，身份视图另保留其真实 journal 和事务类型。
 [原收据索引](read/original-receipts.json)保留各自的执行身份和原始清单摘要。
+[G2 原 Unload 身份条件](read/claim-source/README.md)在同一查询行类型上补充 `claimCapture`。
 
 在证明机取回三个固定 Git 对象，使用项目已核准的重任务锁、离线 Cargo 缓存和 Lean 服务。
 `A_QUERY_GENERATED` 指向 A 的已封口 `--source-query` 运行下的

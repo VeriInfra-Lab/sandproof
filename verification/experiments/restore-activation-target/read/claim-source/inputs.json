@@ -1,0 +1,51 @@
+{
+  "source_commit": "1b15872a07568f9f34aad514a64673ac328c7ee8",
+  "source_tree": "42b4f7fda5df6c10c9310f78b9edec6bbb98048a",
+  "query_provider": "c05bac6a83b9d102a75060f0769a81ca9058d9e6",
+  "ordinary_receipt_commit": "752781a09bcbfa7ade6c2095b720106dd203a389",
+  "inventory_sha256": "9f7b2ace48a2d3b12ffab1ea5803f9c6ac6294ff3e19af83d543a8d0ddb5d287",
+  "proof_sha256": "4c228b5dbf61534219de81fab24deb68cd901f42516d6b6e2fc00e50209bf736",
+  "service_sha256": "695c5e723ddfa26993893ee6585003e472b0f0464986d496a5eabe84b84d7839",
+  "checked_service_files": 6,
+  "standard_dependency_audits": 3,
+  "full_original_validator": {
+    "charon_exit": 0,
+    "aeneas_exit": 2,
+    "first_external_failure": "serde_core 1.0.228 src/ser/mod.rs:1220\u20131224, input argument type",
+    "first_identity_failure": "controller-service/src/controller/lifecycle_inbox/source_work/restore.rs:86:94\u2013161, pattern-guard borrow-context merge",
+    "llbc_sha256": "2092dfe2cc7c155b112d2b618f9c032b4f6442c783d7c423602a15cd47e1f02e"
+  },
+  "exact_guard_shared_query_cut": {
+    "charon_exit": 0,
+    "aeneas_exit": 0,
+    "llbc_sha256": "2ffff634d0a63888f17cc4359d55fab41c159a664407aa22b8f441a20ce59cf8",
+    "theorems": [
+      "original_unload_guard_exact",
+      "validated_claim_binds_original_unload",
+      "selected_query_row_has_original_capture"
+    ],
+    "generated": {
+      "Funs.lean": "7ae0aae7127896eea4cd37592fb02efaec101008581c29d5034462889e6105df",
+      "FunsExternal_Template.lean": "6f1aed2a1919df645a2015520516aa25bb1dc08eafe2967495811dc9b91793de",
+      "Types.lean": "b28f4a5ce617a83cb68d9cbbb7fd53f73348ade690b6ff5b647db9db060e2ac6",
+      "TypesExternal_Template.lean": "8ca8c6712c493731c6b4d621445f40d4516cbf16452910e23d3036e8d58f8058"
+    }
+  },
+  "native_parity": {
+    "run_exit": 0,
+    "native_tests": 1,
+    "cases": [
+      "valid row selected by full intent equality",
+      "changed anchored session",
+      "changed anchored source incarnation",
+      "changed anchored capture",
+      "changed anchored operation kind"
+    ],
+    "log_sha256": "adbde5f83de2c4f0a6c64fca9302f45d93aea57bfab0cd741879c8c3655f64bb",
+    "fixture_sha256": "f5666ddcaf7eeb28ff29b3f9ed0862e6942958cda6371acf8131fcb91d9798bb"
+  },
+  "original_prefix_sha256": "6ed815fdf46230f5e6c18f90e3db0e6d7d8f7746f27af7be8af936a8e94ebb1a",
+  "staged_prefix_sha256": "aa0e036e88d43f4cb1ad5758f2c5e213ee0f8f42836187a37ab6ddae2eff105b",
+  "guard_sha256": "073f0b921c9b147e9b531446fdd7bcf25a2786b31f973cf0bb20f31d8605932c",
+  "bound_funs_external_sha256": "8131dbd0057fbae57064d15953c029a53793f64204ad97ac5ec76a003394a90a"
+}

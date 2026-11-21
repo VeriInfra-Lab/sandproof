@@ -1,0 +1,62 @@
+use super::*;
+
+#[test]
+fn original_validator_and_extracted_cut_bind_the_original_unload() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, _) = unloaded_resume_source(&dir.path().join("db"));
+    let request = record_real_resume(&mut journal);
+    admit_real_resume(&mut journal, &request);
+    let world = journal.world().unwrap();
+    let row = codec::load(&journal.journal.connection)
+        .unwrap()
+        .unwrap()
+        .records
+        .into_iter()
+        .find(|row| {
+            row.restore
+                .as_ref()
+                .is_some_and(|claim| claim.intent == request)
+        })
+        .expect("original admitted Resume row");
+    let claim = row.restore.as_ref().unwrap();
+    assert_eq!(claim.intent, request);
+
+    restore::validate_record(&row, &world).unwrap();
+    restore::proof_validate_claim_source(&row, claim).unwrap();
+
+    let mut changed_session = row.clone();
+    changed_session.work.anchor.request.request.binding.session =
+        "different-session".try_into().unwrap();
+
+    let mut changed_source = row.clone();
+    let LifecycleOperation::Unload {
+        source_incarnation, ..
+    } = &mut changed_source.work.anchor.request.request.operation
+    else {
+        panic!("original source is Unload");
+    };
+    *source_incarnation = source_incarnation.checked_next().unwrap();
+
+    let mut changed_capture = row.clone();
+    let LifecycleOperation::Unload { capture, .. } =
+        &mut changed_capture.work.anchor.request.request.operation
+    else {
+        panic!("original source is Unload");
+    };
+    *capture = capture.checked_next().unwrap();
+
+    let mut changed_kind = row;
+    changed_kind.work.anchor.request.request.operation = LifecycleOperation::Destroy {};
+    for changed in [changed_session, changed_source, changed_capture, changed_kind] {
+        let claim = changed.restore.as_ref().unwrap();
+        assert_eq!(claim.intent, request);
+        assert!(matches!(
+            restore::validate_record(&changed, &world),
+            Err(JournalError::CorruptStore)
+        ));
+        assert!(matches!(
+            restore::proof_validate_claim_source(&changed, claim),
+            Err(JournalError::CorruptStore)
+        ));
+    }
+}
