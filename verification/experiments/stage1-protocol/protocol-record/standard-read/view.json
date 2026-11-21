@@ -4,8 +4,8 @@
   "files": {
     "SandboxModel/Lifecycle/Protocol/StandardRecordReads.lean": {
       "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/StandardRecordReads.lean.in",
-      "source_sha256": "2fd16c70ac641f7dacc227548ec72d2b9532f3cbd3ffa4e91898055c807d5ca6",
-      "sha256": "2fd16c70ac641f7dacc227548ec72d2b9532f3cbd3ffa4e91898055c807d5ca6"
+      "source_sha256": "52a2e2c82d6d71f094d9a22e713b2e93cbd4f5c0e08b5cdfe1bda46edac148eb",
+      "sha256": "52a2e2c82d6d71f094d9a22e713b2e93cbd4f5c0e08b5cdfe1bda46edac148eb"
     },
     "SandboxModel/ProofAuditCommand.lean": {
       "source": "SandboxModel/ProofAuditCommand.lean",
@@ -118,25 +118,15 @@
         ]
       ]
     },
-    "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Funs.lean": {
-      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Funs.lean",
-      "source_sha256": "c57b890e1f5eee5827316279b76e4cf8d7f8f16b34c6f5bf01015eb6f993a472",
-      "sha256": "c57b890e1f5eee5827316279b76e4cf8d7f8f16b34c6f5bf01015eb6f993a472"
-    },
     "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/FunsExternal.lean": {
       "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/FunsExternal.lean.in",
       "source_sha256": "22f828972faacc28c7ea4a124bdd76c757910cfc4026753605d678727662f9bc",
       "sha256": "22f828972faacc28c7ea4a124bdd76c757910cfc4026753605d678727662f9bc"
     },
-    "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Types.lean": {
-      "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Types.lean",
-      "source_sha256": "c3d0a193cba91a5aa663cb257ce7902162f2f4128afe49f0fa3eddff674f6e2f",
-      "sha256": "c3d0a193cba91a5aa663cb257ce7902162f2f4128afe49f0fa3eddff674f6e2f"
-    },
     "verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/TypesExternal.lean": {
       "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/TypesExternal.lean.in",
-      "source_sha256": "0750324493f8f67e15ef16b22f40ec7b766f8713b07cb2ad0cd7e8d814fe757c",
-      "sha256": "0750324493f8f67e15ef16b22f40ec7b766f8713b07cb2ad0cd7e8d814fe757c"
+      "source_sha256": "2dbebe8b05a1406603fbbe0e83ef064455dd615417fc341cc05d0f37b4e9d63b",
+      "sha256": "2dbebe8b05a1406603fbbe0e83ef064455dd615417fc341cc05d0f37b4e9d63b"
     },
     "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean": {
       "source": "verification/aeneas/sqlite-statements/SandproofSqliteStatements/TypesExternal.lean",
@@ -165,8 +155,8 @@
     },
     "tools/proof_services.py": {
       "source": "tools/proof_services.py",
-      "source_sha256": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
-      "sha256": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7"
+      "source_sha256": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",
+      "sha256": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892"
     },
     "scripts/lean-mcp-server.sh": {
       "source": "scripts/lean-mcp-server.sh",
@@ -175,8 +165,188 @@
     },
     "lakefile.toml": {
       "source": "verification/experiments/stage1-protocol/protocol-record/standard-read/view.toml.in",
-      "source_sha256": "4daadf2a4888e650811170edfa3ae72c784cff1d2977018e388fcbd498ec1ac3",
-      "sha256": "4daadf2a4888e650811170edfa3ae72c784cff1d2977018e388fcbd498ec1ac3"
+      "source_sha256": "58779fc3d2664d0aeda93a965f93607e85f690fdba305d641e9e8dc4764d9f1c",
+      "sha256": "58779fc3d2664d0aeda93a965f93607e85f690fdba305d641e9e8dc4764d9f1c"
+    },
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean": {
+      "source": "verification/aeneas/stage1-protocol/standard-blob/load/SandproofStage1Request/Types.lean",
+      "isolate": {
+        "isolated_sha256": "f5c72d53fe363e7fd7c2cf2bbfec40f0bc6f4c614c2ea3f8b69c220cf7940932",
+        "edits": [
+          {
+            "offset": 884,
+            "before": "@[discriminant isize, rust_type \"core::ops::range::Bound\"]\n",
+            "after": "@[rust_type \"core::ops::range::Bound\"]\n"
+          },
+          {
+            "offset": 1959,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::auxiliary::AuxiliaryReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::auxiliary::AuxiliaryReject\"]\n"
+          },
+          {
+            "offset": 3044,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::capture::continuation::CaptureReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::capture::continuation::CaptureReject\"]\n"
+          },
+          {
+            "offset": 4835,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::worker::WorkerReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::worker::WorkerReject\"]\n"
+          },
+          {
+            "offset": 6309,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::scheduler::SchedulerReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::scheduler::SchedulerReject\"]\n"
+          },
+          {
+            "offset": 8260,
+            "before": "@[discriminant isize, rust_type \"sandbox_controller_core::request::Reject\"]\n",
+            "after": "@[rust_type \"sandbox_controller_core::request::Reject\"]\n"
+          },
+          {
+            "offset": 9797,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::recovery_monitor::RuntimeReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::recovery_monitor::RuntimeReject\"]\n"
+          },
+          {
+            "offset": 10470,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::publication::PublicationReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::publication::PublicationReject\"]\n"
+          },
+          {
+            "offset": 12278,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::maintenance::windows::WindowReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::maintenance::windows::WindowReject\"]\n"
+          },
+          {
+            "offset": 13476,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::maintenance::slots::SlotReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::maintenance::slots::SlotReject\"]\n"
+          },
+          {
+            "offset": 14437,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::maintenance::retirement::RetirementReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::maintenance::retirement::RetirementReject\"]\n"
+          },
+          {
+            "offset": 16031,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::maintenance::MaintenanceReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::maintenance::MaintenanceReject\"]\n"
+          },
+          {
+            "offset": 17422,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::effect::EffectReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::effect::EffectReject\"]\n"
+          },
+          {
+            "offset": 19040,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::controller::ControllerReject\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::controller::ControllerReject\"]\n"
+          },
+          {
+            "offset": 23752,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::maintenance::retirement::QuiescenceStatus\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::maintenance::retirement::QuiescenceStatus\"]\n"
+          },
+          {
+            "offset": 26144,
+            "before": "@[discriminant isize, rust_type \"sandbox_controller_core::model::Phase\"]\n",
+            "after": "@[rust_type \"sandbox_controller_core::model::Phase\"]\n"
+          },
+          {
+            "offset": 28142,
+            "before": "@[discriminant isize, rust_type \"sandbox_controller_core::model::Protocol\"]\n",
+            "after": "@[rust_type \"sandbox_controller_core::model::Protocol\"]\n"
+          },
+          {
+            "offset": 29466,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::model::NetworkPolicy\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::model::NetworkPolicy\"]\n"
+          },
+          {
+            "offset": 30218,
+            "before": "@[discriminant isize, rust_type \"sandbox_controller_core::model::FailureKind\"]\n",
+            "after": "@[rust_type \"sandbox_controller_core::model::FailureKind\"]\n"
+          },
+          {
+            "offset": 30967,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::model::OperationKind\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::model::OperationKind\"]\n"
+          },
+          {
+            "offset": 31579,
+            "before": "@[discriminant isize, rust_type\n  \"sandbox_controller_core::model::OperationStatus\"]\n",
+            "after": "@[rust_type\n  \"sandbox_controller_core::model::OperationStatus\"]\n"
+          },
+          {
+            "offset": 32893,
+            "before": "@[discriminant isize, rust_type \"sandbox_controller_core::model::Command\"]\n",
+            "after": "@[rust_type \"sandbox_controller_core::model::Command\"]\n"
+          },
+          {
+            "offset": 41457,
+            "before": "@[discriminant isize, rust_type \"sandproof_controller_service::CrashPoint\"]\n",
+            "after": "@[rust_type \"sandproof_controller_service::CrashPoint\"]\n"
+          },
+          {
+            "offset": 42198,
+            "before": "@[discriminant isize, rust_type \"sandproof_controller_service::JournalError\"]\n",
+            "after": "@[rust_type \"sandproof_controller_service::JournalError\"]\n"
+          },
+          {
+            "offset": 47778,
+            "before": "@[discriminant isize, rust_type\n  \"sandproof_protocol::lifecycle::terminal::TerminalStatus\"]\n",
+            "after": "@[rust_type\n  \"sandproof_protocol::lifecycle::terminal::TerminalStatus\"]\n"
+          },
+          {
+            "offset": 50759,
+            "before": "@[discriminant isize, rust_type\n  \"sandproof_protocol::lifecycle::request::LifecycleOperation\"]\n",
+            "after": "@[rust_type\n  \"sandproof_protocol::lifecycle::request::LifecycleOperation\"]\n"
+          },
+          {
+            "offset": 52091,
+            "before": "@[discriminant isize, rust_type\n  \"sandproof_protocol::lifecycle::identity::ExpectedSession\"]\n",
+            "after": "@[rust_type\n  \"sandproof_protocol::lifecycle::identity::ExpectedSession\"]\n"
+          },
+          {
+            "offset": 60884,
+            "before": "@[discriminant isize, rust_type\n  \"sandproof_protocol::lifecycle::observation::CreateRefusalReason\"]\n",
+            "after": "@[rust_type\n  \"sandproof_protocol::lifecycle::observation::CreateRefusalReason\"]\n"
+          },
+          {
+            "offset": 63950,
+            "before": "@[discriminant isize, rust_type\n  \"sandproof_controller_service::controller::lifecycle_inbox::unload_resolution::UnloadResolution\"]\n",
+            "after": "@[rust_type\n  \"sandproof_controller_service::controller::lifecycle_inbox::unload_resolution::UnloadResolution\"]\n"
+          },
+          {
+            "offset": 74067,
+            "before": "@[discriminant isize, rust_type\n  \"sandproof_protocol::lifecycle::request::ValidationError\"]\n",
+            "after": "@[rust_type\n  \"sandproof_protocol::lifecycle::request::ValidationError\"]\n"
+          },
+          {
+            "offset": 74965,
+            "before": "@[discriminant isize, rust_type\n  \"sandproof_protocol::lifecycle::authority::AcceptedIntentError\"]\n",
+            "after": "@[rust_type\n  \"sandproof_protocol::lifecycle::authority::AcceptedIntentError\"]\n"
+          },
+          {
+            "offset": 77434,
+            "before": "@[discriminant isize, rust_type \"sandproof_protocol::internal::InternalError\"]\n",
+            "after": "@[rust_type \"sandproof_protocol::internal::InternalError\"]\n"
+          }
+        ]
+      },
+      "source_sha256": "d5b197e799749b1ecbbbc434b294f19eef99ebd29f36aba60cda843b38820762",
+      "sha256": "f5c72d53fe363e7fd7c2cf2bbfec40f0bc6f4c614c2ea3f8b69c220cf7940932"
+    },
+    "verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean": {
+      "source": "verification/experiments/stage1-protocol/inbox-record/TypesExternal.lean.in",
+      "source_sha256": "0e745e75bc62eb4cd195f97ed6081768a74b38d90ad0b49822cc9cb0422119e1",
+      "sha256": "0e745e75bc62eb4cd195f97ed6081768a74b38d90ad0b49822cc9cb0422119e1"
+    },
+    "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean": {
+      "source": "verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean",
+      "source_sha256": "54992966b4aedfcf4fe18cd00e344502f118ed822f8ab415965cb1e2e6e3a8b9",
+      "sha256": "54992966b4aedfcf4fe18cd00e344502f118ed822f8ab415965cb1e2e6e3a8b9"
     }
   }
 }

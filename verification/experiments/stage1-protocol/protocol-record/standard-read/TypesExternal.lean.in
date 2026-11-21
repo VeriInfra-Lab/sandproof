@@ -1,4 +1,5 @@
 import SandproofSqliteStatements.TypesExternal
+import SandproofStage1Request.Types
 
 /-! Finite library observations for the one ordinary World read interval.
 The cell is the before-borrow observation, and Ref is the issued live guard.
@@ -7,6 +8,13 @@ guard validity and release are explicit fixed-library conformance conditions.
 No resource/custom Drop, callback, mutation, panic unwind or crash is modelled.
 The target is x86_64; the borrow counter has the real signed-isize range. -/
 namespace SandproofStandardRecordRust
+abbrev sandproof_controller_service.controller.checkpoint.config.MaintenanceConfig :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.MaintenanceConfig
+abbrev sandproof_controller_service.controller.lifecycle_inbox.model.Inbox :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox
+abbrev serde_json.error.Error :=
+  SandproofStage1RequestRust.serde_json.error.Error
+
 abbrev rusqlite.Connection := SandproofSqliteStatementsRust.rusqlite.Connection
 
 structure WorldReadCell (T : Type) where
