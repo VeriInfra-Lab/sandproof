@@ -200,7 +200,7 @@ def check_encoder_wrapper(translated, encoder):
     return to_vec['def_id']
 
 
-def probe(variant, output, tools, lock, wrapper_ir, source_commit, frontier=None):
+def probe(variant, output, tools, lock, wrapper_ir, source_commit, frontier=None, *, identity=None):
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal':
         raise ValueError('extraction probe belongs to the existing proof role')
     if shutil.disk_usage(ROOT).free < 80 * GIB:
@@ -211,7 +211,12 @@ def probe(variant, output, tools, lock, wrapper_ir, source_commit, frontier=None
     output.mkdir()
     source = output / 'source'
     source.mkdir()
-    source_tree, original_archive = BASELINES[source_commit]
+    if identity is None:
+        source_tree, original_archive = BASELINES[source_commit]
+    else:
+        if identity['head'] != source_commit:
+            raise ValueError('frontier capture identity differs from the selected source')
+        source_tree, original_archive = identity['tree'], identity['source_archive_sha256']
     report = dict(variant=variant, source_commit=source_commit, source_tree=source_tree,
                   cpus=cpus, development_probe=True, original_implementation=False,
                   commands=[], generated=False, wrapper_ir=wrapper_ir, native_acceptance=False,

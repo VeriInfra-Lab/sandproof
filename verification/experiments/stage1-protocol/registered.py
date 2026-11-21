@@ -36,6 +36,7 @@ CONVERGENCE = _convergence()
 _unload_spec = importlib.util.spec_from_file_location('stage1_unload_audits', ROOT/HERE/'unload_audits.py')
 UNLOAD = importlib.util.module_from_spec(_unload_spec)
 _unload_spec.loader.exec_module(UNLOAD)
+CPU_PINNED_UNLOAD_JOBS = (UNLOAD.LABEL, UNLOAD.PARENT_LABEL)
 PROFILES = ('full', 'create-delivery', CONVERGENCE.PROFILE)
 CREATE_SCOPE = 'stage1-create-delivery'
 CREATE_SOURCE_ENV = 'SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE'
@@ -353,6 +354,7 @@ NATIVE_DRIVERS = (
     ('source-live', 'tools/check_source_live_components.py', False),
     *V3_SLICE_NATIVE_DRIVERS,
     (UNLOAD.LABEL, str(UNLOAD.DRIVER), False),
+    (UNLOAD.PARENT_LABEL, str(UNLOAD.PARENT_DRIVER), False),
     *CREATE_NATIVE_DRIVERS,
     *(row for row in CONVERGENCE.NATIVE_DRIVERS if row[0] not in {v[0] for v in CREATE_NATIVE_DRIVERS}),
 )
@@ -614,7 +616,7 @@ def validate_registration(root=ROOT, *, profile='full'):
     """Fail before execution if a required native case or Rust mutant was lost."""
     check_profile(profile)
     create_profile(root)
-    if len(NATIVE_CASES) != 78 or len(set(NATIVE_CASES)) != 78:
+    if len(NATIVE_CASES) != 79 or len(set(NATIVE_CASES)) != 79:
         raise ValueError('duplicate native registration')
     if profile == 'full':
         for name, variants in INBOX_CASES.items():
@@ -667,7 +669,7 @@ def run_native(root, work, *, profile='full', scope=None):
     for label, driver, needs_archive in drivers:
         output = work/label
         args = ['--output', output]
-        if label in ('stage1-sqlite-commit', 'source-live', UNLOAD.LABEL):
+        if label in ('stage1-sqlite-commit', 'source-live', *CPU_PINNED_UNLOAD_JOBS):
             args.insert(0, 'native')
         native_pass_fds = ()
         if Path(driver).parent.name in CONVERGENCE.LOCKED_NATIVE:
@@ -892,6 +894,8 @@ def formal_plan(output, *, root=ROOT, profile='full'):
         native=('stage1-create-transaction-link', 'stage1-original-source-rows'),
         cases=('transaction', 'source-rows'))
     add(UNLOAD.LABEL, UNLOAD.DRIVER, ['formal'], native=(UNLOAD.LABEL,), cases=UNLOAD.PACKAGES)
+    add(UNLOAD.PARENT_LABEL, UNLOAD.PARENT_DRIVER, ['formal'],
+        native=(UNLOAD.PARENT_LABEL,), cases=UNLOAD.PARENT_CASES)
     CONVERGENCE.append_jobs(jobs, output, root, profile=profile)
     _append_create_jobs(jobs, output, root, profile)
     return CONVERGENCE.append_extra_jobs(jobs, output, root, profile=profile)
@@ -967,6 +971,12 @@ def _check_fixed_protocol_record(original, job):
 def _check_actual(result, job):
     if result.get('complete') is not True:
         raise ValueError('original formal driver incomplete: ' + job['name'])
+    if job['name'] == UNLOAD.PARENT_LABEL:
+        if any(not re.fullmatch(r'[0-9a-f]{64}', result.get(key, ''))
+               for key in ('source_sha256', 'native_result_sha256')):
+            raise ValueError('missing original parent transaction input or formal case')
+        UNLOAD.check_parent_audits(ROOT, result)
+        return
     if job['name'] == UNLOAD.LABEL:
         if (result.get('kind') != UNLOAD.KIND or result.get('frozen_inputs') != UNLOAD.frozen_inputs(ROOT)
                 or not re.fullmatch(r'[0-9a-f]{64}', result.get('native_result_sha256', ''))):
@@ -1547,7 +1557,7 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
     if log.is_symlink() or not log.is_file():
         raise ValueError('missing original command log')
     evidence[str(log.resolve())] = _sha(log)
-    if job['name'] in ('source-live', 'v3-transaction-source', UNLOAD.LABEL) or 'create_package' in job or profile_is_convergence_job(job):
+    if job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS) or 'create_package' in job or profile_is_convergence_job(job):
         admission = log.parent/'cpu-admission.json'
         _check_cpu_admission(admission)
         evidence[str(admission.resolve())] = _sha(admission)
@@ -1627,7 +1637,7 @@ def _reuse_job(helper, job, context, previous):
         if _checkpoint_evidence(helper, job, result, result_path,
                 Path(receipt['command_log'])) != receipt['evidence']:
             raise ValueError('original evidence inventory changed')
-        if job['name'] in ('source-live', 'v3-transaction-source', UNLOAD.LABEL) or 'create_package' in job or profile_is_convergence_job(job):
+        if job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS) or 'create_package' in job or profile_is_convergence_job(job):
             admission = Path(receipt['command_log']).parent/'cpu-admission.json'
             if (previous.get('cpu_admission') != _check_cpu_admission(admission)
                     or previous.get('cpu_admission_path') != str(admission)
@@ -1666,7 +1676,7 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
         driver = HERE/'original_readback.py'
         args = ['run', '--job', job['name']]
     pass_fds = ()
-    if retained or job['name'] == UNLOAD.LABEL:
+    if retained or job['name'] in CPU_PINNED_UNLOAD_JOBS:
         fd, _ = inherited_lock()
         pass_fds = (fd,)
     elif (job['name'] in ('source-live', 'v3-transaction-source') or 'create_package' in job
@@ -1683,13 +1693,13 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
     env = dict(os.environ, SANDPROOF_FORMAL_CACHE=str(directory/'runtime-cache'),
                CARGO_TARGET_DIR=str(directory/'cargo-target'), PYTHONDONTWRITEBYTECODE='1')
     transport = dict(pass_fds=pass_fds) if pass_fds else {}
-    if job['name'] in ('source-live', 'v3-transaction-source', UNLOAD.LABEL) or 'create_package' in job or profile_is_convergence_job(job):
+    if job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS) or 'create_package' in job or profile_is_convergence_job(job):
         transport.update(cpu_affinity=cpu_affinity, cpu_admission=directory/'cpu-admission.json')
     argv = _invoke(root, driver, args, env, log=directory/'command.log', **transport)
     row = dict(name=job['name'], argv=argv, result_path=str(Path(job['output'])/'result.json'),
                 seconds=time.monotonic()-started, command_log=str(directory/'command.log'),
                 runtime_seed_sha256=seed_sha256)
-    if job['name'] in ('source-live', 'v3-transaction-source', UNLOAD.LABEL) or 'create_package' in job or profile_is_convergence_job(job):
+    if job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS) or 'create_package' in job or profile_is_convergence_job(job):
         admission = directory/'cpu-admission.json'
         row.update(cpu_admission=_check_cpu_admission(admission, cpu_affinity),
                    cpu_admission_path=str(admission), cpu_admission_sha256=_sha(admission))
@@ -1744,7 +1754,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
             while pending and len(inflight) < jobs and not stopped:
                 job = pending.pop(0)
                 slot = free_slots.pop(0)
-                options = (dict(cpu_affinity=slots[slot]) if job['name'] in ('source-live', 'v3-transaction-source', UNLOAD.LABEL) or 'create_package' in job
+                options = (dict(cpu_affinity=slots[slot]) if job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS) or 'create_package' in job
                            or profile_is_convergence_job(job) else {})
                 if profile_is_convergence_job(job):
                     options['original_readback'] = not recompute

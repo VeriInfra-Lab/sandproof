@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 
 from check_current_prepare_capture import CURRENT
+from check_revision_pair import checked_commands
 from frontier_capture import MODULES, admit, configure
 from prepare_world_begin import HERE, ROOT, closure, prepare as prepare_begin, read_exact
 import prepare_transaction_capture as transaction
@@ -27,12 +28,14 @@ CANDIDATE = 'da11e9e7e8f9aab90b4ef6911169f62ba2f5cab1b2066491903045d90a83dbf6'
 REORDERED = '650362a8fc2dfb2811152c13b8514af907c05af3fb5dfdcec9ce6eccf31ab009'
 
 
-def capture_inputs(path, mode):
+def capture_inputs(path, mode, *, identity=None):
     report = json.loads((path / 'probe-result.json').read_bytes())
-    tree, archive = BASELINES[CURRENT]
+    commit = CURRENT if identity is None else identity['head']
+    tree, archive = BASELINES[CURRENT] if identity is None else (
+        identity['tree'], identity['source_archive_sha256'])
     source = REORDERED if mode == 'reordered' else CANDIDATE
     if ((report['source_commit'], report['source_tree'], report['variant'], report['frontier']) !=
-            (CURRENT, tree, 'json-boundary', mode)
+            (commit, tree, 'json-boundary', mode)
             or report['wrapper_ir'] is not False or report['generated'] is not True
             or report['candidate_source_sha256'] != source or report['archive_sha256'] != archive
             or 'error' in report):
@@ -67,15 +70,17 @@ def capture_inputs(path, mode):
     cfg = transaction.configuration(json.loads(profile.read_bytes())['parent'])
     cfg['include'].extend(REQUEST_CARRIERS)
     fixed = json.loads((ROOT / 'verification/foundations-environment.json').read_bytes())
-    if admit(ir, directory, configure(cfg, mode), fixed['target'], mode) != report['frontier_admission']:
+    cfg = configure(cfg, mode)
+    checked_commands(path, report['commands'], cfg, fixed['target'])
+    if admit(ir, directory, cfg, fixed['target'], mode) != report['frontier_admission']:
         raise ValueError('original call admission differs')
     return files, report
 
 
-def materialize(prefix, parent, begin, output, packages, lean_mcp, reordered):
-    generated, primary = capture_inputs(prefix, 'reordered' if reordered else 'prefix')
-    _, whole = capture_inputs(parent, 'parent')
-    prepare_begin(begin, output, packages, lean_mcp)
+def materialize(prefix, parent, begin, output, packages, lean_mcp, reordered, *, identity=None):
+    generated, primary = capture_inputs(prefix, 'reordered' if reordered else 'prefix', identity=identity)
+    _, whole = capture_inputs(parent, 'parent', identity=identity)
+    prepare_begin(begin, output, packages, lean_mcp, identity=identity)
     plan_file = output / 'plan.json'
     plan = json.loads(plan_file.read_bytes())
     root = NEGATIVE_PROOF if reordered else PROOF
@@ -97,7 +102,8 @@ def materialize(prefix, parent, begin, output, packages, lean_mcp, reordered):
     if ({name: sha for name, sha in files.items() if name not in added} != plan['files']
             or added - files.keys()):
         raise ValueError('unexpected original dependency closure')
-    plan.update(source=CURRENT, root=root, files=files, strict_files=sorted(added | set(plan['strict_files'])),
+    plan.update(source=primary['source_commit'], root=root, files=files,
+                strict_files=sorted(added | set(plan['strict_files'])),
                 mode=primary['frontier'], candidate_source=primary['candidate_source_sha256'],
                 prefix_ir=primary['ir_sha256'], parent_ir=whole['ir_sha256'],
                 modules={name: {'sha256': sha} for name, sha in files.items()},

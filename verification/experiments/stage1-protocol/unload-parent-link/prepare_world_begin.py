@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import shutil
 
+from check_revision_pair import checked_commands, generated_inventory
 from prepare_started_transaction import HERE, ROOT, closure, digest, materialize
 from world_begin_capture import MODULE, SOURCE_COMMIT, SOURCE_INPUTS, SOURCE_TREE, admit, configuration
 
@@ -29,29 +30,39 @@ def read_exact(path, expected):
     return data
 
 
-def prepare(capture, output, packages, lean_mcp):
+def prepare(capture, output, packages, lean_mcp, *, identity=None):
     receipt = json.loads((capture / 'result.json').read_bytes())
+    if identity is None:
+        source, tree, driver, archive, ir_digest = (
+            SOURCE_COMMIT, SOURCE_TREE, DRIVER, ARCHIVE_SHA256, IR_SHA256)
+    else:
+        source, tree, driver, archive = (
+            identity['head'], identity['tree'], identity['driver_head'], identity['source_archive_sha256'])
+        ir_digest = receipt['ir_sha256']
     if (receipt['mode'], receipt['head'], receipt['tree'], receipt['driver_head'],
             receipt['complete'], receipt['ir_sha256']) != (
-            'world-begin', SOURCE_COMMIT, SOURCE_TREE, DRIVER, True, IR_SHA256):
-        raise ValueError('the admitted original world begin capture is required')
-    if [(row['label'], row['exit_code']) for row in receipt['commands']] != [('charon', 0), ('aeneas', 0)]:
-        raise ValueError('both fixed extraction tools must complete')
-    read_exact(capture / 'source.tar', ARCHIVE_SHA256)
-    for row in receipt['commands']:
-        read_exact(capture / (row['label'] + '.log'), row['log_sha256'])
+            'world-begin', source, tree, driver, True, ir_digest):
+        raise ValueError('the admitted world begin capture is required')
+    read_exact(capture / 'source.tar', archive)
     for name, expected in SOURCE_INPUTS.items():
         read_exact(capture / 'source' / name, expected)
         read_exact(ROOT / name, expected)
     ir = capture / 'actual.llbc'
     translation = capture / 'generated'
-    read_exact(ir, IR_SHA256)
-    read_exact(translation / 'translation.json', TRANSLATION_SHA256)
-    bodies = {name: read_exact(translation / MODULE / name, expected)
-              for name, expected in GENERATED.items()}
+    read_exact(ir, ir_digest)
+    inventory = generated_inventory(translation)
+    if inventory != receipt['generated']:
+        raise ValueError('world begin generated file inventory differs from the capture')
+    if identity is None:
+        read_exact(translation / 'translation.json', TRANSLATION_SHA256)
+        hashes = GENERATED
+    else:
+        hashes = {name: inventory[f'{MODULE}/{name}'] for name in GENERATED}
+    bodies = {name: read_exact(translation / MODULE / name, expected) for name, expected in hashes.items()}
     profile = ROOT / 'verification/experiments/stage1-protocol/unload-startup-source/capture-profile.json'
     cfg = configuration(json.loads(profile.read_bytes())['parent'])
     environment = json.loads((ROOT / 'verification/foundations-environment.json').read_bytes())
+    checked_commands(capture, receipt['commands'], cfg, environment['target'])
     if admit(ir, translation, cfg, environment['target']) != receipt['begin_admission']:
         raise ValueError('original begin capture no longer satisfies admission')
 
@@ -84,7 +95,7 @@ def prepare(capture, output, packages, lean_mcp):
     files = closure(output, [proof], active_view='lakefile.toml')
     if {name: value for name, value in files.items() if name not in added} != provider or added - files.keys():
         raise ValueError('unexpected imports or missing files in the original provider closure')
-    plan = dict(source=SOURCE_COMMIT, driver=DRIVER, ir=IR_SHA256, root=PROOF, files=files, strict_files=sorted(added),
+    plan = dict(source=source, driver=driver, ir=ir_digest, root=PROOF, files=files, strict_files=sorted(added),
                 modules={name: {'sha256': value} for name, value in files.items()},
                 build_order=[name.removesuffix('.lean') for name in files])
     plan_file.write_text(json.dumps(plan, indent=2) + '\n')

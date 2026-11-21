@@ -34,7 +34,8 @@ PAUSE_RECEIPT_CHILD_SCOPES = (*PAUSE_DISPATCH_CHILD_SCOPES, 'pause-dispatch')
 PAUSE_RECEIPT_LABELS = ('functional', *PAUSE_RECEIPT_CHILD_SCOPES, 'pause-receipt')
 ARCHIVED_NATIVE_CASES = ('stage1-protocol', 'capture-caller', 'pause-publication', 'pause-stop',
                          'pause-dispatch', 'pause-receipt', 'source-live', 'stage1-create-transaction-link',
-                         'stage1-original-source-rows', 'stage1-unload-audits')
+                         'stage1-original-source-rows', 'stage1-unload-audits',
+                         'stage1-unload-parent-transaction')
 SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
                    'SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE',
                    'SANDPROOF_WRITER_SOURCE_ARCHIVE',

@@ -83,7 +83,7 @@ def main():
             result['tree'] = subprocess.check_output(
                 ['git', 'rev-parse', result['head'] + '^{tree}'], cwd=ROOT, text=True,
             ).strip()
-            if admission and (result['head'], result['tree']) != (
+            if MODE == 'prepare-transaction' and (result['head'], result['tree']) != (
                     admission.SOURCE_COMMIT, admission.SOURCE_TREE):
                 raise ValueError(f'{MODE} requires the reviewed integration commit and tree')
         result['workspace_free_bytes'] = shutil.disk_usage(ROOT).free
@@ -126,7 +126,14 @@ def main():
                 child = subprocess.Popen(argv, cwd=source, env=env, stdout=output,
                                          stderr=subprocess.STDOUT, start_new_session=True)
                 while child.poll() is None:
-                    size = sum(p.lstat().st_blocks*512 for p in (OUT/'target').rglob('*') if not p.is_symlink()) if (OUT/'target').exists() else 0
+                    size = 0
+                    for path in (OUT / 'target').rglob('*'):
+                        try:
+                            # Cargo can retire a temporary output between enumeration and stat.
+                            if not path.is_symlink():
+                                size += path.lstat().st_blocks * 512
+                        except FileNotFoundError:
+                            continue
                     result['peak_target_bytes'] = max(size, result.get('peak_target_bytes',0))
                     if time.monotonic()-started > seconds or size > 4*GIB or shutil.disk_usage(ROOT).free < 64*GIB:
                         os.killpg(child.pid,signal.SIGTERM)

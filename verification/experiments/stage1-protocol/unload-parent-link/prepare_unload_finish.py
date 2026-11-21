@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import shutil
 
+from check_revision_pair import checked_commands
 from finish_capture import ARCHIVE, MODULES, SOURCE, TREE, admit, configuration
 from prepare_started_transaction import PROVIDER
 from prepare_unload_frontier import capture_inputs as captured_frontier
@@ -19,19 +20,21 @@ CANDIDATE = 'a3d5c9085b7e6f76de877b67a99bf1bf55e014891c2af090fc42be575060f173'
 REORDERED = '135ccf6216a2e394ccedf512c441848645de517d92ae667ea06466fc844ec7cf'
 
 
-def captured(path, mode):
+def captured(path, mode, *, identity=None):
     report = json.loads((path / 'result.json').read_bytes())
+    commit, tree, archive = (SOURCE, TREE, ARCHIVE) if identity is None else (
+        identity['head'], identity['tree'], identity['source_archive_sha256'])
     candidate = REORDERED if mode == 'reordered' else CANDIDATE
     if (report['complete'] is not True or report['public_acceptance'] is not False
             or (report['mode'], report['source_commit'], report['source_tree'],
-                report['candidate_source_sha256']) != (mode, SOURCE, TREE, candidate)):
+                report['candidate_source_sha256']) != (mode, commit, tree, candidate)):
         raise ValueError('exact complete finish capture required')
     if ([row['label'] for row in report['commands']] != ['charon', 'aeneas']
             or any(type(row['exit_code']) is not int or row['exit_code'] != 0 or row['bounded_stop'] is not False
                    for row in report['commands'])):
         raise ValueError('both original extractor results must complete')
     read_exact(HERE / 'finish_capture.py', report['driver_sha256'])
-    read_exact(path / 'source.tar', ARCHIVE)
+    read_exact(path / 'source.tar', archive)
     read_exact(path / 'source' / transaction.SOURCE, candidate)
     for name, sha in transaction.SOURCE_INPUTS.items():
         if name != transaction.SOURCE:
@@ -52,16 +55,18 @@ def captured(path, mode):
         raise ValueError('complete generated output inventory required')
     files = {name: read_exact(generated / name, report['generated_sha256'][name]) for name in names}
     fixed = json.loads((ROOT / 'verification/foundations-environment.json').read_bytes())
-    if admit(ir, generated, configuration(mode), fixed['target'], mode) != report['admission']:
+    cfg = configuration(mode)
+    checked_commands(path, report['commands'], cfg, fixed['target'])
+    if admit(ir, generated, cfg, fixed['target'], mode) != report['admission']:
         raise ValueError('actual finish admission differs')
     return files, report
 
 
-def materialize(tail, parent, prefix, prefix_parent, begin, output, packages, mcp, mode):
-    generated, actual = captured(tail, mode)
-    parent_files, whole = captured(parent, 'parent')
-    _, admitted_prefix = captured_frontier(prefix, 'prefix')
-    captured_frontier(prefix_parent, 'parent')
+def materialize(tail, parent, prefix, prefix_parent, begin, output, packages, mcp, mode, *, identity=None):
+    generated, actual = captured(tail, mode, identity=identity)
+    parent_files, whole = captured(parent, 'parent', identity=identity)
+    _, admitted_prefix = captured_frontier(prefix, 'prefix', identity=identity)
+    captured_frontier(prefix_parent, 'parent', identity=identity)
     opening = b'fn open_source_work_inputs'
     preceding = (prefix / 'source' / transaction.SOURCE).read_bytes().split(opening, 1)[1]
     full = (parent / 'source' / transaction.SOURCE).read_bytes().split(opening, 1)[1]
@@ -76,7 +81,7 @@ def materialize(tail, parent, prefix, prefix_parent, begin, output, packages, mc
                           rb'.*?\} (\w+)\.config\.max_sessions crashes\n', caller, re.S)
     if opened is None or finishing is None or opened.groups()[1:] != finishing.groups():
         raise ValueError('the generated parent must pass the opened owner and the original Inbox capacity')
-    materialize_begin(begin, output, packages, mcp)
+    materialize_begin(begin, output, packages, mcp, identity=identity)
     plan_path = output / 'plan.json'
     plan = json.loads(plan_path.read_bytes())
     root, module = ROOTS[mode], MODULES[mode]
@@ -106,7 +111,7 @@ def materialize(tail, parent, prefix, prefix_parent, begin, output, packages, mc
                                        for name, sha in reachable.items()
                                        if name not in plan['files'] and name not in added)):
         raise ValueError('unexpected original commit dependencies')
-    plan.update(source=SOURCE, root=root, files=reachable, mode=mode,
+    plan.update(source=actual['source_commit'], root=root, files=reachable, mode=mode,
                 finish_ir=actual['ir_sha256'], factored_parent_ir=whole['ir_sha256'],
                 prior_prefix_ir=admitted_prefix['ir_sha256'],
                 candidate_source=actual['candidate_source_sha256'],

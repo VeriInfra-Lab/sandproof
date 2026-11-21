@@ -178,7 +178,7 @@ def admit(ir, generated, cfg, target, mode):
     return dict(helper=helper['def_id'], commit=commit, lean=mapping['lean_name'], **parent_link)
 
 
-def capture(mode, output, tools, lock):
+def capture(mode, output, tools, lock, *, identity=None):
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal' or shutil.disk_usage(ROOT).free < 80 * GIB:
         raise ValueError('proof role and at least 80 GiB of workspace space required')
     cpus = sorted(os.sched_getaffinity(0))[:4]
@@ -189,18 +189,23 @@ def capture(mode, output, tools, lock):
     for label, path in (('charon', charon), ('aeneas', aeneas)):
         if digest(path) != fixed[label]['binary_sha256']:
             raise ValueError('fixed extraction tool differs: ' + label)
-    if subprocess.check_output(['git', 'rev-parse', SOURCE + '^{tree}'], text=True, cwd=ROOT).strip() != TREE:
+    if identity is None:
+        source_commit, source_tree, expected_archive = SOURCE, TREE, ARCHIVE
+    else:
+        source_commit, source_tree, expected_archive = (
+            identity['head'], identity['tree'], identity['source_archive_sha256'])
+    if subprocess.check_output(['git', 'rev-parse', source_commit + '^{tree}'], text=True, cwd=ROOT).strip() != source_tree:
         raise ValueError('original integration tree differs')
     output.mkdir()
     source = output / 'source'
     source.mkdir()
-    report = dict(mode=mode, source_commit=SOURCE, source_tree=TREE, complete=False, commands=[],
+    report = dict(mode=mode, source_commit=source_commit, source_tree=source_tree, complete=False, commands=[],
                   driver_sha256=digest(Path(__file__)), cpus=cpus, public_acceptance=False)
     try:
         archive = output / 'source.tar'
         with archive.open('xb') as stream:
-            subprocess.run(['git', 'archive', SOURCE], cwd=ROOT, stdout=stream, check=True)
-        if digest(archive) != ARCHIVE:
+            subprocess.run(['git', 'archive', source_commit], cwd=ROOT, stdout=stream, check=True)
+        if digest(archive) != expected_archive:
             raise ValueError('original integration archive differs')
         with tarfile.open(archive) as contents:
             contents.extractall(source, filter='data')

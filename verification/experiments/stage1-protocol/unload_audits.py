@@ -8,6 +8,16 @@ HERE = Path('verification/experiments/stage1-protocol')
 LABEL = 'stage1-unload-audits'
 KIND = 'stage1-unload-audits-component'
 DRIVER = HERE / 'unload_audit_driver.py'
+PARENT_LABEL = 'stage1-unload-parent-transaction'
+PARENT_DRIVER = HERE / 'unload_parent_transaction.py'
+PARENT_CASES = ('begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered')
+PARENT_AUDIT_INPUTS = {
+    'begin': {'started-transaction/UnloadStartedTransaction', 'world-begin/UnloadWorldBegin'},
+    'prefix': {'frontier/UnloadFrontierInputs', 'frontier/UnloadFrontier'},
+    'prefix-reordered': {'frontier/UnloadFrontierInputs', 'frontier/UnloadFrontierReordered'},
+    'finish': {'finish/UnloadFinishInputs', 'finish/UnloadFinish'},
+    'finish-reordered': {'finish/UnloadFinishInputs', 'finish/UnloadFinishReordered'},
+}
 AUDIT = re.compile(r'^#audit_controller_proof (\S+)$', re.M)
 PACKAGES = {
     'unload-startup-source': ('startup', 16, 34),
@@ -15,6 +25,21 @@ PACKAGES = {
     'unload-continued-observation': ('continued-observation', 2, 6),
     'unload-stored-options': ('stored-options', 3, 11),
 }
+
+
+def check_parent_audits(root, result):
+    if result.get('kind') != PARENT_LABEL or tuple(result.get('cases', {})) != PARENT_CASES:
+        raise ValueError('missing actual parent transaction formal cases')
+    package = root / HERE / 'unload-parent-link'
+    common = PARENT_AUDIT_INPUTS['begin']
+    for case, actual in result['cases'].items():
+        expected = common | PARENT_AUDIT_INPUTS[case]
+        names = {audit for path in expected
+                 for audit in AUDIT.findall((package / (path + '.lean.in')).read_text())}
+        if (actual.get('complete') is not True
+                or not re.fullmatch(r'[0-9a-f]{64}', actual.get('service_log_sha256', ''))
+                or not names <= set(actual.get('audits', ())) or not actual.get('files')):
+            raise ValueError('incomplete parent transaction formal audits: ' + case)
 
 
 def digest(path):

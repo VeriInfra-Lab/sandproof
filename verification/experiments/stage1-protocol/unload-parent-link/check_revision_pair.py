@@ -80,8 +80,9 @@ def checked_commands(directory, rows, cfg, target):
     ir = Path(charon[charon.index('--dest-file') + 1])
     if not ir.is_absolute() or ir.name != 'actual.llbc':
         raise ValueError('original Charon output path required')
-    selectors = [arg for flag, key in (('--start-from', 'roots'), ('--include', 'include'), ('--opaque', 'opaque'))
-                 for value in cfg[key] for arg in (flag, value)]
+    selectors = [arg for flag, key in (('--start-from', 'roots'), ('--start-from-if-exists', 'retained_roots'),
+                                       ('--include', 'include'), ('--opaque', 'opaque'))
+                 for value in cfg.get(key, ()) for arg in (flag, value)]
     if charon != ['cargo', '--preset=aeneas', '--error-on-warnings', '--sysroot', 'default', *selectors,
                   '--dest-file', str(ir), '--', '--manifest-path', 'controller-service/Cargo.toml',
                   '--lib', '--locked', '--offline', '--target', target]:
