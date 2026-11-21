@@ -7,7 +7,7 @@
   "source_inputs": {
     "controller-service/src/controller/lifecycle_inbox/model.rs": "f67d17d3eb862d7466c486081fe509c47b06639bc524c6575b7884f026a3e3cb",
     "controller-service/src/controller/lifecycle_inbox/codec.rs": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
-    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/lifecycle_inbox.rs": "4d87f72906bb2ba5ec541b8969ecd90cf7caf74280dd42e5e6e6bbd0488888a8",
     "controller-service/src/capture.rs": "85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24"
@@ -127,15 +127,15 @@
     "SandboxModel/Lifecycle/Protocol/Model.lean": "dfada1e9591aa7aea3d9298ecd34fb8ae2701a5f1b46c18267ab845ca4a16083",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadLifecycleConfigValues.lean.in": "54e82e929f3e6a611432ec809de4ec1d2cf63fbb8f8b831f7b61b326961c225a",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestCounterexample.lean.in": "946e6da18c76896fec69e587440228614669a57471fa52edd10b8ee921d55273",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadFixturePrefix.lean.in": "2806d4e87de37615c2da95f5bf391a069d80f91e587d951fc1b8e76512aaf6eb",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestAcceptance.lean.in": "707ed30d6d9ee9e300f54dd292ad84de1a0e97c70104ea40798877bf48b55efe",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadFixturePrefix.lean.in": "245b0d0fa29d75c681ecddf409e5d2c31668cb3294ada5430bc0619968b1cccf",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestAcceptance.lean.in": "ef928888a702508ffc0b7435b11c99abec3d3877b8238e57ecbd9bac90c4568c",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadCanonicalCounterexample.lean.in": "f344a6108ba18de5e41167a9ab21c1b0fec24a2db64274bfa13e03be5cb9c307",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadCanonicalAcceptance.lean.in": "e4bbc2c790b6df67e908216d4c8255db8c4d5a3913c7db9e7bf90766cbc6ed4e",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadCanonicalAcceptance.lean.in": "d8639c085987960114492f3faa0adfb865f52e75bd74bee78a753ffe4d485c78",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadValidationCounterexample.lean.in": "d4200b950fe1e38b39b1c7828b97a6c1589e7048345d1ab88c9d86099f7eac60",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadValidationAcceptance.lean.in": "daaaa9cc54ee94cd37f1eb931b90d630f74f4f870992b3a20a41533ccae8d184",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadValidationAcceptance.lean.in": "73b2e26c41dae684a58e1e93da9aaa23d9ae6086b16f93b1efa2c10c31a497e0",
     "verification/experiments/stage1-protocol/inbox-validation/InboxCompositionBoundaryValues.lean.in": "7828ca45b59c0c299352af33f636954cc2c8c5f0ece2852e5a86e4e9a7b2d33c",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyCounterexample.lean.in": "0b4b40a87fe40de59a092dcfae8fef0d93f1c4d4be097ae867b0e46b37fa7ef4",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyAcceptance.lean.in": "df32e3cdf185f5fab32a93f8c5c59c5afc234a32b6507df14313cee7e7f98605",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyAcceptance.lean.in": "40e9dd730a60578ff1b23fdd6ee602f16005c083a3e37e8fcfccfc03c89dd1d6",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyThreeValues.lean.in": "f08e6577bbfcb1f939efdb7750bd406650a7b1c9b5e19b0f1304561ed597c66c",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadSuccess.lean.in": "ef2a8c9990e94f426884ae9eae253c9c1ab1af1f190050c8a78c0da0d586710b",
     "verification/experiments/stage1-protocol/inbox-lookup/InboxLookupModel.lean.in": "c4cdd47fbbf766429225befc2b93b02b3f36869bf16e1abdf47d2422131000d0",
@@ -156,8 +156,8 @@
     "verification/experiments/stage1-protocol/create-install/CreateInstallCore.lean.in": "247118a6a8c7d00862619ad1a6eaa6567cebd7ec57519e2a9ddc20b5d6c55265",
     "verification/experiments/stage1-protocol/create-install/CreateInstallExamples.lean.in": "b81ab1d73d342da57819a9480a08495a9769ba476c78d8c955f737e51295371d",
     "verification/experiments/stage1-protocol/create-install/CreateInstallSelection.lean.in": "27a293b7c6d02c05a13abb37a6704f28c4b30201524ae3709c710ab1d99ec90d",
-    "verification/experiments/stage1-protocol/inbox-load/inventory.json": "c1ac14fae5e32e97ba8bf8d46a1c19df73c7edd9f95facae76a545396b4fd410",
-    "verification/experiments/stage1-protocol/create-install/inventory.json": "67dab05e13c9c37c821f7e25b7ffdade85d3c3b8b6f902e3f48679d80cb209f2",
+    "verification/experiments/stage1-protocol/inbox-load/inventory.json": "80a393e59a87b3532bb4fbbce5e12ca0aebd8546af0de2a65954c139ab27b71b",
+    "verification/experiments/stage1-protocol/create-install/inventory.json": "4efc2906c8b435ee714d3ecde8a177937ab14efdd535d7ab3e517708ee28bb61",
     "verification/experiments/stage1-protocol/inbox-validation/generic-root.rs.in": "5cc9d0b47a0de88b645f79e033b06de03d9890c95bcea9b8a0c3f5dd5460ad54",
     "verification/experiments/stage1-protocol/inbox-validation/primitive-roots.rs.in": "d11ec157cfd880f89e9400f8cdc152a2488e774ca034eb4a8a1049eca4b3e4d6",
     "verification/experiments/stage1-protocol/terminal-binding/roots.rs.in": "4eb94c981d8bd6ec3cee2ea082195f0674c3310f09e4423e3b2f47c8a5ff0115",
@@ -189,33 +189,33 @@
   ],
   "store_format_adaptations": {
     "InboxLoadModel": {
-      "before_sha256": "8d887da51f8af264279d3574c76130e10d4723fac54ffa860cad4089653945c6",
+      "before_sha256": "c9618071efa68abf4da7fa00e146427757dd3215561822f6fafce2e17fddee8a",
       "after_sha256": "c9618071efa68abf4da7fa00e146427757dd3215561822f6fafce2e17fddee8a",
-      "occurrences": 2,
+      "occurrences": 0,
       "scope": "Only the actual store-version literals in original specification, comparison helper, correspondence and witnesses. FullLoadContract and all other fields/error ordering unchanged."
     },
     "InboxLoadLibrary": {
-      "before_sha256": "a2a89c1446567cf740bbfa6ffc48d4ff33736042f515265ebaeb21c620aa1aa1",
+      "before_sha256": "29dfcc593e4e1cb372f987f06ec3503ed442823b307704499976a55a75e63c59",
       "after_sha256": "29dfcc593e4e1cb372f987f06ec3503ed442823b307704499976a55a75e63c59",
-      "occurrences": 4,
+      "occurrences": 0,
       "scope": "Only the actual store-version literals in original specification, comparison helper, correspondence and witnesses. FullLoadContract and all other fields/error ordering unchanged."
     },
     "InboxLoadRawCorrespondence": {
-      "before_sha256": "c98e3dd9d21756f71eb637fde18e8e50491bf19c52e121865e5e52d00f719bb2",
+      "before_sha256": "abbf3faa1a67bec78214539c030dfafacd9423916a63ee878500d30016529c4f",
       "after_sha256": "abbf3faa1a67bec78214539c030dfafacd9423916a63ee878500d30016529c4f",
-      "occurrences": 7,
+      "occurrences": 0,
       "scope": "Only the actual store-version literals in original specification, comparison helper, correspondence and witnesses. FullLoadContract and all other fields/error ordering unchanged."
     },
     "InboxLoadHeader": {
-      "before_sha256": "9c5529da229947e5a99dec6b8e5aa5571858f7143da333f2232e27abfc8f4133",
+      "before_sha256": "4927d9aab86b1be576dc1ae0a63442e2af32ccfd55a4ae47d1c9282d343a0ad4",
       "after_sha256": "4927d9aab86b1be576dc1ae0a63442e2af32ccfd55a4ae47d1c9282d343a0ad4",
-      "occurrences": 12,
+      "occurrences": 0,
       "scope": "Only the actual store-version literals in original specification, comparison helper, correspondence and witnesses. FullLoadContract and all other fields/error ordering unchanged."
     },
     "InboxLoadPositiveFullValues": {
-      "before_sha256": "41ae2cabfa0a0064bfe0a442418555ad4792b7337c32a810a4221029962d4c00",
+      "before_sha256": "1564e33f5430c7985532da5ab88b922f635ec8ac3426ede745d2b370e8e81c29",
       "after_sha256": "1564e33f5430c7985532da5ab88b922f635ec8ac3426ede745d2b370e8e81c29",
-      "occurrences": 2,
+      "occurrences": 0,
       "scope": "Only the actual store-version literals in original specification, comparison helper, correspondence and witnesses. FullLoadContract and all other fields/error ordering unchanged."
     }
   },
@@ -7320,5 +7320,10 @@
       }
     ],
     "manifest_is_proof_evidence": false
+  },
+  "current_candidate_input_review": {
+    "base": "8672eeeaacedf67e95123837704f7623f3588f6f",
+    "full_original_acceptance_required": true,
+    "basis": "The five current Format 24 providers are byte-identical to the earlier exact conversion output. Their resulting Lean bytes stay unchanged."
   }
 }
