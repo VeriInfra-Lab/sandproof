@@ -1,0 +1,55 @@
+import SourceRequestEndMatchProof
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRequestEndMatchModel
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRequestEndMatchValues
+
+/-- Decoded witnesses and arbitrary library replies, not actual JSON/SHA facts. -/
+def full : Full := SourceFullWorkGuardValues.full
+def requirement : Requirement := SourceWorkMatch.Values.base.requirement
+def worker : Worker := ⟨requirement.source, SourceWorkMatch.Values.digest⟩
+def action : Action :=
+  ⟨⟨4#u16, "owner", "sandbox", "operation", 1#u64, 2#u64, "logical", 3#u64, ⟨.Vm, "vm"⟩⟩,
+    ⟨⟨.InstallFence SourceWorkMatch.Values.base.anchor.local.sandbox 2#u64 false⟩, 0#u64⟩⟩
+def payload : alloc.vec.Vec U8 := alloc.vec.Vec.from [] (by scalar_tac)
+def io : Ports :=
+  ⟨fun _ => .ok (.Ok payload), fun _ => .ok SourceWorkMatch.Values.digest⟩
+def observation : Observation :=
+  ⟨action, SourceWorkMatch.Values.digest, worker, requirement.source, .Returned 204#u16⟩
+def differentWorker : Worker := { worker with job_digest := SourceWorkMatch.Values.otherDigest }
+def differentObservation : Observation := { observation with worker := differentWorker }
+
+theorem normal :
+    SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches io
+      observation action full requirement worker = .ok (.Ok true) := by
+  rw [SourceRequestEndMatchProof.actual_contract]
+  simp [outcome, binding, io, observation, StatusAllowed]
+
+theorem no_request :
+    SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches io
+      { observation with outcome := .NoRequest } action full requirement worker = .ok (.Ok true) := by
+  rw [SourceRequestEndMatchProof.actual_contract]
+  simp [outcome, binding, io, observation, StatusAllowed]
+
+theorem worker_digest_differs : differentWorker ≠ worker := by
+  intro equal
+  have same := congrArg (fun value : Worker => value.job_digest) equal
+  exact (by decide : SourceWorkMatch.Values.otherDigest ≠ SourceWorkMatch.Values.digest) same
+
+theorem process_still_equal : differentWorker.process = worker.process := rfl
+
+theorem actual_digest_mismatch_rejected :
+    SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches io
+      differentObservation action full requirement worker = .ok (.Ok false) := by
+  rw [SourceRequestEndMatchProof.actual_contract]
+  simp [outcome, binding, io, differentObservation, observation, worker_digest_differs]
+
+end SandboxModel.Stage1Protocol.SourceRequestEndMatchValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.no_request
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.worker_digest_differs
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.process_still_equal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.actual_digest_mismatch_rejected

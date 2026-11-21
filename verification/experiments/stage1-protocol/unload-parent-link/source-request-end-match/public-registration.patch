@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-request-end-match 在固定 b0d791cc 上连接原 CaptureRequestEndObservation::matches 与透明 Full binding_digest，保留全文比较、action编码短路及编码首错；同一完整Contract拒绝实际仅比较worker进程、遗漏job_digest的错误。继承#1005完整164/867，完整入口目标170/885与172/890。
++> 原生34项四视图及恢复交ning。NoRequest/Returned通过只表示原值形状与绑定，不能推出真实未发请求、进程退出或权限；具体JSON/SHA采用、完整父调用/事务/耐久/认证和物理责任保持开放。公共登记/覆盖仅交候选。
+ ## V3 首次卸载使用同一条原执行记录

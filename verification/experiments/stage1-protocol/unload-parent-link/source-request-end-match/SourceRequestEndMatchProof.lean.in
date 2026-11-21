@@ -1,0 +1,128 @@
+import SourceRequestEndMatchView
+import SourceRequestEndMatchRange
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRequestEndMatchModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceRequestEndMatchProof
+noncomputable section
+local instance proofDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem action_eq (left right : Action) :
+    SourceRequestEndMatchActual.sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction.eq
+      SourceRequestEndMatchActual.sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+      left right = .ok (decide (left = right)) :=
+  SourceRetireEquality.effect_action_eq left right
+
+theorem worker_eq (left right : Worker) :
+    SourceRequestEndMatchActual.capture.launch.CaptureWorkerBinding.Insts.CoreCmpPartialEqCaptureWorkerBinding.eq
+      left right = .ok (decide (left = right)) :=
+  SourceRetireEquality.worker_eq left right
+
+theorem source_eq (left right : capture.SourceProcessIdentity) :
+    SourceRequestEndMatchActual.capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq
+      left right = .ok (decide (left = right)) :=
+  SourceWorkMatch.SourceData.process_eq left right
+
+theorem digest_eq (left right : Digest) :
+    SourceRequestEndMatchActual.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq
+      left right = .ok (decide (left = right)) :=
+  SourceWorkMatch.Scalars.wire_content_digest_eq left right
+
+-- Transport the original general proof through the exact same parent provider.
+theorem range_refines (lo hi value : U16) :
+    SourceRequestEndMatchActual.core.ops.range.RangeInclusive.contains
+      core.cmp.PartialOrdU16 core.cmp.PartialOrdU16 core.cmp.PartialOrdU16
+      ⟨lo, hi, false⟩ value = .ok (decide (lo.val ≤ value.val ∧ value.val ≤ hi.val)) :=
+  SourceRequestEndMatchRange.range_u16_refines lo hi value
+
+
+theorem binding_refines (io : Ports) (full : Full) :
+    SourceRequestEndMatchActual.capture.work.FullCaptureWorkRequest.binding_digest io full =
+      binding io full := by
+  unfold SourceRequestEndMatchActual.capture.work.FullCaptureWorkRequest.binding_digest binding
+  apply congrArg (fun next => io.encode full >>= next)
+  funext encoded
+  cases encoded <;>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SourceRetireSpec.vector_deref,
+      SourceRequestEndMatchActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256]
+
+theorem actual_contract (io : Ports) (observed : Observation) (action : Action)
+    (full : Full) (source : Requirement) (worker : Worker) :
+    SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches io
+      observed action full source worker = outcome io observed action full source worker := by
+  unfold SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches outcome
+  rw [action_eq]
+  by_cases same : observed.action = action
+  · simp only [same, decide_true, bind_tc_ok, ↓reduceIte, ne_eq, not_true_eq_false]
+    rw [binding_refines]
+    apply congrArg (fun next => binding io full >>= next)
+    funext encoded
+    cases encoded with
+    | Err error =>
+      simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok digest =>
+      simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok,
+        digest_eq, worker_eq, source_eq, core.ops.range.RangeInclusive.new]
+      cases observed.outcome <;>
+        simp [StatusAllowed, range_refines] <;> split_ifs <;> simp_all
+  · simp [same]
+
+theorem complete_contract (io : Ports) :
+    Contract io (SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches io) :=
+  actual_contract io
+
+theorem action_mismatch_before_encoding (io : Ports) (observed : Observation) (action : Action)
+    (full : Full) (source : Requirement) (worker : Worker) (different : observed.action ≠ action) :
+    SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches io
+      observed action full source worker = .ok (.Ok false) := by
+  rw [actual_contract]
+  simp [outcome, different]
+
+theorem encoding_error_before_later_fields (io : Ports) (observed : Observation) (action : Action)
+    (full : Full) (source : Requirement) (worker : Worker) (error : JsonError)
+    (same : observed.action = action) (failed : io.encode full = .ok (.Err error)) :
+    SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches io
+      observed action full source worker = .ok (.Err error) := by
+  rw [actual_contract]
+  simp [outcome, binding, same, failed]
+
+theorem binding_success_uses_complete_input_and_bytes (io : Ports) (full : Full)
+    (bytes : alloc.vec.Vec U8) (digest : Digest)
+    (encoded : io.encode full = .ok (.Ok bytes)) (hashed : io.digest bytes.slice = .ok digest) :
+    SourceRequestEndMatchActual.capture.work.FullCaptureWorkRequest.binding_digest io full =
+      .ok (.Ok digest) := by
+  rw [binding_refines]
+  simp [binding, encoded, hashed]
+
+theorem accepts_iff_all_fields (io : Ports) (observed : Observation) (action : Action)
+    (full : Full) (source : Requirement) (worker : Worker) (digest : Digest)
+    (bound : binding io full = .ok (.Ok digest)) :
+    SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches io
+      observed action full source worker = .ok (.Ok true) ↔
+      observed.action = action ∧ observed.full_work_binding = digest ∧
+      observed.worker = worker ∧ observed.source = source.source ∧ StatusAllowed observed.outcome := by
+  rw [actual_contract]
+  by_cases same : observed.action = action <;> simp [outcome, same, bound]
+
+end
+end SandboxModel.Stage1Protocol.SourceRequestEndMatchProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.action_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.worker_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.source_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.digest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.range_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.binding_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.action_mismatch_before_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.encoding_error_before_later_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.binding_success_uses_complete_input_and_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.accepts_iff_all_fields
