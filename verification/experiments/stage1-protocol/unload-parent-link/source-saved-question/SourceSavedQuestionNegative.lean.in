@@ -1,0 +1,156 @@
+import SourceSavedQuestionValues
+import SourceSavedQuestionWrong
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes SourceTerminalMatchTypes
+open SourceSavedQuestionModel SourceSavedQuestionValues
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceSavedQuestionNegative
+noncomputable section
+local instance negativeDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev wrong := SourceSavedQuestionWrongActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+
+private theorem inode_nonzero : (11#u64) ≠ 0#u64 := by
+  intro equal
+  have impossible := congrArg UScalar.val equal
+  change (11 : Nat) = 0 at impossible
+  omega
+
+private theorem wrong_identity_actual_contract (record : Record) (represented : Representable record) :
+    SourceSavedQuestionWrongActual.controller.lifecycle_inbox.source_work.full.drain.question.original_identity record =
+      .ok (identityOutcome record) := SourceSavedQuestionProof.identity_actual_contract record represented
+
+private theorem wrong_command_accessor (action : sandbox_controller_core.model.EffectId) :
+    SourceSavedQuestionWrongActual.sandbox_controller_core.model.EffectId.command action =
+      .ok action.logical.command := SourceSavedQuestionProof.command_accessor action
+
+private theorem wrong_requirement_accessor (work : controller.lifecycle_inbox.source_work.SourceWork) :
+    SourceSavedQuestionWrongActual.controller.lifecycle_inbox.source_work.SourceWork.impl.requirement work =
+      .ok work.requirement := SourceSavedQuestionProof.requirement_accessor work
+
+private theorem wrong_command_eq (a b : sandbox_controller_core.model.Command) :
+    SourceSavedQuestionWrongActual.sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq a b =
+      .ok (decide (a = b)) := SourceSavedQuestionProof.command_eq a b
+
+private theorem wrong_operation_key_eq (a b : sandbox_controller_core.model.OperationKey) :
+    SourceSavedQuestionWrongActual.sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq a b =
+      .ok (decide (a = b)) := SourceSavedQuestionProof.operation_key_eq a b
+
+private theorem wrong_wire_tenant_eq (a b : sandproof_protocol.TenantId) :
+    SourceSavedQuestionWrongActual.sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq a b =
+      .ok (decide (a = b)) := SourceSavedQuestionProof.wire_tenant_eq a b
+
+private theorem wrong_wire_sandbox_eq (a b : sandproof_protocol.SandboxId) :
+    SourceSavedQuestionWrongActual.sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq a b =
+      .ok (decide (a = b)) := SourceSavedQuestionProof.wire_sandbox_eq a b
+
+private theorem wrong_core_tenant_eq (a b : sandbox_controller_core.ids.TenantId) :
+    SourceSavedQuestionWrongActual.sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq a b =
+      .ok (decide (a = b)) := SourceSavedQuestionProof.core_tenant_eq a b
+
+private theorem wrong_core_sandbox_eq (a b : sandbox_controller_core.ids.SandboxId) :
+    SourceSavedQuestionWrongActual.sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq a b =
+      .ok (decide (a = b)) := SourceSavedQuestionProof.core_sandbox_eq a b
+
+private theorem wrong_core_vm_eq (a b : sandbox_controller_core.ids.VmId) :
+    SourceSavedQuestionWrongActual.sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq a b =
+      .ok (decide (a = b)) := SourceSavedQuestionProof.core_vm_eq a b
+
+private theorem wrong_clone_action (action : Action) :
+    SourceSavedQuestionWrongActual.sandproof_protocol.WorkAction.Insts.CoreCloneClone.clone
+      SourceSavedQuestionWrongActual.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone action =
+      .ok action := SourceSavedQuestionProof.clone_action action
+
+private theorem wrong_clone_full (full : Full) :
+    SourceSavedQuestionWrongActual.capture.work.FullCaptureWorkRequest.Insts.CoreCloneClone.clone full =
+      .ok full := SourceSavedQuestionProof.clone_full full
+
+private theorem wrong_clone_requirement (requirement : capture.source.SourceObservationRequirement) :
+    SourceSavedQuestionWrongActual.capture.source.SourceObservationRequirement.Insts.CoreCloneClone.clone requirement =
+      .ok requirement := SourceSavedQuestionProof.clone_requirement requirement
+
+private theorem wrong_clone_optional_worker (worker : Option capture.launch.CaptureWorkerBinding) :
+    SourceSavedQuestionWrongActual.core.option.Option.Insts.CoreCloneClone.clone
+      SourceSavedQuestionWrongActual.capture.launch.CaptureWorkerBinding.Insts.CoreCloneClone worker = .ok worker := SourceSavedQuestionProof.clone_optional_worker worker
+
+private theorem wrong_constructor_refines (id : Identity) (sealAction : Action) (full : Full)
+    (requirement : capture.source.SourceObservationRequirement)
+    (worker : Option capture.launch.CaptureWorkerBinding) (action : Action) (stop : Stop) (slot : Slot) :
+    SourceSavedQuestionWrongActual.capture.terminated.TerminatedCaptureWorkRequest.from_source
+      id sealAction full requirement worker (action, stop) slot =
+      .ok (⟨id, sealAction, full, requirement, worker, action, stop, slot⟩ : Work) := SourceSavedQuestionProof.constructor_refines id sealAction full requirement worker action stop slot
+
+/-- A positive equation for the actual mutant, used only as an auxiliary
+    fact. The complete normative Contract below remains unchanged. -/
+private theorem actual_accepts_without_epoch (record : Record) (stop : Stop) (action : Action) (slot : Slot)
+    (id : Identity) (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (sealAction : Action)
+    (represented : Representable record) (ready : identityOutcome record = .Ok id)
+    (found : record.capture = some captured) (present : captured.action = some sealAction)
+    (checked : action.command.logical.command =
+        sandbox_controller_core.model.Command.StopVm id.key.sandbox stop.epoch id.generation id.vm ∧
+      stop.operation.sandbox = id.key.sandbox ∧ stop.operation ≠ id.key ∧
+      action.command.attempt = stop.attempt ∧ action.identity.attempt = stop.attempt ∧
+      action.identity.epoch = stop.epoch ∧ action.identity.generation = id.generation ∧
+      action.identity.owner = sealAction.identity.owner ∧ action.identity.sandbox = sealAction.identity.sandbox ∧
+      slot.binding.owner = record.work.anchor.local.owner ∧ slot.binding.sandbox = id.key.sandbox ∧
+      slot.binding.generation = id.generation ∧ slot.binding.vm = id.vm) :
+    SourceSavedQuestionWrongActual.controller.lifecycle_inbox.source_work.full.drain.question.assemble
+      record stop action slot =
+      .ok (.Ok (⟨id, sealAction, captured.full, record.work.requirement, captured.worker, action, stop, slot⟩ : Work)) := by
+  unfold SourceSavedQuestionWrongActual.controller.lifecycle_inbox.source_work.full.drain.question.assemble
+  rw [wrong_identity_actual_contract record represented, ready]
+  simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok,
+    SourceSavedQuestionWrongActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+    found, present, core.option.Option.ok_or]
+  rw [wrong_command_accessor]
+  simp only [wrong_clone_action, wrong_clone_full, wrong_requirement_accessor, wrong_clone_requirement,
+    wrong_clone_optional_worker, wrong_constructor_refines, bind_tc_ok]
+  simp only [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    wrong_command_eq, wrong_operation_key_eq, wrong_wire_tenant_eq, wrong_wire_sandbox_eq,
+    wrong_core_tenant_eq, wrong_core_sandbox_eq, wrong_core_vm_eq, bind_tc_ok]
+  rcases checked with ⟨sameCommand, sameSandbox, differentKey, commandAttempt, identityAttempt,
+    sameEpoch, sameGeneration, sameOwner, samePublicSandbox, slotOwner, slotSandbox, slotGeneration, slotVm⟩
+  simp [sameCommand, sameSandbox, differentKey, commandAttempt, identityAttempt, sameEpoch,
+    sameGeneration, sameOwner, samePublicSandbox, slotOwner, slotSandbox, slotGeneration, slotVm]
+
+theorem normal_control : wrong saved stop observation = .ok (.Ok expected) := by
+  unfold wrong SourceSavedQuestionWrongActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+  simp only [observation, SourceTerminalMatchValues.make, inode_nonzero, ↓reduceIte]
+  apply actual_accepts_without_epoch saved stop stopAction slot identity captured sealAction
+    represented identity_outcome rfl rfl
+  rcases normal_checks with ⟨cmd, sb, key, _, ca, ia, ep, gen, own, psb, so, ss, sg, sv⟩
+  exact ⟨cmd, sb, key, ca, ia, ep, gen, own, psb, so, ss, sg, sv⟩
+
+theorem gap_control : wrong saved gapStop gapObservation =
+    .ok (.Ok { expected with stop_action := gapStopAction, stop := gapStop }) := by
+  unfold wrong SourceSavedQuestionWrongActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+  simp only [gapObservation, SourceTerminalMatchValues.make, inode_nonzero, ↓reduceIte]
+  apply actual_accepts_without_epoch saved gapStop gapStopAction slot identity captured sealAction
+    represented identity_outcome rfl rfl
+  rcases gap_checks with ⟨cmd, sb, key, _, ca, ia, ep, gen, own, psb, so, ss, sg, sv⟩
+  exact ⟨cmd, sb, key, ca, ia, ep, gen, own, psb, so, ss, sg, sv⟩
+
+theorem actual_old_epoch_accepted : wrong saved oldStop oldObservation =
+    .ok (.Ok { expected with stop_action := oldStopAction, stop := oldStop }) := by
+  unfold wrong SourceSavedQuestionWrongActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+  simp only [oldObservation, SourceTerminalMatchValues.make, inode_nonzero, ↓reduceIte]
+  apply actual_accepts_without_epoch saved oldStop oldStopAction slot identity captured sealAction
+    represented identity_outcome rfl rfl
+  exact ⟨rfl, rfl, normal_checks.2.2.1, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem violates_same_complete_contract : ¬Contract wrong := by
+  intro contract
+  have promised := contract saved oldStop oldObservation represented
+  have expectedOutcome := SourceSavedQuestionValues.actual_old_epoch_rejected
+  rw [SourceSavedQuestionProof.actual_contract saved oldStop oldObservation represented] at expectedOutcome
+  rw [actual_old_epoch_accepted, expectedOutcome] at promised
+  simp at promised
+
+end
+end SandboxModel.Stage1Protocol.SourceSavedQuestionNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionNegative.normal_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionNegative.gap_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionNegative.actual_old_epoch_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSavedQuestionNegative.violates_same_complete_contract

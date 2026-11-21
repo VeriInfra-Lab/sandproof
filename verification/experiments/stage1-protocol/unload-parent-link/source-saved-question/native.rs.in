@@ -1,0 +1,294 @@
+// Real original API/SQLite/JSON fixture, controlled Host; no physical gate fact.
+#[test]
+fn source_saved_question_retains_exact_constructor_and_unchecked_observation_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record, work, observation) =
+        terminal_match_fixture(&dir.path().join("saved-question-normal.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let actual =
+        full::drain::source_terminal_work_for_test(&record, work.stop(), &observation).unwrap();
+    assert_eq!(actual, work);
+    let mut changed = observation.clone();
+    let crate::capture::TerminatedCaptureObservation::StoppedAndDrained {
+        work_binding,
+        full_work_binding,
+        seal_action,
+        source,
+        worker,
+        host_slot,
+        helper_gate_device,
+        ..
+    } = &mut changed;
+    let mut bytes = *work_binding.as_bytes();
+    bytes[0] ^= 1;
+    *work_binding = ContentDigest::from_sha256(bytes);
+    *full_work_binding = ContentDigest::from_sha256(bytes);
+    seal_action.identity.attempt = seal_action.identity.attempt.checked_add(1).unwrap();
+    source.pid = source.pid.checked_add(1).unwrap();
+    *worker = None;
+    host_slot.position.0 = host_slot.position.0.checked_add(1).unwrap();
+    host_slot.expected_previous = Some(core::VmId::new(987654));
+    host_slot.binding.network.0 = host_slot.binding.network.0.checked_add(1).unwrap();
+    *helper_gate_device = 0;
+    let expected_slot = *host_slot;
+    let changed_work =
+        full::drain::source_terminal_work_for_test(&record, work.stop(), &changed).unwrap();
+    assert_eq!(changed_work.identity(), work.identity());
+    assert_eq!(changed_work.seal_action(), work.seal_action());
+    assert_eq!(changed_work.full(), &record.capture.as_ref().unwrap().full);
+    assert_eq!(changed_work.source(), record.work.requirement());
+    assert_eq!(
+        changed_work.worker(),
+        record.capture.as_ref().unwrap().worker.as_ref()
+    );
+    assert_eq!(changed_work.stop_action(), work.stop_action());
+    assert_eq!(changed_work.stop(), work.stop());
+    assert_eq!(changed_work.host_slot(), expected_slot);
+    assert_ne!(changed_work, work);
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_saved_question_preserves_inode_capture_full_and_action_first_errors() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record, work, observation) =
+        terminal_match_fixture(&dir.path().join("saved-question-order.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut missing = record.clone();
+    missing.capture = None;
+    assert!(matches!(
+        full::drain::source_terminal_work_for_test(&missing, work.stop(), &observation),
+        Err(JournalError::CorruptStore)
+    ));
+    let mut changed = record.clone();
+    let cap = changed.capture.as_mut().unwrap();
+    cap.full.state_bytes = 0;
+    cap.action = None;
+    assert!(
+        matches!(
+            full::drain::source_terminal_work_for_test(&changed, work.stop(), &observation),
+            Err(JournalError::Conflict)
+        ),
+        "original Full conflict precedes missing action"
+    );
+    let mut zero_inode = observation.clone();
+    let crate::capture::TerminatedCaptureObservation::StoppedAndDrained {
+        helper_gate_inode, ..
+    } = &mut zero_inode;
+    *helper_gate_inode = 0;
+    assert!(
+        matches!(
+            full::drain::source_terminal_work_for_test(&changed, work.stop(), &zero_inode),
+            Err(JournalError::CorruptStore)
+        ),
+        "zero inode must precede Full conflict"
+    );
+    let mut missing_action = record.clone();
+    missing_action.capture.as_mut().unwrap().action = None;
+    assert!(matches!(
+        full::drain::source_terminal_work_for_test(&missing_action, work.stop(), &observation),
+        Err(JournalError::UnresolvedAction)
+    ));
+    let mut wrong_tag = missing_action.clone();
+    wrong_tag.work.anchor.request.request.operation =
+        sandproof_protocol::lifecycle::LifecycleOperation::Destroy {};
+    assert!(
+        matches!(
+            full::drain::source_terminal_work_for_test(&wrong_tag, work.stop(), &observation),
+            Err(JournalError::Conflict)
+        ),
+        "request tag conflict precedes missing action"
+    );
+    let mut wrong_command = record.clone();
+    let action = wrong_command
+        .capture
+        .as_mut()
+        .unwrap()
+        .action
+        .as_mut()
+        .unwrap();
+    action.command.logical.command = core::Command::InstallFence {
+        sandbox: record.work.anchor.local.sandbox,
+        epoch: action.identity.epoch,
+        terminal: false,
+    };
+    assert!(matches!(
+        full::drain::source_terminal_work_for_test(&wrong_command, work.stop(), &observation),
+        Err(JournalError::CorruptStore)
+    ));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_saved_question_connects_all_six_original_identity_checks() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record, work, observation) =
+        terminal_match_fixture(&dir.path().join("saved-question-identity.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    for field in 0..6 {
+        let mut changed = record.clone();
+        match field {
+            0 => {
+                changed.work.anchor.local.sandbox.0 =
+                    changed.work.anchor.local.sandbox.0.checked_add(1).unwrap()
+            }
+            1 => {
+                changed.work.anchor.native.generation = changed
+                    .work
+                    .anchor
+                    .native
+                    .generation
+                    .checked_add(1)
+                    .unwrap()
+            }
+            2 => changed.work.anchor.native.current_vm = None,
+            3..=5 => {
+                let action = changed.capture.as_mut().unwrap().action.as_mut().unwrap();
+                match field {
+                    3 => action.identity.epoch = action.identity.epoch.checked_add(1).unwrap(),
+                    4 => {
+                        action.identity.generation =
+                            action.identity.generation.checked_add(1).unwrap()
+                    }
+                    5 => action.identity.attempt = action.identity.attempt.checked_add(1).unwrap(),
+                    _ => unreachable!(),
+                }
+            }
+            _ => unreachable!(),
+        }
+        let result =
+            full::drain::source_terminal_work_for_test(&changed, work.stop(), &observation);
+        assert!(
+            matches!(result, Err(JournalError::CorruptStore)),
+            "saved original identity field={field}, result={result:?}"
+        );
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_saved_question_checks_stop_action_and_four_host_binding_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record, work, observation) =
+        terminal_match_fixture(&dir.path().join("saved-question-stop-fields.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    for field in 0..13 {
+        let mut changed = observation.clone();
+        let mut stop = work.stop();
+        let crate::capture::TerminatedCaptureObservation::StoppedAndDrained {
+            stop_action,
+            host_slot,
+            ..
+        } = &mut changed;
+        match field {
+            0 => {
+                stop_action.command.logical.command = core::Command::InstallFence {
+                    sandbox: work.identity().key.sandbox,
+                    epoch: stop.epoch,
+                    terminal: false,
+                }
+            }
+            1 => stop.operation.sandbox.0 = stop.operation.sandbox.0.checked_add(1).unwrap(),
+            2 => stop.operation = work.identity().key,
+            3 => stop_action.command.attempt = stop_action.command.attempt.checked_add(1).unwrap(),
+            4 => {
+                stop_action.identity.attempt = stop_action.identity.attempt.checked_add(1).unwrap()
+            }
+            5 => stop_action.identity.epoch = stop_action.identity.epoch.checked_add(1).unwrap(),
+            6 => {
+                stop_action.identity.generation =
+                    stop_action.identity.generation.checked_add(1).unwrap()
+            }
+            7 => {
+                stop_action.identity.owner =
+                    sandproof_protocol::TenantId::try_from("foreign-owner").unwrap()
+            }
+            8 => {
+                stop_action.identity.sandbox =
+                    sandproof_protocol::SandboxId::try_from("foreign-sandbox").unwrap()
+            }
+            9 => host_slot.binding.owner.0 = host_slot.binding.owner.0.checked_add(1).unwrap(),
+            10 => host_slot.binding.sandbox.0 = host_slot.binding.sandbox.0.checked_add(1).unwrap(),
+            11 => {
+                host_slot.binding.generation = host_slot.binding.generation.checked_add(1).unwrap()
+            }
+            12 => host_slot.binding.vm.0 = host_slot.binding.vm.0.checked_add(1).unwrap(),
+            _ => unreachable!(),
+        }
+        let result = full::drain::source_terminal_work_for_test(&record, stop, &changed);
+        assert!(
+            matches!(result, Err(JournalError::CorruptStore)),
+            "saved original stop/host field={field}, result={result:?}"
+        );
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_saved_question_requires_strictly_newer_stop_epoch() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record, work, observation) =
+        terminal_match_fixture(&dir.path().join("saved-question-stop-epoch.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    // A later epoch need not be the next number.
+    let mut gap_observation = observation.clone();
+    let mut gap_stop = work.stop();
+    gap_stop.epoch = work.identity().epoch.checked_add(10).unwrap();
+    let crate::capture::TerminatedCaptureObservation::StoppedAndDrained { stop_action, .. } =
+        &mut gap_observation;
+    stop_action.command.logical.command = core::Command::StopVm {
+        sandbox: work.identity().key.sandbox,
+        epoch: gap_stop.epoch,
+        generation: work.identity().generation,
+        vm: work.identity().vm,
+    };
+    stop_action.identity.epoch = gap_stop.epoch;
+    let gap_work =
+        full::drain::source_terminal_work_for_test(&record, gap_stop, &gap_observation).unwrap();
+    assert_eq!(gap_work.stop(), gap_stop);
+    // Keep every other original coordinate consistent, so only the strict
+    // stop epoch guard can reject. Unrelated attempt/command mismatches do not mask it.
+    let mut changed = observation.clone();
+    let mut stop = work.stop();
+    stop.epoch = work.identity().epoch;
+    let crate::capture::TerminatedCaptureObservation::StoppedAndDrained { stop_action, .. } =
+        &mut changed;
+    stop_action.command.logical.command = core::Command::StopVm {
+        sandbox: work.identity().key.sandbox,
+        epoch: stop.epoch,
+        generation: work.identity().generation,
+        vm: work.identity().vm,
+    };
+    stop_action.identity.epoch = stop.epoch;
+    let result = full::drain::source_terminal_work_for_test(&record, stop, &changed);
+    assert!(
+        matches!(result, Err(JournalError::CorruptStore)),
+        "saved question must require strictly newer stop epoch: result={result:?}"
+    );
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
