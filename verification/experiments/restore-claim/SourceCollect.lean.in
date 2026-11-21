@@ -1,0 +1,114 @@
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.SourceRead
+
+open Aeneas Aeneas.Std SandproofRestoreSourceReadRust
+open SandproofRestoreSourceReadRust.controller.lifecycle_inbox.source_work
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+abbrev RawSourceRow := core.result.Result (RowBytes × RowBytes × Option RowBytes) rusqlite.error.Error
+abbrev SourceIterator I := core.iter.traits.iterator.Iterator I RawSourceRow
+
+/-- The original cursor's successive normal calls, including vacant rows and
+its terminal observation. Each item records the actual checked row reply. -/
+inductive SourceCursorTrace (ports : codec.SourceRowJson J D) (iterator : SourceIterator I) :
+    I → List (RawSourceRow × Option SourceWorkRecord) → Prop where
+  | done {state after} (observed : iterator.next state = .ok (none, after)) :
+      SourceCursorTrace ports iterator state []
+  | next {state after row decoded rest}
+      (observed : iterator.next state = .ok (some row, after))
+      (rowRead : codec.proof_decode_source_record ports row = .ok (.Ok decoded))
+      (tail : SourceCursorTrace ports iterator after rest) :
+      SourceCursorTrace ports iterator state ((row, decoded) :: rest)
+
+private theorem SourceCursorTrace.row_result {ports : codec.SourceRowJson J D}
+    {iterator : SourceIterator I} {state rows} (trace : SourceCursorTrace ports iterator state rows) :
+    ∀ entry ∈ rows, codec.proof_decode_source_record ports entry.1 = .ok (.Ok entry.2) := by
+  induction trace with
+  | done observed => simp
+  | next observed rowRead _ ih =>
+    intro entry member
+    rcases List.mem_cons.mp member with rfl | later
+    · exact rowRead
+    · exact ih entry later
+
+private theorem actual_source_loop (ports : codec.SourceRowJson J D) (iterator : SourceIterator I)
+    (state : I) (initial : alloc.vec.Vec SourceWorkRecord)
+    (rows : List (RawSourceRow × Option SourceWorkRecord))
+    (trace : SourceCursorTrace ports iterator state rows)
+    (capacity : initial.val.length + (rows.filterMap Prod.snd).length ≤ Usize.max) :
+    ∃ loaded, codec.proof_collect_source_records_loop ports iterator state initial = .ok (.Ok loaded) ∧
+      loaded.val = initial.val ++ rows.filterMap Prod.snd := by
+  induction trace generalizing initial with
+  | done observed =>
+    refine ⟨initial, ?_, by simp⟩
+    rw [codec.proof_collect_source_records_loop, loop]
+    simp [codec.proof_collect_source_records_loop.body, observed]
+  | @next cursor nextState row decoded rest observed rowRead restTrace ih =>
+    cases decoded with
+    | none =>
+      have bound : initial.val.length + (rest.filterMap Prod.snd).length ≤ Usize.max := by
+        simpa using capacity
+      obtain ⟨loaded, ran, exactRows⟩ := ih initial bound
+      refine ⟨loaded, ?_, by simpa using exactRows⟩
+      unfold codec.proof_collect_source_records_loop at ran
+      rw [codec.proof_collect_source_records_loop, loop]
+      simpa [codec.proof_collect_source_records_loop.body, observed, rowRead,
+        core.result.Result.Insts.CoreOpsTry.branch] using ran
+    | some record =>
+      have space : initial.val.length < Usize.max := by
+        simp only [List.filterMap_cons, List.length_cons] at capacity
+        omega
+      obtain ⟨updated, pushed, appended⟩ := WP.spec_imp_exists (alloc.vec.Vec.push_spec initial record space)
+      have bound : updated.val.length + (rest.filterMap Prod.snd).length ≤ Usize.max := by
+        simp only [appended, List.length_append, List.length_singleton]
+        simpa [Nat.add_assoc, Nat.add_comm, Nat.add_left_comm] using capacity
+      obtain ⟨loaded, ran, exactRows⟩ := ih updated bound
+      refine ⟨loaded, ?_, ?_⟩
+      · unfold codec.proof_collect_source_records_loop at ran
+        rw [codec.proof_collect_source_records_loop, loop]
+        simpa [codec.proof_collect_source_records_loop.body, observed, rowRead,
+          core.result.Result.Insts.CoreOpsTry.branch, pushed] using ran
+      · simpa [appended, List.append_assoc] using exactRows
+
+theorem actual_source_collect_preserves_rows (ports : codec.SourceRowJson J D)
+    (iterator : SourceIterator I) (state : I) (rows : List (RawSourceRow × Option SourceWorkRecord))
+    (trace : SourceCursorTrace ports iterator state rows)
+    (capacity : (rows.filterMap Prod.snd).length ≤ Usize.max) :
+    ∃ loaded, codec.proof_collect_source_records ports iterator state = .ok (.Ok loaded) ∧
+      loaded.val = rows.filterMap Prod.snd := by
+  simpa [codec.proof_collect_source_records] using actual_source_loop ports iterator state
+    (alloc.vec.Vec.new SourceWorkRecord) rows trace (by simpa using capacity)
+
+theorem original_read_row_is_in_loaded_sources (ports : codec.SourceRowJson J D)
+    (iterator : SourceIterator I) (state : I) (rows : List (RawSourceRow × Option SourceWorkRecord))
+    (trace : SourceCursorTrace ports iterator state rows)
+    (capacity : (rows.filterMap Prod.snd).length ≤ Usize.max)
+    (bytes sha key : RowBytes) (original decoded : SourceWorkRecord)
+    (originalBytes : ports.decode_record (alloc.vec.Vec.deref bytes) = .ok (.Ok (some original)))
+    (originalSlot : ((.Ok (bytes, sha, some key)), some decoded) ∈ rows) :
+    ∃ loaded, codec.proof_collect_source_records ports iterator state = .ok (.Ok loaded) ∧
+      original ∈ loaded.val := by
+  have decodedAt := trace.row_result _ originalSlot
+  have originalRecord := original_decoded_claim_is_read_back ports bytes sha key original decoded originalBytes decodedAt
+  subst decoded
+  obtain ⟨loaded, returned, content⟩ := actual_source_collect_preserves_rows ports iterator state rows trace capacity
+  refine ⟨loaded, returned, ?_⟩
+  rw [content]
+  exact List.mem_filterMap.mpr ⟨_, originalSlot, rfl⟩
+
+theorem actual_source_collect_first_error (ports : codec.SourceRowJson J D)
+    (iterator : SourceIterator I) (state after : I) (row : RawSourceRow) (error : JournalError)
+    (observed : iterator.next state = .ok (some row, after))
+    (rowRead : codec.proof_decode_source_record ports row = .ok (.Err error)) :
+    codec.proof_collect_source_records ports iterator state = .ok (.Err error) := by
+  unfold codec.proof_collect_source_records codec.proof_collect_source_records_loop
+  rw [loop]
+  simp [codec.proof_collect_source_records_loop.body, observed, rowRead,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.actual_source_collect_preserves_rows
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.original_read_row_is_in_loaded_sources
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.actual_source_collect_first_error

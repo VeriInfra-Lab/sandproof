@@ -1,0 +1,155 @@
+import SandproofRestoreResumeScan.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofRestoreResumeScanRust
+open SandproofRestoreResumeScanRust.sandbox_controller_core
+open SandproofRestoreResumeScanRust.controller.lifecycle_inbox.source_work
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+private abbrev State := restore.proof_permits_resume_loaded.closure
+private abbrev RowCallback :=
+  restore.proof_permits_resume_loaded.closure.Insts.CoreOpsFunctionFnMutTupleSharedSourceWorkRecordBool
+private abbrev CallRow :=
+  restore.proof_permits_resume_loaded.closure.Insts.CoreOpsFunctionFnMutTupleSharedSourceWorkRecordBool.call_mut
+private abbrev CallClaim :=
+  restore.proof_permits_resume_loaded.closure.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRestoreClaimBool.call_once
+
+private theorem bind_ok_parts (first : Result A) (step : A → Result B) (output : B)
+    (reply : (do let value ← first; step value) = .ok output) :
+    ∃ value, first = .ok value ∧ step value = .ok output := by
+  cases first with
+  | ret value => exact ⟨value, rfl, by simpa only [bind_tc_ok] using reply⟩
+  | div => simp at reply
+  | vis effect resume => simp at reply
+
+private theorem callback_preserves_context (state : State) (record : SourceWorkRecord)
+    (answer : Bool) (next : State) (reply : CallRow state record = .ok (answer, next)) :
+    next = state := by
+  rcases state with ⟨request, row, world⟩
+  simp only [CallRow,
+    restore.proof_permits_resume_loaded.closure.Insts.CoreOpsFunctionFnMutTupleSharedSourceWorkRecordBool.call_mut,
+    core.option.Option.as_ref, bind_tc_ok] at reply
+  obtain ⟨value, _, returned⟩ := bind_ok_parts _ _ _ reply
+  exact (congrArg Prod.snd (Result.ok_injective returned)).symm
+
+private theorem blocked_claim_refuses (request : request.ResumeRequest) (row : model.SandboxRecord)
+    (world : model.World) (record : SourceWorkRecord) (claim : restore.RestoreClaim)
+    (blocked : claim.local.sandbox ≠ request.sandbox ∨ claim.local.operation ≠ request.operation ∨
+      claim.activation.isSome) : CallClaim (request, row, record, world) claim = .ok false := by
+  rcases blocked with notSandbox | notOperation | marked
+  · simp [CallClaim,
+      restore.proof_permits_resume_loaded.closure.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRestoreClaimBool.call_once,
+      ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, notSandbox]
+  · by_cases sameSandbox : claim.local.sandbox = request.sandbox <;>
+      simp [CallClaim,
+        restore.proof_permits_resume_loaded.closure.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRestoreClaimBool.call_once,
+        ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq,
+        sameSandbox, notOperation]
+  · cases activation : claim.activation with
+    | none => simp [activation] at marked
+    | some original =>
+      cases actor : request.actor <;>
+        cases generation : U64.checked_add row.generation 1#u64 <;>
+        simp [CallClaim,
+          restore.proof_permits_resume_loaded.closure.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRestoreClaimBool.call_once,
+          ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq,
+          ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq, model.Actor.Insts.CoreCmpPartialEqActor.eq,
+          model.Actor.read_discriminant, model.Phase.Insts.CoreCmpPartialEqPhase.eq,
+          core.option.Option.Insts.CoreCmpPartialEqOption.eq, core.option.Option.is_none,
+          actor, generation, activation, lift]
+
+private theorem accepted_row_has_unmarked_operation (request : request.ResumeRequest)
+    (row : model.SandboxRecord) (world : model.World) (record : SourceWorkRecord) (next : State)
+    (reply : CallRow (request, row, world) record = .ok (true, next)) :
+    ∃ claim, record.restore = some claim ∧ claim.local.sandbox = request.sandbox ∧
+      claim.local.operation = request.operation ∧ claim.activation = none := by
+  cases saved : record.restore with
+  | none =>
+    simp [CallRow,
+      restore.proof_permits_resume_loaded.closure.Insts.CoreOpsFunctionFnMutTupleSharedSourceWorkRecordBool.call_mut,
+      core.option.Option.as_ref, core.option.Option.is_some_and, saved] at reply
+  | some claim =>
+    have claimReply : CallClaim (request, row, record, world) claim = .ok true := by
+      simp only [CallRow,
+        restore.proof_permits_resume_loaded.closure.Insts.CoreOpsFunctionFnMutTupleSharedSourceWorkRecordBool.call_mut,
+        core.option.Option.as_ref, bind_tc_ok, core.option.Option.is_some_and, saved] at reply
+      obtain ⟨value, chose, result⟩ := bind_ok_parts _ _ _ reply
+      have trueValue : value = true := congrArg Prod.fst (Result.ok_injective result)
+      simpa only [trueValue] using chose
+    refine ⟨claim, rfl, ?_, ?_, ?_⟩
+    · by_contra different
+      rw [blocked_claim_refuses request row world record claim (.inl different)] at claimReply
+      simp at claimReply
+    · by_contra different
+      rw [blocked_claim_refuses request row world record claim (.inr (.inl different))] at claimReply
+      simp at claimReply
+    · cases activation : claim.activation with
+      | none => rfl
+      | some original =>
+        have marked : claim.activation.isSome := by simp [activation]
+        rw [blocked_claim_refuses request row world record claim (.inr (.inr marked))] at claimReply
+        simp at claimReply
+
+private theorem any_true_has_row (state : State) (records : List SourceWorkRecord) (consumed : Nat)
+    (reply : anyList RowCallback records state = .ok (true, consumed)) :
+    ∃ record ∈ records, ∃ next, CallRow state record = .ok (true, next) := by
+  induction records generalizing consumed with
+  | nil => simp [anyList] at reply
+  | cons record rest ih =>
+    unfold anyList at reply
+    change (do
+      let (matched, next) ← CallRow state record
+      if matched then .ok (true, 1)
+      else
+        let (found, count) ← anyList RowCallback rest next
+        .ok (found, count + 1)) = .ok (true, consumed) at reply
+    obtain ⟨⟨matched, next⟩, observed, remaining⟩ := bind_ok_parts _ _ _ reply
+    cases matched
+    · have same := callback_preserves_context state record false next observed
+      subst next
+      simp only [Bool.false_eq_true, ↓reduceIte] at remaining
+      obtain ⟨⟨found, count⟩, tail, returned⟩ := bind_ok_parts _ _ _ remaining
+      have foundTrue : found = true := congrArg Prod.fst (Result.ok_injective returned)
+      subst found
+      obtain ⟨other, inside, witness, found⟩ := ih count tail
+      exact ⟨other, List.mem_cons_of_mem _ inside, witness, found⟩
+    · exact ⟨record, List.mem_cons_self, next, observed⟩
+
+theorem native_resume_permit_requires_unmarked_operation (sources : codec.Sources)
+    (world : model.World) (request : request.ResumeRequest)
+    (reply : restore.proof_permits_resume_loaded sources world request = .ok (.Ok true)) :
+    ∃ record ∈ sources.records.val, ∃ claim,
+      record.restore = some claim ∧ claim.local.sandbox = request.sandbox ∧
+      claim.local.operation = request.operation ∧ claim.activation = none := by
+  unfold restore.proof_permits_resume_loaded at reply
+  obtain ⟨observation, _, remaining⟩ := bind_ok_parts _ _ _ reply
+  cases observation with
+  | none => simp at remaining
+  | some row =>
+    simp only [alloc.vec.Vec.deref, Slice.from_val, core.slice.Slice.iter, bind_tc_ok,
+      core.slice.iter.Iter.Insts.CoreIterTraitsIteratorIteratorSharedAT.any, List.drop_zero,
+      bind_assoc_eq] at remaining
+    obtain ⟨⟨answer, consumed⟩, actual, returned⟩ := bind_ok_parts _ _ _ remaining
+    have accepted : answer = true := by simpa using returned
+    subst answer
+    obtain ⟨record, member, next, recordReply⟩ := any_true_has_row _ _ _ actual
+    exact ⟨record, member, accepted_row_has_unmarked_operation request row world record next recordReply⟩
+
+theorem native_resume_permit_refuses_marked_operation (sources : codec.Sources)
+    (world : model.World) (request : request.ResumeRequest) (answer : Bool)
+    (reply : restore.proof_permits_resume_loaded sources world request = .ok (.Ok answer))
+    (marked : ∀ record ∈ sources.records.val, ∀ claim : restore.RestoreClaim,
+      record.restore = some claim → claim.local.sandbox = request.sandbox →
+      claim.local.operation = request.operation → claim.activation.isSome) : answer = false := by
+  cases answer with
+  | false => rfl
+  | true =>
+    obtain ⟨record, member, claim, saved, sandbox, operation, absent⟩ :=
+      native_resume_permit_requires_unmarked_operation sources world request reply
+    simpa [absent] using marked record member claim saved sandbox operation
+
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.native_resume_permit_requires_unmarked_operation
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.native_resume_permit_refuses_marked_operation

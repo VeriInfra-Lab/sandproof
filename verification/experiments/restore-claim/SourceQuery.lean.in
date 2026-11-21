@@ -1,0 +1,164 @@
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.SourceCollect
+
+open Aeneas Aeneas.Std SandproofRestoreSourceQueryRust
+open SandproofRestoreSourceQueryRust.controller.lifecycle_inbox.source_work
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+def sourceRecordsSql : Str :=
+  let sql := "SELECT state_json,sha256,work_key FROM controller_source_work_records ORDER BY id"
+  toStr sql (by
+    rw [← String.ofList_toList (s := sql), String.toByteArray_ofList, U32.max_def, U32.numBits_def]
+    dsimp only [sql]
+    simp only [String.reduceToList]
+    decide +kernel)
+
+abbrev SourceMapper J D := codec.proof_query_source_records.closure J Unit D
+
+abbrev sourceMapper (ports : codec.SourceRowJson J D) :=
+  codec.proof_query_source_records.closure.Insts.CoreOpsFunctionFnMutTupleSharedRowResultTupleVecU8VecU8OptionVecU8Error ports sourceNoParams
+
+abbrev sourceQueryIterator (ports : codec.SourceRowJson J D) : SourceIterator (rusqlite.row.MappedRows (SourceMapper J D)) :=
+  rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError (sourceMapper ports)
+
+def issuedSourceCursor (connection : rusqlite.Connection) (J D : Type) :
+    rusqlite.row.MappedRows (SourceMapper J D) :=
+  sourceMappedCursor (sourceIssuedStatement connection.current sourceRecordsSql 0) ()
+
+/-- With the actual zero-parameter prepare reply, the collector consumes the cursor
+issued by that statement, carrying its original three-column callback. -/
+theorem actual_source_query_uses_issued_cursor (ports : codec.SourceRowJson J D)
+    (connection : rusqlite.Connection)
+    (prepared : connection.current.single.canonical.prepare sourceRecordsSql = .ok (.Ok 0)) :
+    codec.proof_query_source_records ports sourceNoParams connection () sourceRecordsSql =
+      codec.proof_collect_source_records ports (sourceQueryIterator ports)
+        (issuedSourceCursor connection J D) := by
+  unfold codec.proof_query_source_records rusqlite.Connection.prepare
+  simp [sourceIssuedStatement, issuedSourceCursor,
+    rusqlite.statement.Statement.query_map,
+    sourceNoParams, bindSourceNoParams,
+    SandproofSqliteSession.bindUnit, SandproofLoadBlobRust.issuedReadStatement,
+    core.result.Result.Insts.CoreOpsTry.branch, prepared]
+  rfl
+
+theorem actual_source_query_prepare_error (ports : codec.SourceRowJson J D)
+    (connection : rusqlite.Connection) (error : rusqlite.error.Error)
+    (prepared : connection.current.single.canonical.prepare sourceRecordsSql = .ok (.Err error)) :
+    codec.proof_query_source_records ports sourceNoParams connection () sourceRecordsSql = .ok (.Err (.Sqlite error)) := by
+  unfold codec.proof_query_source_records rusqlite.Connection.prepare
+  simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SqliteSourceRowFromError.from, prepared]
+
+abbrev getSourceBlob :=
+  rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex
+    alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql
+
+abbrev getSourceKey :=
+  rusqlite.row.Row.get Usize.Insts.RusqliteRowRowIndex
+    (core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql
+      alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql)
+
+theorem actual_source_mapper_reads_three_columns (ports : codec.SourceRowJson J D)
+    (row : rusqlite.row.Row) (bytes sha : RowBytes) (key : Option RowBytes)
+    (first : getSourceBlob row 0#usize = .ok (.Ok bytes))
+    (second : getSourceBlob row 1#usize = .ok (.Ok sha))
+    (third : getSourceKey row 2#usize = .ok (.Ok key)) :
+    (sourceMapper ports).call_mut () row = .ok (.Ok (bytes, sha, key), ()) := by
+  change codec.proof_query_source_records.closure.Insts.CoreOpsFunctionFnMutTupleSharedRowResultTupleVecU8VecU8OptionVecU8Error.call_mut
+    ports sourceNoParams () row = _
+  unfold codec.proof_query_source_records.closure.Insts.CoreOpsFunctionFnMutTupleSharedRowResultTupleVecU8VecU8OptionVecU8Error.call_mut
+  simp [first, second, third, core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem actual_source_mapper_preserves_column_zero_error (ports : codec.SourceRowJson J D)
+    (row : rusqlite.row.Row) (error : rusqlite.error.Error)
+    (first : getSourceBlob row 0#usize = .ok (.Err error)) :
+    (sourceMapper ports).call_mut () row = .ok (.Err error, ()) := by
+  change codec.proof_query_source_records.closure.Insts.CoreOpsFunctionFnMutTupleSharedRowResultTupleVecU8VecU8OptionVecU8Error.call_mut
+    ports sourceNoParams () row = _
+  unfold codec.proof_query_source_records.closure.Insts.CoreOpsFunctionFnMutTupleSharedRowResultTupleVecU8VecU8OptionVecU8Error.call_mut
+  simp [first, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+private theorem source_blob_column (row : rusqlite.row.Row) (position : Usize)
+    (value : RowBytes) (within : position.val < row.statement.row.columns.val)
+    (raw : row.original.column position = .Blob value.slice) :
+    getSourceBlob row position = .ok (.Ok value) := by
+  cases value
+  simp [rusqlite.row.Row.get, SandproofSqliteSession.rowGet, Usize.Insts.RusqliteRowRowIndex.idx,
+    SandproofSqliteSession.index, within, raw, sourceValueRef, sourceRawValue,
+    alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result, SandproofSqliteSession.blobColumn]
+
+def sourceKeyValue : Option RowBytes → SandproofSqliteSession.RawValue
+  | none => .Null
+  | some bytes => .Blob bytes.slice
+
+private theorem source_key_column (row : rusqlite.row.Row) (position : Usize)
+    (value : Option RowBytes) (within : position.val < row.statement.row.columns.val)
+    (raw : row.original.column position = sourceKeyValue value) :
+    getSourceKey row position = .ok (.Ok value) := by
+  cases value with
+  | none =>
+    simp [rusqlite.row.Row.get, SandproofSqliteSession.rowGet, Usize.Insts.RusqliteRowRowIndex.idx,
+      SandproofSqliteSession.index, within, raw, sourceKeyValue, sourceValueRef,
+      core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql.column_result]
+  | some bytes =>
+    cases bytes
+    simp [rusqlite.row.Row.get, SandproofSqliteSession.rowGet, Usize.Insts.RusqliteRowRowIndex.idx,
+      SandproofSqliteSession.index, within, raw, sourceKeyValue, sourceValueRef, sourceRawValue,
+      core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql.column_result,
+      alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result, SandproofSqliteSession.blobColumn]
+
+/-- Successful step of the same cursor uses the raw Row from that step and the
+statement attached at prepare. Later rows use the next observation of this cursor. -/
+theorem actual_source_cursor_reads_original_row (ports : codec.SourceRowJson J D)
+    (cursor : rusqlite.row.MappedRows (SourceMapper J D)) (row : SandproofSqliteSession.Row)
+    (bytes sha : RowBytes) (key : Option RowBytes)
+    (observed : cursor.mapped.cursor.trace.observe cursor.mapped.cursor.calls = .ok (.Ok (some row)))
+    (firstBound : (0#usize).val < cursor.statement.row.columns.val)
+    (secondBound : (1#usize).val < cursor.statement.row.columns.val)
+    (thirdBound : (2#usize).val < cursor.statement.row.columns.val)
+    (first : row.column 0#usize = .Blob bytes.slice)
+    (second : row.column 1#usize = .Blob sha.slice)
+    (third : row.column 2#usize = sourceKeyValue key) :
+    (sourceQueryIterator ports).next cursor =
+      .ok (some (.Ok (bytes, sha, key)), {
+        cursor with mapped := {
+          cursor.mapped with cursor := {
+            cursor.mapped.cursor with calls := cursor.mapped.cursor.calls + 1 } } }) := by
+  have read := actual_source_mapper_reads_three_columns ports ⟨row, cursor.statement⟩
+    bytes sha key (source_blob_column _ _ _ firstBound first)
+    (source_blob_column _ _ _ secondBound second) (source_key_column _ _ _ thirdBound third)
+  change codec.proof_query_source_records.closure.Insts.CoreOpsFunctionFnMutTupleSharedRowResultTupleVecU8VecU8OptionVecU8Error.call_mut
+    ports sourceNoParams () ⟨row, cursor.statement⟩ = _ at read
+  change rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError.next
+    (sourceMapper ports) cursor = _
+  have callback : cursor.mapped.callback = () := rfl
+  simp [rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError.next,
+    SandproofSqliteSession.mappedNext, SandproofSqliteSession.cursorNext, observed,
+    callback, read]
+
+/-- The loaded list contains the exact durable record read from the original slot,
+including its marker. The observed sequence belongs to this issued cursor. -/
+theorem original_slot_is_in_query_result (ports : codec.SourceRowJson J D)
+    (connection : rusqlite.Connection)
+    (prepared : connection.current.single.canonical.prepare sourceRecordsSql = .ok (.Ok 0))
+    (rows : List (RawSourceRow × Option SourceWorkRecord))
+    (trace : SourceCursorTrace ports (sourceQueryIterator ports) (issuedSourceCursor connection J D) rows)
+    (capacity : (rows.filterMap Prod.snd).length ≤ Usize.max)
+    (bytes sha key : RowBytes) (original decoded : SourceWorkRecord)
+    (originalBytes : ports.decode_record (alloc.vec.Vec.deref bytes) = .ok (.Ok (some original)))
+    (originalSlot : ((.Ok (bytes, sha, some key)), some decoded) ∈ rows) :
+    ∃ loaded, codec.proof_query_source_records ports sourceNoParams connection () sourceRecordsSql = .ok (.Ok loaded) ∧ original ∈ loaded.val := by
+  rw [actual_source_query_uses_issued_cursor ports connection prepared]
+  exact original_read_row_is_in_loaded_sources ports _ _ rows trace capacity
+    bytes sha key original decoded originalBytes originalSlot
+
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.actual_source_query_uses_issued_cursor
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.actual_source_query_prepare_error
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.actual_source_mapper_reads_three_columns
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.actual_source_mapper_preserves_column_zero_error
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.actual_source_cursor_reads_original_row
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.original_slot_is_in_query_result

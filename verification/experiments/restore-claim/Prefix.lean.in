@@ -1,0 +1,52 @@
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.Contract
+
+open Aeneas Aeneas.Std SandproofRestoreClaimRust
+open SandproofRestoreClaimRust.controller.lifecycle_inbox.source_work.restore
+open SandproofRestoreClaimRust.sandbox_controller_core.ids
+open SandproofRestoreClaimRust.sandbox_controller_core.model
+open SandproofRestoreClaimRust.sandbox_controller_core.request
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+private theorem actor_eq_tenant (actor : Actor) (owner : TenantId) :
+    Actor.Insts.CoreCmpPartialEqActor.eq actor (.Tenant owner) =
+      .ok (by classical exact decide (actor = .Tenant owner)) := by
+  cases actor <;>
+    simp [Actor.Insts.CoreCmpPartialEqActor.eq, Actor.read_discriminant,
+      TenantId.Insts.CoreCmpPartialEqTenantId.eq]
+
+theorem marked_claim_refuses_resume_prefix (claim : RestoreClaim) (row : SandboxRecord)
+    (request : ResumeRequest) (original : Action) (saved : claim.activation = some original) :
+    proof_resume_prefix claim row request = .ok false := by
+  classical
+  cases advance : U64.checked_add row.generation 1#u64 <;>
+    simp [proof_resume_prefix, SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+      OperationId.Insts.CoreCmpPartialEqOperationId.eq, actor_eq_tenant,
+      TenantId.Insts.CoreCmpPartialEqTenantId.eq, lift, advance,
+      core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+      core.cmp.impls.PartialEqU64.eq, Phase.Insts.CoreCmpPartialEqPhase.eq,
+      saved, core.option.Option.is_none]
+
+theorem unmarked_claim_accepts_resume_prefix (claim : RestoreClaim) (row : SandboxRecord)
+    (request : ResumeRequest)
+    (sandbox : claim.local.sandbox = request.sandbox)
+    (operation : claim.local.operation = request.operation)
+    (actor : request.actor = .Tenant claim.local.owner)
+    (owner : row.owner = claim.local.owner)
+    (live : row.terminal = false)
+    (successor : U64.checked_add row.generation 1#u64 = some claim.generation)
+    (paused : row.phase = .Paused) (pinned : claim.material_use = true)
+    (unmarked : claim.activation = none) :
+    proof_resume_prefix claim row request = .ok true := by
+  classical
+  simp [proof_resume_prefix, SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    OperationId.Insts.CoreCmpPartialEqOperationId.eq, actor_eq_tenant,
+    TenantId.Insts.CoreCmpPartialEqTenantId.eq, lift, successor,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+    core.cmp.impls.PartialEqU64.eq, Phase.Insts.CoreCmpPartialEqPhase.eq,
+    sandbox, operation, actor, owner, live, paused, pinned, unmarked, core.option.Option.is_none]
+
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.marked_claim_refuses_resume_prefix
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.unmarked_claim_accepts_resume_prefix
