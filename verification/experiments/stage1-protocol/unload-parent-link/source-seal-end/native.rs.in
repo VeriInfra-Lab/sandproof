@@ -1,0 +1,111 @@
+// Uses original controlled Host/SQLite fixtures, without physical VM facts.
+#[test]
+fn source_seal_end_keeps_complete_output_without_assuming_capture_presence() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, _) = settled_terminal(&directory.path().join("seal-end.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let record = current.records.first().unwrap();
+    let action = record.capture.as_ref().unwrap().action.as_ref().unwrap();
+    let core::Command::SealSnapshot {
+        workspace,
+        snapshot,
+        manifest,
+        ..
+    } = *action.command.command()
+    else {
+        panic!("the original full fixture must retain its SealSnapshot action")
+    };
+    let expected = core::capture::CaptureSealEnd {
+        attempt: action.command.attempt,
+        workspace,
+        snapshot,
+        manifest,
+    };
+    assert_eq!(
+        full::source_seal_end_for_test(record, action).unwrap(),
+        expected
+    );
+    let mut without_capture = record.clone();
+    without_capture.capture = None;
+    assert_eq!(
+        full::source_seal_end_for_test(&without_capture, action).unwrap(),
+        expected
+    );
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_seal_end_checks_all_six_original_identity_fields() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, _) = settled_terminal(&directory.path().join("seal-end.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let original = current.records.first().unwrap();
+    let original_action = original.capture.as_ref().unwrap().action.as_ref().unwrap();
+    assert!(full::source_seal_end_for_test(original, original_action).is_ok());
+    for field in 0..6 {
+        let mut record = original.clone();
+        let mut action = original_action.clone();
+        match field {
+            0 => {
+                record.work.anchor.local.sandbox.0 =
+                    record.work.anchor.local.sandbox.0.checked_add(1).unwrap()
+            }
+            1 => {
+                record.work.anchor.native.generation =
+                    record.work.anchor.native.generation.checked_add(1).unwrap()
+            }
+            2 => record.work.anchor.native.current_vm = None,
+            3 => action.identity.epoch = action.identity.epoch.checked_add(1).unwrap(),
+            4 => action.identity.generation = action.identity.generation.checked_add(1).unwrap(),
+            5 => action.identity.attempt = action.identity.attempt.checked_add(1).unwrap(),
+            _ => unreachable!(),
+        }
+        let result = full::source_seal_end_for_test(&record, &action);
+        assert!(
+            matches!(result, Err(JournalError::CorruptStore)),
+            "seal end must retain every original sandbox, source generation, VM and action binding: field={field}, result={result:?}"
+        );
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    }
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_seal_end_rejects_non_seal_commands() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, _, _) = settled_terminal(&directory.path().join("seal-end.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let record = current.records.first().unwrap();
+    let mut action = record
+        .capture
+        .as_ref()
+        .unwrap()
+        .action
+        .as_ref()
+        .unwrap()
+        .clone();
+    action.command.logical.command = core::Command::InstallFence {
+        sandbox: record.work.anchor.local.sandbox,
+        epoch: action.identity.epoch,
+        terminal: false,
+    };
+    assert!(matches!(
+        full::source_seal_end_for_test(record, &action),
+        Err(JournalError::CorruptStore)
+    ));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}

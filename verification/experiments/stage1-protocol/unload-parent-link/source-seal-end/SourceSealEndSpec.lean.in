@@ -1,0 +1,31 @@
+import SourceSealEndView
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceSealEndModel
+noncomputable section
+local instance specDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev Action := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+abbrev SealEnd := SourceRetireTypes.sandbox_controller_core.capture.continuation.CaptureSealEnd
+
+def checks (record : Record) (action : Action) (sandbox : sandbox_controller_core.ids.SandboxId)
+    (epoch generation : U64) (vm : sandbox_controller_core.ids.VmId) : Prop :=
+  sandbox = record.work.anchor.local.sandbox ∧ generation = record.work.anchor.native.generation ∧
+  some vm = record.work.anchor.native.current_vm ∧ action.identity.epoch = epoch ∧
+  action.identity.generation = generation ∧ action.identity.attempt = action.command.attempt
+
+def outcome (record : Record) (action : Action) : Result (core.result.Result SealEnd Journal) :=
+  match action.command.logical.command with
+  | .SealSnapshot sandbox epoch generation vm workspace snapshot manifest =>
+    if checks record action sandbox epoch generation vm then
+      .ok (.Ok ⟨action.command.attempt,workspace,snapshot,manifest⟩)
+    else .ok (.Err .CorruptStore)
+  | _ => .ok (.Err .CorruptStore)
+
+def Contract (root : Record → Action → Result (core.result.Result SealEnd Journal)) : Prop :=
+  ∀ record action, root record action = outcome record action
+
+end
+end SandboxModel.Stage1Protocol.SourceSealEndModel
