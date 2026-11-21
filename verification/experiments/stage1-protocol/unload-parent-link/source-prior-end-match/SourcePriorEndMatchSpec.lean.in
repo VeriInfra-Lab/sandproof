@@ -1,0 +1,45 @@
+import SourceRequestEndMatchValues
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourcePriorEndMatchModel
+noncomputable section
+local instance modelDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev Record := SourceRetireSpec.Record
+abbrev Prior := SourceTerminalEndModel.Prior
+abbrev Ports := SourceRequestEndMatchModel.Ports
+abbrev Reply := core.result.Result Bool JournalError
+
+/-- Exact same request-end and Full-binding specifications as the parent.
+    No physical result, authority, saved bytes or completed state is assumed. -/
+def outcome (io : Ports) (record : Record) (prior : Prior) : Result Reply :=
+  match record.capture with
+  | none => .ok (.Err .CorruptStore)
+  | some captured =>
+    match prior with
+    | .NeverReleased digest action =>
+      if captured.worker.isSome ∨ captured.completed.isSome then .ok (.Ok false)
+      else SourceRetireSpec.tryJournal JournalError.Json
+        (SourceRequestEndMatchModel.binding io captured.full) fun actual =>
+          .ok (.Ok (decide (digest = actual ∧ action = captured.action)))
+    | .WorkerEnded observation =>
+      match captured.action with
+      | none => .ok (.Err .CorruptStore)
+      | some action =>
+        match captured.worker with
+        | none => .ok (.Err .CorruptStore)
+        | some worker =>
+          SourceRetireSpec.tryJournal JournalError.Json
+            (SourceRequestEndMatchModel.outcome io observation action captured.full record.work.requirement worker)
+            fun matched => .ok (.Ok (matched && !(captured.completed.isSome &&
+              match observation.outcome with
+              | .NoRequest => true
+              | .Returned _ => false)))
+
+def Contract (io : Ports) (root : Record → Prior → Result Reply) : Prop :=
+  ∀ record prior, root record prior = outcome io record prior
+
+end
+end SandboxModel.Stage1Protocol.SourcePriorEndMatchModel

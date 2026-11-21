@@ -1,0 +1,65 @@
+import SourcePriorEndMatchProof
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourcePriorEndMatchModel
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourcePriorEndMatchValues
+
+/-- Decoded witnesses under arbitrary parent library replies. They do not
+    claim real JSON/SHA, current source ownership, authorization or persistence. -/
+def io : Ports := SourceRequestEndMatchValues.io
+def captured : controller.lifecycle_inbox.source_work.full.CaptureWork :=
+  ⟨2#u64, 258048#u64, SourceRequestEndMatchValues.full,
+    some SourceRequestEndMatchValues.action, some SourceRequestEndMatchValues.worker,
+    some SourceWorkMatch.Values.digest, some 3#u64, none⟩
+def record : Record :=
+  ⟨SourceWorkMatch.Values.base, none, some captured, none, none, ⟨none, none⟩⟩
+def returned : Prior := .WorkerEnded SourceRequestEndMatchValues.observation
+def noRequest : Prior := .WorkerEnded
+  { SourceRequestEndMatchValues.observation with outcome := .NoRequest }
+def incomplete : Record := { record with capture := some { captured with completed := none } }
+def neverRecord : Record :=
+  { record with capture := some { captured with worker := none, completed := none } }
+def never : Prior := .NeverReleased SourceWorkMatch.Values.digest (some SourceRequestEndMatchValues.action)
+
+theorem normal_worker_ended :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io
+      record returned = .ok (.Ok true) := by
+  rw [SourcePriorEndMatchProof.actual_contract]
+  simp [outcome, record, captured, returned, SourceRetireSpec.tryJournal,
+    SourceRequestEndMatchModel.outcome, SourceRequestEndMatchModel.binding,
+    io, SourceRequestEndMatchValues.io, SourceRequestEndMatchValues.observation,
+    SourceRequestEndMatchValues.requirement, SourceRequestEndMatchModel.StatusAllowed]
+
+theorem normal_never_released :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io
+      neverRecord never = .ok (.Ok true) := by
+  rw [SourcePriorEndMatchProof.actual_contract]
+  simp [outcome, neverRecord, record, captured, never, SourceRetireSpec.tryJournal,
+    SourceRequestEndMatchModel.binding, io, SourceRequestEndMatchValues.io]
+
+theorem incomplete_no_request_control :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io
+      incomplete noRequest = .ok (.Ok true) := by
+  rw [SourcePriorEndMatchProof.actual_contract]
+  simp [outcome, incomplete, record, captured, noRequest, SourceRetireSpec.tryJournal,
+    SourceRequestEndMatchModel.outcome, SourceRequestEndMatchModel.binding,
+    io, SourceRequestEndMatchValues.io, SourceRequestEndMatchValues.observation,
+    SourceRequestEndMatchValues.requirement, SourceRequestEndMatchModel.StatusAllowed]
+
+theorem completed_no_request_rejected :
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io
+      record noRequest = .ok (.Ok false) := by
+  rw [SourcePriorEndMatchProof.actual_contract]
+  simp [outcome, record, captured, noRequest, SourceRetireSpec.tryJournal,
+    SourceRequestEndMatchModel.outcome, SourceRequestEndMatchModel.binding,
+    io, SourceRequestEndMatchValues.io, SourceRequestEndMatchValues.observation,
+    SourceRequestEndMatchValues.requirement, SourceRequestEndMatchModel.StatusAllowed]
+
+end SandboxModel.Stage1Protocol.SourcePriorEndMatchValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchValues.normal_worker_ended
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchValues.normal_never_released
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchValues.incomplete_no_request_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePriorEndMatchValues.completed_no_request_rejected
