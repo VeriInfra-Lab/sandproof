@@ -179,7 +179,7 @@
     "controller-core/Cargo.toml": "bfe39b44a5bbcd38f44ec479443a7456c2c7d2cdf85b8678259f343f25865656",
     "controller-core/tests/ipv4_policy_refactor.rs": "629dbde9072537767aecf942ee126fdcf5230a32550eacf5d96b818da1ec9cc0",
     "controller-core/src/lib.rs": "2a260eede2d65205ba650e745ec718450cd5f99b0a0a26e4d092206ea4f9950c",
-    "controller-core/src/transition.rs": "07f55655872021df738057a5421164dccd9c9e091682f5ccbac4993e5625cdcb",
+    "controller-core/src/transition.rs": "174264cf527db0f9f0b22b20ee75e338a1a580e637e6fe35045056a030eb378c",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
     "controller-core/src/auxiliary.rs": "719ad906c6f96476149a916ad5083e9740b5d4aeeb4d6a5873e2267455a04d54",
     "controller-core/src/capture.rs": "cfe090e04654b40de4b26ee751aa83e1333806b0eaf9e0f2df656f4874c4fe54",
@@ -3533,5 +3533,13 @@
     "adopted_source_pending_validation": true,
     "new_baseline_formal_complete": false,
     "ning_acceptance": false
+  },
+  "source_rebinding_pr1009": {
+    "integration": "faa5b502a8d1aec682afd86208f41f94dffa340b",
+    "rust_source": "controller-core/src/transition.rs",
+    "previous_sha256": "07f55655872021df738057a5421164dccd9c9e091682f5ccbac4993e5625cdcb",
+    "current_sha256": "174264cf527db0f9f0b22b20ee75e338a1a580e637e6fe35045056a030eb378c",
+    "review": "The only production difference is the binder rename in revoke_capture_eligibility. Its declaration and source file are absent from both extracted roots of the original correct view and all four original wrong views. The original variant, extraction and acceptance rules are retained.",
+    "previous_evidence_ledger_sha256": "ae1ee7574c46155c3dc1b8aff26ff7f005fa34f32be67eb78c0d276984618f44"
   }
 }
