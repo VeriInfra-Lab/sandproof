@@ -22,6 +22,7 @@ CASES = {
     'finish': 'UnloadFinish',
     'finish-reordered': 'UnloadFinishReordered',
     'revision': 'RevisionParentCall',
+    'parent-link': 'UnloadParentLink',
 }
 AUTH_TEST = 'proof_first_unload_prepare_orders_inbox_authentication_and_source_decode'
 COMMIT_TEST = 'proof_first_prepare_after_commit_error_preserves_original_durable_work'
@@ -38,6 +39,7 @@ sys.path.insert(0, str(PACKAGE))
 from check_revision_pair import check_pair, git, source_identity
 import finish_capture
 import frontier_capture
+from prepare import materialize_current
 import prepare_revision_call
 import prepare_unload_finish
 import prepare_unload_frontier
@@ -180,6 +182,8 @@ def run_formal(output, result, identity, receipt_path, native_archive, native_ma
                 revisions['base-revision'] / 'generated' / prepare_revision_call.BASE,
                 revisions['parent'] / 'generated' / prepare_revision_call.PARENT,
                 packages, mcp, project, identity=identity)
+        elif case == 'parent-link':
+            materialize_current(project, output / 'revision' / 'project', identity)
         elif case.startswith('prefix'):
             wrong = case.endswith('reordered')
             prepare_unload_frontier.materialize(frontiers['reordered' if wrong else 'prefix'],
@@ -189,9 +193,9 @@ def run_formal(output, result, identity, receipt_path, native_archive, native_ma
             prepare_unload_finish.materialize(finishes[mode], finishes['parent'],
                 frontiers['prefix'], frontiers['parent'], begin, project, packages, mcp, mode, identity=identity)
         plan = json.loads((project / 'plan.json').read_bytes())
-        if case == 'revision':
+        if case in ('revision', 'parent-link'):
             roots, source = plan['roots'], plan['source_commit']
-            expected_roots = [root, 'ParentRejects']
+            expected_roots = [root, 'ParentRejects'] if case == 'revision' else [root]
             files = {name: row['sha256'] for name, row in plan['modules'].items()}
         else:
             roots, source, files = [plan['root']], plan['source'], plan['files']
@@ -201,14 +205,16 @@ def run_formal(output, result, identity, receipt_path, native_archive, native_ma
         if any(digest(project / name) != checksum for name, checksum in files.items()):
             raise ValueError('materialized proof differs from its checked inputs')
         shutil.copyfile(ROOT/'tools/proof_services.py', project/'tools/proof_services.py')
-        (project / 'artifacts').mkdir()
+        (project / 'artifacts').mkdir(exist_ok=True)
 
         def run(cwd, logs, label, argv):
             command(result, env, cwd, logs, label, argv)
 
         run(project, folder, 'build', ['lake', 'build', *roots])
-        actual = checker.actual_files(project, sorted(files), folder, env, run)
-        registered._saved_physical_view(actual, project, folder / 'physical-files', result['commands'])
+        repeated = case == 'parent-link'
+        actual = checker.actual_files(project, sorted(files), folder, env, run, repeat_across_pages=repeated)
+        registered._saved_physical_view(actual, project, folder / 'physical-files', result['commands'],
+                                        repeat_across_pages=repeated)
         result['cases'][case] = dict(actual, complete=True)
     check_parent_audits(ROOT, result, output)
 

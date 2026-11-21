@@ -570,7 +570,7 @@ class Registration(OriginalReadPlanFixture):
         parent = next(j for j in jobs if j['name'] == 'stage1-unload-parent-transaction')
         self.assertEqual(parent['native'], ['stage1-unload-parent-transaction'])
         self.assertEqual(parent['cases'], [
-            'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision'])
+            'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision', 'parent-link'])
 
     def test_unload_parent_requires_each_actual_page_for_repeated_audits(self):
         with tempfile.TemporaryDirectory() as directory:

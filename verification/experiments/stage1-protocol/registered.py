@@ -361,8 +361,8 @@ NATIVE_DRIVERS = (
 CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
 NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
     'stage1-protocol-'+name for name in CRATE_CASES)
-AUDIT_TEMPLATE_COUNT = 650
-AUDIT_DECLARATION_COUNT = 2729
+AUDIT_TEMPLATE_COUNT = 676
+AUDIT_DECLARATION_COUNT = 2952
 
 
 def native_labels(profile='full'):
@@ -1401,7 +1401,7 @@ def _kernel_commands(value):
             yield from _kernel_commands(child)
 
 
-def _saved_physical_view(actual, project, physical, commands):
+def _saved_physical_view(actual, project, physical, commands, *, repeat_across_pages=False):
     """Read the same complete/fresh diagnostic predicates as proof_services.
 
     No service is replayed or invoked here; these are original saved messages.
@@ -1461,11 +1461,11 @@ def _saved_physical_view(actual, project, physical, commands):
                                  str(item.get('message', item.get('data', ''))))
             if match:
                 checked.append(match[1])
-        if set(expected) != set(checked):
+        if len(set(expected)) != len(expected) or sorted(expected) != sorted(checked):
             raise ValueError('original service audit differs from physical source')
         expected_audits.extend(expected)
         observed_audits.extend(checked)
-    if (len(set(expected_audits)) != len(expected_audits)
+    if ((not repeat_across_pages and len(set(expected_audits)) != len(expected_audits))
             or sorted(expected_audits) != sorted(observed_audits)
             or sorted(expected_audits) != sorted(actual['audits'])):
         raise ValueError('missing/duplicate original component audit')
@@ -1553,7 +1553,8 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                          if evidence[str(path)] == actual['service_log_sha256']), None)
         if project is None or physical is None or not project.resolve().is_relative_to(folder.resolve()):
             raise ValueError('original physical project/service evidence is missing')
-        _saved_physical_view(actual, project, physical, commands)
+        repeated = job['name'] == UNLOAD.PARENT_LABEL and 'UnloadParentLink.lean' in actual['files']
+        _saved_physical_view(actual, project, physical, commands, repeat_across_pages=repeated)
         for name, digest in actual['files'].items():
             if evidence.get(str((project/name).resolve())) != digest:
                 raise ValueError('physical proof is absent from the complete evidence inventory')

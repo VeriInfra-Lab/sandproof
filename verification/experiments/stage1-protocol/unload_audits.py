@@ -10,7 +10,7 @@ KIND = 'stage1-unload-audits-component'
 DRIVER = HERE / 'unload_audit_driver.py'
 PARENT_LABEL = 'stage1-unload-parent-transaction'
 PARENT_DRIVER = HERE / 'unload_parent_transaction.py'
-PARENT_CASES = ('begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision')
+PARENT_CASES = ('begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision', 'parent-link')
 PARENT_AUDIT_INPUTS = {
     'begin': {'started-transaction/UnloadStartedTransaction', 'world-begin/UnloadWorldBegin'},
     'prefix': {'frontier/UnloadFrontierInputs', 'frontier/UnloadFrontier'},
@@ -36,8 +36,11 @@ def check_parent_audits(root, result, folder):
     package = root / HERE / 'unload-parent-link'
     common = PARENT_AUDIT_INPUTS['begin']
     for case, actual in result['cases'].items():
-        expected = PARENT_AUDIT_INPUTS[case]
-        if case != 'revision':
+        if case == 'parent-link':
+            expected = {path.name.removesuffix('.lean.in') for path in package.glob('*.lean.in')}
+        else:
+            expected = PARENT_AUDIT_INPUTS[case]
+        if case not in ('revision', 'parent-link'):
             expected = common | expected
         names = set()
         for path in sorted(expected):

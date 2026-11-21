@@ -50,13 +50,8 @@ def apply_view(data, view):
     return output
 
 
-def materialize(output):
-    frozen = HERE / 'input-closure.json'
-    if frozen.exists():
-        frozen_inventory = json.loads(frozen.read_bytes())
-        for name, expected in frozen_inventory['repository_inputs'].items():
-            checked(ROOT, name, expected)
-    files, provenance, roots = {}, {}, []
+def original_inputs():
+    files, provenance = {}, {}
     isolation = json.loads((STAGE / 'unload-base-provenance/isolation.json').read_bytes())
     spec = importlib.util.spec_from_file_location('base_materializer', STAGE / 'unload-base-provenance/materialize.py')
     tool = importlib.util.module_from_spec(spec)
@@ -71,7 +66,6 @@ def materialize(output):
     for package in ('unload-base-provenance', 'unload-continued-observation', 'unload-stored-options'):
         directory = STAGE / package
         inventory = json.loads((directory / 'sources.json').read_bytes())
-        roots.append(inventory['root'])
         for name, expected in inventory['tool_inputs'].items():
             put(name, checked(ROOT, name, expected), name)
         for module, entry in inventory['modules'].items():
@@ -111,8 +105,11 @@ def materialize(output):
         provenance[name].append('unload-parent-link/views.json:' + name)
     for source in sorted(HERE.glob('*.lean.in')):
         put(source.name.removesuffix('.in'), source.read_bytes(), str(source.relative_to(ROOT)))
-    roots = ['UnloadParentLink']
+    return files, provenance
 
+
+def write_project(output, files, provenance, packages, lean_mcp, *, frozen=None, identity=None):
+    roots = ['UnloadParentLink']
     modules = {name.removesuffix('.lean').replace('/', '.'): data
                for name, data in files.items() if name.endswith('.lean')}
     order, active, seen = [], set(), set()
@@ -136,33 +133,82 @@ def materialize(output):
     # are checked above, but cannot silently become unchecked materialized files.
     files = {name: data for name, data in files.items()
              if not name.endswith('.lean') or name.removesuffix('.lean').replace('/', '.') in seen}
-    if frozen.exists():
+    if frozen is not None:
         actual = {name: sha(data) for name, data in files.items() if name.endswith('.lean')}
-        if actual != frozen_inventory['materialized_modules']:
+        if actual != frozen['materialized_modules']:
             raise ValueError('materialized import closure differs from the checked candidate')
     heads = sorted({name.split('.')[0] for name in seen})
     lake = 'name = "unload-parent-link"\n\n[[require]]\nname = "aeneas"\ngit = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }\nrev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"\n'
     lake += ''.join('\n[[lean_lib]]\nname = "' + head + '"\n' for head in heads)
     files['lakefile.toml'] = lake.encode()
     for name in ('tools/lean_session.py', 'tools/proof_services.py', 'scripts/lean-mcp-server.sh'):
-        put(name, (ROOT / name).read_bytes(), name)
+        data = (ROOT / name).read_bytes()
+        if name in files and files[name] != data:
+            raise ValueError('incompatible shared tool input: ' + name)
+        files[name] = data
     output.mkdir(mode=0o700)
     for name, data in files.items():
         target = output / name
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
     (output / '.lake').mkdir()
-    (output / '.lake/packages').symlink_to((ROOT / '.lake/packages').resolve(strict=True), target_is_directory=True)
+    (output / '.lake/packages').symlink_to(packages, target_is_directory=True)
     (output / '.tools').mkdir()
-    (output / '.tools/lean-mcp').symlink_to((ROOT / '.tools/lean-mcp').resolve(strict=True), target_is_directory=True)
+    (output / '.tools/lean-mcp').symlink_to(lean_mcp, target_is_directory=True)
     (output / 'artifacts').mkdir()
-    (output / 'plan.json').write_text(json.dumps(dict(schema=1, development_only=True,
+    plan = dict(schema=1, development_only=True,
         public_acceptance=False, build_order=order, roots=roots,
-        modules={name:dict(sha256=sha(data), source=provenance[name]) for name,data in files.items() if name.endswith('.lean')}),indent=2)+'\n')
-    print(f'{len(order)} reachable Lean modules; public acceptance remains separate')
+        modules={name: dict(sha256=sha(data), source=provenance[name])
+                 for name, data in files.items() if name.endswith('.lean')})
+    if identity is not None:
+        plan.update(source_commit=identity['head'], source_tree=identity['tree'])
+    (output / 'plan.json').write_text(json.dumps(plan, indent=2)+'\n')
+
+
+def materialize(output):
+    manifest = HERE / 'input-closure.json'
+    frozen = json.loads(manifest.read_bytes()) if manifest.exists() else None
+    if frozen is not None:
+        for name, expected in frozen['repository_inputs'].items():
+            checked(ROOT, name, expected)
+    files, provenance = original_inputs()
+    write_project(output, files, provenance, (ROOT / '.lake/packages').resolve(strict=True),
+                  (ROOT / '.tools/lean-mcp').resolve(strict=True), frozen=frozen)
+
+
+def materialize_current(output, revision, identity):
+    """Compose the current generated reader with the original leaf proofs."""
+    plan = json.loads((revision / 'plan.json').read_bytes())
+    if (plan['source_commit'], plan['source_tree'], plan['roots']) != (
+            identity['head'], identity['tree'], ['RevisionParentCall', 'ParentRejects']):
+        raise ValueError('current revision project differs from the admitted extraction')
+    files, provenance = original_inputs()
+    generated_modules = ('SandproofUnloadBaseSnapshot', 'SandproofUnloadFirstObservation')
+    dependencies = [f'{module}/{name}.lean' for module in generated_modules
+                    for name in ('Types', 'Funs', 'TypesExternal', 'FunsExternal')]
+    dependencies += ['RevisionReadErrors.lean', 'RevisionReadSuccess.lean']
+    for name in dependencies:
+        files[name] = checked(revision, name, plan['modules'][name]['sha256'])
+        provenance[name] = ['current revision capture:' + name]
+    overlay = HERE / 'current-readiness-views.json'
+    for name, view in json.loads(overlay.read_bytes()).items():
+        files[name] = apply_view(files[name], view)
+        provenance[name].append(overlay.name + ':' + name)
+    write_project(output, files, provenance, (revision / '.lake/packages').resolve(strict=True),
+                  (revision / '.tools/lean-mcp').resolve(strict=True), identity=identity)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
-    materialize(parser.parse_args().output.resolve())
+    parser.add_argument('--revision-project', type=Path)
+    parser.add_argument('--source-commit')
+    args = parser.parse_args()
+    if bool(args.revision_project) != bool(args.source_commit):
+        parser.error('the current route requires the actual revision project and its exact source commit')
+    if args.revision_project is None:
+        materialize(args.output.resolve())
+    else:
+        from check_revision_pair import source_identity
+        materialize_current(args.output.resolve(), args.revision_project.resolve(strict=True),
+                            source_identity(args.source_commit, args.source_commit))
