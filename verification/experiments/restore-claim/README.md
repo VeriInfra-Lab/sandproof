@@ -86,6 +86,17 @@ native sandbox 和 operation 的认领都保留标记，正常布尔返回只能
 的原有定义，已核内核证明每次实际回调保留遍历上下文。库符合性仍适用于本次的有限普通
 共享借用。三个外部错误类型只在返回类型中使用，沿用原 SQLite 错误载荷别名。
 
+独立 `RestoreLineageUniqueness` 视图复用 #770 的原 `Session::validate_execution_lineage`
+生成体和 `InboxLineage.accepts_iff`。固定装配核对原 Rust、协议类型和实际 Lean 闭包。
+`actual_valid_session_resume_captures_grow` 证明同一个通过谱系校验的保留
+`Session.entries` 中，原顺序筛出的 Resume capture 严格递增。
+`actual_valid_session_resume_order` 直接接收具名的较早、较晚条目和原列表位置，
+给出原 `CaptureId` 的严格小于关系。起点是原空谱系和零前沿。每次 Resume 由紧邻的
+同来源代、同 capture 的 Unload 提供身份，并保留原 checked successor 检查。
+条目必须都在本次验证的同一列表内。删除的窗口前缀及不同窗口或不同会话仍需历史连接。
+本结果约束不同 Resume 条目。单条目的候选准备重试、真实保护连接、Native 操作绑定及写侧
+首个槽选择仍分别验证。实际 Rust 的共享借用迭代沿用提供方的 `BorrowedVecBinding`。
+
 独立 `SourceCollect` 视图从 `load_records` 的原 `query_map` 游标开始。私有源码副本
 移出原行处理、`checked` 对该行类型的实例及原 `for` 循环，保留生产调用中的 SQL、
 三列顺序和各项检查。实际 Serde 与两个摘要接点通过只转发原参数和结果的字典接线。
@@ -157,8 +168,9 @@ SQLite 首次准入、原 VM 与原映射重开复用使用原
   Charon 在 `controller-service/src/journal.rs:96` 匹配该外部错误枚举处失败。
   `admit-root.rs.in` 保留该探针入口，外部错误分支和完整父方法的抽取尚待接通。
 - Inbox 的 `validate_execution_lineage` 验证同一 session 的 capture frontier
-  严格单调，以及 Resume 紧跟匹配的 Unload。来源选择、所有写者对 claim 的保留、
-  退休后历史键不可复活仍需作为实际连接提供。
+  严格单调，以及 Resume 紧跟匹配的 Unload。上述条目唯一性仍需接到实际来源选择、
+  所有写者对 claim 的保留及
+  退休后的原窗口读取。
 - 其它授予资格路径包括 Inbox 当前请求/版本裁定、Core Resume/ReserveStartup、
   Core 与 journal 的效果派发、重开后的未知激活继续、通用宿主动作为离开数据库后调用、
   失败卸载原实例的 continue 路径，以及后继捕获和退休后的历史窗口。
@@ -180,6 +192,8 @@ bash "$case_dir/verify-decisions.sh" --resume-scan "$SCAN_EVIDENCE" "$PROOF_LOCK
 bash "$case_dir/verify-decisions.sh" --source-read "$READ_EVIDENCE" "$PROOF_LOCK" \
   "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
 bash "$case_dir/verify-decisions.sh" --source-query "$QUERY_EVIDENCE" "$PROOF_LOCK" \
+  "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
+bash "$case_dir/verify-decisions.sh" --lineage "$LINEAGE_EVIDENCE" "$PROOF_LOCK" \
   "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
 ```
 

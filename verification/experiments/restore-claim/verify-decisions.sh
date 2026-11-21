@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Formal entry for the selected restore decisions, scan, source-row readback, and source query.
+# Formal entry for the selected restore decisions, scan, source-row readback, source query, and retained lineage.
 set -euo pipefail
 umask 077
 
 views=(correct wrong)
 case "${1:-}" in
-  --resume-scan|--source-read|--source-query) views=("${1#--}"); shift ;;
+  --resume-scan|--source-read|--source-query|--lineage) views=("${1#--}"); shift ;;
 esac
 if [[ $# != 5 ]]; then
-  echo 'usage: verify-decisions.sh [--resume-scan|--source-read|--source-query] NEW_OUTPUT LOCK TOOL_BIN LAKE_PACKAGES LEAN_MCP_ENV' >&2
+  echo 'usage: verify-decisions.sh [--resume-scan|--source-read|--source-query|--lineage] NEW_OUTPUT LOCK TOOL_BIN LAKE_PACKAGES LEAN_MCP_ENV' >&2
   exit 2
 fi
 here="$(cd -- "$(dirname -- "$0")" && pwd)"
@@ -48,6 +48,18 @@ for view in "${views[@]}"; do
   project="$data/source"
   mkdir -p -- "$project"
   git -C "$repo" archive "$head" | tar -xf - -C "$project"
+  if [[ "$view" == lineage ]]; then
+    cd "$project"
+    mkdir .tools .lake artifacts
+    ln -s -- "$packages" .lake/packages
+    ln -s -- "$mcp_env" .tools/lean-mcp
+    target=RestoreLineageUniqueness
+    bash "$repo/scripts/python-entry.sh" "$here/stage_lineage.py" "$project" "$data/inherited-inputs.json"
+    lake build "SandboxModel.Lifecycle.Protocol.RestoreClaim.$target" > "$data/build.log" 2>&1
+    bash "$repo/scripts/python-entry.sh" "$here/check_view.py" "$project" "$data/check" "$target"
+    results+=("$data/inherited-inputs.json" "$data/check/result.json")
+    continue
+  fi
   args=()
   opacity=()
   staged_source=("$project/controller-service/src/controller/lifecycle_inbox/source_work/restore.rs")
