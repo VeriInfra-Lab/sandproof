@@ -1,0 +1,60 @@
+import SourceSealEndProof
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceContinuationGateModel
+
+-- Decoded-value classification; original Rust correspondence is proved separately.
+-- Classification of saved values grants no continuation or execution permit.
+def allowed (record : Record) : Bool :=
+  match record.capture with
+  | none => false
+  | some capture =>
+    match capture.end with
+    | some (.NeverReleased _ _) => true
+    | some (.WorkerEnded _) => true
+    | _ => false
+
+def Contract (root : Record → Result Bool) : Prop :=
+  ∀ record, root record = .ok (allowed record)
+
+abbrev Capture := controller.lifecycle_inbox.source_work.full.CaptureWork
+
+theorem no_capture (record : Record) (absent : record.capture = none) :
+    allowed record = false := by
+  simp [allowed,absent]
+
+theorem no_end (record : Record) (capture : Capture)
+    (present : record.capture = some capture) (absent : capture.end = none) :
+    allowed record = false := by
+  simp [allowed,present,absent]
+
+theorem never_released (record : Record) (capture : Capture)
+    (present : record.capture = some capture)
+    (ending : ∃ binding action, capture.end = some (.NeverReleased binding action)) :
+    allowed record = true := by
+  rcases ending with ⟨binding,action,ending⟩
+  simp [allowed,present,ending]
+
+theorem worker_ended (record : Record) (capture : Capture)
+    (present : record.capture = some capture)
+    (ending : ∃ observation, capture.end = some (.WorkerEnded observation)) :
+    allowed record = true := by
+  rcases ending with ⟨observation,ending⟩
+  simp [allowed,present,ending]
+
+theorem terminated (record : Record) (capture : Capture)
+    (present : record.capture = some capture)
+    (ending : ∃ stop observation prior, capture.end = some (.Terminated stop observation prior)) :
+    allowed record = false := by
+  rcases ending with ⟨stop,observation,prior,ending⟩
+  simp [allowed,present,ending]
+
+end SandboxModel.Stage1Protocol.SourceContinuationGateModel
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateModel.no_capture
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateModel.no_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateModel.never_released
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateModel.worker_ended
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateModel.terminated

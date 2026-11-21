@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-continuation-gate 在固定 b0d791cc 上连接原 continuation_allowed 与原 FnOnce 回调。任意已解码记录上，无捕获/无 end/Terminated 为 false，NeverReleased/WorkerEnded 为 true；同一个完整 Contract 拒绝实际把 Terminated 改为 true 的回调错误。接续 #1001，完整入口目标为142文件/779审计与144/783。
++> 此值分类不是执行许可或实际 Writer 退出。二十一条原生四视图及恢复交 ning；完整父调用、end 校验、事务/耐久、独立认证和物理事实保持开放。公共登记和覆盖仅为候选。
+ ## V3 首次卸载使用同一条原执行记录

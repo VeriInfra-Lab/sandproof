@@ -1,0 +1,26 @@
+// Disposable cfg(test) view only: call the original classifier and expose
+// actual stored end data for fixture preconditions; no permission is created.
+#[cfg(test)]
+pub(super) fn source_continuation_allowed_for_test(record: &SourceWorkRecord) -> bool {
+    end::continuation_allowed(record)
+}
+
+#[cfg(test)]
+pub(super) fn source_continuation_end_for_test(record: &SourceWorkRecord) -> serde_json::Value {
+    serde_json::to_value(
+        record
+            .capture
+            .as_ref()
+            .and_then(|capture| capture.end.as_ref()),
+    )
+    .unwrap()
+}
+
+#[cfg(test)]
+pub(super) fn source_continuation_without_end_for_test(
+    record: &SourceWorkRecord,
+) -> SourceWorkRecord {
+    let mut without_end = record.clone();
+    without_end.capture.as_mut().unwrap().end = None;
+    without_end
+}

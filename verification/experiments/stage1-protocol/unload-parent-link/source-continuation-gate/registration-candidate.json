@@ -1,0 +1,143 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "parent_prs": [
+    1001
+  ],
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-continuation-gate",
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceContinuationGateProof",
+      "physical_files": 142,
+      "full_audits": 779,
+      "own_modules": [
+        "SourceContinuationGateSpec.lean",
+        "SourceContinuationGateView.lean",
+        "SourceContinuationGateProof.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceContinuationGateModel.no_capture",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateModel.no_end",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateModel.never_released",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateModel.worker_ended",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateModel.terminated",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.actual_full_contract",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.absent_capture",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.absent_end",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.normal_never_released",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.normal_worker_ended",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.terminated_refused"
+      ]
+    },
+    {
+      "variant": "accept-terminated",
+      "formal_root": "SourceContinuationGateNegative",
+      "physical_files": 144,
+      "full_audits": 783,
+      "own_modules": [
+        "SourceContinuationGateSpec.lean",
+        "SourceContinuationGateView.lean",
+        "SourceContinuationGateProof.lean",
+        "SourceContinuationGateWrong.lean",
+        "SourceContinuationGateNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceContinuationGateModel.no_capture",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateModel.no_end",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateModel.never_released",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateModel.worker_ended",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateModel.terminated",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.actual_full_contract",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.absent_capture",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.absent_end",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.normal_never_released",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.normal_worker_ended",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateProof.terminated_refused",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateNegative.normal_control",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateNegative.wrong_accepts_terminated",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateNegative.terminated_counterexample",
+        "SandboxModel.Stage1Protocol.SourceContinuationGateNegative.rejects_same_full_contract"
+      ]
+    }
+  ],
+  "formal_development_entry": "check.py",
+  "public_registration_accepted": false,
+  "production_candidate_equivalence_complete": false,
+  "whole_receipt_proved": false,
+  "native_candidate": {
+    "name": "stage1-source-continuation-gate",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "accept-terminated",
+      "adapted-accept-terminated"
+    ],
+    "tests": [
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_requires_transaction_even_for_empty_expected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_empty_transaction_does_not_load_missing_schema",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_clears_only_complete_original_slot_and_keeps_reservation",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_same_key_with_changed_complete_record_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_unsettled_material_keeps_complete_source_row",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_zero_row_compare_and_set_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_duplicate_preserves_first_update_until_explicit_rollback",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_no_capture_requires_empty_retirement_and_release",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_retiring_zero_does_not_mean_settled",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_settlement_matches_every_original_byte",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_state_size_is_rejected_before_plan_shape",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_checks_all_seven_original_request_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_missing_record_precedes_request_errors",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_keeps_the_first_matching_record_error",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_selects_complete_work_instead_of_only_its_binding",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_keeps_complete_output_without_assuming_capture_presence",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_checks_all_six_original_identity_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_rejects_non_seal_commands",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_missing_capture_and_end_are_false",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_accepts_both_original_saved_normal_ends",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_refuses_original_terminated_end"
+    ],
+    "expected": {
+      "original": {
+        "passed": 21,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 21,
+        "failed": 0
+      },
+      "accept-terminated": {
+        "passed": 20,
+        "failed": 1
+      },
+      "adapted-accept-terminated": {
+        "passed": 20,
+        "failed": 1
+      }
+    },
+    "rejection": "terminated saved end must not pass the original continuation classifier",
+    "restoration": "independent original after both wrong views:21/21",
+    "compiled": false,
+    "tests_executed": false
+  },
+  "providers": {
+    "Option as_ref": "existing SourceRetireLibrary.optionRef, exact A6 shared projection contract",
+    "Option is_some_and": "existing parent implementation with exact original pure unit-state FnOnce; None false/no callback, Some same callback once, failure/effects/divergence preserved",
+    "complete end validation/original parent/source/transaction": "V3/V5/coordinator, open",
+    "valid original World and execution authorization": "V4/V5, open",
+    "durable storage and commit outcome": "V5, open",
+    "actual writer exit/files/sealing/VM": "V6, open",
+    "independent authentication context": "V7, open"
+  },
+  "remaining": [
+    "complete outer continuation call, current identity/World/action gates",
+    "complete end record validation, actual observations and source lookup/borrow",
+    "production/staging general equivalence and standard library adoption",
+    "public native/ordinary/root suite registration and coverage adoption",
+    "authorization,transaction/durability,JSON/network and physical resource facts"
+  ]
+}

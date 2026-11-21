@@ -1,0 +1,56 @@
+import SourceContinuationGateView
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRetireSpec SourceContinuationGateModel
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceContinuationGateProof
+
+theorem actual_contract (record : Record) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed record = .ok (allowed record) := by
+  cases present : record.capture with
+  | none => simp [SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed,SourceRetireActual.core.option.Option.as_ref,SourceRetireLibrary.optionRef,core.option.Option.is_some_and,SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed.closure.Insts.CoreOpsFunctionFnOnceTupleSharedCaptureWorkBool.call_once,allowed,present]
+  | some capture =>
+    cases ending : capture.end with
+    | none => simp [SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed,SourceRetireActual.core.option.Option.as_ref,SourceRetireLibrary.optionRef,core.option.Option.is_some_and,SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed.closure.Insts.CoreOpsFunctionFnOnceTupleSharedCaptureWorkBool.call_once,allowed,present,ending]
+    | some endValue =>
+      cases endValue <;> simp [SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed,SourceRetireActual.core.option.Option.as_ref,SourceRetireLibrary.optionRef,core.option.Option.is_some_and,SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed.closure.Insts.CoreOpsFunctionFnOnceTupleSharedCaptureWorkBool.call_once,allowed,present,ending]
+
+theorem actual_full_contract : Contract SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed := by
+  exact actual_contract
+
+theorem absent_capture (record : Record) (absent : record.capture = none) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed record = .ok false := by
+  rw [actual_contract,no_capture record absent]
+
+theorem absent_end (record : Record) (capture : Capture)
+    (present : record.capture = some capture) (absent : capture.end = none) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed record = .ok false := by
+  rw [actual_contract,no_end record capture present absent]
+
+theorem normal_never_released (record : Record) (capture : Capture)
+    (present : record.capture = some capture)
+    (ending : ∃ binding action, capture.end = some (.NeverReleased binding action)) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed record = .ok true := by
+  rw [actual_contract,never_released record capture present ending]
+
+theorem normal_worker_ended (record : Record) (capture : Capture)
+    (present : record.capture = some capture)
+    (ending : ∃ observation, capture.end = some (.WorkerEnded observation)) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed record = .ok true := by
+  rw [actual_contract,worker_ended record capture present ending]
+
+theorem terminated_refused (record : Record) (capture : Capture)
+    (present : record.capture = some capture)
+    (ending : ∃ stop observation prior, capture.end = some (.Terminated stop observation prior)) :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.continuation_allowed record = .ok false := by
+  rw [actual_contract,terminated record capture present ending]
+
+end SandboxModel.Stage1Protocol.SourceContinuationGateProof
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateProof.actual_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateProof.absent_capture
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateProof.absent_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateProof.normal_never_released
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateProof.normal_worker_ended
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceContinuationGateProof.terminated_refused

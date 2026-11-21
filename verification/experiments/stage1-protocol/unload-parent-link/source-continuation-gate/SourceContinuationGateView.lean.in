@@ -1,0 +1,17 @@
+import SourceContinuationGateSpec
+
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+set_option linter.unusedVariables false
+
+namespace SandboxModel.Stage1Protocol.SourceRetireTypes
+-- ACTUAL CONTINUATION CALLBACK TYPE
+end SandboxModel.Stage1Protocol.SourceRetireTypes
+namespace SandboxModel.Stage1Protocol.SourceRetireActual
+-- Exact existing V0/A6 shared-projection binding; no new library law.
+abbrev core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  SourceRetireLibrary.optionRef value
+
+-- ACTUAL CONTINUATION CALLBACK AND ROOT
+end SandboxModel.Stage1Protocol.SourceRetireActual
