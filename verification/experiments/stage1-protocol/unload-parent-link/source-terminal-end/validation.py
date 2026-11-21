@@ -216,4 +216,4 @@ def declaration(reference, group, name, body):
         raise ValueError('one complete original generated declaration is required: ' + name)
     at = raw.index(body)
     prefix = raw[raw.rfind(b'\n\n/--', 0, at):at]
-    return (b'@[reducible]\n' if re.search(rb'@\[reducible\]\s*$', prefix) else b'') + body
+    return (b'@[reducible]\n' if re.search(rb'@\[\s*reducible(?:\s*,|\s*\])', prefix) else b'') + body

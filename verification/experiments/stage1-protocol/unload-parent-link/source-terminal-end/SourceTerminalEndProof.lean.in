@@ -81,7 +81,6 @@ theorem stop_ne (a b : Stop) :
       SourceTerminalEndActual.sandbox_controller_core.model.StopCoverage.Insts.CoreCmpPartialEqStopCoverage a b =
         .ok (decide (a ≠ b)) := by
   simp [core.cmp.PartialEq.ne.trait_default,core.cmp.PartialEq.ne.default,
-    SourceTerminalEndActual.sandbox_controller_core.model.StopCoverage.Insts.CoreCmpPartialEqStopCoverage,
     stop_eq]
 
 theorem observation_ne (a b : Observation) :
