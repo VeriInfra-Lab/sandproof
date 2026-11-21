@@ -8,8 +8,8 @@
   "new_dependency_contracts": [],
   "production_inputs": {
     "controller-service/src/controller/lifecycle_inbox/readiness.rs": "0f278a2c97a6a7c37a8d6c6e0fc4516a71775254845bcde5995a074d7f15ae6a",
-    "controller-service/src/controller/lifecycle_inbox/readiness/snapshot.rs": "32885942ca2d52198c03964b1d3291f0258ec30ced44c9a05ab781c0adad4538",
-    "controller-service/src/controller/lifecycle_inbox/readiness/tests.rs": "7e0c498544d87b263c8d4b9dccccf9d99a2830f738ca8be9e1a2e84fcbd4ab32",
+    "controller-service/src/controller/lifecycle_inbox/readiness/snapshot.rs": "75a9b0c4564df9716b051c020a5aa5f34b64b0f532e90e2e1186d7596a5cd1a6",
+    "controller-service/src/controller/lifecycle_inbox/readiness/tests.rs": "081314b16a36e8916f495a43d1ac87de4a6fc43b4773ea3cbe1101798f7e233b",
     "controller-core/src/model.rs": "9baeb03f3fb6d1ebef87eaaf3329b4f5233687ef8b65eed6c3d33d75174c4839",
     "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
     "controller-service/src/controller/admission.rs": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1",
@@ -107,5 +107,20 @@
         "current": "53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1"
       }
     }
+  },
+  "current_candidate_input_review": {
+    "base": "9e33dd685ce0b8b3a20ee89936c77f67c2e0e312",
+    "original_source": "29b0661e3424960922752bc122c622bb2f20026b",
+    "source_changes": {
+      "controller-service/src/controller/lifecycle_inbox/readiness/snapshot.rs": {
+        "original": "32885942ca2d52198c03964b1d3291f0258ec30ced44c9a05ab781c0adad4538",
+        "current": "75a9b0c4564df9716b051c020a5aa5f34b64b0f532e90e2e1186d7596a5cd1a6"
+      },
+      "controller-service/src/controller/lifecycle_inbox/readiness/tests.rs": {
+        "original": "7e0c498544d87b263c8d4b9dccccf9d99a2830f738ca8be9e1a2e84fcbd4ab32",
+        "current": "081314b16a36e8916f495a43d1ac87de4a6fc43b4773ea3cbe1101798f7e233b"
+      }
+    },
+    "basis": "The complete actual readiness.rs input is unchanged, including the transparent completion predicate and exact mutation expression. The current snapshot consumer does additional work and remains outside that predicate contract. The native test source only adds one test and retains every original byte in order. The original correct and ignore-status proof and native entry remain required in full verification."
   }
 }
