@@ -1,0 +1,111 @@
+import SourceTerminalMatchValues
+import SourceTerminalMatchWrong
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes
+open SourceTerminalMatchModel SourceTerminalMatchValues
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceTerminalMatchNegative
+noncomputable section
+local instance negativeDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev wrong := SourceTerminalMatchWrongActual.capture.terminated.TerminatedCaptureObservation.matches
+
+private theorem wrong_binding (ports : Ports) (saved : Work) :
+    SourceTerminalMatchWrongActual.capture.terminated.TerminatedCaptureWorkRequest.binding_digest ports saved =
+      binding ports saved := SourceTerminalMatchProof.binding_refines ports saved
+
+private theorem wrong_full_binding (ports : Ports) (full : Full) :
+    SourceTerminalMatchWrongActual.capture.work.FullCaptureWorkRequest.binding_digest ports full =
+      SourceRequestEndMatchModel.binding ports.full full :=
+  SourceTerminalMatchProof.full_binding_refines ports full
+
+private theorem wrong_digest_eq (a b : Digest) :
+    SourceTerminalMatchWrongActual.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq
+      a b = .ok (decide (a = b)) := SourceTerminalMatchProof.digest_eq a b
+
+private theorem wrong_action_eq (a b : Action) :
+    SourceTerminalMatchWrongActual.sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction.eq
+      SourceTerminalMatchWrongActual.sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+      a b = .ok (decide (a = b)) := SourceTerminalMatchProof.action_eq a b
+
+private theorem wrong_source_eq (a b : capture.SourceProcessIdentity) :
+    SourceTerminalMatchWrongActual.capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq
+      a b = .ok (decide (a = b)) := SourceTerminalMatchProof.source_eq a b
+
+private theorem wrong_worker_eq (a b : Option Worker) :
+    SourceTerminalMatchWrongActual.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      SourceTerminalMatchWrongActual.capture.launch.CaptureWorkerBinding.Insts.CoreCmpPartialEqCaptureWorkerBinding
+      a b = .ok (decide (a = b)) := SourceTerminalMatchProof.option_worker_eq a b
+
+def aligned_slot (observed : Observation) (saved : Work) : Observation :=
+  match observed with
+  | .StoppedAndDrained wd fd sealAction stopAction source worker _ device inode =>
+    .StoppedAndDrained wd fd sealAction stopAction source worker saved.host_slot device inode
+
+/-- A universal relation between the two actual generated programs, not a
+    replacement property. The unchanged complete Contract is refuted below. -/
+theorem actual_aligned_slot_relation (ports : Ports) (observed : Observation) (saved : Work) :
+    wrong ports observed saved =
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches ports
+      (aligned_slot observed saved) saved := by
+  rw [SourceTerminalMatchProof.actual_contract]
+  cases observed with
+  | StoppedAndDrained wd fd sealAction stopAction source worker slot device inode =>
+    unfold wrong SourceTerminalMatchWrongActual.capture.terminated.TerminatedCaptureObservation.matches
+      aligned_slot outcome
+    rw [wrong_binding]
+    apply congrArg (fun next => binding ports saved >>= next)
+    funext encoded
+    cases encoded with
+    | Err error =>
+      simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok digest =>
+      simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok, wrong_digest_eq]
+      by_cases same : wd = digest
+      · simp only [same, decide_true, ↓reduceIte, ne_eq, not_true_eq_false]
+        rw [wrong_full_binding]
+        apply congrArg (fun next => SourceRequestEndMatchModel.binding ports.full saved.full >>= next)
+        funext fullEncoded
+        cases fullEncoded with
+        | Err error =>
+          simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | Ok fullDigest =>
+          simp [wrong_action_eq, wrong_source_eq, wrong_worker_eq]
+          all_goals (split_ifs <;> simp_all)
+      · simp [same]
+
+theorem normal_control : wrong io observation work = .ok (.Ok true) := by
+  rw [actual_aligned_slot_relation]
+  exact SourceTerminalMatchValues.normal
+
+theorem absent_worker_control :
+    wrong io (make SourceWorkMatch.Values.digest SourceWorkMatch.Values.digest
+      work.seal_action work.stop_action work.source.source none slot)
+      { work with worker := none } = .ok (.Ok true) := by
+  rw [actual_aligned_slot_relation]
+  exact SourceTerminalMatchValues.absent_worker_control
+
+theorem actual_foreign_slot_accepted : wrong io foreignObservation work = .ok (.Ok true) := by
+  rw [actual_aligned_slot_relation]
+  exact SourceTerminalMatchValues.normal
+
+theorem violates_same_complete_contract : ¬Contract io (wrong io) := by
+  intro contract
+  have promised := contract foreignObservation work
+  have expected := SourceTerminalMatchValues.foreign_slot_rejected
+  rw [SourceTerminalMatchProof.actual_contract] at expected
+  rw [actual_foreign_slot_accepted, expected] at promised
+  simp at promised
+
+end
+end SandboxModel.Stage1Protocol.SourceTerminalMatchNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchNegative.actual_aligned_slot_relation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchNegative.normal_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchNegative.absent_worker_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchNegative.actual_foreign_slot_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchNegative.violates_same_complete_contract

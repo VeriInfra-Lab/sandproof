@@ -1,0 +1,76 @@
+import SourcePriorEndMatchValues
+import SourceTerminalMatchTypes
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceTerminalMatchModel
+noncomputable section
+local instance modelDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev Work := capture.terminated.TerminatedCaptureWorkRequest
+abbrev Observation := capture.terminated.TerminatedCaptureObservation
+abbrev Action := SourceRequestEndMatchModel.Action
+abbrev Full := SourceRequestEndMatchModel.Full
+abbrev Requirement := SourceRequestEndMatchModel.Requirement
+abbrev Worker := SourceRequestEndMatchModel.Worker
+abbrev Digest := SourceRequestEndMatchModel.Digest
+abbrev JsonError := SourceRequestEndMatchModel.JsonError
+abbrev Reply := SourceRequestEndMatchModel.Reply
+abbrev Identity := sandbox_controller_core.capture.continuation.OriginalContinueIdentity
+abbrev Stop := sandbox_controller_core.model.StopCoverage
+abbrev Slot := host_contract.HostSlotContext
+abbrev BindingInput := Identity × Action × Full × Requirement × Option Worker × Action × Stop × Slot
+
+/-- Only the new exact tuple encoder and the existing Full encoder/hash.
+    Both original SHA calls share the same per-symbol digest provider.
+    No business method, validation, authorization or physical fact is a port. -/
+structure Ports where
+  full : SourceRequestEndMatchModel.Ports
+  encode : BindingInput → Result (core.result.Result (alloc.vec.Vec U8) JsonError)
+
+/-- All eight original tuple positions, including the complete optional worker,
+    source requirement and occupied host slot. This asserts no JSON/hash law. -/
+def bindingInput (work : Work) : BindingInput :=
+  (work.identity, work.seal_action, work.full, work.source, work.worker,
+    work.stop_action, work.stop, work.host_slot)
+
+def binding (io : Ports) (work : Work) : Result (core.result.Result Digest JsonError) := do
+  let encoded ← io.encode (bindingInput work)
+  match encoded with
+  | .Err error => .ok (.Err error)
+  | .Ok bytes => do
+    let digest ← io.full.digest bytes.slice
+    .ok (.Ok digest)
+
+/-- The two original fallible calls stay ordered. A first digest mismatch
+    returns false before Full encoding. Device/inode are not checked here;
+    their physical facts and the caller's separate inode guard remain V6/V3. -/
+def outcome (io : Ports) (observed : Observation) (work : Work) : Result Reply := do
+  let ⟨workDigest, fullDigest, sealAction, stop, source, worker, slot, _, _⟩ := observed
+  let encoded ← binding io work
+  match encoded with
+  | .Err error => .ok (.Err error)
+  | .Ok actual =>
+    if workDigest ≠ actual then .ok (.Ok false)
+    else do
+      let encodedFull ← SourceRequestEndMatchModel.binding io.full work.full
+      match encodedFull with
+      | .Err error => .ok (.Err error)
+      | .Ok actualFull => .ok (.Ok (decide (fullDigest = actualFull ∧
+          sealAction = work.seal_action ∧ stop = work.stop_action ∧
+          source = work.source.source ∧ worker = work.worker ∧ slot = work.host_slot)))
+
+def Contract (io : Ports) (root : Observation → Work → Result Reply) : Prop :=
+  ∀ observed work, root observed work = outcome io observed work
+
+/-- The actual factory stores its supplied values. This is deliberately not
+    a theorem that the values were authorized or came from durable facts. -/
+def ConstructorContract
+    (root : Identity → Action → Full → Requirement → Option Worker → (Action × Stop) → Slot → Result Work) : Prop :=
+  ∀ identity sealAction full source worker terminal slot,
+    root identity sealAction full source worker terminal slot =
+      .ok ⟨identity, sealAction, full, source, worker, terminal.1, terminal.2, slot⟩
+
+end
+end SandboxModel.Stage1Protocol.SourceTerminalMatchModel

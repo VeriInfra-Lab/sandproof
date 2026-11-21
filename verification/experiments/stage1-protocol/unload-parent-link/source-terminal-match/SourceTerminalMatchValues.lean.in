@@ -1,0 +1,132 @@
+import SourceTerminalMatchProof
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceTerminalMatchModel
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceTerminalMatchValues
+
+/-- Decoded values and arbitrary library replies only. No current World,
+    real JSON/SHA, durable acceptance, authorization or physical exit witness. -/
+def identity : Identity := ⟨⟨2#u64, 3#u64⟩, 1#u64, 101#u64, 5#u64⟩
+def slot : Slot := ⟨0#u64, none, ⟨1#u64, 2#u64, 101#u64, 5#u64, 6#u64⟩⟩
+def stop : Stop := ⟨⟨2#u64, 4#u64⟩, 2#u64, 0#u64, 7#u64⟩
+def work : Work :=
+  ⟨identity, SourceRequestEndMatchValues.action, SourceRequestEndMatchValues.full,
+    SourceRequestEndMatchValues.requirement, some SourceRequestEndMatchValues.worker,
+    SourceRequestEndMatchValues.action, stop, slot⟩
+def io : Ports :=
+  ⟨SourceRequestEndMatchValues.io, fun _ => .ok (.Ok SourceRequestEndMatchValues.payload)⟩
+def make (wd fd : Digest) (sealAction stopAction : Action) (source : capture.SourceProcessIdentity)
+    (worker : Option Worker) (savedSlot : Slot) : Observation :=
+  .StoppedAndDrained wd fd sealAction stopAction source worker savedSlot 7#u64 11#u64
+def observation : Observation :=
+  make SourceWorkMatch.Values.digest SourceWorkMatch.Values.digest
+    work.seal_action work.stop_action work.source.source work.worker work.host_slot
+def foreignSlot : Slot := { slot with expected_previous := some 5#u64 }
+def foreignObservation : Observation :=
+  make SourceWorkMatch.Values.digest SourceWorkMatch.Values.digest
+    work.seal_action work.stop_action work.source.source work.worker foreignSlot
+def foreignAction : Action :=
+  { SourceRequestEndMatchValues.action with identity :=
+    { SourceRequestEndMatchValues.action.identity with attempt := 4#u64 } }
+def foreignSource : capture.SourceProcessIdentity :=
+  { work.source.source with boot_id := "foreign" }
+
+theorem slot_differs : foreignSlot ≠ work.host_slot := by
+  intro same
+  have equal := congrArg (fun value : Slot => value.expected_previous) same
+  change (some (5#u64)) = none at equal
+  cases equal
+
+theorem action_differs : foreignAction ≠ work.seal_action := by
+  intro same
+  have equal := congrArg (fun value : Action => value.identity.attempt) same
+  change (4#u64) = 3#u64 at equal
+  exact (by decide : (4#u64) ≠ 3#u64) equal
+
+theorem source_differs : foreignSource ≠ work.source.source := by
+  intro same
+  have equal := congrArg (fun value : capture.SourceProcessIdentity => value.boot_id) same
+  change "foreign" = "boot" at equal
+  exact (by decide : "foreign" ≠ "boot") equal
+
+theorem normal :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io observation work =
+      .ok (.Ok true) := by
+  rw [SourceTerminalMatchProof.actual_contract]
+  simp [outcome, binding, io, observation, make, work,
+    SourceRequestEndMatchValues.io, SourceRequestEndMatchModel.binding]
+
+theorem constructor_normal :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureWorkRequest.from_source
+      identity work.seal_action work.full work.source work.worker (work.stop_action, stop) slot =
+      .ok work := by
+  rfl
+
+theorem absent_worker_control :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io
+      (make SourceWorkMatch.Values.digest SourceWorkMatch.Values.digest
+        work.seal_action work.stop_action work.source.source none slot)
+      { work with worker := none } = .ok (.Ok true) := by
+  rw [SourceTerminalMatchProof.actual_contract]
+  simp [outcome, binding, io, make, work,
+    SourceRequestEndMatchValues.io, SourceRequestEndMatchModel.binding]
+
+theorem gate_zero_control :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io
+      (.StoppedAndDrained SourceWorkMatch.Values.digest SourceWorkMatch.Values.digest
+        work.seal_action work.stop_action work.source.source work.worker slot 0#u64 0#u64) work =
+      .ok (.Ok true) := by
+  rw [SourceTerminalMatchProof.actual_contract]
+  simp [outcome, binding, io, work,
+    SourceRequestEndMatchValues.io, SourceRequestEndMatchModel.binding]
+
+theorem foreign_slot_rejected :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io foreignObservation work =
+      .ok (.Ok false) := by
+  rw [SourceTerminalMatchProof.actual_contract]
+  simp [outcome, binding, io, foreignObservation, make,
+    SourceRequestEndMatchValues.io, SourceRequestEndMatchModel.binding, slot_differs]
+
+/-- One explicit omission control per compared field. The general iff above,
+    rather than this finite list, proves completeness for arbitrary values. -/
+def mismatches : List Observation :=
+  let d := SourceWorkMatch.Values.digest
+  let other := SourceWorkMatch.Values.otherDigest
+  [make other d work.seal_action work.stop_action work.source.source work.worker slot,
+   make d other work.seal_action work.stop_action work.source.source work.worker slot,
+   make d d foreignAction work.stop_action work.source.source work.worker slot,
+   make d d work.seal_action foreignAction work.source.source work.worker slot,
+   make d d work.seal_action work.stop_action foreignSource work.worker slot,
+   make d d work.seal_action work.stop_action work.source.source
+     (some SourceRequestEndMatchValues.differentWorker) slot,
+   foreignObservation]
+
+theorem all_seven_field_controls_rejected (observed : Observation) (member : observed ∈ mismatches) :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io observed work =
+      .ok (.Ok false) := by
+  have badSlot : foreignSlot ≠ slot := slot_differs
+  have badAction : foreignAction ≠ SourceRequestEndMatchValues.action := action_differs
+  have badSource : foreignSource ≠ SourceRequestEndMatchValues.requirement.source := source_differs
+  simp [mismatches] at member
+  rcases member with rfl | rfl | rfl | rfl | rfl | rfl | rfl
+  all_goals rw [SourceTerminalMatchProof.actual_contract]
+  all_goals
+    simp [outcome, binding, io, make, foreignObservation,
+      SourceRequestEndMatchValues.io, SourceRequestEndMatchModel.binding,
+      badSlot, badAction, badSource, work,
+      SourceRequestEndMatchValues.worker_digest_differs,
+      (by decide : SourceWorkMatch.Values.otherDigest ≠ SourceWorkMatch.Values.digest)]
+
+end SandboxModel.Stage1Protocol.SourceTerminalMatchValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchValues.slot_differs
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchValues.action_differs
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchValues.source_differs
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchValues.normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchValues.constructor_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchValues.absent_worker_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchValues.gate_zero_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchValues.foreign_slot_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchValues.all_seven_field_controls_rejected

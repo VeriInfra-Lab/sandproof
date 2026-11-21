@@ -1,0 +1,230 @@
+// Real API/SQLite/JSON fixture with controlled Host; no physical exit claim.
+fn terminal_match_fixture(
+    path: &Path,
+) -> (
+    ControllerJournal,
+    SourceWorkRecord,
+    crate::capture::TerminatedCaptureWorkRequest,
+    crate::capture::TerminatedCaptureObservation,
+) {
+    let (journal, record) = source_terminal_fixture(path, 3);
+    let (stop, observation) = full::source_terminal_coordinates_for_test(&record);
+    let work = full::drain::source_terminal_work_for_test(&record, stop, &observation).unwrap();
+    assert!(observation.matches(&work).unwrap());
+    (journal, record, work, observation)
+}
+
+#[test]
+fn source_terminal_match_retains_constructor_and_unchecked_gate_values() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record, work, observation) =
+        terminal_match_fixture(&dir.path().join("terminal-value.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let rebuilt = crate::capture::TerminatedCaptureWorkRequest::from_source(
+        work.identity(),
+        work.seal_action().clone(),
+        work.full().clone(),
+        work.source().clone(),
+        work.worker().cloned(),
+        (work.stop_action().clone(), work.stop()),
+        work.host_slot(),
+    );
+    assert_eq!(rebuilt, work);
+    // Check the factory against independently retained arguments, not just
+    // two invocations fed values already returned by that same factory.
+    let mut id = work.identity();
+    id.epoch = id.epoch.checked_add(1).unwrap();
+    let mut seal = work.seal_action().clone();
+    seal.identity.attempt = seal.identity.attempt.checked_add(1).unwrap();
+    let mut complete_full = work.full().clone();
+    complete_full.state_bytes = complete_full.state_bytes.checked_add(1).unwrap();
+    let mut requirement = work.source().clone();
+    requirement.limits.max_work_bytes = requirement.limits.max_work_bytes.checked_add(1).unwrap();
+    let mut stop_action = work.stop_action().clone();
+    stop_action.identity.attempt = stop_action.identity.attempt.checked_add(1).unwrap();
+    let mut stop = work.stop();
+    stop.attempt = stop.attempt.checked_add(1).unwrap();
+    let mut slot = work.host_slot();
+    slot.position.0 = slot.position.0.checked_add(1).unwrap();
+    let supplied = crate::capture::TerminatedCaptureWorkRequest::from_source(
+        id,
+        seal.clone(),
+        complete_full.clone(),
+        requirement.clone(),
+        None,
+        (stop_action.clone(), stop),
+        slot,
+    );
+    assert_eq!(supplied.identity(), id);
+    assert_eq!(supplied.seal_action(), &seal);
+    assert_eq!(supplied.full(), &complete_full);
+    assert_eq!(supplied.source(), &requirement);
+    assert_eq!(supplied.worker(), None);
+    assert_eq!(supplied.stop_action(), &stop_action);
+    assert_eq!(supplied.stop(), stop);
+    assert_eq!(supplied.host_slot(), slot);
+    assert_eq!(work.full(), &record.capture.as_ref().unwrap().full);
+    assert_eq!(work.source(), record.work.requirement());
+    assert_eq!(
+        work.worker(),
+        record.capture.as_ref().unwrap().worker.as_ref()
+    );
+    let mut changed = observation;
+    let crate::capture::TerminatedCaptureObservation::StoppedAndDrained {
+        helper_gate_device,
+        helper_gate_inode,
+        ..
+    } = &mut changed;
+    *helper_gate_device = 0;
+    *helper_gate_inode = 0;
+    assert!(
+        changed.matches(&work).unwrap(),
+        "this value matcher does not validate physical gate identity"
+    );
+    let never_work = crate::capture::TerminatedCaptureWorkRequest::from_source(
+        work.identity(),
+        work.seal_action().clone(),
+        work.full().clone(),
+        work.source().clone(),
+        None,
+        (work.stop_action().clone(), work.stop()),
+        work.host_slot(),
+    );
+    let crate::capture::TerminatedCaptureObservation::StoppedAndDrained {
+        work_binding,
+        worker,
+        ..
+    } = &mut changed;
+    *work_binding = never_work.binding_digest().unwrap();
+    *worker = None;
+    assert!(
+        changed.matches(&never_work).unwrap(),
+        "None worker is allowed by this value matcher"
+    );
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_terminal_match_checks_bindings_actions_source_and_optional_worker() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, _, work, observation) =
+        terminal_match_fixture(&dir.path().join("terminal-fields.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    for field in 0..12 {
+        let mut changed = observation.clone();
+        let crate::capture::TerminatedCaptureObservation::StoppedAndDrained {
+            work_binding,
+            full_work_binding,
+            seal_action,
+            stop_action,
+            source,
+            worker,
+            ..
+        } = &mut changed;
+        match field {
+            0 | 1 => {
+                let target = if field == 0 {
+                    work_binding
+                } else {
+                    full_work_binding
+                };
+                let mut bytes = *target.as_bytes();
+                bytes[0] ^= 1;
+                *target = ContentDigest::from_sha256(bytes);
+            }
+            2 => {
+                seal_action.identity.attempt = seal_action.identity.attempt.checked_add(1).unwrap()
+            }
+            3 => {
+                stop_action.identity.attempt = stop_action.identity.attempt.checked_add(1).unwrap()
+            }
+            4 => source.pid = source.pid.checked_add(1).unwrap(),
+            5 => {
+                assert!(worker.is_some());
+                *worker = None;
+            }
+            6..=9 => {
+                let previous = worker.as_ref().unwrap();
+                let mut process = previous.process().clone();
+                let mut bytes = *previous.job_digest().as_bytes();
+                match field {
+                    6 => process.pid = process.pid.checked_add(1).unwrap(),
+                    7 => {
+                        process.start_time_ticks = process.start_time_ticks.checked_add(1).unwrap()
+                    }
+                    8 => process.boot_id.push('x'),
+                    9 => bytes[0] ^= 1,
+                    _ => unreachable!(),
+                }
+                *worker = Some(
+                    crate::capture::CaptureWorkerBinding::new(
+                        process,
+                        ContentDigest::from_sha256(bytes),
+                    )
+                    .unwrap(),
+                );
+            }
+            10 => seal_action.command.attempt = seal_action.command.attempt.checked_add(1).unwrap(),
+            11 => stop_action.command.attempt = stop_action.command.attempt.checked_add(1).unwrap(),
+            _ => unreachable!(),
+        }
+        assert_ne!(changed, observation);
+        assert!(
+            !changed.matches(&work).unwrap(),
+            "terminal matching original field={field}"
+        );
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_terminal_match_rejects_every_complete_host_slot_field() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, _, work, observation) =
+        terminal_match_fixture(&dir.path().join("terminal-slot.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    for field in 0..7 {
+        let mut changed = observation.clone();
+        let crate::capture::TerminatedCaptureObservation::StoppedAndDrained { host_slot, .. } =
+            &mut changed;
+        match field {
+            0 => host_slot.position.0 = host_slot.position.0.checked_add(1).unwrap(),
+            1 => {
+                host_slot.expected_previous = if host_slot.expected_previous.is_some() {
+                    None
+                } else {
+                    Some(core::VmId::new(987654))
+                }
+            }
+            2 => host_slot.binding.owner.0 = host_slot.binding.owner.0.checked_add(1).unwrap(),
+            3 => host_slot.binding.sandbox.0 = host_slot.binding.sandbox.0.checked_add(1).unwrap(),
+            4 => {
+                host_slot.binding.generation = host_slot.binding.generation.checked_add(1).unwrap()
+            }
+            5 => host_slot.binding.vm.0 = host_slot.binding.vm.0.checked_add(1).unwrap(),
+            6 => host_slot.binding.network.0 = host_slot.binding.network.0.checked_add(1).unwrap(),
+            _ => unreachable!(),
+        }
+        assert_ne!(changed, observation);
+        assert!(
+            !changed.matches(&work).unwrap(),
+            "terminal matching must retain complete original host slot: field={field}"
+        );
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}

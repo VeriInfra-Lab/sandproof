@@ -1,0 +1,13 @@
+import SourceTerminalMatchSpec
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceTerminalMatchActual
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq := SourceRequestEndMatchActual.alloc.string.String.Insts.CoreCmpPartialEqString.eq
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq := @SourceRequestEndMatchActual.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+end SandboxModel.Stage1Protocol.SourceTerminalMatchActual
+
+namespace SandboxModel.Stage1Protocol.SourceTerminalMatchWrongActual
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq := SourceRequestEndMatchActual.alloc.string.String.Insts.CoreCmpPartialEqString.eq
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq := @SourceRequestEndMatchActual.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+end SandboxModel.Stage1Protocol.SourceTerminalMatchWrongActual
