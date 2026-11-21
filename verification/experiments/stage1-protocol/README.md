@@ -92,6 +92,14 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
 原生入口另运行本组件 `test_replay_formal.py`，检查私有抽取目录准备及准确审计清单，
 并确认漏项、额外或重复审计会被原检查器拒绝。这些驱动回归不运行 Lean，不提供业务证明。
 
+保留的 Request、Manifest 和 Carriers 现覆盖 `d087923fbfdbe7db50e0cb6097308296ab28b2ea`
+的抽取输入。Manifest 和 Carriers 在 ning 的 `data2` 重抽，Request 复用该机已有的
+捕获并逐项核对全部 46 个输入。三份正规化 LLBC 和 11 个生成文件均匹配原冻结，
+原定理和生成文件继续复用。抽取确认的收据为
+`retained-current.d087923f/comparison.json`，SHA256
+`79111836d2c04a9e053ee3331eb573ae30b26eae2bbe23be80f299dc565cc57e`。
+新版传输测试、原反例、原版恢复及 Lean 核查仍由同一最终候选的正式入口执行。
+
 `registered.py` 统一登记结果/观察/确认、完整清单、字段与字节、Writer、固定派生来源和
 同步收件切片的原入口。普通检查仍调用各包原命令和同性质错误版；证明入口消费对应的
 完整范围回执。裸开发 `result.json` 不能充当范围回执，未运行的源码/LLBC 来源检查也不能
