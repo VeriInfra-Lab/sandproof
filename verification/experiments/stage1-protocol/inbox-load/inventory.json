@@ -3540,6 +3540,15 @@
     "previous_sha256": "07f55655872021df738057a5421164dccd9c9e091682f5ccbac4993e5625cdcb",
     "current_sha256": "174264cf527db0f9f0b22b20ee75e338a1a580e637e6fe35045056a030eb378c",
     "review": "The only production difference is the binder rename in revoke_capture_eligibility. Its declaration and source file are absent from both extracted roots of the original correct view and all four original wrong views. The original variant, extraction and acceptance rules are retained.",
-    "previous_evidence_ledger_sha256": "ae1ee7574c46155c3dc1b8aff26ff7f005fa34f32be67eb78c0d276984618f44"
+    "previous_evidence_ledger_sha256": "ae1ee7574c46155c3dc1b8aff26ff7f005fa34f32be67eb78c0d276984618f44",
+    "current_correct_capture": {
+      "candidate": "33d10d15496d1bad9c4dbf196aeaa0c22abe3ecc",
+      "comparison_sha256": "b922cbcd7a9fe0c3898f796229d5f8ced747b3039ceb1a92594686ee52ec3712",
+      "generated_files_equal": 10,
+      "original_bindings_equal": true,
+      "primitive_canonical_equal": true,
+      "request_canonical_difference": "One source column: is_destroy_operation switch branch end in /rustc/library/core/src/macros/mod.rs, line 434, column 8 to 25. No other LLBC field differs after the existing short_names canonicalization.",
+      "proof_acceptance": false
+    }
   }
 }
