@@ -1,0 +1,39 @@
+import SourceFullWorkGuardValues
+
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+open SandproofFoundationsRust.IdentifierLibrary
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceWorkerGuardModel
+noncomputable section
+local instance modelDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+abbrev Process := capture.SourceProcessIdentity
+abbrev Worker := capture.launch.CaptureWorkerBinding
+abbrev Digest := sandproof_protocol.lifecycle.digest.ContentDigest
+abbrev Reply := core.result.Result Worker JournalError
+
+/-- Representation only: no ownership, lifetime or source permission. -/
+def Representable (process : Process) : Prop := StringRepresentable process.boot_id
+
+def ProcessAllowed (process : Process) : Prop :=
+  0 < process.pid.val ∧ 0 < process.start_time_ticks.val ∧
+  0 < (stringBytes process.boot_id).length ∧
+  (stringBytes process.boot_id).length ≤ 128 ∧
+  (stringBytes process.boot_id).all SourceFullWorkGuardModel.graphicByte = true
+
+/-- The original local value is built before checking. This specifies only
+the returned result, not absence of any temporary construction on failure. -/
+def outcome (process : Process) (digest : Digest) : Reply :=
+  if ProcessAllowed process then .Ok ⟨process, digest⟩ else .Err .UnsupportedInput
+
+def ValidContract (root : Worker → Result Bool) : Prop :=
+  ∀ worker, Representable worker.process →
+    root worker = .ok (decide (ProcessAllowed worker.process))
+
+def ConstructorContract (root : Process → Digest → Result Reply) : Prop :=
+  ∀ process digest, Representable process → root process digest = .ok (outcome process digest)
+
+end
+end SandboxModel.Stage1Protocol.SourceWorkerGuardModel

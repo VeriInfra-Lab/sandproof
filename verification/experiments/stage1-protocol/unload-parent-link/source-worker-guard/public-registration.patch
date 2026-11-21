@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-worker-guard 在固定 b0d791cc 上直接连接原 CaptureWorkerBinding::new/valid，准确保留完整 process/job_digest；同一 ValidContract/ConstructorContract 否定实际遗漏启动 ticks 守卫的错误。继承#1004完整158/850，完整入口目标164/867与166/874。
++> 原生31项四视图及恢复交ning。局部值先构造再检查，返回数据/形状true不产生 FullCaptureLaunchPermit、实际worker/启动门或释放事实；库采用、完整父调用/事务/耐久/JSON/认证和物理责任保持开放。公共登记/覆盖仅交候选。
+ ## V3 首次卸载使用同一条原执行记录

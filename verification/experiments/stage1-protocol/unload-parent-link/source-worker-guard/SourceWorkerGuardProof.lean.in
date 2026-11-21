@@ -1,0 +1,98 @@
+import SourceWorkerGuardView
+import SourceWorkerGuardSpec
+
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceWorkerGuardTypes
+open SourceWorkerGuardModel SandproofFoundationsRust.IdentifierLibrary
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceWorkerGuardProof
+noncomputable section
+local instance modelDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem all_refines (bytes : List U8) :
+    ∃ rest, allBytes
+      SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.valid.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+      () bytes = .ok (bytes.all SourceFullWorkGuardModel.graphicByte, rest) := by
+  exact SourceFullWorkGuardPause.all_refines bytes
+
+theorem valid_refines (worker : Worker) (represented : Representable worker.process) :
+    SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.valid worker =
+      .ok (decide (ProcessAllowed worker.process)) := by
+  obtain ⟨rest, checked⟩ := all_refines (stringBytes worker.process.boot_id)
+  have bounded : StringRepresentable worker.process.boot_id := represented
+  simp [SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.valid,
+    SourceWorkerGuardActual.alloc.string.String.is_empty,
+    SourceWorkerGuardActual.alloc.string.String.len,
+    SourceWorkerGuardActual.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+    SourceFullWorkGuardActual.alloc.string.String.is_empty,
+    SourceFullWorkGuardActual.alloc.string.String.len,
+    SourceFullWorkGuardActual.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+    SourceFullWorkGuardStd.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref,
+    SourceFullWorkGuardStd.core.str.Str.is_empty, SourceFullWorkGuardStd.core.str.Str.len,
+    SourceWorkerGuardActual.core.str.Str.bytes,
+    SourceWorkerGuardActual.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+    SourceFullWorkGuardActual.core.str.Str.bytes,
+    SourceFullWorkGuardActual.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+    SourceFullWorkGuardStd.core.str.Str.bytes,
+    SourceFullWorkGuardStd.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all,
+    bounded, checked, ProcessAllowed, Nat.pos_iff_ne_zero]
+  split_ifs <;> simp_all
+  apply Bool.eq_iff_iff.mpr
+  simp
+
+theorem constructor_refines (process : Process) (digest : Digest) (represented : Representable process) :
+    SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.new process digest = .ok (outcome process digest) := by
+  unfold SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.new
+  rw [valid_refines _ represented]
+  by_cases allowed : ProcessAllowed process <;> simp [outcome, allowed]
+
+theorem complete_valid_contract :
+    ValidContract SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.valid :=
+  valid_refines
+
+theorem complete_constructor_contract :
+    ConstructorContract SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.new :=
+  constructor_refines
+
+theorem successful_payload (process : Process) (digest : Digest)
+    (represented : Representable process) (allowed : ProcessAllowed process) :
+    SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.new process digest = .ok (.Ok ⟨process, digest⟩) := by
+  rw [constructor_refines process digest represented]
+  simp [outcome, allowed]
+
+theorem successful_fields (process : Process) (digest : Digest) (worker : Worker)
+    (represented : Representable process) (allowed : ProcessAllowed process)
+    (returned : SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.new process digest = .ok (.Ok worker)) :
+    worker.process = process ∧ worker.job_digest = digest := by
+  rw [successful_payload process digest represented allowed] at returned
+  have equal : worker = (⟨process, digest⟩ : Worker) := by simpa using returned.symm
+  rw [equal]
+  exact ⟨rfl, rfl⟩
+
+theorem rejects_invalid (process : Process) (digest : Digest)
+    (represented : Representable process) (invalid : ¬ ProcessAllowed process) :
+    SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.new process digest = .ok (.Err .UnsupportedInput) := by
+  rw [constructor_refines process digest represented]
+  simp [outcome, invalid]
+
+theorem digest_does_not_change_valid (process : Process) (first second : Digest)
+    (represented : Representable process) :
+    SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.valid ⟨process, first⟩ =
+      SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.valid ⟨process, second⟩ := by
+  rw [valid_refines _ represented, valid_refines _ represented]
+
+end
+end SandboxModel.Stage1Protocol.SourceWorkerGuardProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardProof.all_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardProof.valid_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardProof.constructor_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardProof.complete_valid_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardProof.complete_constructor_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardProof.successful_payload
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardProof.successful_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardProof.rejects_invalid
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardProof.digest_does_not_change_valid

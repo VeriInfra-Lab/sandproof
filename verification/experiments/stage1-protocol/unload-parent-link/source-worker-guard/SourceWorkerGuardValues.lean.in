@@ -1,0 +1,59 @@
+import SourceWorkerGuardProof
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceWorkerGuardModel
+open SandproofFoundationsRust.IdentifierLibrary
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceWorkerGuardValues
+
+def process : Process := { SourceWorkMatch.Values.source with start_time_ticks := 1#u64 }
+def digest : Digest := SourceWorkMatch.Values.digest
+def otherDigest : Digest := SourceWorkMatch.Values.otherDigest
+def worker : Worker := ⟨process, digest⟩
+def zeroProcess : Process := { process with start_time_ticks := 0#u64 }
+def zeroWorker : Worker := ⟨zeroProcess, digest⟩
+
+theorem represented : Representable process := by
+  change StringRepresentable "boot"
+  simp only [StringRepresentable, stringBytes, List.length_map]
+  change 4 ≤ Usize.max
+  scalar_tac
+
+theorem allowed : ProcessAllowed process := by
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;> decide
+
+theorem normal_valid : SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.valid worker = .ok true := by
+  rw [SourceWorkerGuardProof.valid_refines worker represented]
+  simp [worker, allowed]
+
+theorem normal_constructor :
+    SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.new process digest = .ok (.Ok worker) :=
+  SourceWorkerGuardProof.successful_payload process digest represented allowed
+
+theorem zero_represented : Representable zeroProcess := represented
+
+theorem zero_not_allowed : ¬ ProcessAllowed zeroProcess := by
+  intro valid
+  have ticks := valid.2.1
+  change (0 : Nat) < 0 at ticks
+  omega
+
+theorem zero_constructor_rejected :
+    SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.new zeroProcess digest = .ok (.Err .UnsupportedInput) :=
+  SourceWorkerGuardProof.rejects_invalid zeroProcess digest zero_represented zero_not_allowed
+
+theorem different_digest_changes_value : worker ≠ (⟨process, otherDigest⟩ : Worker) := by
+  intro equal
+  have same := congrArg (fun value : Worker => value.job_digest) equal
+  exact (by decide : digest ≠ otherDigest) same
+
+end SandboxModel.Stage1Protocol.SourceWorkerGuardValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardValues.represented
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardValues.allowed
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardValues.normal_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardValues.normal_constructor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardValues.zero_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardValues.zero_not_allowed
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardValues.zero_constructor_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardValues.different_digest_changes_value

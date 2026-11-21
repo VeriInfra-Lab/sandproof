@@ -1,0 +1,173 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "parent_prs": [
+    1004
+  ],
+  "parent_commit": "3544c987b1b84d2e52a80ea680410917ea199189",
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-worker-guard",
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceWorkerGuardValues",
+      "physical_files": 164,
+      "full_audits": 867,
+      "own_modules": [
+        "SourceWorkerGuardTypes.lean",
+        "SourceWorkerGuardLibrary.lean",
+        "SourceWorkerGuardView.lean",
+        "SourceWorkerGuardSpec.lean",
+        "SourceWorkerGuardProof.lean",
+        "SourceWorkerGuardValues.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.all_refines",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.valid_refines",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.constructor_refines",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.complete_valid_contract",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.complete_constructor_contract",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.successful_payload",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.successful_fields",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.rejects_invalid",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.digest_does_not_change_valid",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.represented",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.allowed",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.normal_valid",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.normal_constructor",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.zero_represented",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.zero_not_allowed",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.zero_constructor_rejected",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.different_digest_changes_value"
+      ]
+    },
+    {
+      "variant": "allow-zero-start-ticks",
+      "formal_root": "SourceWorkerGuardNegative",
+      "physical_files": 166,
+      "full_audits": 874,
+      "own_modules": [
+        "SourceWorkerGuardTypes.lean",
+        "SourceWorkerGuardLibrary.lean",
+        "SourceWorkerGuardView.lean",
+        "SourceWorkerGuardSpec.lean",
+        "SourceWorkerGuardProof.lean",
+        "SourceWorkerGuardValues.lean",
+        "SourceWorkerGuardWrong.lean",
+        "SourceWorkerGuardNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.all_refines",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.valid_refines",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.constructor_refines",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.complete_valid_contract",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.complete_constructor_contract",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.successful_payload",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.successful_fields",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.rejects_invalid",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardProof.digest_does_not_change_valid",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.represented",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.allowed",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.normal_valid",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.normal_constructor",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.zero_represented",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.zero_not_allowed",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.zero_constructor_rejected",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardValues.different_digest_changes_value",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.wrong_valid_fixed_ticks",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.normal_valid_control",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.normal_constructor_control",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.actual_zero_valid_accepted",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.actual_zero_constructor_accepted",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.violates_same_valid_contract",
+        "SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.violates_same_constructor_contract"
+      ]
+    }
+  ],
+  "formal_development_entry": "check.py",
+  "public_registration_accepted": false,
+  "production_candidate_equivalence_complete": false,
+  "whole_receipt_proved": false,
+  "native_candidate": {
+    "name": "stage1-source-worker-guard",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "allow-zero-start-ticks",
+      "adapted-allow-zero-start-ticks"
+    ],
+    "tests": [
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_requires_transaction_even_for_empty_expected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_empty_transaction_does_not_load_missing_schema",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_clears_only_complete_original_slot_and_keeps_reservation",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_same_key_with_changed_complete_record_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_unsettled_material_keeps_complete_source_row",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_zero_row_compare_and_set_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_duplicate_preserves_first_update_until_explicit_rollback",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_no_capture_requires_empty_retirement_and_release",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_retiring_zero_does_not_mean_settled",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_settlement_matches_every_original_byte",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_state_size_is_rejected_before_plan_shape",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_checks_all_seven_original_request_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_missing_record_precedes_request_errors",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_keeps_the_first_matching_record_error",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_selects_complete_work_instead_of_only_its_binding",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_keeps_complete_output_without_assuming_capture_presence",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_checks_all_six_original_identity_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_rejects_non_seal_commands",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_missing_capture_and_end_are_false",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_accepts_both_original_saved_normal_ends",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_refuses_original_terminated_end",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_terminal_end_carries_all_original_prior_shapes",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_terminal_end_replay_keeps_complete_prior_and_checks_every_stop_field",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_terminal_end_replay_checks_all_original_observation_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::full_work_guard_accepts_original_normal_and_keeps_unchecked_values_unprivileged",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::full_work_guard_checks_all_original_pause_fields_and_graphic_byte_bounds",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::full_work_guard_checks_profile_shape_signed_sizes_and_timeout_boundaries",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::full_work_guard_rejects_zero_state_bytes",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_worker_guard_constructor_preserves_complete_process_and_digest",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_worker_guard_checks_original_pid_and_graphic_byte_bounds",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_worker_guard_rejects_zero_original_start_ticks"
+    ],
+    "expected": {
+      "original": {
+        "passed": 31,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 31,
+        "failed": 0
+      },
+      "allow-zero-start-ticks": {
+        "passed": 30,
+        "failed": 1
+      },
+      "adapted-allow-zero-start-ticks": {
+        "passed": 30,
+        "failed": 1
+      }
+    },
+    "rejection": "worker constructor must reject zero original start ticks",
+    "restoration": "independent original after both wrong views:31/31",
+    "compiled": false,
+    "tests_executed": false
+  },
+  "providers": {
+    "five String/bytes calls": "exact same parent call models/normal allocation and valid shared borrow; String.len/is_empty adoption still V0 open",
+    "ASCII primitive and byte callback": "original bodies transparent; exact parent allBytes proof reused",
+    "current intent and durable send": "V1/V2 open",
+    "source/returned borrow/whole parent": "V3 open",
+    "World/authorization/transaction/commit unknown/durability": "V4/V5 open",
+    "actual process/job/gate/Writer/files/VM": "V6 open",
+    "independent authenticated context": "V7 open"
+  },
+  "remaining": [
+    "general production/staging equivalence and exact library adoption",
+    "original confirmed-commit FullCaptureLaunchPermit creation/single-consumption and physical release",
+    "source lookup/borrow/whole parent/World/transaction/unknown commit/durability",
+    "complete JSON/manifest arbitrary file-set/network/authentication",
+    "Ning ordinary/native/public registration and coverage adoption"
+  ]
+}
