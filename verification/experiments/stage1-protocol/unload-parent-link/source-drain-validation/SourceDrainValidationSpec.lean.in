@@ -1,0 +1,81 @@
+import SourceSavedQuestionValues
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceDrainValidationModel
+abbrev Record := SourceSavedQuestionModel.Record
+abbrev Stop := SourceSavedQuestionModel.Stop
+abbrev Observation := SourceSavedQuestionModel.Observation
+abbrev Work := SourceSavedQuestionModel.Work
+abbrev Journal := SourceSavedQuestionModel.Journal
+abbrev End := controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord
+abbrev Prior := SourcePriorEndMatchModel.Prior
+abbrev Ports := SourceTerminalMatchModel.Ports
+abbrev Reply := core.result.Result Unit Journal
+abbrev Representable := SourceSavedQuestionModel.Representable
+
+/-- Original pure callback under the existing shared-borrow value model.
+    This names no authority, DB, physical or whole-business interface. -/
+def savedEndCallback : core.ops.function.FnOnce Unit
+    controller.lifecycle_inbox.source_work.full.CaptureWork (Option End) where
+  call_once _ captured := SourceRetireLibrary.optionRef captured.«end»
+
+/-- The original as_ref/and_then/as_ref selection, using the already registered
+    per-symbol models; no validation or error branch is replaced. -/
+def originalEndSelector (record : Record) : Result (Option End) := do
+  let captured ← SourceRetireLibrary.optionRef record.capture
+  SourceRowChargeView.optionAndThen savedEndCallback captured ()
+
+def expandedEndSelector (record : Record) : Option End :=
+  match record.capture with | none => none | some captured => captured.«end»
+
+/-- Select only the saved original prior. The saved stop/observation are not
+    substituted for validate_record's supplied stop/observation. -/
+def savedPrior (record : Record) : Option Prior :=
+  match record.capture with
+  | some captured =>
+    match captured.«end» with
+    | some (.Terminated _ _ prior) => prior
+    | _ => none
+  | none => none
+
+/-- Reuse the exact parent prior match including the late completed/NoRequest
+    rule. A false match becomes CorruptStore; an original error is preserved. -/
+noncomputable def priorOutcome (io : Ports) (record : Record) : Result Reply :=
+  match savedPrior record with
+  | none => .ok (.Ok ())
+  | some prior => SourceRetireSpec.tryJournal id
+      (SourcePriorEndMatchModel.outcome io.full record prior) fun matched =>
+        .ok (if matched then .Ok () else .Err .CorruptStore)
+
+/-- Same complete question/observation/prior specifications, in actual order.
+    Only the two existing typed JSON calls and shared digest provider are ports.
+    Language failure/nonreturn and original error conversions stay explicit. -/
+noncomputable def outcome (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) : Result Reply :=
+  SourceRetireSpec.tryJournal id (SourceSavedQuestionModel.outcome record stop observed) fun work =>
+    SourceRetireSpec.tryJournal JournalError.Json
+      (SourceTerminalMatchModel.outcome io observed work) fun matched =>
+        if matched then priorOutcome io record else .ok (.Err .CorruptStore)
+
+/-- This is only the original decoded-value classifier. True does not assert
+    an actual process/Writer/descriptor closure or release authorization. -/
+noncomputable def writerOutcome (io : Ports) (record : Record) :
+    Result (core.result.Result Bool Journal) :=
+  match record.capture with
+  | none => .ok (.Ok false)
+  | some captured =>
+    match captured.«end» with
+    | some (.Terminated stop observation _) =>
+      SourceRetireSpec.tryJournal id (outcome io record stop observation) fun _ => .ok (.Ok true)
+    | _ => .ok (.Ok false)
+
+def Contract (io : Ports) (root : Record → Stop → Observation → Result Reply) : Prop :=
+  ∀ record stop observation, Representable record → root record stop observation = outcome io record stop observation
+
+def WriterContract (io : Ports)
+    (root : Record → Result (core.result.Result Bool Journal)) : Prop :=
+  ∀ record, Representable record → root record = writerOutcome io record
+
+end SandboxModel.Stage1Protocol.SourceDrainValidationModel

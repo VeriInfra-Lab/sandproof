@@ -1,0 +1,115 @@
+import SourceDrainValidationValues
+import SourceDrainValidationWrong
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceDrainValidationModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceDrainValidationNegative
+noncomputable section
+open SourceDrainValidationValues
+
+private theorem question_same (record : Record) (stop : Stop) (observed : Observation) :
+    SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved record stop observed =
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved record stop observed := rfl
+private theorem observation_same (io : Ports) (observed : Observation) (work : Work) :
+    SourceDrainValidationWrongActual.capture.terminated.TerminatedCaptureObservation.matches io observed work =
+    SourceDrainValidationActual.capture.terminated.TerminatedCaptureObservation.matches io observed work := rfl
+private theorem prior_same (io : Ports) (record : Record) (prior : Prior) :
+    SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io record prior =
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io record prior := rfl
+
+/-- A positive equation for the actual mutant, not an alternate Contract.
+    The original late call still executes and its errors still propagate;
+    only a normal Bool false is now wrongly allowed through. -/
+private theorem actual_accepts_late_reply (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (work : Work)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (previousStop : Stop) (previousObservation : Observation) (prior : Prior) (checked : Bool)
+    (represented : Representable record)
+    (present : record.capture = some captured)
+    (ended : captured.«end» = some (.Terminated previousStop previousObservation (some prior)))
+    (ready : SourceSavedQuestionModel.outcome record stop observed = .ok (.Ok work))
+    (matched : SourceTerminalMatchModel.outcome io observed work = .ok (.Ok true))
+    (late : SourcePriorEndMatchModel.outcome io.full record prior = .ok (.Ok checked)) :
+    SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io record stop observed = .ok (.Ok ()) := by
+  unfold SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+  rw [question_same, SourceDrainValidationProof.question_refines record stop observed represented, ready]
+  simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+  rw [observation_same, SourceDrainValidationProof.observation_refines, matched]
+  simp only [bind_tc_ok, ↓reduceIte,
+    SourceDrainValidationWrongActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+    present, ended]
+  rw [prior_same, SourceDrainValidationProof.prior_refines, late]
+  cases checked <;> simp
+
+theorem normal_control :
+    SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io ended stop observation = .ok (.Ok ()) := by
+  have ready : SourceSavedQuestionModel.outcome ended stop observation = .ok (.Ok expected) := question_outcome none
+  unfold SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+  rw [question_same, SourceDrainValidationProof.question_refines ended stop observation (represented none), ready]
+  simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+  rw [observation_same, SourceDrainValidationProof.observation_refines, observation_matches]
+  simp [SourceDrainValidationWrongActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+    ended, withPrior, capturedWith]
+
+theorem matching_prior_control :
+    SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io matchingPrior stop observation = .ok (.Ok ()) :=
+  actual_accepts_late_reply io matchingPrior stop observation expected (capturedWith (some returned))
+    stop observation returned true (represented (some returned)) rfl rfl
+    (question_outcome (some returned)) observation_matches worker_prior_true
+
+theorem actual_mismatched_prior_accepted :
+    SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io mismatched stop observation = .ok (.Ok ()) :=
+  actual_accepts_late_reply io mismatched stop observation expected (capturedWith (some badPrior))
+    stop observation badPrior false (represented (some badPrior)) rfl rfl
+    (question_outcome (some badPrior)) observation_matches never_prior_false
+
+theorem actual_writer_mismatch_accepted :
+    SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed
+      io mismatched = .ok (.Ok true) := by
+  unfold SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed
+  simp only [mismatched, withPrior, capturedWith]
+  change (show Result (core.result.Result Bool Journal) from do
+    let r ← SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io mismatched stop observation
+    let cf ← core.result.Result.Insts.CoreOpsTry.branch r
+    match cf with
+    | core.ops.control_flow.ControlFlow.Continue _ => .ok (.Ok true)
+    | core.ops.control_flow.ControlFlow.Break residual =>
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual Bool
+        (core.convert.FromSame JournalError) residual) = .ok (.Ok true)
+  rw [actual_mismatched_prior_accepted]
+  simp [core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem violates_same_complete_contract :
+    ¬ Contract io (SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.validate_record io) := by
+  intro claimed
+  have h := claimed mismatched stop observation (represented (some badPrior))
+  have correct := mismatched_prior_rejected
+  rw [SourceDrainValidationProof.actual_contract io mismatched stop observation (represented (some badPrior))] at correct
+  rw [actual_mismatched_prior_accepted, correct] at h
+  simp at h
+
+theorem violates_same_writer_contract :
+    ¬ WriterContract io (SourceDrainValidationWrongActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io) := by
+  intro claimed
+  have h := claimed mismatched (represented (some badPrior))
+  have correct := writer_bad_prior_rejected
+  rw [SourceDrainValidationProof.writer_actual_contract io mismatched (represented (some badPrior))] at correct
+  rw [actual_writer_mismatch_accepted, correct] at h
+  simp at h
+
+end
+end SandboxModel.Stage1Protocol.SourceDrainValidationNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationNegative.normal_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationNegative.matching_prior_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationNegative.actual_mismatched_prior_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationNegative.actual_writer_mismatch_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationNegative.violates_same_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationNegative.violates_same_writer_contract
