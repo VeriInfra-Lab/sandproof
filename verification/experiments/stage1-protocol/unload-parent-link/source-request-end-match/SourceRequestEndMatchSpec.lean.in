@@ -1,0 +1,61 @@
+import SourceWorkerGuardValues
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRequestEndMatchModel
+noncomputable section
+local instance modelDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev Action := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+abbrev Full := capture.work.FullCaptureWorkRequest
+abbrev Requirement := capture.source.SourceObservationRequirement
+abbrev Worker := capture.launch.CaptureWorkerBinding
+abbrev Observation := capture.CaptureRequestEndObservation
+abbrev Outcome := capture.CaptureRequestEndOutcome
+abbrev Digest := sandproof_protocol.lifecycle.digest.ContentDigest
+abbrev JsonError := serde_json.error.Error
+abbrev Reply := core.result.Result Bool JsonError
+
+/-- Two exact library calls only; no business method is an external port.
+    A6/A9 adoption of the concrete JSON/SHA instances remains an obligation.
+    Arbitrary port results below do not assert JSON correctness or a hash fact. -/
+structure Ports where
+  encode : Full → Result (core.result.Result (alloc.vec.Vec U8) JsonError)
+  digest : Slice U8 → Result (Array U8 32#usize)
+
+/-- Bind the complete original value and then all returned bytes. Encoding
+    failure is propagated before hashing. No collision or physical truth law. -/
+def binding (io : Ports) (full : Full) : Result (core.result.Result Digest JsonError) := do
+  let encoded ← io.encode full
+  match encoded with
+  | .Err error => .ok (.Err error)
+  | .Ok bytes => do
+      let digest ← io.digest bytes.slice
+      .ok (.Ok digest)
+
+/-- Shape only: a returned 4xx/5xx is accepted here too. NoRequest is an
+    ordinary tag, not evidence of no request, worker exit or permission. -/
+def StatusAllowed : Outcome → Prop
+  | .NoRequest => True
+  | .Returned status => 200 ≤ status.val ∧ status.val ≤ 599
+
+/-- The complete property is shared by both actual Rust views. The action
+    guard precedes encoding; any encoding error precedes all later tests. -/
+def outcome (io : Ports) (observed : Observation) (action : Action)
+    (full : Full) (source : Requirement) (worker : Worker) : Result Reply :=
+  if observed.action ≠ action then .ok (.Ok false)
+  else do
+    let encoded ← binding io full
+    match encoded with
+    | .Err error => .ok (.Err error)
+    | .Ok digest => .ok (.Ok (decide (observed.full_work_binding = digest ∧
+        observed.worker = worker ∧ observed.source = source.source ∧ StatusAllowed observed.outcome)))
+
+def Contract (io : Ports)
+    (root : Observation → Action → Full → Requirement → Worker → Result Reply) : Prop :=
+  ∀ observed action full source worker,
+    root observed action full source worker = outcome io observed action full source worker
+
+end
+end SandboxModel.Stage1Protocol.SourceRequestEndMatchModel

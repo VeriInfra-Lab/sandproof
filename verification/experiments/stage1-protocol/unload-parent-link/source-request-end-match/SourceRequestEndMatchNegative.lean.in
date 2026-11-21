@@ -1,0 +1,99 @@
+import SourceRequestEndMatchWrong
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRequestEndMatchModel SourceRequestEndMatchValues
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative
+noncomputable section
+local instance negativeDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev wrong := SourceRequestEndMatchWrongActual.capture.CaptureRequestEndObservation.matches
+
+private theorem wrong_action_eq (left right : Action) :
+    SourceRequestEndMatchWrongActual.sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction.eq
+      SourceRequestEndMatchWrongActual.sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+      left right = .ok (decide (left = right)) := SourceRequestEndMatchProof.action_eq left right
+
+private theorem wrong_digest_eq (left right : Digest) :
+    SourceRequestEndMatchWrongActual.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq
+      left right = .ok (decide (left = right)) := SourceRequestEndMatchProof.digest_eq left right
+
+private theorem wrong_source_eq (left right : capture.SourceProcessIdentity) :
+    SourceRequestEndMatchWrongActual.capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq
+      left right = .ok (decide (left = right)) := SourceRequestEndMatchProof.source_eq left right
+
+private theorem wrong_binding (ports : Ports) (request : Full) :
+    SourceRequestEndMatchWrongActual.capture.work.FullCaptureWorkRequest.binding_digest ports request =
+      binding ports request := SourceRequestEndMatchProof.binding_refines ports request
+
+private theorem wrong_range_refines (lo hi value : U16) :
+    SourceRequestEndMatchWrongActual.core.ops.range.RangeInclusive.contains
+      core.cmp.PartialOrdU16 core.cmp.PartialOrdU16 core.cmp.PartialOrdU16
+      ⟨lo, hi, false⟩ value = .ok (decide (lo.val ≤ value.val ∧ value.val ≤ hi.val)) :=
+  SourceRequestEndMatchProof.range_refines lo hi value
+
+private theorem fixed_digest_eq (left right : Worker) :
+    ({ left with job_digest := right.job_digest } : Worker) = right ↔ left.process = right.process := by
+  cases left
+  cases right
+  simp
+
+/-- Relation between actual generated functions. The same complete Contract
+    remains the property being checked; no process-only replacement spec. -/
+theorem actual_process_only_relation (ports : Ports) (observed : Observation) (action : Action)
+    (request : Full) (source : Requirement) (worker : Worker) :
+    wrong ports observed action request source worker =
+      SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches ports
+        { observed with worker := { observed.worker with job_digest := worker.job_digest } }
+        action request source worker := by
+  rw [SourceRequestEndMatchProof.actual_contract]
+  unfold wrong SourceRequestEndMatchWrongActual.capture.CaptureRequestEndObservation.matches outcome
+  rw [wrong_action_eq]
+  by_cases same : observed.action = action
+  · simp only [same, decide_true, bind_tc_ok, ↓reduceIte, ne_eq, not_true_eq_false]
+    rw [wrong_binding]
+    apply congrArg (fun next => binding ports request >>= next)
+    funext encoded
+    cases encoded with
+    | Err error =>
+      simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok digest =>
+      simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok, wrong_digest_eq,
+        SourceRequestEndMatchWrongActual.capture.launch.CaptureWorkerBinding.impl.process,
+        wrong_source_eq, core.ops.range.RangeInclusive.new]
+      cases observed.outcome <;>
+        simp [StatusAllowed, wrong_range_refines, fixed_digest_eq] <;>
+        split_ifs <;> simp_all
+  · simp [same]
+
+theorem normal_control : wrong io observation action full requirement worker = .ok (.Ok true) := by
+  rw [actual_process_only_relation]
+  exact SourceRequestEndMatchValues.normal
+
+theorem no_request_control :
+    wrong io { observation with outcome := .NoRequest } action full requirement worker = .ok (.Ok true) := by
+  rw [actual_process_only_relation]
+  exact SourceRequestEndMatchValues.no_request
+
+theorem actual_digest_mismatch_accepted :
+    wrong io differentObservation action full requirement worker = .ok (.Ok true) := by
+  rw [actual_process_only_relation]
+  exact SourceRequestEndMatchValues.normal
+
+theorem violates_same_complete_contract : ¬Contract io (wrong io) := by
+  intro contract
+  have promised := contract differentObservation action full requirement worker
+  rw [actual_digest_mismatch_accepted] at promised
+  simp [outcome, binding, io, differentObservation, observation, worker_digest_differs] at promised
+
+end
+end SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative.actual_process_only_relation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative.normal_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative.no_request_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative.actual_digest_mismatch_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative.violates_same_complete_contract

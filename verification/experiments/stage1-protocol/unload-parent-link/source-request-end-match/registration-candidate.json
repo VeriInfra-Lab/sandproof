@@ -1,0 +1,178 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "parent_prs": [
+    1005
+  ],
+  "parent_commit": "7d923214f875bb3bcab226644c277556dad1cd5b",
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-request-end-match",
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceRequestEndMatchValues",
+      "physical_files": 170,
+      "full_audits": 885,
+      "own_modules": [
+        "SourceRequestEndMatchRange.lean",
+        "SourceRequestEndMatchSpec.lean",
+        "SourceRequestEndMatchLibrary.lean",
+        "SourceRequestEndMatchView.lean",
+        "SourceRequestEndMatchProof.lean",
+        "SourceRequestEndMatchValues.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchRange.range_u16_refines",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.action_eq",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.worker_eq",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.source_eq",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.digest_eq",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.range_refines",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.binding_refines",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.complete_contract",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.action_mismatch_before_encoding",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.encoding_error_before_later_fields",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.binding_success_uses_complete_input_and_bytes",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.accepts_iff_all_fields",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.normal",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.no_request",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.worker_digest_differs",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.process_still_equal",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.actual_digest_mismatch_rejected"
+      ]
+    },
+    {
+      "variant": "process-only-worker",
+      "formal_root": "SourceRequestEndMatchNegative",
+      "physical_files": 172,
+      "full_audits": 890,
+      "own_modules": [
+        "SourceRequestEndMatchRange.lean",
+        "SourceRequestEndMatchSpec.lean",
+        "SourceRequestEndMatchLibrary.lean",
+        "SourceRequestEndMatchView.lean",
+        "SourceRequestEndMatchProof.lean",
+        "SourceRequestEndMatchValues.lean",
+        "SourceRequestEndMatchWrong.lean",
+        "SourceRequestEndMatchNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchRange.range_u16_refines",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.action_eq",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.worker_eq",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.source_eq",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.digest_eq",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.range_refines",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.binding_refines",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.complete_contract",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.action_mismatch_before_encoding",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.encoding_error_before_later_fields",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.binding_success_uses_complete_input_and_bytes",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchProof.accepts_iff_all_fields",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.normal",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.no_request",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.worker_digest_differs",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.process_still_equal",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchValues.actual_digest_mismatch_rejected",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative.actual_process_only_relation",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative.normal_control",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative.no_request_control",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative.actual_digest_mismatch_accepted",
+        "SandboxModel.Stage1Protocol.SourceRequestEndMatchNegative.violates_same_complete_contract"
+      ]
+    }
+  ],
+  "formal_development_entry": "check.py",
+  "public_registration_accepted": false,
+  "production_candidate_equivalence_complete": false,
+  "whole_receipt_proved": false,
+  "native_candidate": {
+    "name": "stage1-source-request-end-match",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "process-only-worker",
+      "adapted-process-only-worker"
+    ],
+    "tests": [
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_requires_transaction_even_for_empty_expected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_empty_transaction_does_not_load_missing_schema",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_clears_only_complete_original_slot_and_keeps_reservation",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_same_key_with_changed_complete_record_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_unsettled_material_keeps_complete_source_row",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_zero_row_compare_and_set_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_duplicate_preserves_first_update_until_explicit_rollback",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_no_capture_requires_empty_retirement_and_release",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_retiring_zero_does_not_mean_settled",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_settlement_matches_every_original_byte",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_state_size_is_rejected_before_plan_shape",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_checks_all_seven_original_request_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_missing_record_precedes_request_errors",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_keeps_the_first_matching_record_error",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_selects_complete_work_instead_of_only_its_binding",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_keeps_complete_output_without_assuming_capture_presence",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_checks_all_six_original_identity_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_rejects_non_seal_commands",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_missing_capture_and_end_are_false",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_accepts_both_original_saved_normal_ends",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_refuses_original_terminated_end",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_terminal_end_carries_all_original_prior_shapes",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_terminal_end_replay_keeps_complete_prior_and_checks_every_stop_field",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_terminal_end_replay_checks_all_original_observation_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::full_work_guard_accepts_original_normal_and_keeps_unchecked_values_unprivileged",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::full_work_guard_checks_all_original_pause_fields_and_graphic_byte_bounds",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::full_work_guard_checks_profile_shape_signed_sizes_and_timeout_boundaries",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::full_work_guard_rejects_zero_state_bytes",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_worker_guard_constructor_preserves_complete_process_and_digest",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_worker_guard_checks_original_pid_and_graphic_byte_bounds",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_worker_guard_rejects_zero_original_start_ticks",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_request_end_accepts_normal_and_checks_original_status_range",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_request_end_checks_complete_action_binding_and_source",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_request_end_rejects_every_original_worker_field"
+    ],
+    "expected": {
+      "original": {
+        "passed": 34,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 34,
+        "failed": 0
+      },
+      "process-only-worker": {
+        "passed": 33,
+        "failed": 1
+      },
+      "adapted-process-only-worker": {
+        "passed": 33,
+        "failed": 1
+      }
+    },
+    "rejection": "request end matching must retain complete original worker binding",
+    "rejection_field": 3,
+    "restoration": "independent original after both wrong views:34/34",
+    "compiled": false,
+    "tests_executed": false
+  },
+  "providers": {
+    "JSON encoding": "exact original to_vec on complete Full; arbitrary result contract; concrete A6/B4 adoption still V0 open",
+    "SHA": "exact full returned byte slice and existing normal-domain A9/B4; no collision injection/authorization/physical truth",
+    "String/Option/range": "same exact parent per-symbol models, original general U16 proof reused verbatim",
+    "current intent and durable send": "V1/V2 open",
+    "source/returned borrow/whole parent": "V3 open",
+    "World/authorization/transaction/commit unknown/durability": "V4/V5 open",
+    "actual request/worker exit/gate/material/VM/Writer": "V6 open",
+    "independent authentication": "V7 open"
+  },
+  "remaining": [
+    "general production/staging equivalence and exact concrete library call adoption",
+    "original worker protected tagged record/provenance/actual exit and gate history",
+    "source lookup/borrow/whole parent/World/transaction/unknown commit/durability",
+    "complete JSON/manifest arbitrary file-set/network/authentication",
+    "Ning ordinary/native/public registration and coverage adoption"
+  ]
+}

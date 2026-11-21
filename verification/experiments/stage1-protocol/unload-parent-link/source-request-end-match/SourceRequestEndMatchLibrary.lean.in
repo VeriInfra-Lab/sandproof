@@ -1,0 +1,15 @@
+import SourceRequestEndMatchSpec
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceRequestEndMatchActual
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq := SandproofSourceRetentionProviders.alloc.string.String.Insts.CoreCmpPartialEqString.eq
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq := @SandproofSourceRetentionProviders.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+def core.ops.range.RangeInclusive.contains := @SourceFullWorkGuardActual.core.ops.range.RangeInclusive.contains
+end SandboxModel.Stage1Protocol.SourceRequestEndMatchActual
+
+namespace SandboxModel.Stage1Protocol.SourceRequestEndMatchWrongActual
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq := SandproofSourceRetentionProviders.alloc.string.String.Insts.CoreCmpPartialEqString.eq
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq := @SandproofSourceRetentionProviders.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+def core.ops.range.RangeInclusive.contains := @SourceFullWorkGuardActual.core.ops.range.RangeInclusive.contains
+end SandboxModel.Stage1Protocol.SourceRequestEndMatchWrongActual

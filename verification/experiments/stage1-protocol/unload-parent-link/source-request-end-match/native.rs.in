@@ -1,0 +1,158 @@
+// Actual public matching with original API/SQLite fixtures. These are value
+// checks; the controlled Host provides no real worker exit or request fact.
+fn source_request_end_fixture(path: &Path) -> (ControllerJournal, SourceWorkRecord) {
+    let (journal, _, source) = sealed_before_end(path);
+    let record = journal
+        .lifecycle_capture_record(source.source_sandbox())
+        .unwrap()
+        .unwrap();
+    (journal, record)
+}
+
+#[test]
+fn source_request_end_accepts_normal_and_checks_original_status_range() {
+    use crate::capture::CaptureRequestEndOutcome;
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, record) = source_request_end_fixture(&directory.path().join("end-status.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let captured = record.capture.as_ref().unwrap();
+    let worker = captured.worker.as_ref().unwrap();
+    let original = actual_api_end(&record);
+    let action = &original.action;
+    assert!(
+        original
+            .matches(action, &captured.full, &record.work.requirement, worker)
+            .unwrap()
+    );
+    for status in [0, 199, 200, 201, 299, 300, 400, 500, 599, 600, u16::MAX] {
+        let mut changed = original.clone();
+        changed.outcome = CaptureRequestEndOutcome::Returned {
+            http_status: status,
+        };
+        assert_eq!(
+            changed
+                .matches(action, &captured.full, &record.work.requirement, worker)
+                .unwrap(),
+            (200..=599).contains(&status),
+            "original returned status shape: {status}"
+        );
+    }
+    let mut no_request = original.clone();
+    no_request.outcome = CaptureRequestEndOutcome::NoRequest;
+    assert!(
+        no_request
+            .matches(action, &captured.full, &record.work.requirement, worker)
+            .unwrap()
+    );
+    // This plain tag does not establish the separately required worker facts.
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_request_end_checks_complete_action_binding_and_source() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, record) = source_request_end_fixture(&directory.path().join("end-fields.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let captured = record.capture.as_ref().unwrap();
+    let worker = captured.worker.as_ref().unwrap();
+    let original = actual_api_end(&record);
+    let action = &original.action;
+    for field in 0..9 {
+        let mut changed = original.clone();
+        match field {
+            0 => {
+                changed.action.identity.epoch =
+                    changed.action.identity.epoch.checked_add(1).unwrap()
+            }
+            1 => {
+                changed.action.identity.generation =
+                    changed.action.identity.generation.checked_add(1).unwrap()
+            }
+            2 => {
+                changed.action.identity.attempt =
+                    changed.action.identity.attempt.checked_add(1).unwrap()
+            }
+            3 => {
+                changed.action.command.attempt =
+                    changed.action.command.attempt.checked_add(1).unwrap()
+            }
+            4 => {
+                changed.action.command.logical.command = core::Command::InstallFence {
+                    sandbox: record.work.anchor.local.sandbox,
+                    epoch: action.identity.epoch,
+                    terminal: false,
+                }
+            }
+            5 => changed.full_work_binding = ContentDigest::from_sha256([0x5a; 32]),
+            6 => changed.source.pid = changed.source.pid.checked_add(1).unwrap(),
+            7 => {
+                changed.source.start_time_ticks =
+                    changed.source.start_time_ticks.checked_add(1).unwrap()
+            }
+            8 => changed.source.boot_id.push('x'),
+            _ => unreachable!(),
+        }
+        assert_ne!(changed, original);
+        assert!(
+            !changed
+                .matches(action, &captured.full, &record.work.requirement, worker)
+                .unwrap(),
+            "original request-end field={field}"
+        );
+    }
+    // Exact original complete input -> exact encoded bytes -> actual SHA.
+    use sha2::{Digest, Sha256};
+    let bytes = serde_json::to_vec(&captured.full).unwrap();
+    assert_eq!(
+        captured.full.binding_digest().unwrap(),
+        ContentDigest::from_sha256(Sha256::digest(&bytes).into())
+    );
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_request_end_rejects_every_original_worker_field() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, record) = source_request_end_fixture(&directory.path().join("end-worker.db"));
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let captured = record.capture.as_ref().unwrap();
+    let worker = captured.worker.as_ref().unwrap();
+    let original = actual_api_end(&record);
+    let action = &original.action;
+    for field in 0..4 {
+        let mut process = worker.process().clone();
+        let mut digest = *worker.job_digest();
+        match field {
+            0 => process.pid = process.pid.checked_add(1).unwrap(),
+            1 => process.start_time_ticks = process.start_time_ticks.checked_add(1).unwrap(),
+            2 => process.boot_id.push('x'),
+            3 => digest = ContentDigest::from_sha256([0x6b; 32]),
+            _ => unreachable!(),
+        }
+        let mut changed = original.clone();
+        changed.worker = crate::capture::CaptureWorkerBinding::new(process, digest).unwrap();
+        assert_ne!(changed.worker, original.worker);
+        assert!(
+            !changed
+                .matches(action, &captured.full, &record.work.requirement, worker)
+                .unwrap(),
+            "request end matching must retain complete original worker binding: field={field}"
+        );
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
