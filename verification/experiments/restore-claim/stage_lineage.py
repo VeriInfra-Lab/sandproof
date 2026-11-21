@@ -1,4 +1,4 @@
-"""Materialize the existing #770 InboxLineage providers for one downstream check."""
+"""Materialize existing #770 providers for one downstream check."""
 import argparse
 import hashlib
 import json
@@ -8,14 +8,18 @@ import shutil
 
 
 PROVIDERS = Path('verification/experiments/create-transaction-link/current')
-OWN_PROOF = Path('verification/experiments/restore-claim/RestoreLineageUniqueness.lean.in')
-TARGET = 'SandboxModel.Lifecycle.Protocol.RestoreClaim.RestoreLineageUniqueness'
-RUST_INPUTS = (
-    'Cargo.lock',
-    'controller-service/src/controller/lifecycle_inbox/model.rs',
-    'sandbox-protocol/src/lifecycle/identity.rs',
-    'sandbox-protocol/src/lifecycle/request.rs',
-)
+COMPONENTS = {
+    'lineage': ('RestoreLineageUniqueness', (
+        'controller-service/src/controller/lifecycle_inbox/model.rs',
+        'sandbox-protocol/src/lifecycle/identity.rs',
+        'sandbox-protocol/src/lifecycle/request.rs',
+    )),
+    'parent-transaction': ('RestoreTransaction', (
+        'controller-service/src/controller/transaction.rs',
+        'controller-service/src/controller/transaction/memo.rs',
+        'controller-service/src/lib.rs',
+    )),
+}
 IMPORT = re.compile(r'^\s*(?:(?:public|private|meta)\s+)?import\s+(.+)$', re.MULTILINE)
 
 
@@ -23,24 +27,28 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def materialize(project):
+def materialize(project, component):
+    name, production = COMPONENTS[component]
+    target_module = 'SandboxModel.Lifecycle.Protocol.RestoreClaim.' + name
+    own_proof = Path('verification/experiments/restore-claim') / f'{name}.lean.in'
+    rust_inputs = ('Cargo.lock', *production)
     existing = project / PROVIDERS
     rust = json.loads((existing / 'rust-source-binding.json').read_text())
-    for name in RUST_INPUTS:
+    for name in rust_inputs:
         if digest(project / name) != rust['files'][name]:
-            raise ValueError(f'inherited execution lineage source changed: {name}')
+            raise ValueError(f'inherited Rust source changed: {name}')
 
     modules = json.loads((existing / 'materialization.json').read_text())['modules']
     expected = {}
-    pending = [TARGET]
+    pending = [target_module]
     seen = set()
     while pending:
         module = pending.pop()
         if module in seen:
             continue
         seen.add(module)
-        if module == TARGET:
-            entry = dict(path=TARGET.replace('.', '/') + '.lean', source=OWN_PROOF)
+        if module == target_module:
+            entry = dict(path=target_module.replace('.', '/') + '.lean', source=own_proof)
         elif module in modules:
             entry = modules[module]
         else:
@@ -61,12 +69,13 @@ def materialize(project):
 
     shutil.copyfile(existing / 'lakefile.toml.in', project / 'lakefile.toml')
     return dict(inherited_rust_source=rust['source_head'],
-                rust={name: rust['files'][name] for name in RUST_INPUTS}, modules=expected)
+                rust={name: rust['files'][name] for name in rust_inputs}, modules=expected)
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('project', type=Path)
     parser.add_argument('receipt', type=Path)
+    parser.add_argument('--component', choices=COMPONENTS, default='lineage')
     args = parser.parse_args()
-    args.receipt.write_text(json.dumps(materialize(args.project), indent=2, sort_keys=True) + '\n')
+    args.receipt.write_text(json.dumps(materialize(args.project, args.component), indent=2, sort_keys=True) + '\n')

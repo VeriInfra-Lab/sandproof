@@ -86,6 +86,31 @@ native sandbox 和 operation 的认领都保留标记，正常布尔返回只能
 的原有定义，已核内核证明每次实际回调保留遍历上下文。库符合性仍适用于本次的有限普通
 共享借用。三个外部错误类型只在返回类型中使用，沿用原 SQLite 错误载荷别名。
 
+独立 `RestoreTransaction` 视图直接导入 #770 的原事务结构、生成体和
+`SandproofParentCommitRust.ParentResults`。`Source.actual_started_transaction_preserves_owner`
+从已开始的原 SQLite 事务和该连接上成功的原身份检查，证明实际构造器保留原句柄、committed
+单元、起始序号和完整初始 World。`actual_commit_success_observes_candidate_world`
+接过真实父提交定义和四项原验证的正常结果，确认成功时发布了验证所读的同一个完整候选。
+`actual_successful_commit_validated_inbox` 从实际 Commit 的成功返回反推同一 owner
+上的原 `validate_inbox` 已成功，且保留该 owner。
+`actual_finisher_inbox_check_succeeded` 将确认已进入 finisher 的四项正常观察绑定到同一
+原校验调用，因此也适用于已进入提交回调的未知结果。
+仅凭错误标签无法识别已经进入回调。源表存在、真实校验器的业务规则和同一物理快照仍由 V5 提供。
+`ParentResults.actual_commit_unknown_and_original_observation` 仍提供未知回包下的
+原缓存失效。数据库可处于两个耐久结局，重读需真实恢复路径与 A4。
+
+`actual_drop_success_observes_original_cache` 和
+`actual_drop_error_clears_original_cache` 检查真实生成的 `WorldTransaction::drop`、
+原 rollback 回调及原 memo 后态。前者保留原缓存，后者使其失效。实际读到同一存活缓存
+单元由 `PhysicalLink.LinkedCommitted` 绑定。事务槽已空时 Drop 走无回调分支。
+是否由恢复调用点进入自动 Drop、真实回滚的 SQLite 结果及重开读回仍需各自的连接。
+
+保留的原件包含 `from_started_transaction` 和 `CommittedWorld::check_identity`，
+完整 `WorldTransaction::begin`、`storage::apply` 与 `WorldTransaction::advance`、
+以及未知后的 `ensure_ready`／`load_world` 仍缺本路径的对应。写入父链必须证明
+原标记、accepted input、World 和 outbox 来自同一活动事务及原完整身份。
+已有两种未知提交的实际 SQLite 重开见证沿用下文的固定回归收据。
+
 独立 `RestoreLineageUniqueness` 视图复用 #770 的原 `Session::validate_execution_lineage`
 生成体和 `InboxLineage.accepts_iff`。固定装配核对原 Rust、协议类型和实际 Lean 闭包。
 `actual_valid_session_resume_captures_grow` 证明同一个通过谱系校验的保留
@@ -194,6 +219,8 @@ bash "$case_dir/verify-decisions.sh" --source-read "$READ_EVIDENCE" "$PROOF_LOCK
 bash "$case_dir/verify-decisions.sh" --source-query "$QUERY_EVIDENCE" "$PROOF_LOCK" \
   "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
 bash "$case_dir/verify-decisions.sh" --lineage "$LINEAGE_EVIDENCE" "$PROOF_LOCK" \
+  "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
+bash "$case_dir/verify-decisions.sh" --parent-transaction "$PARENT_EVIDENCE" "$PROOF_LOCK" \
   "$TOOL_BIN" "$LAKE_PACKAGES" "$LEAN_MCP_ENV"
 ```
 
