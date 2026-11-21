@@ -1527,9 +1527,14 @@ class CheckpointExecution(unittest.TestCase):
         sqlite_adapter = registered.CONVERGENCE.extra(registered.ROOT, 'sqlite-commit')
         sqlite_result = self.directory/'sqlite-fixture/result.json'
         sqlite_result.parent.mkdir()
+        current_sqlite = sqlite_adapter.using_current(sqlite_adapter.inventory(registered.ROOT))
+        sqlite_commit = sqlite_adapter.head(registered.ROOT) if current_sqlite else sqlite_adapter.SOURCE_COMMIT
+        sqlite_packet = dict.fromkeys(sqlite_adapter.PACKET, '0' * 64) if current_sqlite else sqlite_adapter.PACKET
         sqlite_result.write_text(json.dumps(dict(convergence_entry='sqlite-commit', mode='native',
-            complete=True, actuals=[], source_commit=sqlite_adapter.SOURCE_COMMIT,
-            native_executed_here=False, packet=sqlite_adapter.PACKET)))
+            complete=True, actuals=[], source_commit=sqlite_commit,
+            native_executed_here=current_sqlite, packet=sqlite_packet)))
+        sqlite_readback_inputs = (sqlite_result.parent, registered.ROOT, sqlite_packet,
+                                  sqlite_commit, current_sqlite)
         def original_file(receipt, name):
             self.assertEqual(name, 'result.json')
             return sqlite_result if receipt['key']['label'] == 'stage1-sqlite-commit' else retained
@@ -1584,7 +1589,7 @@ class CheckpointExecution(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'controlled SQLite packet rejection'):
                         registered.main()
                     execute.assert_not_called()
-                    sqlite_readback.assert_called_once_with(sqlite_result.parent, registered.ROOT)
+                    sqlite_readback.assert_called_once_with(*sqlite_readback_inputs)
                     self.assertFalse(output.exists())
                     return
                 error = OSError if interrupt_final else ValueError
@@ -1595,7 +1600,7 @@ class CheckpointExecution(unittest.TestCase):
                     registered.main()
                 self.assertEqual(execute.call_args.kwargs['jobs'],2)
                 self.assertEqual(execute.call_args.kwargs['resume'],'/original/registered-result.json')
-                sqlite_readback.assert_called_once_with(sqlite_result.parent, registered.ROOT)
+                sqlite_readback.assert_called_once_with(*sqlite_readback_inputs)
         finally:
             os.umask(before_umask)
         saved = registered._read(output/'registered-result.json')
