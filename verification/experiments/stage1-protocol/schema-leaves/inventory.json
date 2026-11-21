@@ -13,13 +13,13 @@
     "retention_window"
   ],
   "inputs": {
-    "lakefile.toml": "19b74b43bcaf5191e4ffd93ed39e494dc703cb3defc09fbd4b5512779288610a",
+    "lakefile.toml": "5e9e1df3094a41ba9dc7aae5a7dd942555c6cef0dc1a39d19e41bce9cab7cfc1",
     "verification/extract-foundations/src/lib.rs": "994f521901df6e4da537b4cffb3f2582cc612cbebd78056c681b056517525de4",
     "scripts/regenerate-foundations-lean.sh": "7edb9d02e3ba63dac422609b054cebe81368f450d8cbb31a2a9507a3dbb36347",
     "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
     "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
     "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
-    "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
     "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
     "verification/extract-foundations/Cargo.toml": "925c39d821702c5f18fb5c1ed0b8631bc029a936de390dd3c5a16862fcf29b46",
