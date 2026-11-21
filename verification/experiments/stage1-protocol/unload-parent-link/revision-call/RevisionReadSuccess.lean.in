@@ -1,0 +1,158 @@
+import RevisionReadErrors
+
+open Aeneas Aeneas.Std Result
+
+namespace RevisionReadSuccess
+open SandproofUnloadBaseSnapshot RevisionReadErrors
+open controller.internal_inbox.model (InternalLocalBinding)
+open controller.lifecycle_inbox.model (Session)
+open controller.lifecycle_inbox.readiness (NativeCreateSnapshot CreateReadiness)
+open controller.lifecycle_inbox.readiness.snapshot (ReadyCandidate base_snapshot)
+open sandproof_protocol.lifecycle.authority (AcceptedLifecycleIntent AuthenticatedCenterContext)
+open sandbox_controller_core.model (World OperationResult)
+
+variable [Representations]
+
+private theorem equal_allocator_continuations
+    (clone : Result AcceptedLifecycleIntent) (inputHighWater : Result (core.result.Result U64 JournalError))
+    (left right : AcceptedLifecycleIntent → core.result.Result U64 JournalError →
+      Result (core.result.Result ReadyCandidate JournalError))
+    (equal : ∀ request highWater, left request highWater = right request highWater) :
+    (do
+      let request ← clone
+      let highWater ← inputHighWater
+      left request highWater) =
+    (do
+      let request ← clone
+      let highWater ← inputHighWater
+      right request highWater) := by
+  apply congrArg (fun (next : AcceptedLifecycleIntent → Result (core.result.Result ReadyCandidate JournalError)) =>
+    clone >>= next)
+  funext request
+  apply congrArg (fun (next : core.result.Result U64 JournalError → Result (core.result.Result ReadyCandidate JournalError)) =>
+    inputHighWater >>= next)
+  funext highWater
+  exact equal request highWater
+
+variable [ops : Operations]
+
+/-- Post-revision suffix of the actual reader. The original clone and allocator
+    return values remain unrestricted, including outer failure and divergence. -/
+def finishCandidate (connection : rusqlite.Connection) (intent current : AcceptedLifecycleIntent)
+    (localBinding : Option InternalLocalBinding) (native : Option NativeCreateSnapshot)
+    (history : Option OperationResult) (readiness : CreateReadiness) (revision : Option U64) :
+    Result (core.result.Result ReadyCandidate JournalError) := do
+  let request ← ops.cloneIntent intent
+  let highWater ← ops.inputHighWater connection
+  match highWater with
+  | .Err error => .ok (.Err error)
+  | .Ok counter => .ok (.Ok {
+      view := {
+        request
+        current_request := current
+        «local» := localBinding
+        historical_result := history
+        native_input_high_water := counter
+        native
+        readiness
+      }
+      actions := alloc.vec.Vec.new _
+      continuation := none
+      native_revision := revision
+      receipts := alloc.vec.Vec.new _
+      source := none
+      credential := none
+      options := none
+      ready_fact := none
+    })
+
+variable {tx : rusqlite.transaction.Transaction} {ns : Str} {world : World}
+variable {intent : AcceptedLifecycleIntent} {context : AuthenticatedCenterContext}
+
+theorem revision_then_allocator (reads : BeforeRevision tx ns world intent context)
+    (id : sandproof_protocol.SandboxId) (key : Str) (revision : I64)
+    (idOk : ops.sandboxId ns reads.localBinding.sandbox = .ok (.Ok id))
+    (textOk : ops.sandboxIdText id = .ok key)
+    (queried : revisionQuery reads.connection key = .ok (.Ok revision))
+    (nonnegative : 0 ≤ revision.val) :
+    base_snapshot tx ns world intent context =
+      finishCandidate reads.connection intent reads.entry.intent (some reads.localBinding)
+        (some reads.native) reads.history reads.ready (some (IScalar.hcast .U64 revision)) := by
+  rcases reads.createOrResume with ⟨binding, incarnation, operation⟩ |
+    ⟨source, capture, target, digest, operation⟩
+  all_goals
+    simp [base_snapshot, reads.derefOk, reads.loaded, reads.authOk, reads.found,
+      reads.indexed, reads.entryFound, reads.localEq, reads.cloneOk, reads.recordFound,
+      reads.nativeOk, reads.historyOk, reads.readyOk, operation,
+      controller.identity.sandbox_id, idOk, sandproof_protocol.SandboxId.as_str, textOk,
+      queried, core.option.Option.ok_or, core.option.Option.map,
+      core.option.OptionResult.transpose, core.option.OptionOption.flatten, core.option.Option.filter,
+      core.result.Result.Insts.CoreOpsTry.branch, core.result.Result.map_err,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from, nonnegative, finishCandidate,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingResultOptionOperationResultJournalError.call_once,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedInternalLocalBindingBool.call_once]
+    apply equal_allocator_continuations (ops.cloneIntent intent) (ops.inputHighWater reads.connection)
+    intro request highWater
+    cases highWater <;> simp only [bind_tc_ok]
+
+theorem absent_local_skips_revision (reads : BeforeLocalRead tx ns world intent context)
+    (ready : CreateReadiness) (absent : reads.session.«local» = none)
+    (readyOk : ops.readiness intent reads.entry.intent reads.entry reads.session none = .ok ready) :
+    base_snapshot tx ns world intent context =
+      finishCandidate reads.connection intent reads.entry.intent none none none ready none := by
+  rcases reads.createOrResume with ⟨binding, incarnation, operation⟩ |
+    ⟨source, capture, target, digest, operation⟩
+  all_goals
+    simp [base_snapshot, reads.derefOk, reads.loaded, reads.authOk, reads.found,
+      reads.indexed, reads.entryFound, reads.cloneOk, absent, readyOk, operation,
+      core.option.Option.ok_or, core.option.Option.filter, core.option.Option.map,
+      core.option.OptionResult.transpose, core.option.OptionOption.flatten,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      finishCandidate]
+    apply equal_allocator_continuations (ops.cloneIntent intent) (ops.inputHighWater reads.connection)
+    intro request highWater
+    cases highWater <;> simp only [bind_tc_ok]
+
+theorem absent_world_record_skips_revision (reads : BeforeLocalRead tx ns world intent context)
+    (localBinding : InternalLocalBinding) (history : Option OperationResult) (ready : CreateReadiness)
+    (localEq : reads.session.«local» = some localBinding)
+    (absent : ops.sandboxRecord world localBinding.sandbox = .ok none)
+    (historyOk : ops.originalResult world localBinding = .ok (.Ok history))
+    (readyOk : ops.readiness intent reads.entry.intent reads.entry reads.session none = .ok ready) :
+    base_snapshot tx ns world intent context =
+      finishCandidate reads.connection intent reads.entry.intent (some localBinding) none history ready none := by
+  rcases reads.createOrResume with ⟨binding, incarnation, operation⟩ |
+    ⟨source, capture, target, digest, operation⟩
+  all_goals
+    simp [base_snapshot, reads.derefOk, reads.loaded, reads.authOk, reads.found,
+      reads.indexed, reads.entryFound, reads.cloneOk, localEq, absent, historyOk, readyOk, operation,
+      core.option.Option.ok_or, core.option.Option.map,
+      core.option.OptionResult.transpose, core.option.OptionOption.flatten, core.option.Option.filter,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      finishCandidate,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingResultOptionOperationResultJournalError.call_once,
+      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure_1.Insts.CoreOpsFunctionFnOnceTupleSharedInternalLocalBindingBool.call_once]
+    apply equal_allocator_continuations (ops.cloneIntent intent) (ops.inputHighWater reads.connection)
+    intro request highWater
+    cases highWater <;> simp only [bind_tc_ok]
+
+theorem read_revision_precedes_allocator_error (reads : BeforeRevision tx ns world intent context)
+    (id : sandproof_protocol.SandboxId) (key : Str) (revision : I64) (error : JournalError)
+    (idOk : ops.sandboxId ns reads.localBinding.sandbox = .ok (.Ok id))
+    (textOk : ops.sandboxIdText id = .ok key)
+    (queried : revisionQuery reads.connection key = .ok (.Ok revision))
+    (nonnegative : 0 ≤ revision.val) (cloned : ops.cloneIntent intent = .ok intent)
+    (failed : ops.inputHighWater reads.connection = .ok (.Err error)) :
+    base_snapshot tx ns world intent context = .ok (.Err error) := by
+  rw [revision_then_allocator reads id key revision idOk textOk queried nonnegative]
+  simp only [finishCandidate, cloned, failed, bind_tc_ok]
+
+end RevisionReadSuccess
+
+#audit_controller_proof RevisionReadSuccess.revision_then_allocator
+#audit_controller_proof RevisionReadSuccess.absent_local_skips_revision
+#audit_controller_proof RevisionReadSuccess.absent_world_record_skips_revision
+#audit_controller_proof RevisionReadSuccess.read_revision_precedes_allocator_error

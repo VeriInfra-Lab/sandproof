@@ -1,0 +1,54 @@
+{
+  "capture_driver": "476a100a70365dbddd1904ffac505f622074923b",
+  "source_commit": "f26fc26a3fb6987a18ad69015c56bb99c0748e12",
+  "llbc": {
+    "base-revision": "965f8a7caf736862d5a20cf3fce13d25f5ce3cf746b902ab24c4cb7752bcdeee",
+    "parent": "9a723993951c1b3e57ad5ca81c67e891a13d4f3f7f3a10d2292ddae22c860e6f"
+  },
+  "generated_funs": {
+    "SandproofUnloadBaseSnapshot": {
+      "raw_sha256": "ab180e01714d71c63ac6402e3b2146c96c6f292f54d863afae360b8db6292437",
+      "view_sha256": "6e6aeb74760a797add243f7ff226daae57e9ce10b4f8cd24d9bc5e1835111c7d",
+      "edits": [
+        {
+          "offset": 821,
+          "before": "namespace SandproofUnloadBaseSnapshot\n\n",
+          "after": "namespace SandproofUnloadBaseSnapshot\n\nvariable [Representations] [Operations]\n\n"
+        }
+      ]
+    },
+    "SandproofUnloadFirstObservation": {
+      "raw_sha256": "04d70787fd2c3be35334c7a7f3f9f951d4aad8950a7b7eaa1628828bdbeee45c",
+      "view_sha256": "412a60275f2c9848ec27a509f6bdc6c7285fbddc1f28af7e4c923df819e00f41",
+      "edits": [
+        {
+          "offset": 829,
+          "before": "namespace SandproofUnloadFirstObservation\n\n",
+          "after": "namespace SandproofUnloadFirstObservation\n\nvariable [Representations] [ParentCalls]\n\n"
+        },
+        {
+          "offset": 2015,
+          "before": "alloc.string.String.Insts.CoreCmpPartialEqString :",
+          "after": "alloc.string.String.Insts.CoreCmpPartialEqString [Representations] [ParentCalls] :"
+        },
+        {
+          "offset": 2825,
+          "before": "sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult\n  :",
+          "after": "sandbox_controller_core.model.OperationResult.Insts.CoreCmpPartialEqOperationResult [Representations] [ParentCalls]\n  :"
+        },
+        {
+          "offset": 3581,
+          "before": "capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation :",
+          "after": "capture.HostEpochObservation.Insts.CoreCmpPartialEqHostEpochObservation [Representations] [ParentCalls] :"
+        }
+      ]
+    }
+  },
+  "repository": {
+    "verification/experiments/stage1-protocol/unload-base-provenance/proof-inputs/SandproofUnloadBaseSnapshot/FunsExternal.lean.in": "28a2506116810657e8cf9b08a3aa40152ecfefe973ca19ba365351df469698c3",
+    "verification/experiments/stage1-protocol/unload-startup-source/proof-inputs/SandproofUnloadFirstObservation/FunsExternal.lean.in": "0ae766305b253556e247543c5555e2d52c5702535bca374aaa12edd1e9fc3b73",
+    "verification/experiments/stage1-protocol/unload-startup-source/proof-inputs/ParentSuccess.lean.in": "2fafbfa1abdabf6bab24e0cb34e738c718bfc1c2ff1817e079fbf757dee30ca6",
+    "verification/experiments/stage1-protocol/create-standard-adapter/FunsExternal.lean.in": "ff1df8c22d30902ed5e755c35181b692f8d24c4000604458cd7e3f83d8ba1814",
+    "verification/experiments/stage1-protocol/unload-parent-link/ParentErrors.lean.in": "7bc01c213a4810aade0f25295a932b6e214dc69c94a4668030d7dfdae0f0615e"
+  }
+}

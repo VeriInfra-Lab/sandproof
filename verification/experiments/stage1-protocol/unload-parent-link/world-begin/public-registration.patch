@@ -1,0 +1,17 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -5,1 +5,14 @@
++
++## V3 首次卸载的原开始事务
++
++Refs #635。固定 integration `f26fc26a3fb6987a18ad69015c56bb99c0748e12`。
++`UnloadWorldBegin` 复用 #923 的原透明生成体和 #770 的已开始事务证明。四个首错分支保留
++原错误及连接回写。SQLite 开启使用原 `Immediate`；开成功后从同一原事务的连接读取
++`input` 和空作用域，并把前沿、候选 World 和原事务传给原所有者构造。版本变化拒绝；
++匹配版本下通过原 World getter 在同一事务表示中读回原候选。
++
++局部结果的实际文件闭包及审计入口见[本包说明](../verification/experiments/stage1-protocol/unload-parent-link/README.md#原-begin-的首错与已开始事务连接)。
++缓存来源、写前维护、物理 SQLite 启动与 allocator 回调由 V5 具名提供，回滚和物理帧仍待闭合。
++完整外层首次登记的生成体仍受固定 Aeneas 高阶生命周期约束限制。实际观察请求构造、未构造的失败分支、
++持久收件及真实 JSON/TLS 各自保留验收义务。普通和原生使用 #920、#929 的独立回执；公共封口由主控统一核对。
+ ## V3 卸载观察读取原 Create 选项
