@@ -1,0 +1,8 @@
+// Disposable test-only forwarding to the unchanged original complete guard.
+#[cfg(test)]
+pub(in crate::controller::lifecycle_inbox::source_work) fn source_full_binding_for_test(
+    record: &SourceWorkRecord,
+    full: &FullCaptureWorkRequest,
+) -> Result<(), JournalError> {
+    validate::full_binding(record, full)
+}

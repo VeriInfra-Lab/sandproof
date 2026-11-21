@@ -1,0 +1,75 @@
+import SourceFullBindingProof
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes SourceFullBindingModel
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceFullBindingValues
+
+/-- Ordinary decoded witnesses only, with the exact parent Rust value domain.
+    No current World, authorization, persistence, file or process fact. -/
+def saved : Record := SourcePriorEndMatchValues.record
+def full : Full := SourceFullWorkGuardValues.full
+def changedDigest : Full :=
+  { full with pause := { full.pause with source_work_binding := SourceWorkMatch.Values.otherDigest } }
+def uncheckedRecord : Record :=
+  { saved with capture := none, work := { saved.work with anchor :=
+    { saved.work.anchor with native := { saved.work.anchor.native with generation := 102#u64 } } } }
+
+theorem represented : Representable full := SourceFullWorkGuardValues.full_representable
+theorem changed_represented : Representable changedDigest := represented
+theorem allowed : SourceFullWorkGuardModel.FullAllowed full := SourceFullWorkGuardValues.full_allowed
+theorem changed_allowed : SourceFullWorkGuardModel.FullAllowed changedDigest := allowed
+
+theorem request_tag : saved.work.anchor.request.request.operation =
+    sandproof_protocol.lifecycle.request.LifecycleOperation.Unload 101#u64 1#u64 := rfl
+
+theorem normal_bindings : Bindings saved full 101#u64 1#u64 := by
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem normal :
+    SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding saved full =
+      .ok (.Ok ()) := by
+  rw [SourceFullBindingProof.actual_contract saved full represented]
+  simp [outcome, request_tag, allowed, normal_bindings]
+
+theorem unchecked_record_fields_normal :
+    SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding uncheckedRecord full =
+      .ok (.Ok ()) := by
+  have same :
+      SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding uncheckedRecord full =
+      SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding saved full := rfl
+  rw [same]
+  exact normal
+
+theorem source_digest_differs :
+    changedDigest.pause.source_work_binding ≠ saved.work.requirement.work_binding := by
+  change SourceWorkMatch.Values.otherDigest ≠ SourceWorkMatch.Values.digest
+  decide
+
+theorem actual_changed_digest_rejected :
+    SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding saved changedDigest =
+      .ok (.Err .Conflict) := by
+  rw [SourceFullBindingProof.actual_contract saved changedDigest changed_represented]
+  simp [outcome, request_tag, Bindings, source_digest_differs]
+
+theorem actual_zero_state_rejected :
+    SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding saved
+      SourceFullWorkGuardValues.emptyState = .ok (.Err .Conflict) := by
+  apply SourceFullBindingProof.invalid_full_rejected
+  · exact SourceFullWorkGuardValues.empty_state_representable
+  · simp [SourceFullWorkGuardModel.FullAllowed, SourceFullWorkGuardModel.Sized,
+      SourceFullWorkGuardValues.emptyState, SourceFullWorkGuardValues.full]
+
+end SandboxModel.Stage1Protocol.SourceFullBindingValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingValues.represented
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingValues.changed_represented
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingValues.allowed
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingValues.changed_allowed
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingValues.request_tag
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingValues.normal_bindings
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingValues.normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingValues.unchecked_record_fields_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingValues.source_digest_differs
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingValues.actual_changed_digest_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingValues.actual_zero_state_rejected

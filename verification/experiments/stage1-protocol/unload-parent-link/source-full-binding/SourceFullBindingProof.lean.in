@@ -1,0 +1,142 @@
+import SourceFullBindingView
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes SourceFullBindingModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceFullBindingProof
+noncomputable section
+local instance proofDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem request_accessor (work : controller.lifecycle_inbox.source_work.SourceWork) :
+    SourceFullBindingActual.controller.lifecycle_inbox.source_work.SourceWork.request work =
+      .ok work.anchor.request := rfl
+
+theorem valid_refines (full : Full) (represented : Representable full) :
+    SourceFullBindingActual.capture.work.FullCaptureWorkRequest.valid full =
+      .ok (decide (SourceFullWorkGuardModel.FullAllowed full)) :=
+  SourceFullWorkGuardProof.actual_contract full represented
+
+theorem binding_eq (a b : sandproof_protocol.lifecycle.identity.OperationBinding) :
+    SourceFullBindingActual.sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCmpPartialEqOperationBinding.eq
+      a b = .ok (decide (a = b)) := SourceWorkMatch.RequestEquality.binding_eq a b
+
+theorem incarnation_eq (a b : Incarnation) :
+    SourceFullBindingActual.sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq
+      a b = .ok (decide (a = b)) := by
+  simp [SourceFullBindingActual.sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq,
+    SourceFullBindingActual.sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq]
+
+theorem capture_eq (a b : Capture) :
+    SourceFullBindingActual.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq
+      a b = .ok (decide (a = b)) := by
+  simp [SourceFullBindingActual.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq,
+    SourceFullBindingActual.sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq]
+
+theorem digest_eq (a b : sandproof_protocol.lifecycle.digest.ContentDigest) :
+    SourceFullBindingActual.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq
+      a b = .ok (decide (a = b)) := SourceWorkMatch.Scalars.wire_content_digest_eq a b
+
+theorem node_eq (a b : sandproof_protocol.internal.NodeIdentity) :
+    SourceFullBindingActual.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq
+      a b = .ok (decide (a = b)) := SourceWorkMatch.RequestEquality.node_eq a b
+
+theorem resource_eq (a b : sandproof_protocol.ResourceRef) :
+    SourceFullBindingActual.sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq
+      a b = .ok (decide (a = b)) := SourceWorkMatch.SourceData.resource_eq a b
+
+theorem process_eq (a b : capture.SourceProcessIdentity) :
+    SourceFullBindingActual.capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq
+      a b = .ok (decide (a = b)) := SourceWorkMatch.SourceData.process_eq a b
+
+theorem ne_refines {T : Type} (dictionary : core.cmp.PartialEq T T)
+    (lawful : ∀ a b, dictionary.eq a b = .ok (decide (a = b))) (a b : T) :
+    core.cmp.PartialEq.ne.trait_default dictionary a b = .ok (decide (a ≠ b)) := by
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, lawful]
+
+theorem actual_contract (saved : Record) (full : Full) (represented : Representable full) :
+    SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding saved full =
+      outcome saved full := by
+  unfold SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding outcome
+  rw [request_accessor]
+  simp only [bind_tc_ok]
+  cases operation : saved.work.anchor.request.request.operation with
+  | Create create target => rfl
+  | Resume source captured target digest => rfl
+  | Renew incarnation endAt extendOnly => rfl
+  | Destroy => rfl
+  | Unload source captured =>
+    rw [valid_refines full represented]
+    simp only [bind_tc_ok]
+    simp only [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      binding_eq, incarnation_eq, capture_eq, digest_eq, node_eq, resource_eq, process_eq,
+      bind_tc_ok]
+    by_cases valid : SourceFullWorkGuardModel.FullAllowed full
+    · simp [valid, Bindings]
+      all_goals (split_ifs <;> simp_all)
+    · simp [valid]
+
+theorem complete_contract :
+    Contract SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding :=
+  actual_contract
+
+theorem non_unload_before_validity (saved : Record) (full : Full)
+    (notUnload : ∀ source captured,
+      saved.work.anchor.request.request.operation ≠
+        sandproof_protocol.lifecycle.request.LifecycleOperation.Unload source captured) :
+    SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding saved full =
+      .ok (.Err .Conflict) := by
+  unfold SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding
+  rw [request_accessor]
+  simp only [bind_tc_ok]
+  cases operation : saved.work.anchor.request.request.operation with
+  | Create create target => rfl
+  | Resume source captured target digest => rfl
+  | Renew incarnation endAt extendOnly => rfl
+  | Destroy => rfl
+  | Unload source captured => exact False.elim (notUnload source captured operation)
+
+theorem invalid_full_rejected (saved : Record) (full : Full) (represented : Representable full)
+    (invalid : ¬SourceFullWorkGuardModel.FullAllowed full) :
+    SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding saved full =
+      .ok (.Err .Conflict) := by
+  rw [actual_contract saved full represented]
+  unfold outcome
+  cases saved.work.anchor.request.request.operation <;> simp [invalid]
+
+theorem accepts_iff_all_bindings (saved : Record) (full : Full) (represented : Representable full) :
+    SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding saved full =
+      .ok (.Ok ()) ↔ ∃ source captured,
+        saved.work.anchor.request.request.operation =
+          sandproof_protocol.lifecycle.request.LifecycleOperation.Unload source captured ∧
+        SourceFullWorkGuardModel.FullAllowed full ∧ Bindings saved full source captured := by
+  rw [actual_contract saved full represented]
+  unfold outcome
+  cases saved.work.anchor.request.request.operation <;> simp
+
+theorem capture_slot_ignored (saved : Record) (full : Full)
+    (captured : Option controller.lifecycle_inbox.source_work.full.CaptureWork) :
+    SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding
+      { saved with capture := captured } full =
+    SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding saved full := rfl
+
+end
+end SandboxModel.Stage1Protocol.SourceFullBindingProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.request_accessor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.valid_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.binding_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.incarnation_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.capture_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.digest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.node_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.resource_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.process_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.ne_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.non_unload_before_validity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.invalid_full_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.accepts_iff_all_bindings
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingProof.capture_slot_ignored

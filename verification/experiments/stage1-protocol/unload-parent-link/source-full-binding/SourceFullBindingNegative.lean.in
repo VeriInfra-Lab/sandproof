@@ -1,0 +1,100 @@
+import SourceFullBindingValues
+import SourceFullBindingWrong
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes
+open SourceFullBindingModel SourceFullBindingValues
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceFullBindingNegative
+noncomputable section
+local instance negativeDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev wrong := SourceFullBindingWrongActual.controller.lifecycle_inbox.source_work.full.validate.full_binding
+
+private theorem wrong_request (work : controller.lifecycle_inbox.source_work.SourceWork) :
+    SourceFullBindingWrongActual.controller.lifecycle_inbox.source_work.SourceWork.request work =
+      .ok work.anchor.request := rfl
+private theorem wrong_valid (full : Full) (represented : Representable full) :
+    SourceFullBindingWrongActual.capture.work.FullCaptureWorkRequest.valid full =
+      .ok (decide (SourceFullWorkGuardModel.FullAllowed full)) :=
+  SourceFullBindingProof.valid_refines full represented
+private theorem wrong_binding (a b : sandproof_protocol.lifecycle.identity.OperationBinding) :
+    SourceFullBindingWrongActual.sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCmpPartialEqOperationBinding.eq
+      a b = .ok (decide (a = b)) := SourceFullBindingProof.binding_eq a b
+private theorem wrong_incarnation (a b : Incarnation) :
+    SourceFullBindingWrongActual.sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq
+      a b = .ok (decide (a = b)) := SourceFullBindingProof.incarnation_eq a b
+private theorem wrong_capture (a b : Capture) :
+    SourceFullBindingWrongActual.sandproof_protocol.lifecycle.identity.CaptureId.Insts.CoreCmpPartialEqCaptureId.eq
+      a b = .ok (decide (a = b)) := SourceFullBindingProof.capture_eq a b
+private theorem wrong_node (a b : sandproof_protocol.internal.NodeIdentity) :
+    SourceFullBindingWrongActual.sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq
+      a b = .ok (decide (a = b)) := SourceFullBindingProof.node_eq a b
+private theorem wrong_resource (a b : sandproof_protocol.ResourceRef) :
+    SourceFullBindingWrongActual.sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq
+      a b = .ok (decide (a = b)) := SourceFullBindingProof.resource_eq a b
+private theorem wrong_process (a b : capture.SourceProcessIdentity) :
+    SourceFullBindingWrongActual.capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq
+      a b = .ok (decide (a = b)) := SourceFullBindingProof.process_eq a b
+
+def aligned_digest (saved : Record) (full : Full) : Full :=
+  { full with pause := { full.pause with source_work_binding := saved.work.requirement.work_binding } }
+
+/-- Relate the two actual programs on the unchanged input domain. This helper
+    does not weaken the complete normative Contract refuted below. -/
+theorem actual_aligned_digest_relation (saved : Record) (full : Full)
+    (represented : Representable full) :
+    wrong saved full =
+      SourceFullBindingActual.controller.lifecycle_inbox.source_work.full.validate.full_binding saved
+        (aligned_digest saved full) := by
+  have alignedRep : Representable (aligned_digest saved full) := represented
+  rw [SourceFullBindingProof.actual_contract saved _ alignedRep]
+  unfold wrong SourceFullBindingWrongActual.controller.lifecycle_inbox.source_work.full.validate.full_binding outcome
+  rw [wrong_request]
+  simp only [bind_tc_ok]
+  cases operation : saved.work.anchor.request.request.operation with
+  | Create create target => rfl
+  | Resume source captured target digest => rfl
+  | Renew incarnation endAt extendOnly => rfl
+  | Destroy => rfl
+  | Unload source captured =>
+    rw [wrong_valid full represented]
+    simp only [bind_tc_ok, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      wrong_binding, wrong_incarnation, wrong_capture, wrong_node, wrong_resource, wrong_process]
+    have sameAllowed : SourceFullWorkGuardModel.FullAllowed (aligned_digest saved full) =
+        SourceFullWorkGuardModel.FullAllowed full := rfl
+    rw [sameAllowed]
+    by_cases valid : SourceFullWorkGuardModel.FullAllowed full
+    · simp [valid, Bindings, aligned_digest]
+      all_goals (split_ifs <;> simp_all)
+    · simp [valid]
+
+theorem normal_control : wrong saved full = .ok (.Ok ()) := by
+  rw [actual_aligned_digest_relation saved full represented]
+  exact SourceFullBindingValues.normal
+
+theorem unchecked_record_fields_control : wrong uncheckedRecord full = .ok (.Ok ()) := by
+  rw [actual_aligned_digest_relation uncheckedRecord full represented]
+  exact SourceFullBindingValues.unchecked_record_fields_normal
+
+theorem actual_changed_digest_accepted : wrong saved changedDigest = .ok (.Ok ()) := by
+  rw [actual_aligned_digest_relation saved changedDigest changed_represented]
+  exact SourceFullBindingValues.normal
+
+theorem violates_same_complete_contract : ¬Contract wrong := by
+  intro contract
+  have promised := contract saved changedDigest changed_represented
+  have expected := SourceFullBindingValues.actual_changed_digest_rejected
+  rw [SourceFullBindingProof.actual_contract saved changedDigest changed_represented] at expected
+  rw [actual_changed_digest_accepted, expected] at promised
+  simp at promised
+
+end
+end SandboxModel.Stage1Protocol.SourceFullBindingNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingNegative.actual_aligned_digest_relation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingNegative.normal_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingNegative.unchecked_record_fields_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingNegative.actual_changed_digest_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceFullBindingNegative.violates_same_complete_contract
