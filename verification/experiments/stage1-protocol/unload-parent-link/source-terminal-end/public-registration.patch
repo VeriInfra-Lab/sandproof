@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-terminal-end 在固定 b0d791cc 上连接原 terminal_end 全构造子、完整 stop/观察重放及原 prior 克隆。同一个完整 Contract 拒绝实际只比较 stop 的错误，保留 stop→观察→克隆顺序。接续 #1002，完整入口目标145文件/804审计与147/812。
++> 原生二十四项四视图及恢复交 ning。末态整值相等不证明实际 Stop/Writer退出或执行许可；来源借用、完整父调用、同事务/耐久、认证/JSON和物理事实继续开放。公共登记和覆盖仅交候选。
+ ## V3 首次卸载使用同一条原执行记录

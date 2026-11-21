@@ -1,0 +1,175 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "parent_prs": [
+    1002
+  ],
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "owned_component": "verification/experiments/stage1-protocol/unload-parent-link/source-terminal-end",
+  "formal_views": [
+    {
+      "variant": "original",
+      "formal_root": "SourceTerminalEndProof",
+      "physical_files": 145,
+      "full_audits": 804,
+      "own_modules": [
+        "SourceTerminalEndSpec.lean",
+        "SourceTerminalEndView.lean",
+        "SourceTerminalEndProof.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.stop_eq",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.observation_eq",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_action",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_process",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_worker",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_digest",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_optional_action",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_stop",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_host",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_end_observation",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_terminated_observation",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_prior",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_end",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.actual_full_contract",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_end_outcome",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.stop_ne",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.observation_ne",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.initial",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.carry_never_released",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.carry_worker_ended",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.replay_keeps_complete_prior",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.stop_mismatch",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.observation_mismatch",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.actual_comparison_order"
+      ]
+    },
+    {
+      "variant": "stop-only-replay",
+      "formal_root": "SourceTerminalEndNegative",
+      "physical_files": 147,
+      "full_audits": 812,
+      "own_modules": [
+        "SourceTerminalEndSpec.lean",
+        "SourceTerminalEndView.lean",
+        "SourceTerminalEndProof.lean",
+        "SourceTerminalEndWrong.lean",
+        "SourceTerminalEndNegative.lean"
+      ],
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.stop_eq",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.observation_eq",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_action",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_process",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_worker",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_digest",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_optional_action",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_stop",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_host",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_end_observation",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_terminated_observation",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_prior",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_end",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.actual_contract",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.actual_full_contract",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.clone_end_outcome",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.stop_ne",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.observation_ne",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.initial",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.carry_never_released",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.carry_worker_ended",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.replay_keeps_complete_prior",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.stop_mismatch",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.observation_mismatch",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndProof.actual_comparison_order",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndNegative.wrong_stop_ne",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndNegative.wrong_clone_end",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndNegative.wrong_returns_saved",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndNegative.normal_replay_control",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndNegative.wrong_still_rejects_stop",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndNegative.observation_counterexample",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndNegative.rejects_same_full_contract",
+        "SandboxModel.Stage1Protocol.SourceTerminalEndNegative.inode_counterexample"
+      ]
+    }
+  ],
+  "formal_development_entry": "check.py",
+  "public_registration_accepted": false,
+  "production_candidate_equivalence_complete": false,
+  "whole_receipt_proved": false,
+  "native_candidate": {
+    "name": "stage1-source-terminal-end",
+    "preparation": "native.py",
+    "variants": [
+      "original",
+      "adapted-original",
+      "stop-only-replay",
+      "adapted-stop-only-replay"
+    ],
+    "tests": [
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_requires_transaction_even_for_empty_expected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_empty_transaction_does_not_load_missing_schema",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_clears_only_complete_original_slot_and_keeps_reservation",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_same_key_with_changed_complete_record_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_unsettled_material_keeps_complete_source_row",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_zero_row_compare_and_set_is_rejected",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_retire_duplicate_preserves_first_update_until_explicit_rollback",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_no_capture_requires_empty_retirement_and_release",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_retiring_zero_does_not_mean_settled",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_settlement_matches_every_original_byte",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_material_charge_state_size_is_rejected_before_plan_shape",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_checks_all_seven_original_request_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_missing_record_precedes_request_errors",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_keeps_the_first_matching_record_error",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_question_selects_complete_work_instead_of_only_its_binding",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_keeps_complete_output_without_assuming_capture_presence",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_checks_all_six_original_identity_fields",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_seal_end_rejects_non_seal_commands",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_missing_capture_and_end_are_false",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_accepts_both_original_saved_normal_ends",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_continuation_gate_refuses_original_terminated_end",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_terminal_end_carries_all_original_prior_shapes",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_terminal_end_replay_keeps_complete_prior_and_checks_every_stop_field",
+      "controller::lifecycle_inbox::source_work::tests::end_pipeline::source_terminal_end_replay_checks_all_original_observation_fields"
+    ],
+    "expected": {
+      "original": {
+        "passed": 24,
+        "failed": 0
+      },
+      "adapted-original": {
+        "passed": 24,
+        "failed": 0
+      },
+      "stop-only-replay": {
+        "passed": 23,
+        "failed": 1
+      },
+      "adapted-stop-only-replay": {
+        "passed": 23,
+        "failed": 1
+      }
+    },
+    "rejection": "terminal replay must compare all original observation fields",
+    "restoration": "independent original after both wrong views:24/24",
+    "compiled": false,
+    "tests_executed": false
+  },
+  "providers": {
+    "String/Option clones and complete String/Option/Bool equality": "existing per-symbol SourceRetireLibrary/A6 contracts and complete parent equality/clone proofs; normal allocation and valid shared borrows",
+    "complete original end/stop/observation clones": "all actual derived functions transparent; reuse parent complete field lemmas; no whole-business port",
+    "source lookup/parent/transaction": "V3/V5/coordinator, open",
+    "valid World/execution authorization": "V4/V5, open",
+    "durable storage/commit outcome": "V5, open",
+    "actual Stop/writer exit/files/sealing/VM": "V6, open",
+    "independent authenticated context": "V7, open"
+  },
+  "remaining": [
+    "production/staging general equivalence and exact standard library adoption",
+    "original source lookup/return borrow and whole parent call/transaction",
+    "public native/ordinary/root suite registration and coverage adoption",
+    "authorization/durability/JSON/network/actual Stop/writer or resource facts"
+  ]
+}

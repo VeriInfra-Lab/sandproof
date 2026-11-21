@@ -1,0 +1,25 @@
+// Append only in a disposable cfg(test) full.rs view.
+#[cfg(test)]
+pub(super) fn source_terminal_record_for_test(
+    record: &SourceWorkRecord,
+    stop: core::StopCoverage,
+    observation: crate::capture::TerminatedCaptureObservation,
+) -> Result<SourceWorkRecord, JournalError> {
+    let end = drain::source_terminal_end_for_test(record, stop, observation)?;
+    let mut next = record.clone();
+    next.capture
+        .as_mut()
+        .expect("fixture capture must exist")
+        .end = Some(end);
+    Ok(next)
+}
+
+#[cfg(test)]
+pub(super) fn source_terminal_coordinates_for_test(
+    record: &SourceWorkRecord,
+) -> (
+    core::StopCoverage,
+    crate::capture::TerminatedCaptureObservation,
+) {
+    drain::source_terminal_coordinates_for_test(record)
+}
