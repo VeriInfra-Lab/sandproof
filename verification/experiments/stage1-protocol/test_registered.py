@@ -572,6 +572,24 @@ class Registration(OriginalReadPlanFixture):
         self.assertEqual(parent['cases'], [
             'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision'])
 
+    def test_unload_parent_requires_each_actual_page_for_repeated_audits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = registered.HERE / 'unload-parent-link'
+            (root / package).mkdir(parents=True)
+            theorem = 'UnloadParent.example'
+            leaf, total = (str(package / (name + '.lean.in')) for name in ('Leaf', 'Total'))
+            for name in (leaf, total):
+                (root / name).write_text(f'#audit_controller_proof {theorem}\n')
+            templates = {leaf: [theorem], total: [theorem]}
+            files = {'Leaf.lean': registered._sha(root / leaf)}
+            actual = {'files': files, 'audits': [theorem]}
+            coverage = registered.UNLOAD.parent_audit_pages
+            self.assertEqual(coverage(root, templates, [actual], {}),
+                             {'pages': 2, 'declarations': 2, 'missing': [total]})
+            files['Total.lean'] = registered._sha(root / total)
+            self.assertEqual(coverage(root, templates, [actual], {})['missing'], [])
+
     def test_total_only_subsumes_same_variant_append_formal(self):
         jobs = registered.formal_plan(Path('/unused'))
         inbox = [job for job in jobs if Path(job['driver']).parent.name.startswith('inbox-')]

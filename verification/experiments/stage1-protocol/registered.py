@@ -1927,13 +1927,20 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
             argv = _invoke(root, HERE/name/'test_binding.py', [], env)
             record['source_admission_regressions'].append(dict(name=name, argv=argv,
                                                                llbc_sha256=_sha(capture)))
-        expected_audits = ({audit for audits in audit_templates(root).values() for audit in audits}
+        templates = audit_templates(root) if profile == 'full' else {}
+        expected_audits = ({audit for audits in templates.values() for audit in audits}
             if profile == 'full' else {a for job in plan for view in job['views'].values() for a in view['audits']})
         observed_audits = retained_audits(record) if profile == 'full' else set()
+        actuals, composed = [], {}
         for checked in record['results']:
             result = _read(Path(checked['result_path']))
-            for actual in _actuals(result):
+            views = _actuals(result)
+            actuals.extend(views)
+            for actual in views:
                 observed_audits.update(actual.get('audits', ()))
+            if checked['name'] == UNLOAD.PARENT_LABEL:
+                name = 'RevisionReadyTransport.lean'
+                composed[name] = result['cases']['revision']['files'][name]
         record['template_audits'] = dict(expected=sorted(expected_audits), observed=sorted(observed_audits),
             missing=sorted(expected_audits-observed_audits),
             scope=('all template declarations; retained component audits also enter the public total gate'
@@ -1943,6 +1950,10 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
             raise ValueError('registered template audit declarations missing: '
                              + repr(record['template_audits']['missing']))
         if profile == 'full':
+            record['template_audits']['unload_parent'] = UNLOAD.parent_audit_pages(root, templates, actuals, composed)
+            if record['template_audits']['unload_parent']['missing']:
+                raise ValueError('missing actual unload parent audit pages: '
+                                 + repr(record['template_audits']['unload_parent']['missing']))
             record['retained_source_files'] = compute_retained_coverage(root, record)
             record['retained_inventory_sha256'] = _sha(root/HERE/'retained-protocol.json')
         elif expected_audits != observed_audits:

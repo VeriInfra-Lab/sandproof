@@ -18,7 +18,8 @@ PARENT_AUDIT_INPUTS = {
     'finish': {'finish/UnloadFinishInputs', 'finish/UnloadFinish'},
     'finish-reordered': {'finish/UnloadFinishInputs', 'finish/UnloadFinishReordered'},
     'revision': {'revision-transport/RevisionReadyTransport', 'revision-call/RevisionReadErrors',
-                 'revision-call/RevisionReadSuccess', 'revision-call/RevisionParentCall'},
+                 'revision-call/RevisionReadSuccess', 'revision-call/RevisionParentCall',
+                 'ParentErrors', 'ParentRejects'},
 }
 AUDIT = re.compile(r'^#audit_controller_proof (\S+)$', re.M)
 PACKAGES = {
@@ -85,6 +86,24 @@ def check_parent_captures(folder, result, evidence):
         paths.update({'generated/' + path: sha for path, sha in generated.items()})
         if any(evidence.get(str(capture / path)) != sha for path, sha in paths.items()):
             raise ValueError('missing or changed current parent extraction inputs: ' + name)
+
+
+def parent_audit_pages(root, templates, actuals, composed_pages):
+    """Count every declared audit on its own physically checked page."""
+    package = HERE / 'unload-parent-link'
+    observations = {}
+    for actual in actuals:
+        for page, sha in actual.get('files', {}).items():
+            key = (Path(page).name, sha)
+            observations.setdefault(key, set()).update(actual['audits'])
+    pages = {name: audits for name, audits in templates.items() if Path(name).is_relative_to(package)}
+    missing = []
+    for name, audits in pages.items():
+        page = Path(name).with_suffix('').name
+        sha = composed_pages.get(page) or digest(root / name)
+        if not set(audits) <= observations.get((page, sha), set()):
+            missing.append(name)
+    return dict(pages=len(pages), declarations=sum(map(len, pages.values())), missing=missing)
 
 
 def digest(path):

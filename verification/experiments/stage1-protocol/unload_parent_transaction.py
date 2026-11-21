@@ -191,11 +191,13 @@ def run_formal(output, result, identity, receipt_path, native_archive, native_ma
         plan = json.loads((project / 'plan.json').read_bytes())
         if case == 'revision':
             roots, source = plan['roots'], plan['source_commit']
+            expected_roots = [root, 'ParentRejects']
             files = {name.replace('.', '/') + '.lean': row['sha256']
                      for name, row in plan['modules'].items()}
         else:
             roots, source, files = [plan['root']], plan['source'], plan['files']
-        if roots != [root] or source != identity['head']:
+            expected_roots = [root]
+        if roots != expected_roots or source != identity['head']:
             raise ValueError('wrong materialized root or commit: ' + case)
         if any(digest(project / name) != checksum for name, checksum in files.items()):
             raise ValueError('materialized proof differs from its checked inputs')
@@ -205,7 +207,7 @@ def run_formal(output, result, identity, receipt_path, native_archive, native_ma
         def run(cwd, logs, label, argv):
             command(result, env, cwd, logs, label, argv)
 
-        run(project, folder, 'build', ['lake', 'build', root])
+        run(project, folder, 'build', ['lake', 'build', *roots])
         actual = checker.actual_files(project, sorted(files), folder, env, run)
         registered._saved_physical_view(actual, project, folder / 'physical-files', result['commands'])
         result['cases'][case] = dict(actual, complete=True)

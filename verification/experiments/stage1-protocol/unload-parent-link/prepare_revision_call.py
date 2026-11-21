@@ -87,20 +87,31 @@ def prepare_call(base, parent, packages, lean_mcp, output, *, identity=None):
     for name in ('RevisionReadErrors', 'RevisionReadSuccess', 'RevisionParentCall'):
         files[f'{name}.lean'] = (PACKAGE / f'{name}.lean.in').read_bytes()
 
+    proofs = PROOFS
+    roots = ['RevisionParentCall']
+    if identity is not None:
+        # Both parent proof roots consume the same admitted current generated
+        # parent, including its revision field.
+        for src, names in ((PARENT_PROOF, ('ParentProof', 'ParentSuccess')),
+                           (HERE, ('ParentErrors', 'ParentRejects'))):
+            for name in names:
+                files[f'{name}.lean'] = (src / (name + '.lean.in')).read_bytes()
+            proofs += names
+        roots.append('ParentRejects')
     materialize(base / 'Types.lean', parent / 'Types.lean', packages, lean_mcp, output)
     for name, payload in files.items():
         (output / name).write_bytes(payload)
     lakefile = output / 'lakefile.toml'
     with lakefile.open('a') as stream:
-        for name in PROOFS:
+        for name in proofs:
             stream.write(f'\n[[lean_lib]]\nname = "{name}"\n')
     plan_file = output / 'plan.json'
     plan = json.loads(plan_file.read_bytes())
     plan['build_order'] += [f'{BASE}.FunsExternal', f'{BASE}.Funs',
-                            f'{PARENT}.FunsExternal', f'{PARENT}.Funs', *PROOFS]
+                            f'{PARENT}.FunsExternal', f'{PARENT}.Funs', *proofs]
     plan['modules'].update({name.removesuffix('.lean').replace('/', '.'): dict(sha256=sha(data))
                             for name, data in files.items()})
-    plan['roots'] = ['RevisionParentCall']
+    plan['roots'] = roots
     if identity is not None:
         plan.update(source_commit=identity['head'], source_tree=identity['tree'])
     plan_file.write_text(json.dumps(plan, indent=2) + '\n')
