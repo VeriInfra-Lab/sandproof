@@ -1,0 +1,121 @@
+// Original API/SQLite inputs and controlled Host; no actual source/VM fact.
+#[test]
+fn source_full_binding_checks_complete_unload_request_and_requirement_fields() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, saved) = source_terminal_fixture(&dir.path().join("full-binding.db"), 1);
+    let full = saved.capture.as_ref().unwrap().full.clone();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    assert!(full.valid());
+    assert!(full::source_full_binding_for_test(&saved, &full).is_ok());
+    // These values are not inspected by this guard, and passing still grants
+    // no permission or evidence of a current source/capture/World.
+    let mut unchecked = saved.clone();
+    unchecked.capture = None;
+    unchecked.work.anchor.native.generation = unchecked
+        .work
+        .anchor
+        .native
+        .generation
+        .checked_add(1)
+        .unwrap();
+    assert!(full::source_full_binding_for_test(&unchecked, &full).is_ok());
+    for field in 0..6 {
+        let mut changed = saved.clone();
+        match field {
+            0 => {
+                changed.work.anchor.request.request.binding.key.owner =
+                    sandproof_protocol::TenantId::try_from("foreign-owner").unwrap()
+            }
+            1 | 2 => {
+                let sandproof_protocol::lifecycle::LifecycleOperation::Unload {
+                    source_incarnation,
+                    capture,
+                } = &mut changed.work.anchor.request.request.operation
+                else {
+                    panic!("original fixture must be Unload")
+                };
+                if field == 1 {
+                    *source_incarnation = source_incarnation.checked_next().unwrap();
+                } else {
+                    *capture = capture.checked_next().unwrap();
+                }
+            }
+            3 => {
+                changed.work.requirement.node.node_id =
+                    sandproof_protocol::NodeId::try_from("foreign-node").unwrap()
+            }
+            4 => {
+                changed.work.requirement.resource.id =
+                    sandproof_protocol::ResourceId::try_from("foreign-resource").unwrap()
+            }
+            5 => changed.work.requirement.source.boot_id.push('x'),
+            _ => unreachable!(),
+        }
+        assert!(
+            matches!(
+                full::source_full_binding_for_test(&changed, &full),
+                Err(JournalError::Conflict)
+            ),
+            "complete Full binding original field={field}"
+        );
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_full_binding_rejects_non_unload_and_invalid_full_work() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, saved) = source_terminal_fixture(&dir.path().join("full-tag.db"), 1);
+    let full = saved.capture.as_ref().unwrap().full.clone();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut other = saved.clone();
+    other.work.anchor.request.request.operation =
+        sandproof_protocol::lifecycle::LifecycleOperation::Destroy {};
+    let mut invalid = full.clone();
+    invalid.state_bytes = 0;
+    assert!(!invalid.valid());
+    for (record, work) in [(&other, &full), (&other, &invalid), (&saved, &invalid)] {
+        assert!(matches!(
+            full::source_full_binding_for_test(record, work),
+            Err(JournalError::Conflict)
+        ));
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_full_binding_rejects_changed_original_source_work_digest() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, saved) = source_terminal_fixture(&dir.path().join("full-digest.db"), 1);
+    let original = saved.capture.as_ref().unwrap().full.clone();
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut changed = original.clone();
+    let mut bytes = *changed.pause.source_work_binding.as_bytes();
+    bytes[0] ^= 1;
+    changed.pause.source_work_binding = ContentDigest::from_sha256(bytes);
+    assert!(original.valid() && changed.valid());
+    assert!(full::source_full_binding_for_test(&saved, &original).is_ok());
+    assert!(
+        matches!(
+            full::source_full_binding_for_test(&saved, &changed),
+            Err(JournalError::Conflict)
+        ),
+        "full binding must retain original source work digest"
+    );
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}

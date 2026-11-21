@@ -1,0 +1,45 @@
+import SourceFullBindingSpec
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceFullBindingActual
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+def I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from := @SourceFullWorkGuardActual.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from
+def Str.Insts.CoreCmpPartialEqStr.eq := @SourceFullWorkGuardActual.Str.Insts.CoreCmpPartialEqStr.eq
+def alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq := @SourceFullWorkGuardActual.alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq := @SourceFullWorkGuardActual.alloc.string.String.Insts.CoreCmpPartialEqString.eq
+def alloc.string.String.Insts.CoreOpsDerefDerefStr.deref := @SourceFullWorkGuardActual.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+def alloc.string.String.is_empty := @SourceFullWorkGuardActual.alloc.string.String.is_empty
+def alloc.string.String.len := @SourceFullWorkGuardActual.alloc.string.String.len
+def alloc.vec.Vec.is_empty := @SourceFullWorkGuardActual.alloc.vec.Vec.is_empty
+def core.ops.range.RangeInclusive.contains := @SourceFullWorkGuardActual.core.ops.range.RangeInclusive.contains
+def core.str.Str.as_bytes := @SourceFullWorkGuardActual.core.str.Str.as_bytes
+def core.str.Str.bytes := @SourceFullWorkGuardActual.core.str.Str.bytes
+def core.str.Str.is_empty := @SourceFullWorkGuardActual.core.str.Str.is_empty
+def core.str.Str.len := @SourceFullWorkGuardActual.core.str.Str.len
+def core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all := @SourceFullWorkGuardActual.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all
+end SandboxModel.Stage1Protocol.SourceFullBindingActual
+
+namespace SandboxModel.Stage1Protocol.SourceFullBindingWrongActual
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+def I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from := @SourceFullWorkGuardActual.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from
+def Str.Insts.CoreCmpPartialEqStr.eq := @SourceFullWorkGuardActual.Str.Insts.CoreCmpPartialEqStr.eq
+def alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq := @SourceFullWorkGuardActual.alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq := @SourceFullWorkGuardActual.alloc.string.String.Insts.CoreCmpPartialEqString.eq
+def alloc.string.String.Insts.CoreOpsDerefDerefStr.deref := @SourceFullWorkGuardActual.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+def alloc.string.String.is_empty := @SourceFullWorkGuardActual.alloc.string.String.is_empty
+def alloc.string.String.len := @SourceFullWorkGuardActual.alloc.string.String.len
+def alloc.vec.Vec.is_empty := @SourceFullWorkGuardActual.alloc.vec.Vec.is_empty
+def core.ops.range.RangeInclusive.contains := @SourceFullWorkGuardActual.core.ops.range.RangeInclusive.contains
+def core.str.Str.as_bytes := @SourceFullWorkGuardActual.core.str.Str.as_bytes
+def core.str.Str.bytes := @SourceFullWorkGuardActual.core.str.Str.bytes
+def core.str.Str.is_empty := @SourceFullWorkGuardActual.core.str.Str.is_empty
+def core.str.Str.len := @SourceFullWorkGuardActual.core.str.Str.len
+def core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all := @SourceFullWorkGuardActual.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all
+end SandboxModel.Stage1Protocol.SourceFullBindingWrongActual

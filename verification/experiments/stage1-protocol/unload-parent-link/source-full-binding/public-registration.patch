@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-full-binding 连接固定 b0d791cc 的原 Full/来源绑定守卫，复用#1004完整合法性及父 canonical 类型和比较。保留非Unload先拒绝、完整七组绑定、普通值域及未检查capture/native字段；同一Contract否定实际漏比source_work_binding。完整目标186/958与188/963。
++> 原生43项四视图及恢复交ning，公共登记/覆盖仅交候选。普通解码值匹配不产生授权、捕获或耐久事实；具体库采用、question组装/完整父调用、World/事务/未知提交、物理进程/FD/VM/材料与JSON/TLS/系统结论仍开放。
+ ## V3 首次卸载使用同一条原执行记录

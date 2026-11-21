@@ -1,0 +1,45 @@
+import SourceTerminalMatchValues
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceFullBindingModel
+noncomputable section
+local instance modelDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev Record := SourceRetireSpec.Record
+abbrev Full := SourceFullWorkGuardModel.Full
+abbrev Incarnation := sandproof_protocol.lifecycle.identity.IncarnationId
+abbrev Capture := sandproof_protocol.lifecycle.identity.CaptureId
+abbrev Journal := SourceRetireSpec.Journal
+abbrev Reply := core.result.Result Unit Journal
+abbrev Representable := SourceFullWorkGuardModel.FullRepresentable
+
+/-- The seven comparisons from the actual caller. No capture presence, current
+    native generation, World, request authorization or source existence clause. -/
+def Bindings (saved : Record) (full : Full) (source : Incarnation) (capture : Capture) : Prop :=
+  full.pause.binding.operation = saved.work.anchor.request.request.binding ∧
+  full.pause.binding.source_incarnation = source ∧
+  full.pause.binding.capture = capture ∧
+  full.pause.source_work_binding = saved.work.requirement.work_binding ∧
+  full.pause.node = saved.work.requirement.node ∧
+  full.pause.source_resource = saved.work.requirement.resource ∧
+  full.pause.source = saved.work.requirement.source
+
+/-- Reuse the complete original Full validity predicate. The operation tag is
+    tested first. The arbitrary saved record need not be current or reachable. -/
+def outcome (saved : Record) (full : Full) : Result Reply :=
+  match saved.work.anchor.request.request.operation with
+  | .Unload source capture =>
+    if SourceFullWorkGuardModel.FullAllowed full ∧ Bindings saved full source capture then
+      .ok (.Ok ())
+    else .ok (.Err .Conflict)
+  | _ => .ok (.Err .Conflict)
+
+/-- Representation is exactly the parent's normal Rust/borrow input domain,
+    not a FullAllowed assumption. Invalid representable work is still covered. -/
+def Contract (root : Record → Full → Result Reply) : Prop :=
+  ∀ saved full, Representable full → root saved full = outcome saved full
+
+end
+end SandboxModel.Stage1Protocol.SourceFullBindingModel
