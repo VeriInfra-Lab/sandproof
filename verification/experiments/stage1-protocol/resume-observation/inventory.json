@@ -5,7 +5,7 @@
     "sandbox-protocol/src/identifiers.rs": "c799f564cb21208a6572d5c98672ba8a200da6eb88d53657d84a78ceeb61be83",
     "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
     "sandbox-protocol/src/internal/window.rs": "ffabf825e91636fb5c549fa874a7ec2c3e10298c34ef5026fca8ffdae58c79eb",
-    "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
     "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
     "sandbox-protocol/src/lifecycle/access.rs": "e21818fb5d6ef97a079e9c1c155a450386d2d4dc70df9eb6dbcff79268afa7f2",
     "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
@@ -100,5 +100,75 @@
       "template": "NegativeResumeContinuedBinding"
     }
   },
-  "historical_proof_commit": "4f52d972a368596c0a9d4a8fff8913e757dfc778"
+  "historical_proof_commit": "4f52d972a368596c0a9d4a8fff8913e757dfc778",
+  "current_format_recapture": {
+    "candidate": "13cdef0530f00483fff329b14e0312cd3c94d0e3",
+    "historical_input_sha256": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "reviewed_source_change": "HOST_STORE_FORMAT_VERSION changed from 23 to 24. The constant does not occur in these raw LLBC slices.",
+    "source_review_sha256": "eadf9f0a399b6d126f2e6730f282467099cc5df594908a2a2cea809d4189586c",
+    "actual_capture_index_sha256": "5fe5efe666fea67f170d9d2567f2c3e913fb716be1aafb590d73c668521d3398",
+    "views": {
+      "correct": {
+        "exit": 0,
+        "driver_log_sha256": "3f394b14bc7cf2afe2883b899377c734ef8302dcf0ef0ecea3c30aaea484f1f2",
+        "llbc": "8622c9f041ba970b97d00e40e1b217ec8f336717a78e7ecf73b108fb2225fc17",
+        "generated": {
+          "SandproofStage1Request/Funs.lean": "49f7a968ff1a20fc3dda5c718363a6d1bb82cbdf5ac21cb68e5e846ccd8a5211",
+          "SandproofStage1Request/FunsExternal_Template.lean": "234ae72e56e03207703078f8062c906bfd34e4ec540816538a2399b01152fe57",
+          "SandproofStage1Request/Types.lean": "b44c58a649077c03fdfee9e796b564a45ba5bab81fe602694e8c9d68b48c31e1",
+          "translation.json": "b619584f61222231c10d78712cc8393e73802e9f4fec2699caef115fdbafa9fb"
+        },
+        "receipt_sha256": "b30d891be693d26cf2e699738d4f747c85e5a01d32bf873d0f5c56095ba641bf"
+      },
+      "resume-session-only": {
+        "exit": 0,
+        "driver_log_sha256": "9bca010eff16734b21eec26cc45b9f7bdfdf38640ada0c5422cb50b3726dfbcb",
+        "llbc": "1743d64a4f752ee1cf9484090b0bd98f06fd033c7b91a428e53a522a8a5deeca",
+        "generated": {
+          "SandproofStage1Request/Funs.lean": "96a4ac268d8d5fb1da7556398269de8daeab53910a65f4d6d1457deea7206d9c",
+          "SandproofStage1Request/FunsExternal_Template.lean": "234ae72e56e03207703078f8062c906bfd34e4ec540816538a2399b01152fe57",
+          "SandproofStage1Request/Types.lean": "b44c58a649077c03fdfee9e796b564a45ba5bab81fe602694e8c9d68b48c31e1",
+          "translation.json": "d5da5f9f45730e9f8d8e5ce241ed77b61e4ec8207d5918888f6f3c7862c31178"
+        },
+        "receipt_sha256": "3cbf604e6a48b9a305e7fb5cec803737e59160847dfffaa3fafaeeb519a2ce3a"
+      },
+      "resume-ignore-retention": {
+        "exit": 0,
+        "driver_log_sha256": "3e4933809b20da0715460a1ab674ce0f9805f7bf7e96e1362838ef2cb862b8d7",
+        "llbc": "673d1689d0502fec9b70f4fd6137c72757591b40be04e9485f9037550b25a329",
+        "generated": {
+          "SandproofStage1Request/Funs.lean": "8aaab57ff251b4f993ac046ce53526fab7693193a5cd917431583a3a23b59f7d",
+          "SandproofStage1Request/FunsExternal_Template.lean": "234ae72e56e03207703078f8062c906bfd34e4ec540816538a2399b01152fe57",
+          "SandproofStage1Request/Types.lean": "b44c58a649077c03fdfee9e796b564a45ba5bab81fe602694e8c9d68b48c31e1",
+          "translation.json": "c4740cf3fab63dd98f180006869c1e80eeaf21e3af95a0f751283d1f780019b0"
+        },
+        "receipt_sha256": "abffbcf69c15d1eb02c98b8d8e152d313b640c08a9df95a03d658254ec236755"
+      },
+      "resume-continued-binding": {
+        "exit": 0,
+        "driver_log_sha256": "d8c0f96a2c911d212942cc30e4ef0a477abac13606c881e8c27fcfdc94404b4a",
+        "llbc": "118737ae6c65f70fb7738b5daa6c0f6161285bff07e719e211d97d3fa9a7fb8c",
+        "generated": {
+          "SandproofStage1Request/Funs.lean": "103f2c69d497cbe650b8f142277cd1ce3073bba301435a8b81f3d28b5e702e25",
+          "SandproofStage1Request/FunsExternal_Template.lean": "234ae72e56e03207703078f8062c906bfd34e4ec540816538a2399b01152fe57",
+          "SandproofStage1Request/Types.lean": "b44c58a649077c03fdfee9e796b564a45ba5bab81fe602694e8c9d68b48c31e1",
+          "translation.json": "afa48067accccd335663b4897a3278147cc752bfeac45ee4f10f8dfe76cd376d"
+        },
+        "receipt_sha256": "f08416779d0d3041d5839d1d2cec68f5b52ff23b564e698b50305d8c5cb8e578"
+      },
+      "resume-wrong-renew-incarnation": {
+        "exit": 0,
+        "driver_log_sha256": "470143d66abbdf51afd9dec288c831b42d4c970a74149c2684023ca7ad060e00",
+        "llbc": "df905ccd70874ea89e431adf7a731d3eab1a0864ba64cbda332ce5967ec6617d",
+        "generated": {
+          "SandproofStage1Request/Funs.lean": "5a9c105a5cb4255df02698b2fbded47ae6312f721cd1c3cb748716d44b443ab3",
+          "SandproofStage1Request/FunsExternal_Template.lean": "234ae72e56e03207703078f8062c906bfd34e4ec540816538a2399b01152fe57",
+          "SandproofStage1Request/Types.lean": "b44c58a649077c03fdfee9e796b564a45ba5bab81fe602694e8c9d68b48c31e1",
+          "translation.json": "b619584f61222231c10d78712cc8393e73802e9f4fec2699caef115fdbafa9fb"
+        },
+        "receipt_sha256": "7ef4a49ba014cf033b3ad8240db565c4648a5f0a0fd57bc2eba95caf72ce66c6"
+      }
+    },
+    "acceptance_pending": true
+  }
 }
