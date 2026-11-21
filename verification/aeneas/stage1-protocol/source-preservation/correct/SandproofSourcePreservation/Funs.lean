@@ -256,7 +256,7 @@ impl_def
 }
 
 /-- [sandproof_controller_service::host_contract::{impl core::cmp::PartialEq<sandproof_controller_service::host_contract::HostSlotContext> for sandproof_controller_service::host_contract::HostSlotContext}::eq]:
-    Source: 'controller-service/src/host_contract.rs', lines 241:29-241:38
+    Source: 'controller-service/src/host_contract.rs', lines 257:29-257:38
     Visibility: public -/
 def host_contract.HostSlotContext.Insts.CoreCmpPartialEqHostSlotContext.eq
   (self : host_contract.HostSlotContext)
