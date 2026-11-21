@@ -1,0 +1,9 @@
+// Disposable fixture-only forwarding to the unchanged original question root.
+#[cfg(test)]
+pub(in crate::controller::lifecycle_inbox::source_work) fn source_terminal_work_for_test(
+    record: &SourceWorkRecord,
+    stop: core::StopCoverage,
+    observation: &TerminatedCaptureObservation,
+) -> Result<crate::capture::TerminatedCaptureWorkRequest, JournalError> {
+    question::from_saved(record, stop, observation)
+}

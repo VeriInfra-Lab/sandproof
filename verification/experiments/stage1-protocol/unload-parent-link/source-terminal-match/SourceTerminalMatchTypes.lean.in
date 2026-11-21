@@ -1,0 +1,7 @@
+import SourcePriorEndMatchValues
+open Aeneas Aeneas.Std
+open SandproofSourceRetentionProviders SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceTerminalMatchTypes
+-- ACTUAL COMPLETE ADDITIONAL TERMINAL TYPES
+end SandboxModel.Stage1Protocol.SourceTerminalMatchTypes

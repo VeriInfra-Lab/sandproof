@@ -1,0 +1,23 @@
+import SourceTerminalMatchLibrary
+
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceTerminalMatchModel
+set_option autoImplicit false
+set_option linter.unusedVariables false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceTerminalMatchActual
+noncomputable section
+variable (io : SourceTerminalMatchModel.Ports)
+local notation "capture.work.encode_full_work_binding" => io.full.encode
+local notation "capture.work.digest_full_work_binding" => io.full.digest
+local notation "capture.terminated.encode_terminated_work_binding" => io.encode
+local notation "capture.terminated.digest_terminated_work_binding" => io.full.digest
+
+-- ACTUAL COMPLETE TERMINAL MATCH FUNCTIONS
+
+end
+end SandboxModel.Stage1Protocol.SourceTerminalMatchActual

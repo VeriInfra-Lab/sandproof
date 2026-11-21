@@ -1,0 +1,185 @@
+import SourceTerminalMatchView
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceTerminalMatchModel
+open SourceWorkMatch
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceTerminalMatchProof
+noncomputable section
+local instance proofDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem action_eq (a b : Action) :
+    SourceTerminalMatchActual.sandproof_protocol.WorkAction.Insts.CoreCmpPartialEqWorkAction.eq
+      SourceTerminalMatchActual.sandbox_controller_core.model.EffectId.Insts.CoreCmpPartialEqEffectId
+      a b = .ok (decide (a = b)) :=
+  SourceRetireEquality.effect_action_eq a b
+
+theorem digest_eq (a b : Digest) :
+    SourceTerminalMatchActual.sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq
+      a b = .ok (decide (a = b)) :=
+  SourceWorkMatch.Scalars.wire_content_digest_eq a b
+
+theorem source_eq (a b : capture.SourceProcessIdentity) :
+    SourceTerminalMatchActual.capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq
+      a b = .ok (decide (a = b)) :=
+  SourceWorkMatch.SourceData.process_eq a b
+
+theorem option_worker_eq (a b : Option Worker) :
+    SourceTerminalMatchActual.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      SourceTerminalMatchActual.capture.launch.CaptureWorkerBinding.Insts.CoreCmpPartialEqCaptureWorkerBinding
+      a b = .ok (decide (a = b)) :=
+  Containers.option_eq_of _ SourceRetireEquality.worker_eq a b
+
+theorem slot_eq (a b : Slot) :
+    SourceTerminalMatchActual.host_contract.HostSlotContext.Insts.CoreCmpPartialEqHostSlotContext.eq
+      a b = .ok (decide (a = b)) :=
+  SourcePreservation.host_context_eq a b
+
+theorem constructor_contract :
+    ConstructorContract SourceTerminalMatchActual.capture.terminated.TerminatedCaptureWorkRequest.from_source := by
+  intro identity sealAction full source worker terminal slot
+  cases terminal
+  rfl
+
+theorem binding_input_injective : Function.Injective bindingInput := by
+  intro a b same
+  cases a
+  cases b
+  simpa [bindingInput, capture.terminated.TerminatedCaptureWorkRequest.mk.injEq] using same
+
+theorem full_binding_refines (io : Ports) (full : Full) :
+    SourceTerminalMatchActual.capture.work.FullCaptureWorkRequest.binding_digest io full =
+      SourceRequestEndMatchModel.binding io.full full :=
+  SourceRequestEndMatchProof.binding_refines io.full full
+
+theorem binding_refines (io : Ports) (work : SourceTerminalMatchModel.Work) :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureWorkRequest.binding_digest io work =
+      binding io work := by
+  unfold SourceTerminalMatchActual.capture.terminated.TerminatedCaptureWorkRequest.binding_digest binding bindingInput
+  apply congrArg (fun next => io.encode (work.identity, work.seal_action, work.full, work.source,
+    work.worker, work.stop_action, work.stop, work.host_slot) >>= next)
+  funext encoded
+  cases encoded <;>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SourceRetireSpec.vector_deref,
+      SourceTerminalMatchActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256]
+
+theorem actual_contract (io : Ports) (observed : Observation) (work : SourceTerminalMatchModel.Work) :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io observed work =
+      outcome io observed work := by
+  cases observed with
+  | StoppedAndDrained workDigest fullDigest sealAction stopAction source worker slot device inode =>
+    unfold SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches outcome
+    rw [binding_refines]
+    apply congrArg (fun next => binding io work >>= next)
+    funext encoded
+    cases encoded with
+    | Err error =>
+      simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok digest =>
+      simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok, digest_eq]
+      by_cases same : workDigest = digest
+      · simp only [same, decide_true, ↓reduceIte, ne_eq, not_true_eq_false]
+        rw [full_binding_refines]
+        apply congrArg (fun next => SourceRequestEndMatchModel.binding io.full work.full >>= next)
+        funext fullEncoded
+        cases fullEncoded with
+        | Err error =>
+          simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | Ok fullDigest =>
+          simp [action_eq, source_eq, option_worker_eq, slot_eq]
+          all_goals (split_ifs <;> simp_all)
+      · simp [same]
+
+theorem complete_contract (io : Ports) :
+    Contract io (SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io) :=
+  actual_contract io
+
+theorem terminal_encoding_error_first (io : Ports) (observed : Observation)
+    (work : SourceTerminalMatchModel.Work) (error : JsonError)
+    (failed : io.encode (bindingInput work) = .ok (.Err error)) :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io observed work =
+      .ok (.Err error) := by
+  rw [actual_contract]
+  cases observed
+  simp [outcome, binding, failed]
+
+theorem terminal_binding_mismatch_before_full (io : Ports) (work : SourceTerminalMatchModel.Work)
+    (workDigest fullDigest actual : Digest) (sealAction stopAction : Action)
+    (source : capture.SourceProcessIdentity) (worker : Option Worker) (slot : Slot) (device inode : U64)
+    (bound : binding io work = .ok (.Ok actual)) (different : workDigest ≠ actual) :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io
+      (.StoppedAndDrained workDigest fullDigest sealAction stopAction source worker slot device inode) work =
+      .ok (.Ok false) := by
+  rw [actual_contract]
+  simp [outcome, bound, different]
+
+theorem full_encoding_error_before_fields (io : Ports) (work : SourceTerminalMatchModel.Work)
+    (actual fullDigest : Digest) (sealAction stopAction : Action)
+    (source : capture.SourceProcessIdentity) (worker : Option Worker) (slot : Slot) (device inode : U64)
+    (error : JsonError) (bound : binding io work = .ok (.Ok actual))
+    (failed : io.full.encode work.full = .ok (.Err error)) :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io
+      (.StoppedAndDrained actual fullDigest sealAction stopAction source worker slot device inode) work =
+      .ok (.Err error) := by
+  rw [actual_contract]
+  simp [outcome, bound, SourceRequestEndMatchModel.binding, failed]
+
+theorem binding_uses_complete_tuple_and_bytes (io : Ports) (work : SourceTerminalMatchModel.Work)
+    (bytes : alloc.vec.Vec U8) (digest : Digest)
+    (encoded : io.encode (bindingInput work) = .ok (.Ok bytes))
+    (hashed : io.full.digest bytes.slice = .ok digest) :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureWorkRequest.binding_digest io work =
+      .ok (.Ok digest) := by
+  rw [binding_refines]
+  simp [binding, encoded, hashed]
+
+theorem accepts_iff_all_checked_fields (io : Ports) (work : SourceTerminalMatchModel.Work)
+    (workDigest fullDigest actual actualFull : Digest) (sealAction stopAction : Action)
+    (source : capture.SourceProcessIdentity) (worker : Option Worker) (slot : Slot) (device inode : U64)
+    (bound : binding io work = .ok (.Ok actual))
+    (fullBound : SourceRequestEndMatchModel.binding io.full work.full = .ok (.Ok actualFull)) :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io
+      (.StoppedAndDrained workDigest fullDigest sealAction stopAction source worker slot device inode) work =
+      .ok (.Ok true) ↔ workDigest = actual ∧ fullDigest = actualFull ∧
+        sealAction = work.seal_action ∧ stopAction = work.stop_action ∧
+        source = work.source.source ∧ worker = work.worker ∧ slot = work.host_slot := by
+  rw [actual_contract]
+  by_cases same : workDigest = actual <;> simp [outcome, bound, fullBound, same]
+
+theorem ignores_gate_values (io : Ports) (work : SourceTerminalMatchModel.Work)
+    (workDigest fullDigest : Digest) (sealAction stopAction : Action)
+    (source : capture.SourceProcessIdentity) (worker : Option Worker) (slot : Slot)
+    (device1 inode1 device2 inode2 : U64) :
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io
+      (.StoppedAndDrained workDigest fullDigest sealAction stopAction source worker slot device1 inode1) work =
+    SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io
+      (.StoppedAndDrained workDigest fullDigest sealAction stopAction source worker slot device2 inode2) work := by
+  rw [actual_contract, actual_contract]
+  rfl
+
+end
+end SandboxModel.Stage1Protocol.SourceTerminalMatchProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.action_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.digest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.source_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.option_worker_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.slot_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.constructor_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.binding_input_injective
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.full_binding_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.binding_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.terminal_encoding_error_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.terminal_binding_mismatch_before_full
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.full_encoding_error_before_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.binding_uses_complete_tuple_and_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.accepts_iff_all_checked_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceTerminalMatchProof.ignores_gate_values
