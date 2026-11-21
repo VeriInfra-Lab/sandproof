@@ -1,0 +1,141 @@
+// Real API/SQL/JSON data plus controlled Host; value success is no physical fact.
+#[test]
+fn source_drain_validation_accepts_exact_saved_observation_and_prior_controls() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record, work, observation) =
+        terminal_match_fixture(&dir.path().join("drain-controls.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    full::drain::source_drain_validate_for_test(&record, work.stop(), &observation).unwrap();
+    assert!(full::drain::source_drain_writer_closed_for_test(&record).unwrap());
+    let mut value = serde_json::to_value(&record).unwrap();
+    value["capture"]["end"]["prior"] = serde_json::Value::Null;
+    let no_prior: SourceWorkRecord = serde_json::from_value(value.clone()).unwrap();
+    full::drain::source_drain_validate_for_test(&no_prior, work.stop(), &observation).unwrap();
+    assert!(full::drain::source_drain_writer_closed_for_test(&no_prior).unwrap());
+    let ended = actual_api_end(&record);
+    let prior = serde_json::json!({"state": "worker_ended", "observation": ended});
+    assert!(full::drain::source_prior_matches_for_test(&record, prior.clone()).unwrap());
+    value["capture"]["end"]["prior"] = prior;
+    let with_prior: SourceWorkRecord = serde_json::from_value(value).unwrap();
+    full::drain::source_drain_validate_for_test(&with_prior, work.stop(), &observation).unwrap();
+    assert!(full::drain::source_drain_writer_closed_for_test(&with_prior).unwrap());
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_drain_validation_preserves_original_question_errors_before_matching() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record, work, observation) =
+        terminal_match_fixture(&dir.path().join("drain-order.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut invalid = record.clone();
+    invalid.capture.as_mut().unwrap().full.state_bytes = 0;
+    invalid.capture.as_mut().unwrap().action = None;
+    assert!(matches!(
+        full::drain::source_drain_validate_for_test(&invalid, work.stop(), &observation),
+        Err(JournalError::Conflict)
+    ));
+    let mut zero = observation.clone();
+    let crate::capture::TerminatedCaptureObservation::StoppedAndDrained {
+        helper_gate_inode, ..
+    } = &mut zero;
+    *helper_gate_inode = 0;
+    assert!(matches!(
+        full::drain::source_drain_validate_for_test(&invalid, work.stop(), &zero),
+        Err(JournalError::CorruptStore)
+    ));
+    let mut absent = record.clone();
+    absent.capture = None;
+    assert!(matches!(
+        full::drain::source_drain_validate_for_test(&absent, work.stop(), &observation),
+        Err(JournalError::CorruptStore)
+    ));
+    let mut missing_action = record.clone();
+    missing_action.capture.as_mut().unwrap().action = None;
+    assert!(matches!(
+        full::drain::source_drain_validate_for_test(&missing_action, work.stop(), &observation),
+        Err(JournalError::UnresolvedAction)
+    ));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_drain_validation_checks_actual_observation_before_writer_success() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record, work, observation) =
+        terminal_match_fixture(&dir.path().join("drain-match.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut changed = observation.clone();
+    let crate::capture::TerminatedCaptureObservation::StoppedAndDrained { work_binding, .. } =
+        &mut changed;
+    let mut bytes = *work_binding.as_bytes();
+    bytes[0] ^= 1;
+    *work_binding = ContentDigest::from_sha256(bytes);
+    assert!(matches!(
+        full::drain::source_drain_validate_for_test(&record, work.stop(), &changed),
+        Err(JournalError::CorruptStore)
+    ));
+    let mut value = serde_json::to_value(&record).unwrap();
+    value["capture"]["end"]["observation"] = serde_json::to_value(changed).unwrap();
+    let bad_saved: SourceWorkRecord = serde_json::from_value(value).unwrap();
+    assert!(matches!(
+        full::drain::source_drain_writer_closed_for_test(&bad_saved),
+        Err(JournalError::CorruptStore)
+    ));
+    let mut no_end = full::source_continuation_without_end_for_test(&record);
+    no_end.capture.as_mut().unwrap().full.state_bytes = 0;
+    assert!(!full::drain::source_drain_writer_closed_for_test(&no_end).unwrap());
+    no_end.capture = None;
+    assert!(!full::drain::source_drain_writer_closed_for_test(&no_end).unwrap());
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_drain_validation_rejects_mismatched_saved_prior() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record, work, observation) =
+        terminal_match_fixture(&dir.path().join("drain-prior.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    assert!(record.capture.as_ref().unwrap().worker.is_some());
+    let prior = serde_json::json!({
+        "state": "never_released",
+        "full_work_binding": record.capture.as_ref().unwrap().full.binding_digest().unwrap(),
+        "seal_action": record.capture.as_ref().unwrap().action,
+    });
+    assert!(!full::drain::source_prior_matches_for_test(&record, prior.clone()).unwrap());
+    let mut value = serde_json::to_value(&record).unwrap();
+    value["capture"]["end"]["prior"] = prior;
+    let mismatched: SourceWorkRecord = serde_json::from_value(value).unwrap();
+    assert!(
+        matches!(
+            full::drain::source_drain_validate_for_test(&mismatched, work.stop(), &observation),
+            Err(JournalError::CorruptStore)
+        ),
+        "drain validation must reject mismatched saved prior"
+    );
+    assert!(matches!(
+        full::drain::source_drain_writer_closed_for_test(&mismatched),
+        Err(JournalError::CorruptStore)
+    ));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}

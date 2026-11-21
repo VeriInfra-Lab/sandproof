@@ -1,0 +1,337 @@
+import SourceDrainValidationView
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceDrainValidationModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceDrainValidationProof
+noncomputable section
+
+theorem question_refines (record : Record) (stop : Stop) (observed : Observation)
+    (represented : Representable record) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      record stop observed = SourceSavedQuestionModel.outcome record stop observed := by
+  change SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+    record stop observed = SourceSavedQuestionModel.outcome record stop observed
+  exact SourceSavedQuestionProof.actual_contract record stop observed represented
+
+theorem observation_refines (io : Ports) (observed : Observation) (work : Work) :
+    SourceDrainValidationActual.capture.terminated.TerminatedCaptureObservation.matches io observed work =
+      SourceTerminalMatchModel.outcome io observed work := by
+  change SourceTerminalMatchActual.capture.terminated.TerminatedCaptureObservation.matches io observed work = _
+  exact SourceTerminalMatchProof.actual_contract io observed work
+
+theorem prior_refines (io : Ports) (record : Record) (prior : Prior) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io record prior =
+      SourcePriorEndMatchModel.outcome io.full record prior := by
+  change SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches io.full record prior = _
+  exact SourcePriorEndMatchProof.actual_contract io.full record prior
+
+theorem original_option_selection_relation (record : Record) :
+    originalEndSelector record = .ok (expandedEndSelector record) := by
+  cases present : record.capture <;>
+    simp [originalEndSelector, expandedEndSelector, SourceRetireLibrary.optionRef,
+      SourceRowChargeView.optionAndThen, savedEndCallback, present]
+
+theorem no_prior (io : Ports) (record : Record) (absent : savedPrior record = none) :
+    priorOutcome io record = .ok (.Ok ()) := by
+  simp only [priorOutcome, absent]
+
+theorem prior_false (io : Ports) (record : Record) (prior : Prior)
+    (present : savedPrior record = some prior)
+    (refused : SourcePriorEndMatchModel.outcome io.full record prior = .ok (.Ok false)) :
+    priorOutcome io record = .ok (.Err .CorruptStore) := by
+  simp [priorOutcome, present, SourceRetireSpec.tryJournal, refused]
+
+theorem prior_true (io : Ports) (record : Record) (prior : Prior)
+    (present : savedPrior record = some prior)
+    (accepted : SourcePriorEndMatchModel.outcome io.full record prior = .ok (.Ok true)) :
+    priorOutcome io record = .ok (.Ok ()) := by
+  simp [priorOutcome, present, SourceRetireSpec.tryJournal, accepted]
+
+theorem prior_error (io : Ports) (record : Record) (prior : Prior) (error : Journal)
+    (present : savedPrior record = some prior)
+    (failed : SourcePriorEndMatchModel.outcome io.full record prior = .ok (.Err error)) :
+    priorOutcome io record = .ok (.Err error) := by
+  simp [priorOutcome, present, SourceRetireSpec.tryJournal, failed]
+
+theorem question_error_first (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (error : Journal)
+    (failed : SourceSavedQuestionModel.outcome record stop observed = .ok (.Err error)) :
+    outcome io record stop observed = .ok (.Err error) := by
+  simp [outcome, SourceRetireSpec.tryJournal, failed]
+
+theorem match_error_before_prior (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (work : Work) (error : SourceTerminalMatchModel.JsonError)
+    (ready : SourceSavedQuestionModel.outcome record stop observed = .ok (.Ok work))
+    (failed : SourceTerminalMatchModel.outcome io observed work = .ok (.Err error)) :
+    outcome io record stop observed = .ok (.Err (.Json error)) := by
+  simp [outcome, SourceRetireSpec.tryJournal, ready, failed]
+
+theorem match_false_before_prior (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (work : Work)
+    (ready : SourceSavedQuestionModel.outcome record stop observed = .ok (.Ok work))
+    (failed : SourceTerminalMatchModel.outcome io observed work = .ok (.Ok false)) :
+    outcome io record stop observed = .ok (.Err .CorruptStore) := by
+  simp [outcome, SourceRetireSpec.tryJournal, ready, failed]
+
+theorem successful_match_continues_to_prior (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (work : Work)
+    (ready : SourceSavedQuestionModel.outcome record stop observed = .ok (.Ok work))
+    (matched : SourceTerminalMatchModel.outcome io observed work = .ok (.Ok true)) :
+    outcome io record stop observed = priorOutcome io record := by
+  simp [outcome, SourceRetireSpec.tryJournal, ready, matched]
+
+theorem writer_missing_capture (io : Ports) (record : Record) (absent : record.capture = none) :
+    writerOutcome io record = .ok (.Ok false) := by
+  simp [writerOutcome, absent]
+
+theorem writer_missing_end (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (present : record.capture = some captured) (absent : captured.«end» = none) :
+    writerOutcome io record = .ok (.Ok false) := by
+  simp [writerOutcome, present, absent]
+
+theorem writer_uses_saved_coordinates (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (stop : Stop) (observed : Observation) (prior : Option Prior)
+    (present : record.capture = some captured)
+    (ended : captured.«end» = some (.Terminated stop observed prior)) :
+    writerOutcome io record = SourceRetireSpec.tryJournal id
+      (outcome io record stop observed) (fun _ => .ok (.Ok true)) := by
+  simp only [writerOutcome, present, ended]
+
+
+theorem actual_contract (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (represented : Representable record) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io record stop observed = outcome io record stop observed := by
+  unfold SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record outcome
+  rw [question_refines record stop observed represented]
+  unfold SourceRetireSpec.tryJournal
+  apply congrArg (fun next => SourceSavedQuestionModel.outcome record stop observed >>= next)
+  funext question
+  cases question with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok work =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok, observation_refines]
+    apply congrArg (fun next => SourceTerminalMatchModel.outcome io observed work >>= next)
+    funext matched
+    cases matched with
+    | Err error =>
+      simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        SourceDrainValidationActual.JournalErrorFromJson.from_json]
+    | Ok matched =>
+      cases matched with
+      | false => simp
+      | true =>
+        simp only [bind_tc_ok, ↓reduceIte,
+          SourceDrainValidationActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef]
+        unfold priorOutcome savedPrior
+        cases captured : record.capture with
+        | none => simp
+        | some saved =>
+          simp only []
+          cases ended : saved.«end» with
+          | none => simp
+          | some endValue =>
+            simp only []
+            cases endValue with
+            | NeverReleased digest sealAction => rfl
+            | WorkerEnded observation => rfl
+            | Terminated previousStop previousObservation prior =>
+              cases prior with
+              | none => rfl
+              | some prior =>
+                simp only [prior_refines]
+                unfold SourceRetireSpec.tryJournal
+                apply congrArg (fun next => SourcePriorEndMatchModel.outcome io.full record prior >>= next)
+                funext checked
+                cases checked with
+                | Err error =>
+                  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+                | Ok checked =>
+                  cases checked <;> simp
+
+theorem complete_contract (io : Ports) :
+    Contract io (SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record io) :=
+  actual_contract io
+
+theorem writer_actual_contract (io : Ports) (record : Record) (represented : Representable record) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io record =
+      writerOutcome io record := by
+  unfold SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed writerOutcome
+  cases captured : record.capture with
+  | none => simp
+  | some saved =>
+    simp only []
+    cases ended : saved.«end» with
+    | none => simp
+    | some endValue =>
+      simp only []
+      cases endValue with
+      | NeverReleased digest sealAction => rfl
+      | WorkerEnded observation => rfl
+      | Terminated stop observation prior =>
+        simp only []
+        rw [actual_contract io record stop observation represented]
+        unfold SourceRetireSpec.tryJournal
+        apply congrArg (fun next => outcome io record stop observation >>= next)
+        funext checked
+        cases checked <;> simp [core.result.Result.Insts.CoreOpsTry.branch,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem complete_writer_contract (io : Ports) :
+    WriterContract io (SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io) :=
+  writer_actual_contract io
+
+end
+end SandboxModel.Stage1Protocol.SourceDrainValidationProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.question_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.observation_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.prior_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.original_option_selection_relation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.no_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.prior_false
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.prior_true
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.prior_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.question_error_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.match_error_before_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.match_false_before_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.successful_match_continues_to_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.writer_missing_capture
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.writer_missing_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.writer_uses_saved_coordinates
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.writer_actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.complete_writer_contract
+
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceDrainValidationModel
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceDrainValidationProof
+noncomputable section
+
+theorem actual_question_error_before_observation (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (error : Journal)
+    (failed : SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+      record stop observed = .ok (.Err error)) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io record stop observed = .ok (.Err error) := by
+  unfold SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+  rw [failed]
+  simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem actual_first_question_error (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (error : Journal) (represented : Representable record)
+    (failed : SourceSavedQuestionModel.outcome record stop observed = .ok (.Err error)) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io record stop observed = .ok (.Err error) := by
+  rw [actual_contract io record stop observed represented]
+  exact question_error_first io record stop observed error failed
+
+theorem actual_match_error_before_prior (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (work : Work) (error : SourceTerminalMatchModel.JsonError)
+    (represented : Representable record)
+    (ready : SourceSavedQuestionModel.outcome record stop observed = .ok (.Ok work))
+    (failed : SourceTerminalMatchModel.outcome io observed work = .ok (.Err error)) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io record stop observed = .ok (.Err (.Json error)) := by
+  rw [actual_contract io record stop observed represented]
+  exact match_error_before_prior io record stop observed work error ready failed
+
+theorem actual_match_false_before_prior (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (work : Work) (represented : Representable record)
+    (ready : SourceSavedQuestionModel.outcome record stop observed = .ok (.Ok work))
+    (failed : SourceTerminalMatchModel.outcome io observed work = .ok (.Ok false)) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io record stop observed = .ok (.Err .CorruptStore) := by
+  rw [actual_contract io record stop observed represented]
+  exact match_false_before_prior io record stop observed work ready failed
+
+theorem actual_successful_match_continues_prior (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (work : Work) (represented : Representable record)
+    (ready : SourceSavedQuestionModel.outcome record stop observed = .ok (.Ok work))
+    (matched : SourceTerminalMatchModel.outcome io observed work = .ok (.Ok true)) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io record stop observed = priorOutcome io record := by
+  rw [actual_contract io record stop observed represented]
+  exact successful_match_continues_to_prior io record stop observed work ready matched
+
+theorem actual_prior_false (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (work : Work) (prior : Prior) (represented : Representable record)
+    (ready : SourceSavedQuestionModel.outcome record stop observed = .ok (.Ok work))
+    (matched : SourceTerminalMatchModel.outcome io observed work = .ok (.Ok true))
+    (present : savedPrior record = some prior)
+    (refused : SourcePriorEndMatchModel.outcome io.full record prior = .ok (.Ok false)) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io record stop observed = .ok (.Err .CorruptStore) := by
+  rw [actual_successful_match_continues_prior io record stop observed work represented ready matched]
+  exact prior_false io record prior present refused
+
+theorem actual_prior_error (io : Ports) (record : Record) (stop : Stop)
+    (observed : Observation) (work : Work) (prior : Prior) (error : Journal)
+    (represented : Representable record)
+    (ready : SourceSavedQuestionModel.outcome record stop observed = .ok (.Ok work))
+    (matched : SourceTerminalMatchModel.outcome io observed work = .ok (.Ok true))
+    (present : savedPrior record = some prior)
+    (failed : SourcePriorEndMatchModel.outcome io.full record prior = .ok (.Err error)) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io record stop observed = .ok (.Err error) := by
+  rw [actual_successful_match_continues_prior io record stop observed work represented ready matched]
+  exact prior_error io record prior error present failed
+
+theorem actual_writer_missing_capture (io : Ports) (record : Record) (absent : record.capture = none) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io record = .ok (.Ok false) := by
+  unfold SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed
+  simp [absent]
+
+theorem actual_writer_missing_end (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (present : record.capture = some captured) (absent : captured.«end» = none) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io record = .ok (.Ok false) := by
+  unfold SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed
+  simp [present, absent]
+
+theorem actual_writer_failed_validation (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (stop : Stop) (observed : Observation) (prior : Option Prior) (error : Journal)
+    (present : record.capture = some captured)
+    (ended : captured.«end» = some (.Terminated stop observed prior))
+    (failed : SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io record stop observed = .ok (.Err error)) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io record = .ok (.Err error) := by
+  unfold SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed
+  simp [present, ended, failed, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem actual_writer_validated_success (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (stop : Stop) (observed : Observation) (prior : Option Prior)
+    (present : record.capture = some captured)
+    (ended : captured.«end» = some (.Terminated stop observed prior))
+    (accepted : SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io record stop observed = .ok (.Ok ())) :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io record = .ok (.Ok true) := by
+  unfold SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed
+  simp [present, ended, accepted, core.result.Result.Insts.CoreOpsTry.branch]
+
+end
+end SandboxModel.Stage1Protocol.SourceDrainValidationProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_question_error_before_observation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_first_question_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_match_error_before_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_match_false_before_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_successful_match_continues_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_prior_false
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_prior_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_writer_missing_capture
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_writer_missing_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_writer_failed_validation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationProof.actual_writer_validated_success

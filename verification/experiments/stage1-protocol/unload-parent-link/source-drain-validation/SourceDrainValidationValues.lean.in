@@ -1,0 +1,158 @@
+import SourceDrainValidationProof
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceDrainValidationModel
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceDrainValidationValues
+open SourceDrainValidationModel
+
+def io : Ports := SourceTerminalMatchValues.io
+def saved : Record := SourceSavedQuestionValues.saved
+def stop : Stop := SourceSavedQuestionValues.stop
+def observation : Observation := SourceSavedQuestionValues.observation
+def expected : Work := SourceSavedQuestionValues.expected
+def captured : controller.lifecycle_inbox.source_work.full.CaptureWork := SourceSavedQuestionValues.captured
+
+def capturedWith (prior : Option Prior) : controller.lifecycle_inbox.source_work.full.CaptureWork :=
+  { captured with «end» := some (.Terminated stop observation prior) }
+def withPrior (prior : Option Prior) : Record :=
+  { saved with capture := some (capturedWith prior) }
+def ended : Record := withPrior none
+def badPrior : Prior := .NeverReleased SourceWorkMatch.Values.digest (some SourceSavedQuestionValues.sealAction)
+def mismatched : Record := withPrior (some badPrior)
+def requestEnd : SourceRequestEndMatchModel.Observation :=
+  { SourceRequestEndMatchValues.observation with
+    action := SourceSavedQuestionValues.sealAction,
+    source := saved.work.requirement.source }
+def returned : Prior := .WorkerEnded requestEnd
+def matchingPrior : Record := withPrior (some returned)
+def noRequest : Prior := .WorkerEnded { requestEnd with outcome := .NoRequest }
+def completedNoRequest : Record := withPrior (some noRequest)
+
+
+theorem represented (prior : Option Prior) : Representable (withPrior prior) := by
+  intro value present
+  have same : capturedWith prior = value := Option.some.inj present
+  subst value
+  exact SourceFullBindingValues.represented
+
+theorem question_outcome (prior : Option Prior) :
+    SourceSavedQuestionModel.outcome (withPrior prior) stop observation = .ok (.Ok expected) := by
+  change SourceSavedQuestionModel.outcome SourceSavedQuestionValues.saved
+    SourceSavedQuestionValues.stop SourceSavedQuestionValues.observation = .ok (.Ok SourceSavedQuestionValues.expected)
+  have accepted := SourceSavedQuestionValues.normal
+  rw [SourceSavedQuestionProof.actual_contract _ _ _ SourceSavedQuestionValues.represented] at accepted
+  exact accepted
+
+theorem observation_matches : SourceTerminalMatchModel.outcome io observation expected = .ok (.Ok true) := by
+  simp [SourceTerminalMatchModel.outcome, SourceTerminalMatchModel.binding,
+    SourceRequestEndMatchModel.binding, io, SourceTerminalMatchValues.io,
+    SourceRequestEndMatchValues.io, observation, expected,
+    SourceSavedQuestionValues.observation, SourceSavedQuestionValues.expected, SourceTerminalMatchValues.make]
+
+theorem saved_prior (prior : Option Prior) : savedPrior (withPrior prior) = prior := rfl
+
+theorem never_prior_false :
+    SourcePriorEndMatchModel.outcome io.full mismatched badPrior = .ok (.Ok false) := by
+  simp [SourcePriorEndMatchModel.outcome, mismatched, withPrior, capturedWith,
+    captured, SourceSavedQuestionValues.captured, SourcePriorEndMatchValues.captured, badPrior]
+
+theorem worker_prior_true :
+    SourcePriorEndMatchModel.outcome io.full matchingPrior returned = .ok (.Ok true) := by
+  simp [SourcePriorEndMatchModel.outcome, matchingPrior, withPrior, capturedWith,
+    captured, SourceSavedQuestionValues.captured, SourcePriorEndMatchValues.captured,
+    returned, requestEnd, SourceRequestEndMatchValues.observation, SourceRetireSpec.tryJournal,
+    SourceRequestEndMatchModel.outcome, SourceRequestEndMatchModel.binding,
+    io, SourceTerminalMatchValues.io, SourceRequestEndMatchValues.io,
+    SourceRequestEndMatchModel.StatusAllowed]
+
+theorem completed_no_request_prior_false :
+    SourcePriorEndMatchModel.outcome io.full completedNoRequest noRequest = .ok (.Ok false) := by
+  simp [SourcePriorEndMatchModel.outcome, completedNoRequest, withPrior, capturedWith,
+    captured, SourceSavedQuestionValues.captured, SourcePriorEndMatchValues.captured,
+    noRequest, requestEnd, SourceRequestEndMatchValues.observation, SourceRetireSpec.tryJournal,
+    SourceRequestEndMatchModel.outcome, SourceRequestEndMatchModel.binding,
+    io, SourceTerminalMatchValues.io, SourceRequestEndMatchValues.io,
+    SourceRequestEndMatchModel.StatusAllowed]
+
+theorem normal_no_prior :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io ended stop observation = .ok (.Ok ()) := by
+  rw [SourceDrainValidationProof.actual_successful_match_continues_prior io ended stop observation expected
+    (represented none) (question_outcome none) observation_matches]
+  exact SourceDrainValidationProof.no_prior io ended rfl
+
+theorem normal_matching_prior :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io matchingPrior stop observation = .ok (.Ok ()) := by
+  rw [SourceDrainValidationProof.actual_successful_match_continues_prior io matchingPrior stop observation expected
+    (represented (some returned)) (question_outcome (some returned)) observation_matches]
+  exact SourceDrainValidationProof.prior_true io matchingPrior returned rfl worker_prior_true
+
+theorem mismatched_prior_rejected :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io mismatched stop observation = .ok (.Err .CorruptStore) :=
+  SourceDrainValidationProof.actual_prior_false io mismatched stop observation expected badPrior
+    (represented (some badPrior)) (question_outcome (some badPrior)) observation_matches rfl never_prior_false
+
+theorem completed_no_request_rejected :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io completedNoRequest stop observation = .ok (.Err .CorruptStore) :=
+  SourceDrainValidationProof.actual_prior_false io completedNoRequest stop observation expected noRequest
+    (represented (some noRequest)) (question_outcome (some noRequest)) observation_matches rfl completed_no_request_prior_false
+
+theorem writer_normal :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io ended = .ok (.Ok true) :=
+  SourceDrainValidationProof.actual_writer_validated_success io ended (capturedWith none)
+    stop observation none rfl rfl normal_no_prior
+
+theorem writer_matching_prior :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io matchingPrior = .ok (.Ok true) :=
+  SourceDrainValidationProof.actual_writer_validated_success io matchingPrior (capturedWith (some returned))
+    stop observation (some returned) rfl rfl normal_matching_prior
+
+theorem writer_bad_prior_rejected :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io mismatched = .ok (.Err .CorruptStore) :=
+  SourceDrainValidationProof.actual_writer_failed_validation io mismatched (capturedWith (some badPrior))
+    stop observation (some badPrior) .CorruptStore rfl rfl mismatched_prior_rejected
+
+theorem writer_completed_no_request_rejected :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io completedNoRequest = .ok (.Err .CorruptStore) :=
+  SourceDrainValidationProof.actual_writer_failed_validation io completedNoRequest (capturedWith (some noRequest))
+    stop observation (some noRequest) .CorruptStore rfl rfl completed_no_request_rejected
+
+theorem writer_missing_capture_control :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io SourceSavedQuestionValues.missingCapture = .ok (.Ok false) :=
+  SourceDrainValidationProof.actual_writer_missing_capture io SourceSavedQuestionValues.missingCapture rfl
+
+theorem writer_missing_end_before_full_conflict :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io SourceSavedQuestionValues.conflictBeforeAction = .ok (.Ok false) :=
+  SourceDrainValidationProof.actual_writer_missing_end io SourceSavedQuestionValues.conflictBeforeAction _ rfl rfl
+
+theorem zero_inode_precedes_full_conflict :
+    SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+      io SourceSavedQuestionValues.conflictBeforeAction stop SourceSavedQuestionValues.zeroInode = .ok (.Err .CorruptStore) := by
+  apply SourceDrainValidationProof.actual_question_error_before_observation
+  change SourceSavedQuestionActual.controller.lifecycle_inbox.source_work.full.drain.question.from_saved
+    SourceSavedQuestionValues.conflictBeforeAction SourceSavedQuestionValues.stop SourceSavedQuestionValues.zeroInode = _
+  exact SourceSavedQuestionValues.zero_inode_precedes_full_conflict
+
+end SandboxModel.Stage1Protocol.SourceDrainValidationValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.represented
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.question_outcome
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.observation_matches
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.saved_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.never_prior_false
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.worker_prior_true
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.completed_no_request_prior_false
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.normal_no_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.normal_matching_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.mismatched_prior_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.completed_no_request_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.writer_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.writer_matching_prior
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.writer_bad_prior_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.writer_completed_no_request_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.writer_missing_capture_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.writer_missing_end_before_full_conflict
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceDrainValidationValues.zero_inode_precedes_full_conflict

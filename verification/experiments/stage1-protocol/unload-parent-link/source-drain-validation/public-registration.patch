@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-drain-validation 在固定 b0d791cc 的实际抽取视图连接原 from_saved、完整终止观察匹配和 late prior 检查及 writer_closed；复用#1011/#1008/#1007同一规格、112类与167个完整原体。原请求错误最先，观察编码/不匹配早于prior；prior错误原样传播、false为CorruptStore。完整目标196/1062与198/1068，同一Contract和WriterContract否定真实漏late返回。
++> 原闭包借用及命名返回借用的固定工具失败保留，只展开纯Option选择并以原A6模型证明该值关系；无业务opaque或生成体编辑。晚匹配失败前已有请求值，不能冒称从未构造。Writer Bool不是物理关闭/释放资格；原生52项四视图及恢复交ning。当前World/SQL/事务/未知提交/耐久、物理事实/认证及完整JSON/TLS/系统仍开放，公共登记/覆盖仅交候选。
+ ## V3 首次卸载使用同一条原执行记录

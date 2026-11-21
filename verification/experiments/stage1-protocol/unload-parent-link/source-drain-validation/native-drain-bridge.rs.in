@@ -1,0 +1,16 @@
+// Disposable cfg(test) forwarding only. No JSON, physical or transaction fact.
+#[cfg(test)]
+pub(in crate::controller::lifecycle_inbox::source_work) fn source_drain_validate_for_test(
+    record: &SourceWorkRecord,
+    stop: core::StopCoverage,
+    observation: &TerminatedCaptureObservation,
+) -> Result<(), JournalError> {
+    validate_record(record, stop, observation)
+}
+
+#[cfg(test)]
+pub(in crate::controller::lifecycle_inbox::source_work) fn source_drain_writer_closed_for_test(
+    record: &SourceWorkRecord,
+) -> Result<bool, JournalError> {
+    writer_closed(record)
+}
