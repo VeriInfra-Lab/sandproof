@@ -1,0 +1,19 @@
+import SourceWorkerGuardTypes
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceWorkerGuardActual
+def alloc.string.String.Insts.CoreOpsDerefDerefStr.deref := SourceFullWorkGuardActual.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+def alloc.string.String.is_empty := SourceFullWorkGuardActual.alloc.string.String.is_empty
+def alloc.string.String.len := SourceFullWorkGuardActual.alloc.string.String.len
+def core.str.Str.bytes := SourceFullWorkGuardActual.core.str.Str.bytes
+def core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all := @SourceFullWorkGuardActual.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all
+end SandboxModel.Stage1Protocol.SourceWorkerGuardActual
+
+namespace SandboxModel.Stage1Protocol.SourceWorkerGuardWrongActual
+def alloc.string.String.Insts.CoreOpsDerefDerefStr.deref := SourceFullWorkGuardActual.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+def alloc.string.String.is_empty := SourceFullWorkGuardActual.alloc.string.String.is_empty
+def alloc.string.String.len := SourceFullWorkGuardActual.alloc.string.String.len
+def core.str.Str.bytes := SourceFullWorkGuardActual.core.str.Str.bytes
+def core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all := @SourceFullWorkGuardActual.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all
+end SandboxModel.Stage1Protocol.SourceWorkerGuardWrongActual

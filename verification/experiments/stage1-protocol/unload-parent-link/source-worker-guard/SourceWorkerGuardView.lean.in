@@ -1,0 +1,10 @@
+import SourceWorkerGuardLibrary
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceWorkerGuardTypes
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+noncomputable section
+namespace SandboxModel.Stage1Protocol.SourceWorkerGuardActual
+-- ACTUAL COMPLETE WORKER FUNCTIONS
+end SandboxModel.Stage1Protocol.SourceWorkerGuardActual

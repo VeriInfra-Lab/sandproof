@@ -1,0 +1,103 @@
+// Candidates for the original data constructor and shape classifier only.
+// A process/digest value proves no ownership, existence, gate or permission.
+#[test]
+fn source_worker_guard_constructor_preserves_complete_process_and_digest() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, request) = full_work_guard_fixture(&directory.path().join("worker-normal.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let process = request.pause.source.clone();
+    let first_digest = ContentDigest::from_sha256([0x5a; 32]);
+    let first = crate::capture::CaptureWorkerBinding::new(process.clone(), first_digest).unwrap();
+    assert!(first.valid());
+    assert_eq!(first.process(), &process);
+    assert_eq!(first.job_digest(), &first_digest);
+    let second_digest = ContentDigest::from_sha256([0x6b; 32]);
+    let second = crate::capture::CaptureWorkerBinding::new(process.clone(), second_digest).unwrap();
+    assert!(second.valid());
+    assert_eq!(second.process(), &process);
+    assert_eq!(second.job_digest(), &second_digest);
+    assert_ne!(first, second);
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_worker_guard_checks_original_pid_and_graphic_byte_bounds() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, request) = full_work_guard_fixture(&directory.path().join("worker-shape.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let process = request.pause.source.clone();
+    let digest = ContentDigest::from_sha256([0x5a; 32]);
+    let normal = crate::capture::CaptureWorkerBinding::new(process.clone(), digest).unwrap();
+    let mut invalid = Vec::new();
+    let mut no_pid = process.clone();
+    no_pid.pid = 0;
+    invalid.push(no_pid);
+    for boot in [
+        String::new(),
+        "a".repeat(129),
+        " ".into(),
+        "\u{7f}".into(),
+        "é".into(),
+        "a\0b".into(),
+    ] {
+        let mut changed = process.clone();
+        changed.boot_id = boot;
+        invalid.push(changed);
+    }
+    for changed in invalid {
+        assert!(matches!(
+            crate::capture::CaptureWorkerBinding::new(changed.clone(), digest),
+            Err(JournalError::UnsupportedInput)
+        ));
+        // Exercise original private-field deserialization into a decoded
+        // value; this is no proof of a complete JSON/network/receipt path.
+        let mut encoded = serde_json::to_value(&normal).unwrap();
+        encoded["process"] = serde_json::to_value(&changed).unwrap();
+        let decoded: crate::capture::CaptureWorkerBinding =
+            serde_json::from_value(encoded).unwrap();
+        assert_eq!(decoded.process(), &changed);
+        assert_eq!(decoded.job_digest(), &digest);
+        assert!(!decoded.valid());
+    }
+    for boot in ["!".to_owned(), "~".to_owned(), "a".repeat(128)] {
+        let mut changed = process.clone();
+        changed.boot_id = boot;
+        let worker = crate::capture::CaptureWorkerBinding::new(changed.clone(), digest).unwrap();
+        assert!(worker.valid());
+        assert_eq!(worker.process(), &changed);
+        assert_eq!(worker.job_digest(), &digest);
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_worker_guard_rejects_zero_original_start_ticks() {
+    let directory = tempfile::tempdir().unwrap();
+    let (journal, request) =
+        full_work_guard_fixture(&directory.path().join("worker-zero-ticks.db"));
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut process = request.pause.source.clone();
+    process.start_time_ticks = 0;
+    let reply =
+        crate::capture::CaptureWorkerBinding::new(process, ContentDigest::from_sha256([0x5a; 32]));
+    assert!(
+        matches!(reply, Err(JournalError::UnsupportedInput)),
+        "worker constructor must reject zero original start ticks"
+    );
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}

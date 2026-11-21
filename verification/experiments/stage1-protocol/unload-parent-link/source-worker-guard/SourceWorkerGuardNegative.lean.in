@@ -1,0 +1,68 @@
+import SourceWorkerGuardWrong
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceWorkerGuardModel SourceWorkerGuardValues
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+
+namespace SandboxModel.Stage1Protocol.SourceWorkerGuardNegative
+noncomputable section
+
+/-- Exact relation between the two actual generated classifiers, not a weak
+replacement contract. The wrong constructor still returns its original data. -/
+theorem wrong_valid_fixed_ticks (value : Worker) :
+    SourceWorkerGuardWrongActual.capture.launch.CaptureWorkerBinding.valid value =
+      SourceWorkerGuardActual.capture.launch.CaptureWorkerBinding.valid
+        { value with process := { value.process with start_time_ticks := 1#u64 } } := by
+  rfl
+
+theorem normal_valid_control :
+    SourceWorkerGuardWrongActual.capture.launch.CaptureWorkerBinding.valid worker = .ok true := by
+  rw [wrong_valid_fixed_ticks]
+  exact normal_valid
+
+theorem normal_constructor_control :
+    SourceWorkerGuardWrongActual.capture.launch.CaptureWorkerBinding.new process digest = .ok (.Ok worker) := by
+  unfold SourceWorkerGuardWrongActual.capture.launch.CaptureWorkerBinding.new
+  have accepted := normal_valid_control
+  simp only [worker] at accepted
+  rw [accepted]
+  simp [worker]
+
+theorem actual_zero_valid_accepted :
+    SourceWorkerGuardWrongActual.capture.launch.CaptureWorkerBinding.valid zeroWorker = .ok true := by
+  rw [wrong_valid_fixed_ticks]
+  exact normal_valid
+
+theorem actual_zero_constructor_accepted :
+    SourceWorkerGuardWrongActual.capture.launch.CaptureWorkerBinding.new zeroProcess digest = .ok (.Ok zeroWorker) := by
+  unfold SourceWorkerGuardWrongActual.capture.launch.CaptureWorkerBinding.new
+  have accepted := actual_zero_valid_accepted
+  simp only [zeroWorker] at accepted
+  rw [accepted]
+  simp [zeroWorker]
+
+theorem violates_same_valid_contract :
+    ¬ ValidContract SourceWorkerGuardWrongActual.capture.launch.CaptureWorkerBinding.valid := by
+  intro contract
+  have promised := contract zeroWorker zero_represented
+  rw [actual_zero_valid_accepted] at promised
+  simp [zeroWorker, zero_not_allowed] at promised
+
+theorem violates_same_constructor_contract :
+    ¬ ConstructorContract SourceWorkerGuardWrongActual.capture.launch.CaptureWorkerBinding.new := by
+  intro contract
+  have promised := contract zeroProcess digest zero_represented
+  rw [actual_zero_constructor_accepted] at promised
+  simp [outcome, zero_not_allowed] at promised
+
+end
+end SandboxModel.Stage1Protocol.SourceWorkerGuardNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.wrong_valid_fixed_ticks
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.normal_valid_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.normal_constructor_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.actual_zero_valid_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.actual_zero_constructor_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.violates_same_valid_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkerGuardNegative.violates_same_constructor_contract

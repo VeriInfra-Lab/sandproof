@@ -1,0 +1,7 @@
+import SourceFullWorkGuardValues
+open Aeneas Aeneas.Std SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceWorkerGuardTypes
+-- ACTUAL WORKER CALLBACK TYPE
+end SandboxModel.Stage1Protocol.SourceWorkerGuardTypes
