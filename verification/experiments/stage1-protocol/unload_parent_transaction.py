@@ -192,8 +192,7 @@ def run_formal(output, result, identity, receipt_path, native_archive, native_ma
         if case == 'revision':
             roots, source = plan['roots'], plan['source_commit']
             expected_roots = [root, 'ParentRejects']
-            files = {name.replace('.', '/') + '.lean': row['sha256']
-                     for name, row in plan['modules'].items()}
+            files = {name: row['sha256'] for name, row in plan['modules'].items()}
         else:
             roots, source, files = [plan['root']], plan['source'], plan['files']
             expected_roots = [root]
