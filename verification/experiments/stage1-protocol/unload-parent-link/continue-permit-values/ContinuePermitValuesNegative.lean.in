@@ -1,0 +1,43 @@
+import ContinuePermitValuesWrong
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes ContinuePermitValuesModel
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.ContinuePermitValuesNegative
+open ContinuePermitValuesValues
+local notation "WrongCtor" => ContinuePermitValuesWrongActual.capture.continuation.OriginalContinuePermit.after_dispatch_commit
+
+-- Actual wrong constructor; refute the unchanged complete ConstructorContract.
+theorem wrong_constructor_zero (action : Action) (binding : Digest) :
+    WrongCtor action binding = .ok { action, work_binding := zeroBinding } := by
+  simp [ContinuePermitValuesWrongActual.capture.continuation.OriginalContinuePermit.after_dispatch_commit, zeroBinding, SourceWorkMatch.Values.digest,
+    SourceEndReceiptActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256]
+  apply Aeneas.Std.Array.ext
+  simp only [Aeneas.Std.Array.repeat_val, Aeneas.Std.Array.from_val]
+  decide
+
+theorem wrong_action_control (action : Action) (binding : Digest) :
+    (do let permit ← WrongCtor action binding; ContinuePermitValuesProof.readAll permit) =
+      .ok (action,zeroBinding) := by
+  rw [wrong_constructor_zero]
+  simp only [bind_tc_ok, ContinuePermitValuesProof.read_all_complete]
+
+theorem wrong_normal_differs :
+    WrongCtor inputAction inputBinding ≠ .ok { action := inputAction, work_binding := inputBinding } := by
+  intro wrong
+  rw [wrong_constructor_zero] at wrong
+  have fields := congrArg (fun permit : Permit => permit.work_binding) (Result.ok_injective wrong)
+  exact binding_differs_from_zero fields.symm
+
+theorem wrong_refutes_same_complete_contract : ¬ ConstructorContract WrongCtor := by
+  intro contract
+  exact wrong_normal_differs (contract inputAction inputBinding)
+
+theorem wrong_zero_control :
+    WrongCtor inputAction zeroBinding = .ok { action := inputAction, work_binding := zeroBinding } :=
+  wrong_constructor_zero inputAction zeroBinding
+end SandboxModel.Stage1Protocol.ContinuePermitValuesNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesNegative.wrong_constructor_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesNegative.wrong_action_control
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesNegative.wrong_normal_differs
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesNegative.wrong_refutes_same_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesNegative.wrong_zero_control

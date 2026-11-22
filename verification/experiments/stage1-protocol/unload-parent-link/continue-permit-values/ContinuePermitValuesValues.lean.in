@@ -1,0 +1,28 @@
+import ContinuePermitValuesProof
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes ContinuePermitValuesModel
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.ContinuePermitValuesValues
+noncomputable section
+def inputAction : Action := SourceSavedQuestionValues.sealAction
+def inputBinding : Digest := SourceWorkMatch.Values.otherDigest
+def zeroBinding : Digest := SourceWorkMatch.Values.digest
+
+theorem binding_differs_from_zero : inputBinding ≠ zeroBinding := by decide
+
+theorem normal_complete :
+    (do
+      let permit ← ContinuePermitValuesActual.capture.continuation.OriginalContinuePermit.after_dispatch_commit inputAction inputBinding
+      ContinuePermitValuesProof.readAll permit) = .ok (inputAction,inputBinding) :=
+  ContinuePermitValuesProof.construct_then_read_complete inputAction inputBinding
+
+theorem zero_control :
+    (do
+      let permit ← ContinuePermitValuesActual.capture.continuation.OriginalContinuePermit.after_dispatch_commit inputAction zeroBinding
+      ContinuePermitValuesProof.readAll permit) = .ok (inputAction,zeroBinding) :=
+  ContinuePermitValuesProof.construct_then_read_complete inputAction zeroBinding
+end
+end SandboxModel.Stage1Protocol.ContinuePermitValuesValues
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesValues.binding_differs_from_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesValues.normal_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesValues.zero_control

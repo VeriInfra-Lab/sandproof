@@ -1,0 +1,42 @@
+import ContinuePermitValuesView
+import ContinuePermitValuesModel
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes ContinuePermitValuesModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+namespace SandboxModel.Stage1Protocol.ContinuePermitValuesProof
+local notation "Ctor" => ContinuePermitValuesActual.capture.continuation.OriginalContinuePermit.after_dispatch_commit
+local notation "ReadAction" => ContinuePermitValuesActual.capture.continuation.OriginalContinuePermit.impl.action
+local notation "ReadBinding" => ContinuePermitValuesActual.capture.continuation.OriginalContinuePermit.impl.work_binding
+
+theorem constructor_complete_contract : ConstructorContract Ctor := by
+  intro action binding
+  rfl
+
+theorem action_reader (permit : Permit) : ReadAction permit = .ok permit.action := rfl
+
+theorem binding_reader (permit : Permit) : ReadBinding permit = .ok permit.work_binding := rfl
+
+theorem readers_complete_contract : ReadersContract ReadAction ReadBinding := by
+  intro permit
+  exact ⟨action_reader permit, binding_reader permit⟩
+
+def readAll (permit : Permit) : Result (Action × Digest) := do
+  let action ← ReadAction permit
+  let binding ← ReadBinding permit
+  .ok (action,binding)
+
+theorem read_all_complete (permit : Permit) : readAll permit = .ok (permit.action,permit.work_binding) := by
+  simp [readAll, action_reader, binding_reader]
+
+theorem construct_then_read_complete (action : Action) (binding : Digest) :
+    (do let permit ← Ctor action binding; readAll permit) = .ok (action,binding) := by
+  rw [constructor_complete_contract action binding]
+  simp only [bind_tc_ok, read_all_complete]
+end SandboxModel.Stage1Protocol.ContinuePermitValuesProof
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesProof.constructor_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesProof.action_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesProof.binding_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesProof.readers_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesProof.read_all_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuePermitValuesProof.construct_then_read_complete

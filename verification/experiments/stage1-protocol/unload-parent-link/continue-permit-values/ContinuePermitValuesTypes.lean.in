@@ -1,0 +1,7 @@
+import SourceEndAccessor
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceRetireTypes
+-- ACTUAL COMPLETE PERMIT VALUE TYPES
+end SandboxModel.Stage1Protocol.SourceRetireTypes
