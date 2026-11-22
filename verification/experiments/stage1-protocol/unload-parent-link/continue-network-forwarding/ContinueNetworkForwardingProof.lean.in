@@ -1,0 +1,163 @@
+import ContinueNetworkForwardingView
+import ContinueNetworkForwardingWrong
+import ContinueNetworkForwardingInline
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes ContinueWorkBindingModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+namespace SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof
+noncomputable section
+local notation "Root" => ContinueNetworkForwardingActual.capture.continuation.OriginalContinueWorkRequest.binding_digest
+local notation "WrongRoot" => ContinueNetworkForwardingWrongActual.capture.continuation.OriginalContinueWorkRequest.binding_digest
+local notation "InlineWrong" => ContinueNetworkForwardingInlineActual.capture.continuation.OriginalContinueWorkRequest.binding_digest
+local notation "Input" => ContinueNetworkForwardingActual.capture.continuation.OriginalContinueWorkRequest.binding_input_with_policy
+local notation "WrongInput" => ContinueNetworkForwardingWrongActual.capture.continuation.OriginalContinueWorkRequest.binding_input_with_policy
+
+/-- These are the original shared arguments at the actual caller sites.
+    The generated root invokes the same transparent method with these values. -/
+def suppliedInput (question : Question) : Result BindingInput := Input question question.network_policy
+def replacedInput (question : Question) : Result BindingInput := WrongInput question .DenyAll
+def denied (question : Question) : Question := { question with network_policy := .DenyAll }
+
+/-- A value representation inverse, not an executed factory or a saved fact. -/
+def questionOfInput (value : BindingInput) : Question :=
+  ⟨value.1, value.2.1, value.2.2.1, value.2.2.2.1, value.2.2.2.2.1, value.2.2.2.2.2⟩
+
+theorem tuple_complete (question : Question) (policy : NetworkPolicy) :
+    Input question policy = .ok (bindingInput { question with network_policy := policy }) := rfl
+
+theorem wrong_tuple_same (question : Question) (policy : NetworkPolicy) :
+    WrongInput question policy = Input question policy := rfl
+
+theorem supplied_input_complete (question : Question) :
+    suppliedInput question = .ok (bindingInput question) := rfl
+
+theorem replaced_input_complete (question : Question) :
+    replacedInput question = .ok (bindingInput (denied question)) := rfl
+
+theorem correct_same_original (io : Ports) (question : Question) :
+    Root io question = ContinueWorkBindingActual.capture.continuation.OriginalContinueWorkRequest.binding_digest io question := by
+  simp only [ContinueNetworkForwardingActual.capture.continuation.OriginalContinueWorkRequest.binding_digest,
+    ContinueNetworkForwardingActual.capture.continuation.OriginalContinueWorkRequest.binding_input_with_policy,
+    ContinueWorkBindingActual.capture.continuation.OriginalContinueWorkRequest.binding_digest, bind_tc_ok]
+  rfl
+
+theorem wrong_same_unfactored (io : Ports) (question : Question) :
+    WrongRoot io question = InlineWrong io question := by
+  simp only [ContinueNetworkForwardingWrongActual.capture.continuation.OriginalContinueWorkRequest.binding_digest,
+    ContinueNetworkForwardingWrongActual.capture.continuation.OriginalContinueWorkRequest.binding_input_with_policy,
+    ContinueNetworkForwardingInlineActual.capture.continuation.OriginalContinueWorkRequest.binding_digest, bind_tc_ok]
+  rfl
+
+theorem correct_result (io : Ports) (question : Question) : Root io question = outcome io question := by
+  rw [correct_same_original]
+  exact ContinueWorkBindingProof.actual_contract io question
+
+theorem wrong_result (io : Ports) (question : Question) : WrongRoot io question = outcome io (denied question) := by
+  rw [wrong_same_unfactored]
+  unfold ContinueNetworkForwardingInlineActual.capture.continuation.OriginalContinueWorkRequest.binding_digest outcome
+  apply congrArg (fun next => io.encode (bindingInput (denied question)) >>= next)
+  funext encoded
+  cases encoded <;>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SourceRetireSpec.vector_deref,
+      SourceEndReceiptActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256]
+
+theorem normal_complete_contract (io : Ports) : CompleteContract io suppliedInput (Root io) :=
+  ⟨supplied_input_complete, correct_result io⟩
+
+theorem input_representation (question : Question) : questionOfInput (bindingInput question) = question := rfl
+
+/-- Connect the actual caller prefix to the same whole-result specification.
+    Equality of port functions does not assert physical calls or elapsed time. -/
+theorem correct_actual_callsite (io : Ports) (question : Question) :
+    Root io question = (do let value ← suppliedInput question; outcome io (questionOfInput value)) := by
+  rw [correct_result, supplied_input_complete]
+  simp only [bind_tc_ok, input_representation]
+
+theorem wrong_actual_callsite (io : Ports) (question : Question) :
+    WrongRoot io question = (do let value ← replacedInput question; outcome io (questionOfInput value)) := by
+  rw [wrong_result, replaced_input_complete]
+  simp only [bind_tc_ok, input_representation]
+
+/-- Same complete contract as the parent and correct version. No hash law. -/
+theorem non_deny_refutes_same_contract (io : Ports) (question : Question)
+    (different : question.network_policy ≠ .DenyAll) :
+    ¬ CompleteContract io replacedInput (WrongRoot io) := by
+  intro claimed
+  have equality := Result.ok_injective (claimed.1 question)
+  have policy := congrArg (fun value : BindingInput => value.2.2.2.2.1) equality
+  change sandbox_controller_core.model.NetworkPolicy.DenyAll = question.network_policy at policy
+  exact different policy.symm
+
+theorem non_deny_refutes_unfactored_contract (io : Ports) (question : Question)
+    (different : question.network_policy ≠ .DenyAll) :
+    ¬ CompleteContract io replacedInput (InlineWrong io) := by
+  intro claimed
+  apply non_deny_refutes_same_contract io question different
+  refine ⟨claimed.1, ?_⟩
+  intro value
+  rw [wrong_same_unfactored]
+  exact claimed.2 value
+
+/-- DenyAll is a legal control, with all other fields and both ports arbitrary. -/
+theorem deny_control (io : Ports) (question : Question) (same : question.network_policy = .DenyAll) :
+    WrongRoot io question = Root io question := by
+  rw [wrong_result, correct_result]
+  have identical : denied question = question := by cases question; simp_all [denied]
+  exact congrArg (outcome io) identical
+
+def otherPolicy : NetworkPolicy := .Ipv4 false
+  (alloc.vec.Vec.from [⟨0x0a000000#u32, 8#u8⟩] (by scalar_tac))
+  (alloc.vec.Vec.from [⟨0x0a010000#u32, 16#u8⟩] (by scalar_tac))
+def counterQuestion : Question := { SourceEndAccessorValues.question with network_policy := otherPolicy }
+
+theorem counter_non_deny : counterQuestion.network_policy ≠ .DenyAll := by
+  simp [counterQuestion, otherPolicy]
+
+theorem counterexample (io : Ports) : ¬ CompleteContract io replacedInput (WrongRoot io) :=
+  non_deny_refutes_same_contract io counterQuestion counter_non_deny
+
+theorem normal_all_fields :
+    suppliedInput SourceEndAccessorValues.question = .ok (bindingInput SourceEndAccessorValues.question) :=
+  supplied_input_complete SourceEndAccessorValues.question
+
+theorem normal_non_deny_input : suppliedInput counterQuestion = .ok (bindingInput counterQuestion) :=
+  supplied_input_complete counterQuestion
+
+theorem actual_json_first (io : Ports) (question : Question) (error : JsonError)
+    (encoded : io.encode (bindingInput question) = .ok (.Err error)) :
+    Root io question = .ok (.Err error) := by
+  rw [correct_same_original]
+  exact ContinueWorkBindingProof.actual_json_first io question error encoded
+
+theorem actual_all_bytes (io : Ports) (question : Question) (bytes : Bytes)
+    (encoded : io.encode (bindingInput question) = .ok (.Ok bytes)) :
+    Root io question = (do let digest ← io.full.digest bytes.slice; .ok (.Ok digest)) := by
+  rw [correct_same_original]
+  exact ContinueWorkBindingProof.actual_complete_bytes io question bytes encoded
+end
+end SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.tuple_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.wrong_tuple_same
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.supplied_input_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.replaced_input_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.correct_same_original
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.wrong_same_unfactored
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.correct_result
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.wrong_result
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.normal_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.input_representation
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.correct_actual_callsite
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.wrong_actual_callsite
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.non_deny_refutes_same_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.non_deny_refutes_unfactored_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.deny_control
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.counter_non_deny
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.counterexample
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.normal_all_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.normal_non_deny_input
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.actual_json_first
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.actual_all_bytes
