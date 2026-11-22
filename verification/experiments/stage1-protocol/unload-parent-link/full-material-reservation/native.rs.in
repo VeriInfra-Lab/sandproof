@@ -1,0 +1,37 @@
+// The original API/SQL fixture supplies a full decoded value. Integer boundary
+// edits exercise the arithmetic interface, not deployable physical allocations.
+#[test]
+fn source_full_material_reservation_preserves_complete_checked_formula() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&dir.path().join("material-formula.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let stored = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let original = record.capture.as_ref().unwrap().full.clone();
+    assert!(original.valid());
+    let inputs: [(u64, u64, u64); 7] = [
+        (0, 0, 0),
+        (original.state_bytes, original.memory_bytes, original.disk_bytes),
+        (1, 2, 3),
+        (u64::MAX, 1, 0),
+        (u64::MAX - 1, 0, 2),
+        (u64::MAX / 2 + 1, 0, 0),
+        (u64::MAX / 2, 0, 0),
+    ];
+    for (state, memory, disk) in inputs {
+        let mut full = original.clone();
+        full.state_bytes = state;
+        full.memory_bytes = memory;
+        full.disk_bytes = disk;
+        let mathematical = 2 * (u128::from(state) + u128::from(memory) + u128::from(disk))
+            + 2 * 262_144 + 65_536;
+        let actual = full::source_full_material_reservation_for_test(&full);
+        match u64::try_from(mathematical) {
+            Ok(expected) => assert_eq!(actual.unwrap(), expected,
+                "Full material reservation must include both complete copies"),
+            Err(_) => assert!(matches!(actual, Err(JournalError::MaintenanceCapacity)),
+                "Full material reservation must reject every arithmetic overflow"),
+        }
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), stored);
+}

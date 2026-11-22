@@ -1,0 +1,99 @@
+import FullMaterialReservationView
+import FullMaterialReservationModel
+import SourceReservationSpec
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes FullMaterialReservationModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.FullMaterialReservationProof
+local notation "R" => FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation
+local notation "AndThen" => FullMaterialReservationActual.core.option.Option.and_then
+local notation "DiskFn" => FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation.closure.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64.call_once
+local notation "DiskDict" => FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation.closure.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64
+local notation "DoubleFn" => FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation.closure_1.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64.call_once
+local notation "DoubleDict" => FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation.closure_1.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64
+local notation "FinalFn" => FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation.closure_2.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64.call_once
+local notation "FinalDict" => FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation.closure_2.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64
+
+theorem outcome_success_iff (full : Full) (total : U64) :
+    outcome full = .ok (.Ok total) ↔ total.val = amount full := by
+  have known := SourceReservationSpec.try_mk_success_iff (amount full) total
+  cases sampled : UScalar.tryMkOpt .U64 (amount full) <;>
+    simpa [outcome, UScalar.tryMk, sampled, Result.ofOption] using known
+
+theorem outcome_overflow_iff (full : Full) :
+    outcome full = .ok (.Err .MaintenanceCapacity) ↔ U64.max < amount full := by
+  have known := SourceReservationSpec.try_mk_overflow_iff (amount full)
+  cases sampled : UScalar.tryMkOpt .U64 (amount full) <;>
+    simpa [outcome, UScalar.tryMk, sampled, Result.ofOption] using known
+
+theorem final_constant (n : U64) : FinalFn () n = .ok (U64.checked_add n 589824#u64) := by
+  obtain ⟨product, multiplied, productValue⟩ := WP.spec_imp_exists (U64.mul_spec
+    (x := 2#u64) (y := 262144#u64) (by scalar_tac))
+  obtain ⟨total, added, totalValue⟩ := WP.spec_imp_exists (U64.add_spec
+    (x := product) (y := 65536#u64) (by scalar_tac))
+  have totalExact : total = 589824#u64 := by
+    apply UScalar.eq_of_val_eq
+    scalar_tac
+  simp only [FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation.closure_2.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64.call_once,
+    multiplied, bind_tc_ok, added, totalExact]
+
+theorem actual_steps (full : Full) : FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation full =
+    match U64.checked_add full.state_bytes full.memory_bytes with
+    | none => .ok (.Err .MaintenanceCapacity)
+    | some first => match U64.checked_add first full.disk_bytes with
+      | none => .ok (.Err .MaintenanceCapacity)
+      | some combined => match U64.checked_mul combined 2#u64 with
+        | none => .ok (.Err .MaintenanceCapacity)
+        | some doubled => match U64.checked_add doubled 589824#u64 with
+          | none => .ok (.Err .MaintenanceCapacity)
+          | some total => .ok (.Ok total) := by
+  simp only [FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation, lift, bind_tc_ok]
+  cases h0 : U64.checked_add full.state_bytes full.memory_bytes with
+  | none => simp only [FullMaterialReservationActual.core.option.Option.and_then, bind_tc_ok, core.option.Option.ok_or]
+  | some first =>
+    simp only [FullMaterialReservationActual.core.option.Option.and_then, FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation.closure.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64.call_once, bind_tc_ok]
+    cases h1 : U64.checked_add first full.disk_bytes with
+    | none => simp only [bind_tc_ok, core.option.Option.ok_or]
+    | some combined =>
+      simp only [FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation.closure_1.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64.call_once, bind_tc_ok]
+      cases h2 : U64.checked_mul combined 2#u64 with
+      | none => simp only [bind_tc_ok, core.option.Option.ok_or]
+      | some doubled =>
+        simp only [final_constant, bind_tc_ok, core.option.Option.ok_or]
+        cases U64.checked_add doubled 589824#u64 <;> rfl
+
+theorem checked_add_value (left right returned : U64)
+    (reply : U64.checked_add left right = some returned) : returned.val = left.val + right.val := by
+  have specification := U64.checked_add_bv_spec left right
+  rw [reply] at specification
+  exact specification.2.1
+
+theorem checked_mul_value (left right returned : U64)
+    (reply : U64.checked_mul left right = some returned) : returned.val = left.val * right.val := by
+  have specification := U64.checked_mul_bv_spec left right
+  rw [reply] at specification
+  exact specification.2.1
+
+theorem checked_add_absent (left right : U64)
+    (reply : U64.checked_add left right = none) : U64.max < left.val + right.val := by
+  have specification := U64.checked_add_bv_spec left right
+  rw [reply] at specification
+  exact specification
+
+theorem checked_mul_absent (left right : U64)
+    (reply : U64.checked_mul left right = none) : U64.max < left.val * right.val := by
+  have specification := U64.checked_mul_bv_spec left right
+  rw [reply] at specification
+  exact specification
+
+end SandboxModel.Stage1Protocol.FullMaterialReservationProof
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationProof.outcome_success_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationProof.outcome_overflow_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationProof.final_constant
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationProof.actual_steps
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationProof.checked_add_value
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationProof.checked_mul_value
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationProof.checked_add_absent
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationProof.checked_mul_absent

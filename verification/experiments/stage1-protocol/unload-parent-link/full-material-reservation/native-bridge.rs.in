@@ -1,0 +1,6 @@
+#[cfg(test)]
+pub(super) fn source_full_material_reservation_for_test(
+    full: &FullCaptureWorkRequest,
+) -> Result<u64, JournalError> {
+    reservation(full)
+}

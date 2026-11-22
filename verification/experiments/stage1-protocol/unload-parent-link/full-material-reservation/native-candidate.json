@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "ordinary_native_executed": false,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "parent_commit": "29a97e6441167ccbf0abd8f27655303c63e9925d",
+  "parent_assertions": 60,
+  "additional_assertions": [
+    "source_full_material_reservation_preserves_complete_checked_formula"
+  ],
+  "total_assertions_per_view": 61,
+  "native_expected_variants": [
+    "original",
+    "adapted-original",
+    "omit-second-material-copy",
+    "adapted-omit-second-material-copy"
+  ],
+  "expected": {
+    "original": {
+      "passed": 61,
+      "failed": 0
+    },
+    "adapted-original": {
+      "passed": 61,
+      "failed": 0
+    },
+    "omit-second-material-copy": {
+      "passed": 60,
+      "failed": 1
+    },
+    "adapted-omit-second-material-copy": {
+      "passed": 60,
+      "failed": 1
+    }
+  },
+  "rejection": "Full material reservation must include both complete copies",
+  "restoration": "independent original/source/target all61 after each of two wrong views",
+  "scope": "decoded Full;original valid control,zero,four actual u64 overflow sites;no physical/deployment/authorization fact",
+  "pending": [
+    "ning actual compile/test/library and binary source binding/two independent restores",
+    "public registry/coverage adoption and complete formal checks"
+  ]
+}

@@ -1,0 +1,78 @@
+import FullMaterialReservationSteps
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes FullMaterialReservationModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.FullMaterialReservationProof
+local notation "R" => FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation
+theorem actual_contract : Contract R := by
+  intro full
+  rw [actual_steps]
+  cases h0 : U64.checked_add full.state_bytes full.memory_bytes with
+  | none =>
+    dsimp only
+    have firstOverflow := checked_add_absent _ _ h0
+    symm
+    apply (outcome_overflow_iff full).mpr
+    unfold amount
+    omega
+  | some first =>
+    dsimp only
+    have firstValue := checked_add_value _ _ _ h0
+    cases h1 : U64.checked_add first full.disk_bytes with
+    | none =>
+      dsimp only
+      have secondOverflow := checked_add_absent _ _ h1
+      symm
+      apply (outcome_overflow_iff full).mpr
+      unfold amount
+      omega
+    | some combined =>
+      dsimp only
+      have secondValue := checked_add_value _ _ _ h1
+      cases h2 : U64.checked_mul combined 2#u64 with
+      | none =>
+        dsimp only
+        have doubledOverflow := checked_mul_absent _ _ h2
+        change U64.max < combined.val * 2 at doubledOverflow
+        symm
+        apply (outcome_overflow_iff full).mpr
+        unfold amount
+        omega
+      | some doubled =>
+        dsimp only
+        have doubledValue := checked_mul_value _ _ _ h2
+        change doubled.val = combined.val * 2 at doubledValue
+        cases h3 : U64.checked_add doubled 589824#u64 with
+        | none =>
+          dsimp only
+          have finalOverflow := checked_add_absent _ _ h3
+          change U64.max < doubled.val + 589824 at finalOverflow
+          symm
+          apply (outcome_overflow_iff full).mpr
+          unfold amount
+          omega
+        | some total =>
+          dsimp only
+          have finalValue := checked_add_value _ _ _ h3
+          change total.val = doubled.val + 589824 at finalValue
+          symm
+          apply (outcome_success_iff full total).mpr
+          unfold amount
+          omega
+
+theorem actual_success_iff (full : Full) (total : U64) :
+    R full = .ok (.Ok total) ↔ total.val = amount full := by
+  rw [actual_contract]
+  exact outcome_success_iff full total
+
+theorem actual_overflow_iff (full : Full) :
+    R full = .ok (.Err .MaintenanceCapacity) ↔ U64.max < amount full := by
+  rw [actual_contract]
+  exact outcome_overflow_iff full
+
+end SandboxModel.Stage1Protocol.FullMaterialReservationProof
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationProof.actual_success_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationProof.actual_overflow_iff

@@ -1,0 +1,12 @@
+import FullMaterialReservationTypes
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+set_option linter.unusedVariables false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.FullMaterialReservationActual
+-- ACTUAL COMPLETE MATERIAL FUNCTIONS
+end SandboxModel.Stage1Protocol.FullMaterialReservationActual
