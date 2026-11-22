@@ -1,0 +1,30 @@
+import SourceEndAccessorTypes
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceEndAccessorModel
+abbrev Question := capture.continuation.OriginalContinueWorkRequest
+abbrev Identity := sandbox_controller_core.capture.continuation.OriginalContinueIdentity
+abbrev Full := capture.work.FullCaptureWorkRequest
+abbrev Requirement := capture.source.SourceObservationRequirement
+abbrev Receipt := sandbox_controller_core.capture.continuation.CaptureWorkEndReceipt
+abbrev NetworkPolicy := sandbox_controller_core.model.NetworkPolicy
+abbrev FilePolicy := sandbox_controller_core.model.FilePolicyRef
+abbrev Constructor := Identity → Full → Requirement → Receipt → NetworkPolicy → FilePolicy → Result Question
+
+/-- One complete decoded-value property for correct and real wrong constructors.
+    No field equality is an authorization or actual saved/physical fact. -/
+def ConstructorContract (root : Constructor) : Prop :=
+  ∀ identity full source receipt networkPolicy filePolicy,
+    root identity full source receipt networkPolicy filePolicy =
+      .ok { identity, full, source, end_receipt := receipt,
+            network_policy := networkPolicy, file_policy := filePolicy }
+
+def ReadersContract
+    (identity : Question → Result Identity) (full : Question → Result Full)
+    (source : Question → Result Requirement) (receipt : Question → Result Receipt)
+    (networkPolicy : Question → Result NetworkPolicy) (filePolicy : Question → Result FilePolicy) : Prop :=
+  ∀ question, identity question = .ok question.identity ∧ full question = .ok question.full ∧
+    source question = .ok question.source ∧ receipt question = .ok question.end_receipt ∧
+    networkPolicy question = .ok question.network_policy ∧ filePolicy question = .ok question.file_policy
+end SandboxModel.Stage1Protocol.SourceEndAccessorModel

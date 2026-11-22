@@ -1,0 +1,54 @@
+// Same real API/SQLite fixture as the parent60. These are explicit decoded
+// constructor values: replacing digests does not claim a real encoded binding.
+#[test]
+fn source_end_accessor_preserves_complete_continuation_question() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&dir.path().join("accessor-fields.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let stored = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let captured = record.capture.as_ref().unwrap();
+    let identity = core::capture::OriginalContinueIdentity {
+        key: core::OperationKey {
+            sandbox: record.work.anchor.local.sandbox,
+            operation: captured.operation,
+        },
+        epoch: record.work.anchor.native.epoch,
+        generation: record.work.anchor.native.generation,
+        vm: record.work.anchor.native.current_vm.unwrap(),
+    };
+    let full = captured.full.clone();
+    let source = record.work.requirement().clone();
+    let file_policy = journal.world().unwrap()
+        .sandbox_record(identity.key.sandbox).unwrap().file_policy;
+    let policies = [
+        core::NetworkPolicy::DenyAll,
+        core::NetworkPolicy::Ipv4 {
+            internet_access: false,
+            allow_out: vec![core::Ipv4Cidr { network: 0x0a00_0000, prefix_length: 8 }],
+            deny_out: vec![core::Ipv4Cidr { network: 0x0a01_0000, prefix_length: 16 }],
+        },
+    ];
+    for network_policy in policies {
+        // Equal digest bytes are a genuine swap-mutant control; distinct
+        // bytes expose the actual omission under the same complete assertion.
+        for distinct in [false, true] {
+            let mut receipt = record.capture_work_end_receipt().unwrap().unwrap();
+            receipt.work_binding = [7; 32];
+            receipt.end_binding = if distinct { [9; 32] } else { [7; 32] };
+            let question = crate::capture::OriginalContinueWorkRequest::from_ended_source(
+                identity, full.clone(), source.clone(), receipt, network_policy.clone(), file_policy,
+            );
+            let actual = (
+                question.identity(), question.full().clone(), question.source().clone(),
+                question.end_receipt(), question.network_policy().clone(), question.file_policy(),
+            );
+            let expected = (
+                identity, full.clone(), source.clone(), receipt, network_policy.clone(), file_policy,
+            );
+            assert_eq!(actual, expected,
+                "continuation request must preserve all six complete fields");
+        }
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), stored);
+}

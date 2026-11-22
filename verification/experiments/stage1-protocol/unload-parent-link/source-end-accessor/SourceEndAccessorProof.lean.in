@@ -1,0 +1,87 @@
+import SourceEndAccessorView
+import SourceEndAccessorModel
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceEndAccessorModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+namespace SandboxModel.Stage1Protocol.SourceEndAccessorProof
+noncomputable section
+local notation "Root" => SourceEndAccessorActual.controller.lifecycle_inbox.source_work.full.end.SourceWorkRecord.capture_work_end_receipt
+local notation "Ctor" => SourceEndAccessorActual.capture.continuation.OriginalContinueWorkRequest.from_ended_source
+local notation "ReadIdentity" => SourceEndAccessorActual.capture.continuation.OriginalContinueWorkRequest.impl.identity
+local notation "ReadFull" => SourceEndAccessorActual.capture.continuation.OriginalContinueWorkRequest.impl.full
+local notation "ReadSource" => SourceEndAccessorActual.capture.continuation.OriginalContinueWorkRequest.impl.source
+local notation "ReadReceipt" => SourceEndAccessorActual.capture.continuation.OriginalContinueWorkRequest.impl.end_receipt
+local notation "ReadNetwork" => SourceEndAccessorActual.capture.continuation.OriginalContinueWorkRequest.impl.network_policy
+local notation "ReadFile" => SourceEndAccessorActual.capture.continuation.OriginalContinueWorkRequest.impl.file_policy
+
+theorem original_receipt_same (io : SourceEndReceiptModel.Ports) (record : SourceEndReceiptModel.Record) :
+    Root io record = SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record := rfl
+
+/-- Same complete parent property, including its domain and every failure. -/
+theorem getter_actual_contract (io : SourceEndReceiptModel.Ports) (record : SourceEndReceiptModel.Record)
+    (represented : SourceEndReceiptModel.Representable record) :
+    Root io record = SourceEndReceiptModel.outcome io record := by
+  rw [original_receipt_same]
+  exact SourceEndReceiptProof.actual_contract io record represented
+
+theorem getter_complete_contract (io : SourceEndReceiptModel.Ports) :
+    SourceEndReceiptModel.Contract io (Root io) := getter_actual_contract io
+
+theorem constructor_complete_contract : ConstructorContract Ctor := by
+  intro identity full source receipt networkPolicy filePolicy
+  rfl
+
+theorem identity_reader (question : Question) : ReadIdentity question = .ok question.identity := rfl
+theorem full_reader (question : Question) : ReadFull question = .ok question.full := rfl
+theorem source_reader (question : Question) : ReadSource question = .ok question.source := rfl
+theorem receipt_reader (question : Question) : ReadReceipt question = .ok question.end_receipt := rfl
+theorem network_reader (question : Question) : ReadNetwork question = .ok question.network_policy := rfl
+theorem file_reader (question : Question) : ReadFile question = .ok question.file_policy := rfl
+
+theorem readers_complete_contract :
+    ReadersContract ReadIdentity ReadFull ReadSource ReadReceipt ReadNetwork ReadFile := by
+  intro question
+  exact ⟨identity_reader question, full_reader question, source_reader question,
+    receipt_reader question, network_reader question, file_reader question⟩
+
+/-- Observe only by the actual six methods, preserving complete values. -/
+def readAll (question : Question) : Result Question := do
+  let identity ← ReadIdentity question
+  let full ← ReadFull question
+  let source ← ReadSource question
+  let receipt ← ReadReceipt question
+  let networkPolicy ← ReadNetwork question
+  let filePolicy ← ReadFile question
+  .ok { identity, full, source, end_receipt := receipt,
+        network_policy := networkPolicy, file_policy := filePolicy }
+
+theorem read_all_complete (question : Question) : readAll question = .ok question := by
+  simp [readAll, identity_reader, full_reader, source_reader, receipt_reader,
+    network_reader, file_reader]
+
+/-- All inputs, including independent work/end bindings, have one property.
+    The constructor and accessors do not assert authorization or persistence. -/
+theorem construct_then_read_complete (identity : Identity) (full : Full) (source : Requirement)
+    (receipt : Receipt) (networkPolicy : NetworkPolicy) (filePolicy : FilePolicy) :
+    (do
+      let question ← Ctor identity full source receipt networkPolicy filePolicy
+      readAll question) = .ok (⟨identity, full, source, receipt,
+        networkPolicy, filePolicy⟩ : Question) := by
+  rw [constructor_complete_contract identity full source receipt networkPolicy filePolicy]
+  simp only [bind_tc_ok, read_all_complete]
+end
+end SandboxModel.Stage1Protocol.SourceEndAccessorProof
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.original_receipt_same
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.getter_actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.getter_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.constructor_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.identity_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.full_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.source_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.receipt_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.network_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.file_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.readers_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.read_all_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorProof.construct_then_read_complete

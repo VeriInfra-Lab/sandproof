@@ -1,0 +1,12 @@
+import SourceEndAccessorProof
+import SourceEndReceiptWrong
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceEndAccessorReceiptWrongActual
+noncomputable section
+variable (io : SourceEndReceiptModel.Ports)
+local notation "controller.lifecycle_inbox.source_work.full.end.receipt" => SandboxModel.Stage1Protocol.SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.receipt io
+-- ACTUAL COMPLETE WRONG ACCESSOR FUNCTIONS
+end
+end SandboxModel.Stage1Protocol.SourceEndAccessorReceiptWrongActual
