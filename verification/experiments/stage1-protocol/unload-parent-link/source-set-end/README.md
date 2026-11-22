@@ -39,6 +39,26 @@ observation.matches 及其 JSON 错误，再拒绝不匹配或 completed＋NoReq
 仅沿用原 29 项接口。视图只插入完整原生成声明，共有部分逐字核对后复用父定义；
 不手改生成体或导入含自定义公理的模板。
 
+前缀完整开发入口为 `check-prefix.py`，它调用未修改的原完整检查器。
+输入 JSON 固定包含 `correct`、`wrong`、`reads`、`reads_audit`、`retention`、
+`retention_audit` 六个本地只读位置：两份本包真实前缀捕获、#1014 正确项目/审计和原
+retention 项目/审计。原 207 文件闭包及全部父审计均保留；新增根显式导入状态模型、
+拆分等价和见证，错误根另接真实错误版与同合同反例。两视图各自检查全部实际文件、
+内核审计、固定依赖及全计划/文件的重新物化，不提供跳过错误版或删减父义务的选项。
+生成 Types 仅允许已核对的闭包源位置注释由 420 行移到 417 行；所有类型体和接口
+完全相同，实际函数只允许删除那一处三行守卫。不作通用文本归一化。
+
+```sh
+SANDPROOF_ACCEPTANCE_ROLE=formal python3 \
+  verification/experiments/stage1-protocol/unload-parent-link/source-set-end/check-prefix.py \
+  --inputs /private/prefix-inputs.json --output /private/prefix-check \
+  --lock /private/proof-heavy.lock --lake-packages /private/fixed-lake-packages \
+  --lean-mcp /private/fixed-lean-mcp
+```
+
+`registration-candidate.json` 只提交本包前缀范围的公共登记候选，未自行采用到共享根。
+完整 setter 的原结果/完整状态合同和准入仍单独保留，不由这个入口消除缺口。
+
 完整 setter 的固定两项工具已成功结束，但原 30 项结构准入仍拒绝新增
 `Box.Insts.CoreCmpPartialEqBox.ne`。候选需求见 `dependencies-candidate.patch`：
 正常 Box 共享借用下向同一传入 PartialEq 字典的 ne 委托，保留完整值和原结果/失败；

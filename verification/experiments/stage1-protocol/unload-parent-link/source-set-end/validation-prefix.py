@@ -98,3 +98,98 @@ def current(directory, variant):
 
 
 def declaration(reference,group,name,body):return inherited.declaration(reference,group,name,body)
+
+
+CLOSURE = ROOT + '.closure'
+CALL = CLOSURE + '.Insts.CoreOpsFunctionFnOnceTupleWorkActionEffectIdBoxWorkActionEffectId'
+NEW = {'Types': {CLOSURE}, 'Funs': {ROOT, CALL, CALL + '.call_once'}}
+
+
+def parent(project, audit, retention, retention_audit, reference):
+    plan, evidence = original_inputs.prior(project, audit, 'SourceEndReceiptValues', 207, 1175)
+    kept, kept_evidence = original_inputs.prior(retention, retention_audit, 'RetentionProviders', 26, 127)
+    if (plan['source'], plan['tree']) != (capture.retire.SOURCE, capture.retire.TREE):
+        raise ValueError('the exact original production identity must agree with the entire parent')
+    if any(plan['files'].get(name) != wanted for name, wanted in kept['files'].items()):
+        raise ValueError('the entire retained26/127 provider must remain present')
+    sources = {name: (project / name).read_bytes() for name in plan['files']}
+    shared, added = {}, {}
+    for group, count in (('Types', 116), ('Funs', 182)):
+        shared[group], added[group] = {}, {}
+        for name, raw in parsed(reference[group]).items():
+            found = [file for file, source in sources.items() if source.count(raw) == 1]
+            if found:
+                shared[group][name] = found
+            else:
+                added[group][name] = raw
+        if len(shared[group]) != count or set(added[group]) != NEW[group]:
+            raise ValueError('all complete parent declarations and only original prefix additions required: ' + group)
+    return plan, dict(parent=evidence, retention=kept_evidence, shared=shared), added
+
+
+def same_interfaces(reference, wrong):
+    for key in ('External', 'TypesExternal'):
+        if reference[key] != wrong[key]:
+            raise ValueError('the exact same complete per-symbol interfaces are mandatory')
+    # Removing the three-line guard moves only this closure's source annotation.
+    # Compare that exact reviewed metadata delta, not a general comment eraser.
+    old_span = (b"    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/full/end.rs', "
+        b'lines 420:52-420:77 -/')
+    new_span = (b"    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/full/end.rs', "
+        b'lines 417:52-417:77 -/')
+    if (reference['Types'].count(old_span) != 1
+            or reference['Types'].replace(old_span, new_span, 1) != wrong['Types']
+            or parsed(reference['Types']) != parsed(wrong['Types'])
+            or len(parsed(reference['Types'])) != 117):
+        raise ValueError('all117 complete canonical types and only the exact three-line closure span shift required')
+    left, right = parsed(reference['Funs']), parsed(wrong['Funs'])
+    if (set(left) != set(right) or [name for name in left if left[name] != right[name]] != [ROOT]):
+        raise ValueError('only the original completed/NoRequest proposal guard may differ')
+    original = (b'              let b := core.option.Option.is_some val.completed\n'
+        b'              let b1 \xe2\x86\x90\n'
+        b'                controller.lifecycle_inbox.source_work.full.end.saved_completed_no_request\n'
+        b'                  b observation1\n'
+        b'              if b1\n'
+        b'              then ok (core.result.Result.Err JournalError.InvalidHostEvidence)\n'
+        b'              else\n'
+        b'                ok (core.result.Result.Ok\n'
+        b'                  (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.WorkerEnded\n'
+        b'                  observation1))')
+    replacement = (b'              ok (core.result.Result.Ok\n'
+        b'                (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.WorkerEnded\n'
+        b'                observation1))')
+    if left[ROOT].count(original) != 1 or left[ROOT].replace(original, replacement, 1) != right[ROOT]:
+        raise ValueError('the actual complete wrong function must remove exactly the original early guard')
+    return dict(changed_function=ROOT, actual_guard_only_difference=True)
+
+
+def raw_functions(reference):
+    return b'\n\n'.join(declaration(reference, 'Funs', name, body)
+        for name, body in parsed(reference['Funs']).items() if name in NEW['Funs'])
+
+
+def extra_inputs():
+    # Trace loaded repository Python modules, including the spec-loaded parent
+    # chain. Normal imported helper modules are in sys.modules; custom parents
+    # are reached through their module globals. No host path enters the plan.
+    from types import ModuleType
+    pending = [sys.modules[__name__]] if __name__ in sys.modules else []
+    pending += [capture, inherited, original_inputs, *tuple(sys.modules.values())]
+    visited, files = set(), set(inherited.extra_inputs())
+    files.add(str((PARENT / 'check.py').relative_to(REPO)))
+    while pending:
+        value = pending.pop()
+        if not isinstance(value, ModuleType) or id(value) in visited:
+            continue
+        visited.add(id(value))
+        filename = getattr(value, '__file__', None)
+        if not filename or str(filename).startswith('<'):
+            continue
+        path = Path(filename).resolve()
+        if not path.is_relative_to(REPO):
+            continue
+        if path.suffix != '.py' or not path.is_file():
+            raise ValueError('one complete repository Python source is required')
+        files.add(str(path.relative_to(REPO)))
+        pending.extend(item for item in vars(value).values() if isinstance(item, ModuleType))
+    return sorted(files)
