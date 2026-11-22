@@ -1,0 +1,77 @@
+import FullMaterialReservationProof
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes FullMaterialReservationModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.FullMaterialReservationValues
+open FullMaterialReservationProof
+local notation "R" => FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation
+
+def normal : Full := SourceFullWorkGuardValues.full
+
+def sizes (state memory disk : U64) : Full :=
+  { normal with state_bytes := state, memory_bytes := memory, disk_bytes := disk }
+
+def zero : Full := sizes 0#u64 0#u64 0#u64
+
+def firstAddition : Full := sizes 18446744073709551615#u64 1#u64 0#u64
+
+def diskAddition : Full := sizes 18446744073709551614#u64 0#u64 2#u64
+
+def doubling : Full := sizes 9223372036854775808#u64 0#u64 0#u64
+
+def metadata : Full := sizes 9223372036854775807#u64 0#u64 0#u64
+
+theorem normal_allowed : SourceFullWorkGuardModel.FullAllowed normal :=
+  SourceFullWorkGuardValues.full_allowed
+
+theorem normal_is_originally_valid :
+    SourceFullWorkGuardActual.capture.work.FullCaptureWorkRequest.valid normal = .ok true :=
+  SourceFullWorkGuardValues.normal_accepted
+
+theorem normal_cost : R normal = .ok (.Ok 589830#u64) := by
+  apply (actual_success_iff normal 589830#u64).mpr
+  simp only [amount, normal, SourceFullWorkGuardValues.full]
+  scalar_tac
+
+theorem zero_cost : R zero = .ok (.Ok 589824#u64) := by
+  apply (actual_success_iff zero 589824#u64).mpr
+  simp only [amount, zero, sizes]
+  scalar_tac
+
+theorem zero_is_not_valid_work : ¬ SourceFullWorkGuardModel.FullAllowed zero := by
+  intro accepted
+  have positive := accepted.2.2.2.1.1
+  change (0 : Nat) < 0 at positive
+  omega
+
+theorem first_addition_overflow : R firstAddition = .ok (.Err .MaintenanceCapacity) := by
+  apply (actual_overflow_iff firstAddition).mpr
+  simp only [amount, firstAddition, sizes]
+  scalar_tac
+
+theorem disk_addition_overflow : R diskAddition = .ok (.Err .MaintenanceCapacity) := by
+  apply (actual_overflow_iff diskAddition).mpr
+  simp only [amount, diskAddition, sizes]
+  scalar_tac
+
+theorem doubling_overflow : R doubling = .ok (.Err .MaintenanceCapacity) := by
+  apply (actual_overflow_iff doubling).mpr
+  simp only [amount, doubling, sizes]
+  scalar_tac
+
+theorem metadata_overflow : R metadata = .ok (.Err .MaintenanceCapacity) := by
+  apply (actual_overflow_iff metadata).mpr
+  simp only [amount, metadata, sizes]
+  scalar_tac
+end SandboxModel.Stage1Protocol.FullMaterialReservationValues
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationValues.normal_allowed
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationValues.normal_is_originally_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationValues.normal_cost
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationValues.zero_cost
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationValues.zero_is_not_valid_work
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationValues.first_addition_overflow
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationValues.disk_addition_overflow
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationValues.doubling_overflow
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationValues.metadata_overflow

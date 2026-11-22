@@ -1,0 +1,101 @@
+import FullMaterialReservation
+import FullMaterialReservationWrong
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes FullMaterialReservationModel
+open FullMaterialReservationValues
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.FullMaterialReservationNegative
+local notation "W" => FullMaterialReservationWrongActual.controller.lifecycle_inbox.source_work.full.reservation
+
+theorem same_final_constant (n : U64) :
+    FullMaterialReservationWrongActual.controller.lifecycle_inbox.source_work.full.reservation.closure_2.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64.call_once () n =
+      .ok (U64.checked_add n 589824#u64) := by
+  change FullMaterialReservationActual.controller.lifecycle_inbox.source_work.full.reservation.closure_2.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64.call_once () n = _
+  exact FullMaterialReservationProof.final_constant n
+
+theorem actual_wrong_steps (full : Full) : W full =
+    match U64.checked_add full.state_bytes full.memory_bytes with
+    | none => .ok (.Err .MaintenanceCapacity)
+    | some first => match U64.checked_add first full.disk_bytes with
+      | none => .ok (.Err .MaintenanceCapacity)
+      | some combined => match U64.checked_mul combined 1#u64 with
+        | none => .ok (.Err .MaintenanceCapacity)
+        | some doubled => match U64.checked_add doubled 589824#u64 with
+          | none => .ok (.Err .MaintenanceCapacity)
+          | some total => .ok (.Ok total) := by
+  simp only [FullMaterialReservationWrongActual.controller.lifecycle_inbox.source_work.full.reservation, lift, bind_tc_ok]
+  cases h0 : U64.checked_add full.state_bytes full.memory_bytes with
+  | none => simp only [FullMaterialReservationWrongActual.core.option.Option.and_then, bind_tc_ok, core.option.Option.ok_or]
+  | some first =>
+    simp only [FullMaterialReservationWrongActual.core.option.Option.and_then,
+      FullMaterialReservationWrongActual.controller.lifecycle_inbox.source_work.full.reservation.closure.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64.call_once, bind_tc_ok]
+    cases h1 : U64.checked_add first full.disk_bytes with
+    | none => simp only [bind_tc_ok, core.option.Option.ok_or]
+    | some combined =>
+      simp only [FullMaterialReservationWrongActual.controller.lifecycle_inbox.source_work.full.reservation.closure_1.Insts.CoreOpsFunctionFnOnceTupleU64OptionU64.call_once, bind_tc_ok]
+      cases h2 : U64.checked_mul combined 1#u64 with
+      | none => simp only [bind_tc_ok, core.option.Option.ok_or]
+      | some doubled =>
+        simp only [same_final_constant, bind_tc_ok, core.option.Option.ok_or]
+        cases U64.checked_add doubled 589824#u64 <;> rfl
+
+theorem actual_normal_under_reserved : W normal = .ok (.Ok 589827#u64) := by
+  have first : U64.checked_add normal.state_bytes normal.memory_bytes = some 2#u64 := by
+    apply InboxLoadLibrary.checked_add_exact
+    simp only [normal, SourceFullWorkGuardValues.full]
+    scalar_tac
+  have second : U64.checked_add 2#u64 normal.disk_bytes = some 3#u64 := by
+    apply InboxLoadLibrary.checked_add_exact
+    simp only [normal, SourceFullWorkGuardValues.full]
+    scalar_tac
+  have copied : U64.checked_mul 3#u64 1#u64 = some 3#u64 := by
+    apply InboxLoadLibrary.checked_mul_exact
+    scalar_tac
+  have final : U64.checked_add 3#u64 589824#u64 = some 589827#u64 := by
+    apply InboxLoadLibrary.checked_add_exact
+    scalar_tac
+  rw [actual_wrong_steps]
+  simp only [first, second, copied, final]
+
+theorem violates_same_complete_contract : ¬ Contract W := by
+  intro claimed
+  have equation := claimed normal
+  rw [actual_normal_under_reserved] at equation
+  have wrongCost := (FullMaterialReservationProof.outcome_success_iff normal 589827#u64).mp equation.symm
+  simp only [amount, normal, SourceFullWorkGuardValues.full] at wrongCost
+  scalar_tac
+
+theorem zero_control : W zero = .ok (.Ok 589824#u64) := by
+  have first : U64.checked_add zero.state_bytes zero.memory_bytes = some 0#u64 := by
+    apply InboxLoadLibrary.checked_add_exact
+    simp only [zero, sizes]
+    scalar_tac
+  have second : U64.checked_add 0#u64 zero.disk_bytes = some 0#u64 := by
+    apply InboxLoadLibrary.checked_add_exact
+    simp only [zero, sizes]
+    scalar_tac
+  have copied : U64.checked_mul 0#u64 1#u64 = some 0#u64 := by
+    apply InboxLoadLibrary.checked_mul_exact
+    scalar_tac
+  have final : U64.checked_add 0#u64 589824#u64 = some 589824#u64 := by
+    apply InboxLoadLibrary.checked_add_exact
+    scalar_tac
+  rw [actual_wrong_steps]
+  simp only [first, second, copied, final]
+
+theorem original_first_overflow_control : W firstAddition = .ok (.Err .MaintenanceCapacity) := by
+  have first : U64.checked_add firstAddition.state_bytes firstAddition.memory_bytes = none := by
+    apply InboxLoadLibrary.checked_add_overflow
+    simp only [firstAddition, sizes]
+    scalar_tac
+  rw [actual_wrong_steps]
+  simp only [first]
+end SandboxModel.Stage1Protocol.FullMaterialReservationNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationNegative.same_final_constant
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationNegative.actual_wrong_steps
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationNegative.actual_normal_under_reserved
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationNegative.violates_same_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationNegative.zero_control
+#audit_controller_proof SandboxModel.Stage1Protocol.FullMaterialReservationNegative.original_first_overflow_control

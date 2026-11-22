@@ -1,0 +1,24 @@
+import SourceEndReceiptValues
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.FullMaterialReservationModel
+abbrev Full := capture.work.FullCaptureWorkRequest
+abbrev Journal := SourceEndReceiptModel.Journal
+abbrev Reply := core.result.Result U64 Journal
+
+/-- Complete original arithmetic for every decoded Full, without a validity,
+    authority, storage, physical material or deployment hypothesis. -/
+def amount (full : Full) : Nat :=
+  2 * (full.state_bytes.val + full.memory_bytes.val + full.disk_bytes.val) + 589824
+
+def outcome (full : Full) : Result Reply :=
+  .ok (match UScalar.tryMkOpt .U64 (amount full) with
+    | none => .Err .MaintenanceCapacity
+    | some total => .Ok total)
+
+/-- The identical full formula, error and representation for actual correct
+    and wrong Rust. Four intermediate overflow sites must refine this result. -/
+def Contract (root : Full → Result Reply) : Prop :=
+  ∀ full, root full = outcome full
+end SandboxModel.Stage1Protocol.FullMaterialReservationModel

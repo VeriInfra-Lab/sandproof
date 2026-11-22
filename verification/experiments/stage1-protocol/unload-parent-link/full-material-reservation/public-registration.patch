@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 full-material-reservation 固定 b0d791cc，精确依赖#1014；原 full.rs::reservation 对任意完整Full计算2*(state+memory+disk)+589824，成功精确、溢出原MaintenanceCapacity。实际Option.and_then/三个闭包透明，保留四步短路；116类型/183原函数复用，新增3原闭包别名/8函数，仍仅父29接口。
++> 完整双视图候选214文件/1195审计、216/1201；真实乘数2改1错误版在同一合法Full返回589827而非589830，由同一完整Contract反驳，保留零值/首溢出控制。本切片不同于#1015的未来End16KiB。原生61项四视图及两次恢复交ning；World/SQL/事务/未知提交/耐久/授权、物理配额/材料/VM、JSON/TLS/系统未据此完成。公共根/登记/冻结/覆盖仅交候选。
+ ## V3 首次卸载使用同一条原执行记录
