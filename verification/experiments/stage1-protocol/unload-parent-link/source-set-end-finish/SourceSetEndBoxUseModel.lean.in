@@ -1,0 +1,18 @@
+import SourceSetEndFinishProof
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceSetEndBoxUseModel
+/-- An unconstrained standard method, with no behavior law or axiom.
+    Every instance, including failure and divergence, is quantified. -/
+class UnknownBoxNe where
+  apply : {T : Type} → (A : Type) → core.cmp.PartialEq T T → T → T → Result Bool
+/-- Keep the already modeled eq. Only the unrelated ne slot is arbitrary. -/
+def dictionary [provider : UnknownBoxNe] {T : Type}
+    (original : core.cmp.PartialEq T T) : core.cmp.PartialEq T T where
+  eq := alloc.boxed.PartialEqBox.eq original
+  ne := provider.apply Global original
+/-- Representation of the two actual derived enum dictionaries, whose ne
+    is explicitly the default method. This does not describe Box.ne. -/
+def derivedDictionary {T : Type} (actualEq : T → T → Result Bool) : core.cmp.PartialEq T T where
+  eq := actualEq
+end SandboxModel.Stage1Protocol.SourceSetEndBoxUseModel

@@ -1,0 +1,135 @@
+import SourceSetEndBoxUseProof
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceSetEndModel SourceSetEndBoxUseModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceSetEndFinishValues
+noncomputable section
+
+def io : Ports := SourceSetEndPrefixValues.io
+def saved : Record := SourceEndReceiptValues.neverSaved none
+def captured : Capture := { SourceEndReceiptValues.neverCapture none with «end» := none }
+def fresh : Record := { saved with capture := some captured }
+def proposed : End := .NeverReleased SourceEndReceiptValues.digest none
+
+theorem represented : Representable fresh := by
+  intro value present
+  have same : captured = value := Option.some.inj present
+  subst value
+  exact SourceFullBindingValues.represented
+
+theorem represented_domain_inhabited : ∃ record : Record, Representable record := ⟨fresh, represented⟩
+
+theorem original_proposal_continues (io : Ports) (record : Record) (observed : Option Observation)
+    (captured : Capture) (proposed : End) (represented : Representable record)
+    (present : record.capture = some captured)
+    (accepted : SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io record observed =
+      .ok (.Ok proposed)) :
+    SourceSetEndFinishActual.controller.lifecycle_inbox.source_work.full.end.set_end io record observed =
+      install io record captured proposed := by
+  rw [SourceSetEndFinishProof.generated_body_contract io record observed represented,
+    ← SourceSetEndFactor.factorization]
+  rw [SourceSetEndPrefixProof.actual_contract] at accepted
+  simp [factoredOutcome, accepted, continueAt, present]
+
+theorem original_proposal_error_first (io : Ports) (record : Record) (observed : Option Observation)
+    (error : Journal) (represented : Representable record)
+    (refused : SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io record observed =
+      .ok (.Err error)) :
+    SourceSetEndFinishActual.controller.lifecycle_inbox.source_work.full.end.set_end io record observed =
+      atState record (.Err error) := by
+  rw [SourceSetEndFinishProof.generated_body_contract io record observed represented,
+    ← SourceSetEndFactor.factorization]
+  rw [SourceSetEndPrefixProof.actual_contract] at refused
+  simp [factoredOutcome, refused, continueAt]
+
+theorem actual_fresh_end_late_error (io : Ports) (record : Record) (observed : Option Observation)
+    (captured : Capture) (proposed : End) (bytes : alloc.vec.Vec U8) (error : Journal)
+    (represented : Representable record) (present : record.capture = some captured)
+    (accepted : SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io record observed =
+      .ok (.Ok proposed))
+    (absent : captured.«end» = none) (encoded : io.encode_proposed_end proposed = .ok (.Ok bytes))
+    (within : (alloc.vec.Vec.len bytes).val ≤ 16384)
+    (failed : SourceEndReceiptModel.outcome io.receipt (withEnd record captured proposed) = .ok (.Err error)) :
+    SourceSetEndFinishActual.controller.lifecycle_inbox.source_work.full.end.set_end io record observed =
+      atState (withEnd record captured proposed) (.Err error) := by
+  rw [original_proposal_continues io record observed captured proposed represented present accepted]
+  exact SourceSetEndOrder.fresh_end_late_error_keeps_written_record io record captured proposed bytes error absent encoded within failed
+
+theorem normal_proposal (old : Option End) :
+    SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io
+      { fresh with capture := some { captured with «end» := old } } none = .ok (.Ok proposed) := by
+  rw [SourceSetEndPrefixProof.actual_contract]
+  simp [proposal, captured, SourceEndReceiptValues.neverCapture,
+    SourceSavedQuestionValues.captured,
+    SourcePriorEndMatchValues.captured, SourceRetireSpec.tryJournal,
+    SourceRequestEndMatchModel.binding, initialFull, io, SourceSetEndPrefixValues.io,
+    SourceEndReceiptValues.io, SourceEndValidationValues.io, SourceDrainValidationValues.io,
+    SourceTerminalMatchValues.io, SourceRequestEndMatchValues.io, proposed, SourceEndReceiptValues.digest]
+
+theorem normal_complete_output_and_poststate :
+    SourceSetEndFinishActual.controller.lifecycle_inbox.source_work.full.end.set_end io fresh none =
+      atState saved (.Ok ⟨SourceEndReceiptValues.digest, SourceEndReceiptValues.digest, .NeverReleased none⟩) := by
+  have accepted := normal_proposal none
+  change SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io fresh none = _ at accepted
+  rw [original_proposal_continues io fresh none captured proposed represented rfl accepted]
+  rw [SourceSetEndOrder.accepted_budget_installs_before_receipt io fresh captured proposed
+    SourceEndReceiptValues.empty rfl rfl (by decide)]
+  change finish io saved = _
+  have receipt := SourceEndReceiptValues.normal_never_without_seal
+  rw [SourceEndReceiptProof.actual_contract _ _ (SourceEndReceiptValues.represented_never none)] at receipt
+  exact SourceSetEndOrder.receipt_success_retains_all_output_and_state io saved _ receipt
+
+theorem equal_complete_end_replay :
+    SourceSetEndFinishActual.controller.lifecycle_inbox.source_work.full.end.set_end io saved none =
+      atState saved (.Ok ⟨SourceEndReceiptValues.digest, SourceEndReceiptValues.digest, .NeverReleased none⟩) := by
+  have accepted := normal_proposal (some proposed)
+  change SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io saved none = _ at accepted
+  rw [original_proposal_continues io saved none (SourceEndReceiptValues.neverCapture none) proposed
+    (SourceEndReceiptValues.represented_never none) rfl accepted]
+  rw [SourceSetEndOrder.same_complete_end_goes_directly_to_receipt io saved _ proposed rfl]
+  have receipt := SourceEndReceiptValues.normal_never_without_seal
+  rw [SourceEndReceiptProof.actual_contract _ _ (SourceEndReceiptValues.represented_never none)] at receipt
+  exact SourceSetEndOrder.receipt_success_retains_all_output_and_state io saved _ receipt
+
+@[reducible]
+def failingNe : UnknownBoxNe where
+  apply := fun _ _ _ _ => .fail .panic
+@[reducible]
+def divergingNe : UnknownBoxNe where
+  apply := fun _ _ _ _ => .div
+
+theorem method_may_fail {T : Type} (A : Type) (dictionary : core.cmp.PartialEq T T) (left right : T) :
+    failingNe.apply A dictionary left right = .fail .panic := rfl
+
+theorem method_may_diverge {T : Type} (A : Type) (dictionary : core.cmp.PartialEq T T) (left right : T) :
+    divergingNe.apply A dictionary left right = .div := rfl
+
+/-- Full nonempty legal result even when the unprovided method always fails.
+    The witnesses are value interfaces, not claimed serializer or physical facts. -/
+theorem legal_with_failing_method :
+    SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.end.set_end (provider := failingNe) io fresh none =
+      atState saved (.Ok ⟨SourceEndReceiptValues.digest, SourceEndReceiptValues.digest, .NeverReleased none⟩) := by
+  rw [SourceSetEndBoxUseProof.original_root_same (provider := failingNe)]
+  exact normal_complete_output_and_poststate
+
+theorem legal_with_diverging_method :
+    SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.end.set_end (provider := divergingNe) io fresh none =
+      atState saved (.Ok ⟨SourceEndReceiptValues.digest, SourceEndReceiptValues.digest, .NeverReleased none⟩) := by
+  rw [SourceSetEndBoxUseProof.original_root_same (provider := divergingNe)]
+  exact normal_complete_output_and_poststate
+end
+end SandboxModel.Stage1Protocol.SourceSetEndFinishValues
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.represented
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.represented_domain_inhabited
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.original_proposal_continues
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.original_proposal_error_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.actual_fresh_end_late_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.normal_proposal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.normal_complete_output_and_poststate
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.equal_complete_end_replay
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.method_may_fail
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.method_may_diverge
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.legal_with_failing_method
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishValues.legal_with_diverging_method

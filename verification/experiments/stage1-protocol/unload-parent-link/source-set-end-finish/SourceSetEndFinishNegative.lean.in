@@ -1,0 +1,132 @@
+import SourceSetEndFinishWrongView
+import SourceSetEndPrefixNegative
+import SourceSetEndFinish
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceSetEndModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceSetEndFinishNegative
+noncomputable section
+open SourceSetEndPrefixValues
+local instance proofDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem remainder_refines (io : Ports) (record : Record) (observed : Option Observation)
+    (represented : Representable record) :
+    SourceSetEndFinishWrongActual.controller.lifecycle_inbox.source_work.full.end.set_end io record observed =
+      continueAt record id
+        (SourceSetEndPrefixWrongActual.controller.lifecycle_inbox.source_work.full.end.propose_end io record observed)
+        (fun proposed => match record.capture with
+          | none => atState record (.Err .UnresolvedAction)
+          | some captured => install io record captured proposed) := by
+  unfold SourceSetEndFinishWrongActual.controller.lifecycle_inbox.source_work.full.end.set_end continueAt
+  apply congrArg (fun continuation => SourceSetEndPrefixWrongActual.controller.lifecycle_inbox.source_work.full.end.propose_end io record observed >>= continuation)
+  funext answer
+  cases answer with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, atState]
+  | Ok proposed =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+    cases present : record.capture with
+    | none => simp [SourceRetireLibrary.optionRef, core.option.Option.ok_or,
+
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, atState]
+    | some captured =>
+      simp only [SourceRetireLibrary.optionRef, core.option.Option.ok_or,
+        bind_tc_ok]
+      unfold install
+      cases saved : captured.«end» with
+      | none =>
+        simp only [continueAt]
+        apply congrArg (fun continuation => io.encode_proposed_end proposed >>= continuation)
+        funext encoded
+        cases encoded with
+        | Err error => simp [
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+            SourceEndReceiptActual.JournalErrorFromJson.from_json, atState]
+        | Ok bytes =>
+          simp only [bind_tc_ok, SourceSetEndFinishProof.budget_test]
+          by_cases over : (alloc.vec.Vec.len bytes).val > 16384
+          · simp only [if_pos over, atState]
+          · simp only [over, ↓reduceIte]
+            exact SourceSetEndFinishProof.receipt_continuation_refines io (withEnd record captured proposed)
+              (SourceSetEndFinishProof.represented_with_end record captured proposed represented present)
+      | some old =>
+        simp only [SourceSetEndFinishProof.end_ne_refines, bind_tc_ok]
+        by_cases same : old = proposed
+        · simp only [same, decide_true, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+          exact SourceSetEndFinishProof.receipt_continuation_refines io record represented
+        · simp [same, atState]
+
+def proposed : End := .WorkerEnded noRequest
+def written : Record := withEnd record captured proposed
+
+theorem wrong_completed_no_request_continues :
+    SourceSetEndFinishWrongActual.controller.lifecycle_inbox.source_work.full.end.set_end io record (some noRequest) =
+      install io record captured proposed := by
+  rw [remainder_refines io record (some noRequest) represented,
+    SourceSetEndPrefixNegative.actual_completed_no_request_accepted]
+  simp only [continueAt, bind_tc_ok]
+  rfl
+
+theorem late_match_false :
+    SourceEndValidationModel.matched io.receipt.validation written proposed = .ok (.Ok false) := by
+  change SourcePriorEndMatchModel.outcome SourcePriorEndMatchValues.io
+    SourcePriorEndMatchValues.record SourcePriorEndMatchValues.noRequest = _
+  have rejected := SourcePriorEndMatchValues.completed_no_request_rejected
+  rw [SourcePriorEndMatchProof.actual_contract] at rejected
+  exact rejected
+
+theorem late_validation_corrupt :
+    SourceEndValidationModel.outcome io.receipt.validation written = .ok (.Err .CorruptStore) := by
+  apply SourceEndValidationOrder.matched_false_rejected io.receipt.validation written
+    { captured with «end» := some proposed } proposed SourceEndReceiptValues.empty rfl rfl rfl (by decide)
+  exact late_match_false
+
+theorem late_receipt_corrupt :
+    SourceEndReceiptModel.outcome io.receipt written = .ok (.Err .CorruptStore) :=
+  SourceEndReceiptOrder.validation_error_first io.receipt written
+    { captured with «end» := some proposed } proposed .CorruptStore rfl rfl late_validation_corrupt
+
+theorem actual_completed_no_request_late_error :
+    SourceSetEndFinishWrongActual.controller.lifecycle_inbox.source_work.full.end.set_end io record (some noRequest) =
+      atState written (.Err .CorruptStore) := by
+  rw [wrong_completed_no_request_continues]
+  rw [SourceSetEndOrder.accepted_budget_installs_before_receipt io record captured proposed
+    SourceEndReceiptValues.empty rfl rfl (by decide)]
+  exact SourceSetEndOrder.receipt_error_retains_its_complete_input io written .CorruptStore late_receipt_corrupt
+
+theorem original_early_rejection :
+    SourceSetEndFinishActual.controller.lifecycle_inbox.source_work.full.end.set_end io record (some noRequest) =
+      atState record (.Err .InvalidHostEvidence) := by
+  rw [SourceSetEndFinishProof.generated_body_contract io record (some noRequest) represented,
+    ← SourceSetEndFactor.factorization]
+  have rejected := completed_no_request_rejected
+  rw [SourceSetEndPrefixProof.actual_contract] at rejected
+  simp [factoredOutcome, rejected, continueAt]
+
+theorem written_capture_differs : written.capture ≠ record.capture := by
+  simp [written, withEnd, record, captured, SourcePriorEndMatchValues.record,
+    SourcePriorEndMatchValues.captured]
+
+/-- Same complete result/poststate Contract, same decoded witness and domain.
+    Both versions return Err, but the mutant also leaves the End installed. -/
+theorem violates_same_complete_contract :
+    ¬ Contract io (SourceSetEndFinishWrongActual.controller.lifecycle_inbox.source_work.full.end.set_end io) := by
+  intro claimed
+  have wrong := claimed record (some noRequest) represented
+  have correct := original_early_rejection
+  rw [SourceSetEndFinishProof.generated_body_contract io record (some noRequest) represented] at correct
+  rw [actual_completed_no_request_late_error, correct] at wrong
+  simp [atState] at wrong
+end
+end SandboxModel.Stage1Protocol.SourceSetEndFinishNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishNegative.remainder_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishNegative.wrong_completed_no_request_continues
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishNegative.late_match_false
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishNegative.late_validation_corrupt
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishNegative.late_receipt_corrupt
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishNegative.actual_completed_no_request_late_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishNegative.original_early_rejection
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishNegative.written_capture_differs
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishNegative.violates_same_complete_contract
