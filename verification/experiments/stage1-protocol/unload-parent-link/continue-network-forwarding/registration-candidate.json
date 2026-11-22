@@ -1,0 +1,86 @@
+{
+  "component": "stage1-protocol-continue-network-forwarding",
+  "source": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "parent": "3dd4c8b6646a6ef73a1efc3052058957495f61c4",
+  "parent_pr": 1024,
+  "development_only": true,
+  "public_registration_adopted": false,
+  "interface_adoption_complete": false,
+  "same_parent_complete_contract": true,
+  "actual_callsite_inputs_connected": true,
+  "formal_views": [
+    {
+      "variant": "combined-conditional",
+      "formal_root": "ContinueNetworkForwarding",
+      "physical_files": 225,
+      "full_audits": 1243,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.tuple_complete",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.wrong_tuple_same",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.supplied_input_complete",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.replaced_input_complete",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.correct_same_original",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.wrong_same_unfactored",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.correct_result",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.wrong_result",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.normal_complete_contract",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.input_representation",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.correct_actual_callsite",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.wrong_actual_callsite",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.non_deny_refutes_same_contract",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.non_deny_refutes_unfactored_contract",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.deny_control",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.counter_non_deny",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.counterexample",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.normal_all_fields",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.normal_non_deny_input",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.actual_json_first",
+        "SandboxModel.Stage1Protocol.ContinueNetworkForwardingProof.actual_all_bytes"
+      ],
+      "required_raw_views": [
+        "shared/original",
+        "shared/network-policy-as-deny-all",
+        "inline/network-policy-as-deny-all"
+      ]
+    }
+  ],
+  "candidate_interfaces": [
+    "capture.continuation.encode_continue_work_binding",
+    "capture.continuation.digest_continue_work_binding"
+  ],
+  "additional_external_interfaces": [],
+  "public_gate": "reject until exact two parent JSON/SHA uses adopted and Ning/native/public acceptance complete",
+  "native": {
+    "source": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+    "parent": "3dd4c8b6646a6ef73a1efc3052058957495f61c4",
+    "parent_pr": 1024,
+    "variants": [
+      "original",
+      "network-policy-as-deny-all"
+    ],
+    "all_assertions": 63,
+    "added_assertions": 0,
+    "expected_original": {
+      "passed": 63,
+      "failed": 0
+    },
+    "expected_wrong": {
+      "passed": 62,
+      "failed": 1
+    },
+    "rejection": "continuation binding must include the complete supplied network policy",
+    "additional_independent_original_restores": 1,
+    "parent_native_views": 8,
+    "parent_native_restores": 5,
+    "parent_acceptance_not_assumed": true,
+    "compiled": false,
+    "tests_executed": false,
+    "public_acceptance": false
+  },
+  "unproved": [
+    "ordinary/native compilation/test and additional independent original restore",
+    "exact parent JSON/SHA use conformity/adoption and shared public verification",
+    "same World/SQL/parent transaction, current intent/authority, durable facts",
+    "host receive/execute, V6/V7 facts, JSON/TLS/persistent inbox/system closure"
+  ]
+}

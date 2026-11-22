@@ -1,0 +1,27 @@
+{
+  "source": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "parent": "3dd4c8b6646a6ef73a1efc3052058957495f61c4",
+  "parent_pr": 1024,
+  "variants": [
+    "original",
+    "network-policy-as-deny-all"
+  ],
+  "all_assertions": 63,
+  "added_assertions": 0,
+  "expected_original": {
+    "passed": 63,
+    "failed": 0
+  },
+  "expected_wrong": {
+    "passed": 62,
+    "failed": 1
+  },
+  "rejection": "continuation binding must include the complete supplied network policy",
+  "additional_independent_original_restores": 1,
+  "parent_native_views": 8,
+  "parent_native_restores": 5,
+  "parent_acceptance_not_assumed": true,
+  "compiled": false,
+  "tests_executed": false,
+  "public_acceptance": false
+}
