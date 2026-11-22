@@ -1,0 +1,136 @@
+import ContinueWorkBindingView
+import ContinueWorkBindingTupleView
+import ContinueWorkBindingFileWrong
+import ContinueWorkBindingFileInline
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes ContinueWorkBindingModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+namespace SandboxModel.Stage1Protocol.ContinueWorkBindingProof
+noncomputable section
+local notation "Root" => ContinueWorkBindingActual.capture.continuation.OriginalContinueWorkRequest.binding_digest
+local notation "TupleRoot" => ContinueWorkBindingTupleActual.capture.continuation.OriginalContinueWorkRequest.binding_digest
+local notation "Input" => ContinueWorkBindingTupleActual.capture.continuation.OriginalContinueWorkRequest.binding_input
+local notation "WrongRoot" => ContinueWorkBindingFileInlineActual.capture.continuation.OriginalContinueWorkRequest.binding_digest
+local notation "WrongTupleRoot" => ContinueWorkBindingFileWrongActual.capture.continuation.OriginalContinueWorkRequest.binding_digest
+local notation "WrongInput" => ContinueWorkBindingFileWrongActual.capture.continuation.OriginalContinueWorkRequest.binding_input
+
+/-- Unfactored actual entry, arbitrary complete request and arbitrary results.
+    Concrete library conformance/adoption is explicitly still outside this proof. -/
+theorem actual_contract (io : Ports) (question : Question) :
+    Root io question = outcome io question := by
+  unfold ContinueWorkBindingActual.capture.continuation.OriginalContinueWorkRequest.binding_digest outcome
+  apply congrArg (fun next => io.encode (bindingInput question) >>= next)
+  funext encoded
+  cases encoded <;>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SourceRetireSpec.vector_deref,
+      SourceEndReceiptActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256]
+
+theorem actual_complete_result_contract (io : Ports) : Contract io (Root io) :=
+  actual_contract io
+
+/-- The tuple expression is moved once, without cloning a borrowed field. -/
+theorem factored_same_original (io : Ports) (question : Question) :
+    TupleRoot io question = Root io question := by
+  simp only [ContinueWorkBindingTupleActual.capture.continuation.OriginalContinueWorkRequest.binding_digest,
+    ContinueWorkBindingTupleActual.capture.continuation.OriginalContinueWorkRequest.binding_input,
+    ContinueWorkBindingActual.capture.continuation.OriginalContinueWorkRequest.binding_digest,
+    bind_tc_ok]
+  rfl
+
+theorem wrong_factored_same_original (io : Ports) (question : Question) :
+    WrongTupleRoot io question = WrongRoot io question := by
+  simp only [ContinueWorkBindingFileWrongActual.capture.continuation.OriginalContinueWorkRequest.binding_digest,
+    ContinueWorkBindingFileWrongActual.capture.continuation.OriginalContinueWorkRequest.binding_input,
+    ContinueWorkBindingFileInlineActual.capture.continuation.OriginalContinueWorkRequest.binding_digest,
+    bind_tc_ok]
+  rfl
+
+theorem actual_input_contract : InputContract Input := by
+  intro question
+  rfl
+
+theorem same_complete_contract (io : Ports) : CompleteContract io Input (TupleRoot io) := by
+  refine ⟨actual_input_contract, ?_⟩
+  intro question
+  rw [factored_same_original]
+  exact actual_contract io question
+
+theorem same_unfactored_complete_contract (io : Ports) : CompleteContract io Input (Root io) :=
+  ⟨actual_input_contract, actual_contract io⟩
+
+theorem actual_json_first (io : Ports) (question : Question) (error : JsonError)
+    (encoded : io.encode (bindingInput question) = .ok (.Err error)) :
+    Root io question = .ok (.Err error) := by
+  rw [actual_contract]
+  exact json_error_first io question error encoded
+
+theorem actual_complete_bytes (io : Ports) (question : Question) (bytes : Bytes)
+    (encoded : io.encode (bindingInput question) = .ok (.Ok bytes)) :
+    Root io question = (do let digest ← io.full.digest bytes.slice; .ok (.Ok digest)) := by
+  rw [actual_contract]
+  exact complete_bytes_to_digest io question bytes encoded
+
+/-- Different fields are detected before making any statement about SHA. -/
+theorem wrong_complete_tuple (question : Question) :
+    WrongInput question = .ok (question.identity, question.full, question.source,
+      question.end_receipt, question.network_policy, (⟨0#u64⟩ : FilePolicy)) := rfl
+
+theorem file_policy_omission_refutes_complete_contract (io : Ports) (question : Question)
+    (different : question.file_policy.digest ≠ 0#u64) :
+    ¬ CompleteContract io WrongInput (WrongRoot io) := by
+  intro claimed
+  have equality := Result.ok_injective (claimed.1 question)
+  have field := congrArg (fun input : BindingInput => input.2.2.2.2.2.digest) equality
+  change 0#u64 = question.file_policy.digest at field
+  exact different field.symm
+
+theorem real_wrong_refutes_same_complete_contract (io : Ports) :
+    ¬ CompleteContract io WrongInput (WrongRoot io) :=
+  file_policy_omission_refutes_complete_contract io SourceEndAccessorValues.question (by decide)
+
+/-- A legal equal-field control for arbitrary complete other fields and IO. -/
+theorem zero_policy_factored_control (io : Ports) (question : Question)
+    (zero : question.file_policy.digest = 0#u64) :
+    WrongTupleRoot io question = TupleRoot io question := by
+  cases question with
+  | mk identity full source receipt networkPolicy filePolicy =>
+    cases filePolicy
+    simp_all [ContinueWorkBindingFileWrongActual.capture.continuation.OriginalContinueWorkRequest.binding_digest,
+      ContinueWorkBindingFileWrongActual.capture.continuation.OriginalContinueWorkRequest.binding_input,
+      ContinueWorkBindingTupleActual.capture.continuation.OriginalContinueWorkRequest.binding_digest,
+      ContinueWorkBindingTupleActual.capture.continuation.OriginalContinueWorkRequest.binding_input,
+      bind_tc_ok]
+    rfl
+
+theorem zero_policy_control (io : Ports) (question : Question)
+    (zero : question.file_policy.digest = 0#u64) :
+    WrongRoot io question = Root io question := by
+  rw [← wrong_factored_same_original, ← factored_same_original]
+  exact zero_policy_factored_control io question zero
+
+theorem normal_full_question (io : Ports) :
+    TupleRoot io SourceEndAccessorValues.question = outcome io SourceEndAccessorValues.question := by
+  rw [factored_same_original]
+  exact actual_contract io SourceEndAccessorValues.question
+end
+end SandboxModel.Stage1Protocol.ContinueWorkBindingProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.actual_complete_result_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.factored_same_original
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.actual_input_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.same_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.actual_json_first
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.actual_complete_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.wrong_complete_tuple
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.file_policy_omission_refutes_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.real_wrong_refutes_same_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.zero_policy_factored_control
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.zero_policy_control
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.normal_full_question
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.wrong_factored_same_original
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingProof.same_unfactored_complete_contract

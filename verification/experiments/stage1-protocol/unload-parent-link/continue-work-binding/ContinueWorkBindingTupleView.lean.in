@@ -1,0 +1,13 @@
+import ContinueWorkBindingModel
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.ContinueWorkBindingTupleActual
+noncomputable section
+variable (io : ContinueWorkBindingModel.Ports)
+local notation "capture.continuation.encode_continue_work_binding" => io.encode
+local notation "capture.continuation.digest_continue_work_binding" => io.full.digest
+local notation "sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256" => SourceEndReceiptActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256
+-- ACTUAL COMPLETE BINDING FUNCTIONS
+end
+end SandboxModel.Stage1Protocol.ContinueWorkBindingTupleActual

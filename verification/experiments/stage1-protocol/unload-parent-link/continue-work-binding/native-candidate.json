@@ -1,0 +1,29 @@
+{
+  "development_candidate": true,
+  "source": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "parent_pr": 1018,
+  "parent": "2bb7a92f5dc61704d906dc81c3425219901fa4ee",
+  "variants": [
+    "original",
+    "adapted-original",
+    "factored-original",
+    "network-policy-as-deny-all",
+    "adapted-network-policy-as-deny-all",
+    "file-policy-as-zero",
+    "adapted-file-policy-as-zero",
+    "factored-file-policy-as-zero"
+  ],
+  "all_assertions": 63,
+  "correct_assertions": {
+    "passed": 63,
+    "failed": 0
+  },
+  "wrong_assertions": {
+    "passed": 62,
+    "failed": 1
+  },
+  "independent_original_restores": 5,
+  "compiled": false,
+  "tests_executed": false,
+  "public_acceptance": false
+}
