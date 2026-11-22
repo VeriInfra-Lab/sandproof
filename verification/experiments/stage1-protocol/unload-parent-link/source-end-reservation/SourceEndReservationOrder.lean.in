@@ -1,0 +1,44 @@
+import SourceEndReservationSpec
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceEndReservationModel
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceEndReservationOrder
+noncomputable section
+
+theorem future_absent (captured : Capture) (absent : captured.«end» = none) :
+    future captured = 16384#usize := by
+  simp [future, absent]
+
+theorem future_present (captured : Capture) (saved : SourceEndReceiptModel.End)
+    (present : captured.«end» = some saved) : future captured = 0#usize := by
+  simp [future, present]
+
+theorem complete_mathematical_cost (bytes : Usize) (captured : Capture) :
+    ExactCost bytes captured (cost bytes captured) := by
+  have exactSum := Usize.checked_add_bv_spec bytes (future captured)
+  unfold cost
+  cases sum : Usize.checked_add bytes (future captured) with
+  | none =>
+    simp only [sum] at exactSum
+    exact ⟨rfl, exactSum⟩
+  | some total =>
+    simp only [sum] at exactSum
+    exact ⟨exactSum.2.1, exactSum.1⟩
+
+theorem encoding_error_precedes_arithmetic (io : Ports) (captured : Capture) (error : JsonError)
+    (failed : io.encode_capture captured = .ok (.Err error)) :
+    outcome io captured = .ok (.Err (.Json error)) := by
+  simp [outcome, SourceRetireSpec.tryJournal, failed]
+
+theorem successful_encoding_keeps_original_full_value (io : Ports) (captured : Capture)
+    (bytes : alloc.vec.Vec U8) (encoded : io.encode_capture captured = .ok (.Ok bytes)) :
+    outcome io captured = .ok (cost (alloc.vec.Vec.len bytes) captured) := by
+  simp [outcome, SourceRetireSpec.tryJournal, encoded]
+
+end
+end SandboxModel.Stage1Protocol.SourceEndReservationOrder
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationOrder.future_absent
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationOrder.future_present
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationOrder.complete_mathematical_cost
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationOrder.encoding_error_precedes_arithmetic
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationOrder.successful_encoding_keeps_original_full_value

@@ -1,0 +1,34 @@
+// Original API/SQLite/JSON fixtures and controlled Host; cost values only.
+#[test]
+fn source_end_reservation_keeps_saved_end_exact_byte_cost() {
+    let dir = tempfile::tempdir().unwrap();
+    for kind in [1, 2, 3] {
+        let (journal, record) = source_terminal_fixture(&dir.path().join(format!("end-reservation-saved-{kind}.db")), kind);
+        let before = source_retire_sql_rows(&journal.journal.connection);
+        let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+        let original = record.clone();
+        assert!(!full::source_continuation_end_for_test(&record).is_null());
+        let encoded = full::source_end_reservation_bytes_for_test(&record).unwrap();
+        assert_eq!(full::source_end_reservation_for_test(&record).unwrap(), encoded.len());
+        assert_eq!(record, original);
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+        assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+    }
+}
+
+#[test]
+fn source_end_reservation_retains_future_end_budget() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&dir.path().join("end-reservation-future.db"), 0);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let original = record.clone();
+    assert!(full::source_continuation_end_for_test(&record).is_null());
+    let encoded = full::source_end_reservation_bytes_for_test(&record).unwrap();
+    let expected = encoded.len().checked_add(16_384).unwrap();
+    let actual = full::source_end_reservation_for_test(&record).unwrap();
+    assert_eq!(actual, expected, "missing End must reserve its future16384 bytes");
+    assert_eq!(record, original);
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+}

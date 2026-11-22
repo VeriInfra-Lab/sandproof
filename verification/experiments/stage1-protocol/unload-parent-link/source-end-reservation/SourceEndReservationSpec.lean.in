@@ -1,0 +1,40 @@
+import SourceEndReceiptValues
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceEndReservationModel
+noncomputable section
+abbrev Capture := controller.lifecycle_inbox.source_work.full.CaptureWork
+abbrev Journal := SourceEndReceiptModel.Journal
+abbrev JsonError := SourceEndReceiptModel.JsonError
+abbrev Reply := core.result.Result Usize Journal
+structure Ports where
+  encode_capture : Capture → Result (core.result.Result (alloc.vec.Vec U8) JsonError)
+
+/-- The complete original End option controls only future space debt.
+    Existing-End validity is not asserted by this function. -/
+def future (captured : Capture) : Usize := if captured.«end».isNone then 16384#usize else 0#usize
+
+def cost (bytes : Usize) (captured : Capture) : Reply :=
+  match Usize.checked_add bytes (future captured) with
+  | none => .Err .MaintenanceCapacity
+  | some total => .Ok total
+
+/-- A library encoding error wins before all size arithmetic. The encoder's
+    input is the complete original CaptureWork, not a summary or field subset. -/
+def outcome (io : Ports) (captured : Capture) : Result Reply :=
+  SourceRetireSpec.tryJournal JournalError.Json (io.encode_capture captured) fun bytes =>
+    .ok (cost (alloc.vec.Vec.len bytes) captured)
+
+/-- Independent mathematical result characterization, including refusal.
+    No physical allocation, envelope sufficiency, permission or durability. -/
+def ExactCost (bytes : Usize) (captured : Capture) : Reply → Prop
+  | .Ok total => total.val = bytes.val + (future captured).val ∧
+      bytes.val + (future captured).val ≤ Usize.max
+  | .Err error => error = .MaintenanceCapacity ∧
+      Usize.max < bytes.val + (future captured).val
+
+def Contract (io : Ports) (root : Capture → Result Reply) : Prop :=
+  ∀ captured, root captured = outcome io captured
+end
+end SandboxModel.Stage1Protocol.SourceEndReservationModel

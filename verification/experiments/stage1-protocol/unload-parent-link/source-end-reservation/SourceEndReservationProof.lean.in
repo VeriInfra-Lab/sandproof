@@ -1,0 +1,56 @@
+import SourceEndReservationView
+import SourceEndReservationOrder
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceEndReservationModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+namespace SandboxModel.Stage1Protocol.SourceEndReservationProof
+noncomputable section
+
+theorem actual_contract (io : Ports) (captured : Capture) :
+    SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes io captured =
+      outcome io captured := by
+  unfold SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes
+    outcome SourceRetireSpec.tryJournal
+  apply congrArg (fun next => io.encode_capture captured >>= next)
+  funext answer
+  cases answer with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SourceEndReceiptActual.JournalErrorFromJson.from_json]
+  | Ok bytes =>
+    by_cases absent : captured.«end» = none
+    · cases sum : Usize.checked_add (alloc.vec.Vec.len bytes) 16384#usize <;>
+        simp [core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.is_none,
+          core.option.Option.ok_or, cost, future, absent, lift, sum,
+          SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.END_RECORD_BYTES]
+    · cases sum : Usize.checked_add (alloc.vec.Vec.len bytes) 0#usize <;>
+        simp [core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.is_none,
+          core.option.Option.ok_or, cost, future, absent, lift, sum]
+
+theorem complete_contract (io : Ports) : Contract io
+    (SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes io) :=
+  actual_contract io
+
+theorem actual_encoding_error_first (io : Ports) (captured : Capture) (error : JsonError)
+    (failed : io.encode_capture captured = .ok (.Err error)) :
+    SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes io captured =
+      .ok (.Err (.Json error)) := by
+  rw [actual_contract]
+  exact SourceEndReservationOrder.encoding_error_precedes_arithmetic io captured error failed
+
+theorem actual_complete_mathematical_cost (io : Ports) (captured : Capture)
+    (bytes : alloc.vec.Vec U8) (encoded : io.encode_capture captured = .ok (.Ok bytes)) :
+    ∃ reply, SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes io captured =
+      .ok reply ∧ ExactCost (alloc.vec.Vec.len bytes) captured reply := by
+  refine ⟨cost (alloc.vec.Vec.len bytes) captured, ?_, SourceEndReservationOrder.complete_mathematical_cost _ _⟩
+  rw [actual_contract]
+  exact SourceEndReservationOrder.successful_encoding_keeps_original_full_value io captured bytes encoded
+
+end
+end SandboxModel.Stage1Protocol.SourceEndReservationProof
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationProof.complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationProof.actual_encoding_error_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationProof.actual_complete_mathematical_cost

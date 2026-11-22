@@ -1,0 +1,14 @@
+import SourceEndReservationSpec
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceEndReservationModel
+set_option autoImplicit false
+set_option linter.style.longLine false
+namespace SandboxModel.Stage1Protocol.SourceEndReservationActual
+noncomputable section
+variable (io : Ports)
+local notation "controller.lifecycle_inbox.source_work.full.end.encode_reserved_capture" => io.encode_capture
+local notation "controller.lifecycle_inbox.source_work.full.end.END_RECORD_BYTES" => SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.END_RECORD_BYTES
+local notation "JournalErrorFromJson" => SourceEndReceiptActual.JournalErrorFromJson
+-- ACTUAL COMPLETE RESERVATION FUNCTION
+end
+end SandboxModel.Stage1Protocol.SourceEndReservationActual

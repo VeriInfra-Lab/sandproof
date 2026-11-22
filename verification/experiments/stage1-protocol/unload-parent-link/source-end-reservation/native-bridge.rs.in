@@ -1,0 +1,9 @@
+#[cfg(test)]
+pub(crate) fn source_end_reservation_for_test(record: &SourceWorkRecord) -> Result<usize, JournalError> {
+    end::reserved_record_bytes(record.capture.as_ref().unwrap())
+}
+
+#[cfg(test)]
+pub(crate) fn source_end_reservation_bytes_for_test(record: &SourceWorkRecord) -> Result<Vec<u8>, JournalError> {
+    serde_json::to_vec(record.capture.as_ref().unwrap()).map_err(Into::into)
+}

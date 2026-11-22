@@ -1,0 +1,58 @@
+import SourceEndReservationWrong
+import SourceEndReservationValues
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceEndReservationModel SourceEndReservationValues
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceEndReservationNegative
+noncomputable section
+
+theorem wrong_for_any_successful_encoding (ports : Ports) (captured : Capture)
+    (bytes : alloc.vec.Vec U8) (encoded : ports.encode_capture captured = .ok (.Ok bytes)) :
+    SourceEndReservationWrongActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes ports captured =
+      .ok (.Ok (alloc.vec.Vec.len bytes)) := by
+  simp [SourceEndReservationWrongActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes,
+    encoded, core.result.Result.Insts.CoreOpsTry.branch, lift,
+    core.option.Option.ok_or, checked_zero_right]
+
+theorem preserves_original_encoding_error (ports : Ports) (captured : Capture) (error : JsonError)
+    (encoded : ports.encode_capture captured = .ok (.Err error)) :
+    SourceEndReservationWrongActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes ports captured =
+      .ok (.Err (.Json error)) := by
+  simp [SourceEndReservationWrongActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes,
+    encoded, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SourceEndReceiptActual.JournalErrorFromJson.from_json]
+
+theorem existing_end_control_for_all_ports (ports : Ports) (captured : Capture)
+    (savedEnd : SourceEndReceiptModel.End) (present : captured.«end» = some savedEnd) :
+    SourceEndReservationWrongActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes ports captured =
+      SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes ports captured := by
+  unfold SourceEndReservationWrongActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes
+    SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes
+  apply congrArg (fun next => ports.encode_capture captured >>= next)
+  funext answer
+  cases answer with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch]
+  | Ok bytes => simp [core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.is_none, present]
+
+theorem actual_missing_future_debt :
+    SourceEndReservationWrongActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes io pending =
+      .ok (.Ok 0#usize) :=
+  wrong_for_any_successful_encoding io pending empty rfl
+
+theorem violates_same_complete_contract :
+    ¬ Contract io (SourceEndReservationWrongActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes io) := by
+  intro claimed
+  have opposite := claimed pending
+  have correct := normal_future_end
+  rw [SourceEndReservationProof.actual_contract] at correct
+  rw [actual_missing_future_debt, correct] at opposite
+  simp at opposite
+
+end
+end SandboxModel.Stage1Protocol.SourceEndReservationNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationNegative.wrong_for_any_successful_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationNegative.preserves_original_encoding_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationNegative.existing_end_control_for_all_ports
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationNegative.actual_missing_future_debt
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationNegative.violates_same_complete_contract

@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-end-reservation 在固定 b0d791cc 连接原 reserved_record_bytes。从完整 CaptureWork 编码结果开始，缺End额外预留16384、已有End加0，Json错误在算术前返回，usize受检加法溢出为MaintenanceCapacity。116完整类型和181原体逐字复用#1014，只新增原容量函数；现有逐符号接口加原typed CaptureWork编码，不信任整个Serde。
++> 形式候选212文件/1191审计与214/1196；同一完整Contract否定真实遗漏未来预算错误版，已有End/错误编码控制保留。原生62项四视图及恢复交ning；整个128KiB封套/Full释放、set_end状态、World/SQL/事务未知/耐久/认证、物理事实和系统均未据此完成。公共根/登记/覆盖只交候选。
+ ## V3 首次卸载使用同一条原执行记录
