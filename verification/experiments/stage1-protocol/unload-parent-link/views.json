@@ -80,8 +80,8 @@
         "after": "@[rust_type \"sandbox_controller_core::model::Command\"]\n"
       }
     ],
-    "raw_sha256": "029df0470a97ebfefb900780bb968f9fb7a15782036e027cc24489cbb6bd12ed",
-    "view_sha256": "0143996cf8964e0528b812ccf83577dd1e83152029b5b39175f4467fea0fc145",
-    "isolated_sha256": "0143996cf8964e0528b812ccf83577dd1e83152029b5b39175f4467fea0fc145"
+    "raw_sha256": "6494afe592221a831bd3e5b693c6b64f6cde96a828d4782543039130e3b08388",
+    "view_sha256": "2651fa15dddcbd8ae3d28e0f0e3d103dc165be4cd2e93fe91d5ba2f7118214f9",
+    "isolated_sha256": "2651fa15dddcbd8ae3d28e0f0e3d103dc165be4cd2e93fe91d5ba2f7118214f9"
   }
 }
