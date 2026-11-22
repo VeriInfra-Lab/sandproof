@@ -1,0 +1,135 @@
+// Original API/SQLite/JSON values with a controlled Host; no physical fact.
+#[test]
+fn source_end_receipt_keeps_absence_and_original_normal_controls() {
+    let dir = tempfile::tempdir().unwrap();
+    for kind in 0..4 {
+        let (journal, record) =
+            source_terminal_fixture(&dir.path().join(format!("receipt-{kind}.db")), kind);
+        let before = source_retire_sql_rows(&journal.journal.connection);
+        let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+        let receipt = record.capture_work_end_receipt().unwrap();
+        if kind == 0 || kind == 3 {
+            assert!(receipt.is_none());
+        } else {
+            let receipt = receipt.unwrap();
+            let captured = record.capture.as_ref().unwrap();
+            assert_eq!(
+                receipt.work_binding,
+                *captured.full.binding_digest().unwrap().as_bytes()
+            );
+            let bytes = full::source_end_receipt_bytes_for_test(&record)
+                .unwrap()
+                .unwrap();
+            assert_eq!(receipt.end_binding, *digest(&bytes).as_bytes());
+            match (kind, receipt.end) {
+                (1, core::capture::CaptureWorkEnd::NeverReleased { seal: None }) => {}
+                (2, core::capture::CaptureWorkEnd::Returned { .. }) => {}
+                _ => panic!("preserve the original normal receipt variant"),
+            }
+        }
+        let mut absent = record.clone();
+        absent.capture = None;
+        assert!(absent.capture_work_end_receipt().unwrap().is_none());
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+        assert_eq!(
+            codec::load(&journal.journal.connection).unwrap().unwrap(),
+            current
+        );
+    }
+}
+
+#[test]
+fn source_end_receipt_retains_every_original_seal_coordinate() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&dir.path().join("receipt-seal.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let captured = record.capture.as_ref().unwrap();
+    let action = captured.action.as_ref().unwrap();
+    let core::Command::SealSnapshot {
+        workspace,
+        snapshot,
+        manifest,
+        ..
+    } = *action.command.command()
+    else {
+        panic!("fixture must retain its original SealSnapshot action");
+    };
+    let core::capture::CaptureWorkEnd::Returned { seal } =
+        record.capture_work_end_receipt().unwrap().unwrap().end
+    else {
+        panic!("the original normal worker receipt must be Returned");
+    };
+    assert_eq!(seal.attempt, action.command.attempt);
+    assert_eq!(seal.workspace, workspace);
+    assert_eq!(seal.snapshot, snapshot);
+    assert_eq!(seal.manifest, manifest);
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_end_receipt_preserves_validation_before_terminal_none() {
+    let dir = tempfile::tempdir().unwrap();
+    for kind in [0, 3] {
+        let (journal, mut record) =
+            source_terminal_fixture(&dir.path().join(format!("receipt-order-{kind}.db")), kind);
+        let before = source_retire_sql_rows(&journal.journal.connection);
+        let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+        record.capture.as_mut().unwrap().full.state_bytes = 0;
+        if kind == 0 {
+            assert!(record.capture_work_end_receipt().unwrap().is_none());
+        } else {
+            assert!(matches!(
+                record.capture_work_end_receipt(),
+                Err(JournalError::Conflict)
+            ));
+        }
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+        assert_eq!(
+            codec::load(&journal.journal.connection).unwrap().unwrap(),
+            current
+        );
+    }
+}
+
+#[test]
+fn source_end_receipt_distinguishes_original_no_request_tag() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&dir.path().join("receipt-no-request.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut value = serde_json::to_value(&record).unwrap();
+    value["capture"]["end"]["observation"]["outcome"] = serde_json::json!({"kind": "no_request"});
+    let mut no_request: SourceWorkRecord = serde_json::from_value(value).unwrap();
+    no_request.capture.as_mut().unwrap().completed = None;
+    full::source_end_validate_for_test(&no_request).unwrap();
+    let receipt = no_request.capture_work_end_receipt().unwrap().unwrap();
+    assert!(
+        matches!(receipt.end, core::capture::CaptureWorkEnd::NoRequest { .. }),
+        "saved End receipt must preserve NoRequest tag"
+    );
+    assert_eq!(
+        receipt.work_binding,
+        *no_request
+            .capture
+            .as_ref()
+            .unwrap()
+            .full
+            .binding_digest()
+            .unwrap()
+            .as_bytes()
+    );
+    let bytes = full::source_end_receipt_bytes_for_test(&no_request)
+        .unwrap()
+        .unwrap();
+    assert_eq!(receipt.end_binding, *digest(&bytes).as_bytes());
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}

@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-end-receipt 在固定 b0d791cc 接原receipt已解码值入口；完整End校验先于类型/Seal，再次Full绑定、末次End编码/共享摘要及准确三字段输出。113个完整类型和178个原体复用父#1013，新增3类型/5函数，map/transpose保留实际透明体。两次编码回复分开，原业务体保持，调用点环境采用及生产/staging一般连接仍开放。
++> 形式候选207文件/1175审计与209/1180；同一完整Contract否定真实NoRequest误标Returned，正常控制保留。缺capture/End直接None；Terminated先验后None。原生60项四视图及恢复交ning；set_end错误后状态、当前World/SQL/事务/未知提交/耐久、物理事实/认证与完整JSON/TLS/系统未据此完成。公共根/登记/覆盖只交候选。
+ ## V3 首次卸载使用同一条原执行记录

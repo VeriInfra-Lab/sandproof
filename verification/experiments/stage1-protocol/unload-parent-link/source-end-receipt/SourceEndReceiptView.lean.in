@@ -1,0 +1,25 @@
+import SourceEndReceiptLibrary
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes SourceTerminalMatchTypes SourceEndReceiptModel
+set_option autoImplicit false
+set_option linter.unusedVariables false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceEndReceiptActual
+noncomputable section
+variable (io : Ports)
+local notation "capture.CaptureRequestEndObservation" => SandproofSourceRetentionProviders.capture.CaptureRequestEndObservation
+local notation "capture.CaptureRequestEndOutcome.NoRequest" => SandproofSourceRetentionProviders.capture.CaptureRequestEndOutcome.NoRequest
+local notation "capture.CaptureRequestEndOutcome.Returned" => SandproofSourceRetentionProviders.capture.CaptureRequestEndOutcome.Returned
+local notation "capture.work.encode_full_work_binding" => io.validation.drain.full.encode
+local notation "capture.work.digest_full_work_binding" => io.validation.drain.full.digest
+local notation "capture.terminated.encode_terminated_work_binding" => io.validation.drain.encode
+local notation "capture.terminated.digest_terminated_work_binding" => io.validation.drain.full.digest
+local notation "controller.lifecycle_inbox.sha256.digest" => io.validation.drain.full.digest
+local notation "controller.lifecycle_inbox.source_work.full.end.encode_saved_end" => io.validation.encode_end
+local notation "controller.lifecycle_inbox.source_work.full.end.encode_receipt_end" => io.encode_end_again
+-- ACTUAL COMPLETE RECEIPT FUNCTIONS
+end
+end SandboxModel.Stage1Protocol.SourceEndReceiptActual

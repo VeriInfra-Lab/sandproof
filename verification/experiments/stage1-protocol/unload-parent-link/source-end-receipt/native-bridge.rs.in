@@ -1,0 +1,12 @@
+#[cfg(test)]
+pub(crate) fn source_end_receipt_bytes_for_test(
+    record: &SourceWorkRecord,
+) -> Result<Option<Vec<u8>>, JournalError> {
+    record
+        .capture
+        .as_ref()
+        .and_then(|capture| capture.end.as_ref())
+        .map(serde_json::to_vec)
+        .transpose()
+        .map_err(Into::into)
+}

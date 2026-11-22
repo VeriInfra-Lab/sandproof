@@ -1,0 +1,480 @@
+import SourceEndReceiptView
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceEndReceiptModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceEndReceiptProof
+noncomputable section
+
+theorem validation_refines (io : Ports) (record : Record) (represented : Representable record) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.validate_record io record =
+      SourceEndValidationModel.outcome io.validation record := by
+  change SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record io.validation record = _
+  exact SourceEndValidationProof.actual_contract io.validation record represented
+
+theorem full_binding_refines (io : Ports) (full : SourceRequestEndMatchModel.Full) :
+    SourceEndReceiptActual.capture.work.FullCaptureWorkRequest.binding_digest io full =
+      SourceRequestEndMatchModel.binding io.validation.drain.full full := by
+  change SourceRequestEndMatchActual.capture.work.FullCaptureWorkRequest.binding_digest io.validation.drain.full full = _
+  exact SourceRequestEndMatchProof.binding_refines io.validation.drain.full full
+
+theorem final_full_refines (io : Ports) (full : SourceRequestEndMatchModel.Full) :
+    SourceEndReceiptActual.capture.work.FullCaptureWorkRequest.binding_digest (receiptPhase io) full =
+      SourceRequestEndMatchModel.binding (finalFull io) full := by
+  exact full_binding_refines (receiptPhase io) full
+
+theorem seal_refines (record : Record) (action : SourceSealEndModel.Action) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.seal_end record action =
+      SourceSealEndModel.outcome record action := by
+  change SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.seal_end record action = _
+  exact SourceSealEndProof.actual_contract record action
+
+theorem as_bytes_identity (value : SourceRequestEndMatchModel.Digest) :
+    SourceEndReceiptActual.sandproof_protocol.lifecycle.digest.ContentDigest.as_bytes value = .ok value := rfl
+
+theorem owned_digest_refines (io : Ports) (bytes : Slice U8) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.digest io bytes =
+      io.validation.drain.full.digest bytes := by
+  simp [SourceEndReceiptActual.controller.lifecycle_inbox.source_work.digest,
+    SourceEndReceiptActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256]
+  change (io.validation.drain.full.digest bytes >>= pure) = _
+  exact bind_pure _
+
+theorem option_map_refines {T U F : Type} (callback : core.ops.function.FnOnce F T U)
+    (value : Option T) (state : F) :
+    SourceEndReceiptActual.core.option.Option.map callback value state =
+      SourceRetireLibrary.optionMap callback value state := by
+  cases value <;> rfl
+
+theorem option_transpose_refines {T E : Type} (value : Option (core.result.Result T E)) :
+    SourceEndReceiptActual.core.option.OptionResult.transpose value =
+      SourceRetireLibrary.optionTranspose value := by
+  cases value with
+  | none => rfl
+  | some result => cases result <;> rfl
+
+theorem closure_refines (record : Record) (action : SourceSealEndModel.Action) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt.closure.Insts.CoreOpsFunctionFnOnceTupleSharedWorkActionEffectIdResultCaptureSealEndJournalError.call_once
+      record action = SourceSealEndModel.outcome record action := by
+  change SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.seal_end record action = _
+  exact seal_refines record action
+
+theorem option_action_deref (value : Option SourceRequestEndMatchModel.Action) :
+    SourceEndReceiptActual.core.option.Option.as_deref
+      (core.ops.deref.DerefBoxInst SourceRequestEndMatchModel.Action) value = .ok value := by
+  change SourcePriorEndMatchActual.core.option.Option.as_deref
+    (core.ops.deref.DerefBoxInst SourceRequestEndMatchModel.Action) value = _
+  exact SourcePriorEndMatchProof.option_action_deref value
+
+theorem vector_borrow (bytes : alloc.vec.Vec U8) : bytes.deref = bytes.slice := by
+  simp [alloc.vec.Vec.deref, alloc.vec.Vec.val]
+
+theorem actual_contract (io : Ports) (record : Record) (represented : Representable record) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = outcome io record := by
+  unfold SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt outcome
+  cases present : record.capture with
+  | none => rfl
+  | some captured =>
+    simp only []
+    cases ended : captured.«end» with
+    | none => rfl
+    | some saved =>
+      simp only []
+      simp only [validation_refines io record represented, SourceRetireSpec.tryJournal]
+      apply congrArg (fun next => SourceEndValidationModel.outcome io.validation record >>= next)
+      funext validated
+      cases validated with
+      | Err error =>
+        simp [core.result.Result.Insts.CoreOpsTry.branch,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | Ok unitValue =>
+        simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+        cases saved with
+        | Terminated stop observed prior =>
+          simp [typedEnd]
+        | NeverReleased digest action =>
+          simp only [option_action_deref]
+          cases action with
+          | none =>
+            simp only [SourceEndReceiptActual.core.option.Option.map, SourceEndReceiptActual.core.option.OptionResult.transpose, typedEnd, bind_tc_ok]
+            simp only [final_full_refines]
+            apply congrArg (fun next => SourceRequestEndMatchModel.binding (finalFull io) captured.full >>= next)
+            funext fullReply
+            cases fullReply with
+            | Err error =>
+              simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, SourceEndReceiptActual.JournalErrorFromJson.from_json]
+            | Ok workBinding =>
+              simp only [bind_tc_ok, as_bytes_identity]
+              apply congrArg (fun next => io.encode_end_again (.NeverReleased digest none) >>= next)
+              funext encoded
+              cases encoded with
+              | Err error =>
+                simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                  SourceEndReceiptActual.JournalErrorFromJson.from_json]
+              | Ok bytes =>
+                simp [owned_digest_refines, vector_borrow]
+          | some action =>
+            simp only [SourceEndReceiptActual.core.option.Option.map, closure_refines, typedEnd, SourceRetireSpec.tryJournal, bind_tc_ok, bind_assoc]
+            apply congrArg (fun next => SourceSealEndModel.outcome record action >>= next)
+            funext checked
+            cases checked with
+            | Err error =>
+              simp [SourceEndReceiptActual.core.option.OptionResult.transpose, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+            | Ok sealResult =>
+              simp only [SourceEndReceiptActual.core.option.OptionResult.transpose, bind_tc_ok]
+              simp only [final_full_refines]
+              apply congrArg (fun next => SourceRequestEndMatchModel.binding (finalFull io) captured.full >>= next)
+              funext fullReply
+              cases fullReply with
+              | Err error =>
+                simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, SourceEndReceiptActual.JournalErrorFromJson.from_json]
+              | Ok workBinding =>
+                simp only [bind_tc_ok, as_bytes_identity]
+                apply congrArg (fun next => io.encode_end_again (.NeverReleased digest (some action)) >>= next)
+                funext encoded
+                cases encoded with
+                | Err error =>
+                  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                    SourceEndReceiptActual.JournalErrorFromJson.from_json]
+                | Ok bytes =>
+                  simp [owned_digest_refines, vector_borrow]
+        | WorkerEnded observed =>
+          simp only [seal_refines, typedEnd, SourceRetireSpec.tryJournal, bind_assoc]
+          apply congrArg (fun next => SourceSealEndModel.outcome record observed.action >>= next)
+          funext checked
+          cases checked with
+          | Err error =>
+            simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+          | Ok sealResult =>
+            simp only [bind_tc_ok]
+            cases observed with
+            | mk action digest worker source outcomeValue =>
+              cases outcomeValue with
+              | NoRequest =>
+                simp only [bind_tc_ok]
+                simp only [final_full_refines]
+                apply congrArg (fun next => SourceRequestEndMatchModel.binding (finalFull io) captured.full >>= next)
+                funext fullReply
+                cases fullReply with
+                | Err error =>
+                  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, SourceEndReceiptActual.JournalErrorFromJson.from_json]
+                | Ok workBinding =>
+                  simp only [bind_tc_ok, as_bytes_identity]
+                  apply congrArg (fun next => io.encode_end_again (.WorkerEnded ⟨action, digest, worker, source, .NoRequest⟩) >>= next)
+                  funext encoded
+                  cases encoded with
+                  | Err error =>
+                    simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                      SourceEndReceiptActual.JournalErrorFromJson.from_json]
+                  | Ok bytes =>
+                    simp [owned_digest_refines, vector_borrow]
+              | Returned status =>
+                simp only [bind_tc_ok]
+                simp only [final_full_refines]
+                apply congrArg (fun next => SourceRequestEndMatchModel.binding (finalFull io) captured.full >>= next)
+                funext fullReply
+                cases fullReply with
+                | Err error =>
+                  simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, SourceEndReceiptActual.JournalErrorFromJson.from_json]
+                | Ok workBinding =>
+                  simp only [bind_tc_ok, as_bytes_identity]
+                  apply congrArg (fun next => io.encode_end_again (.WorkerEnded ⟨action, digest, worker, source, .Returned status⟩) >>= next)
+                  funext encoded
+                  cases encoded with
+                  | Err error =>
+                    simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                      SourceEndReceiptActual.JournalErrorFromJson.from_json]
+                  | Ok bytes =>
+                    simp [owned_digest_refines, vector_borrow]
+
+theorem complete_contract (io : Ports) :
+    Contract io (SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io) :=
+  actual_contract io
+
+end
+end SandboxModel.Stage1Protocol.SourceEndReceiptProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.validation_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.full_binding_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.final_full_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.seal_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.as_bytes_identity
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.owned_digest_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.option_map_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.option_transpose_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.closure_refines
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.option_action_deref
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.actual_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.complete_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.vector_borrow
+
+
+namespace SandboxModel.Stage1Protocol.SourceEndReceiptOrder
+noncomputable section
+open SourceEndReceiptModel
+abbrev Capture := controller.lifecycle_inbox.source_work.full.CaptureWork
+
+def tail (io : Ports) (full : SourceRequestEndMatchModel.Full) (saved : End) (typed : TypedEnd) : Result Reply :=
+  SourceRetireSpec.tryJournal JournalError.Json (SourceRequestEndMatchModel.binding (finalFull io) full) fun workBinding =>
+  SourceRetireSpec.tryJournal JournalError.Json (io.encode_end_again saved) fun bytes => do
+    let endBinding ← io.validation.drain.full.digest bytes.slice
+    .ok (.Ok (some ⟨workBinding, endBinding, typed⟩))
+
+theorem missing_capture_skips_all (io : Ports) (record : Record) (absent : record.capture = none) :
+    outcome io record = .ok (.Ok none) := by
+  simp [outcome, absent]
+
+theorem missing_end_skips_validation (io : Ports) (record : Record) (captured : Capture)
+    (present : record.capture = some captured) (absent : captured.«end» = none) :
+    outcome io record = .ok (.Ok none) := by
+  simp [outcome, present, absent]
+
+theorem validation_error_first (io : Ports) (record : Record) (captured : Capture) (saved : End)
+    (error : Journal) (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (failed : SourceEndValidationModel.outcome io.validation record = .ok (.Err error)) :
+    outcome io record = .ok (.Err error) := by
+  simp [outcome, present, ended, SourceRetireSpec.tryJournal, failed]
+
+theorem typed_error_before_final_bindings (io : Ports) (record : Record) (captured : Capture) (saved : End)
+    (error : Journal) (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (failed : typedEnd record saved = .ok (.Err error)) :
+    outcome io record = .ok (.Err error) := by
+  simp [outcome, present, ended, SourceRetireSpec.tryJournal, ready, failed]
+
+theorem typed_none_skips_final_bindings (io : Ports) (record : Record) (captured : Capture) (saved : End)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (absent : typedEnd record saved = .ok (.Ok none)) :
+    outcome io record = .ok (.Ok none) := by
+  simp [outcome, present, ended, SourceRetireSpec.tryJournal, ready, absent]
+
+theorem terminated_none_after_validation (io : Ports) (record : Record) (captured : Capture)
+    (stop : SourceDrainValidationModel.Stop) (observed : SourceDrainValidationModel.Observation)
+    (prior : Option SourceEndValidationModel.Prior)
+    (present : record.capture = some captured) (ended : captured.«end» = some (.Terminated stop observed prior))
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ())) :
+    outcome io record = .ok (.Ok none) :=
+  typed_none_skips_final_bindings io record captured _ present ended ready rfl
+
+theorem accepted_type_continues_exact_tail (io : Ports) (record : Record) (captured : Capture)
+    (saved : End) (typed : TypedEnd)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (selected : typedEnd record saved = .ok (.Ok (some typed))) :
+    outcome io record = SourceEndReceiptOrder.tail io captured.full saved typed := by
+  simp [outcome, present, ended, SourceRetireSpec.tryJournal, ready, selected, tail]
+
+theorem final_full_error_before_last_end (io : Ports) (record : Record) (captured : Capture)
+    (saved : End) (typed : TypedEnd) (error : JsonError)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (selected : typedEnd record saved = .ok (.Ok (some typed)))
+    (failed : SourceRequestEndMatchModel.binding (finalFull io) captured.full = .ok (.Err error)) :
+    outcome io record = .ok (.Err (.Json error)) := by
+  rw [accepted_type_continues_exact_tail io record captured saved typed present ended ready selected]
+  simp [tail, SourceRetireSpec.tryJournal, failed]
+
+theorem last_end_error_after_full (io : Ports) (record : Record) (captured : Capture)
+    (saved : End) (typed : TypedEnd) (workBinding : SourceRequestEndMatchModel.Digest) (error : JsonError)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (selected : typedEnd record saved = .ok (.Ok (some typed)))
+    (bound : SourceRequestEndMatchModel.binding (finalFull io) captured.full = .ok (.Ok workBinding))
+    (failed : io.encode_end_again saved = .ok (.Err error)) :
+    outcome io record = .ok (.Err (.Json error)) := by
+  rw [accepted_type_continues_exact_tail io record captured saved typed present ended ready selected]
+  simp [tail, SourceRetireSpec.tryJournal, bound, failed]
+
+theorem complete_output_fields (io : Ports) (record : Record) (captured : Capture)
+    (saved : End) (typed : TypedEnd) (workBinding endBinding : SourceRequestEndMatchModel.Digest)
+    (bytes : alloc.vec.Vec U8)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (selected : typedEnd record saved = .ok (.Ok (some typed)))
+    (bound : SourceRequestEndMatchModel.binding (finalFull io) captured.full = .ok (.Ok workBinding))
+    (encoded : io.encode_end_again saved = .ok (.Ok bytes))
+    (hashed : io.validation.drain.full.digest bytes.slice = .ok endBinding) :
+    outcome io record = .ok (.Ok (some ⟨workBinding, endBinding, typed⟩)) := by
+  rw [accepted_type_continues_exact_tail io record captured saved typed present ended ready selected]
+  simp [tail, SourceRetireSpec.tryJournal, bound, encoded, hashed]
+
+theorem never_without_seal (record : Record) (digest : SourceRequestEndMatchModel.Digest) :
+    typedEnd record (.NeverReleased digest none) = .ok (.Ok (some (.NeverReleased none))) := rfl
+
+theorem never_seal_error (record : Record) (digest : SourceRequestEndMatchModel.Digest)
+    (action : SourceSealEndModel.Action) (error : Journal)
+    (failed : SourceSealEndModel.outcome record action = .ok (.Err error)) :
+    typedEnd record (.NeverReleased digest (some action)) = .ok (.Err error) := by
+  simp [typedEnd, SourceRetireSpec.tryJournal, failed]
+
+theorem worker_seal_error (record : Record) (observed : SourceRequestEndMatchModel.Observation)
+    (error : Journal) (failed : SourceSealEndModel.outcome record observed.action = .ok (.Err error)) :
+    typedEnd record (.WorkerEnded observed) = .ok (.Err error) := by
+  simp [typedEnd, SourceRetireSpec.tryJournal, failed]
+
+theorem worker_no_request_exact (record : Record) (observed : SourceRequestEndMatchModel.Observation)
+    (sealResult : SourceSealEndModel.SealEnd)
+    (selected : observed.outcome = .NoRequest)
+    (sealedValue : SourceSealEndModel.outcome record observed.action = .ok (.Ok sealResult)) :
+    typedEnd record (.WorkerEnded observed) = .ok (.Ok (some (.NoRequest sealResult))) := by
+  simp [typedEnd, SourceRetireSpec.tryJournal, sealedValue, selected]
+
+theorem worker_returned_exact (record : Record) (observed : SourceRequestEndMatchModel.Observation)
+    (sealResult : SourceSealEndModel.SealEnd) (status : U16)
+    (selected : observed.outcome = .Returned status)
+    (sealedValue : SourceSealEndModel.outcome record observed.action = .ok (.Ok sealResult)) :
+    typedEnd record (.WorkerEnded observed) = .ok (.Ok (some (.Returned sealResult))) := by
+  simp [typedEnd, SourceRetireSpec.tryJournal, sealedValue, selected]
+
+end
+end SandboxModel.Stage1Protocol.SourceEndReceiptOrder
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.missing_capture_skips_all
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.missing_end_skips_validation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.validation_error_first
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.typed_error_before_final_bindings
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.typed_none_skips_final_bindings
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.terminated_none_after_validation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.accepted_type_continues_exact_tail
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.final_full_error_before_last_end
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.last_end_error_after_full
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.complete_output_fields
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.never_without_seal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.never_seal_error
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.worker_seal_error
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.worker_no_request_exact
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptOrder.worker_returned_exact
+
+
+namespace SandboxModel.Stage1Protocol.SourceEndReceiptProof
+noncomputable section
+abbrev Capture := SourceEndReceiptOrder.Capture
+
+theorem actual_missing_capture_skips_all (io : Ports) (record : Record) (represented : Representable record) (absent : record.capture = none) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = .ok (.Ok none) := by
+  rw [actual_contract io record represented]
+  exact SourceEndReceiptOrder.missing_capture_skips_all io record absent
+
+theorem actual_missing_end_skips_validation (io : Ports) (record : Record) (represented : Representable record) (captured : Capture)
+    (present : record.capture = some captured) (absent : captured.«end» = none) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = .ok (.Ok none) := by
+  rw [actual_contract io record represented]
+  exact SourceEndReceiptOrder.missing_end_skips_validation io record captured present absent
+
+theorem actual_validation_error_first (io : Ports) (record : Record) (represented : Representable record) (captured : Capture) (saved : End)
+    (error : Journal) (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (failed : SourceEndValidationModel.outcome io.validation record = .ok (.Err error)) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = .ok (.Err error) := by
+  rw [actual_contract io record represented]
+  exact SourceEndReceiptOrder.validation_error_first io record captured saved error present ended failed
+
+theorem actual_typed_error_before_final_bindings (io : Ports) (record : Record) (represented : Representable record) (captured : Capture) (saved : End)
+    (error : Journal) (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (failed : typedEnd record saved = .ok (.Err error)) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = .ok (.Err error) := by
+  rw [actual_contract io record represented]
+  exact SourceEndReceiptOrder.typed_error_before_final_bindings io record captured saved error present ended ready failed
+
+theorem actual_typed_none_skips_final_bindings (io : Ports) (record : Record) (represented : Representable record) (captured : Capture) (saved : End)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (absent : typedEnd record saved = .ok (.Ok none)) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = .ok (.Ok none) := by
+  rw [actual_contract io record represented]
+  exact SourceEndReceiptOrder.typed_none_skips_final_bindings io record captured saved present ended ready absent
+
+theorem actual_terminated_none_after_validation (io : Ports) (record : Record) (represented : Representable record) (captured : Capture)
+    (stop : SourceDrainValidationModel.Stop) (observed : SourceDrainValidationModel.Observation)
+    (prior : Option SourceEndValidationModel.Prior)
+    (present : record.capture = some captured) (ended : captured.«end» = some (.Terminated stop observed prior))
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ())) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = .ok (.Ok none) := by
+  rw [actual_contract io record represented]
+  exact SourceEndReceiptOrder.terminated_none_after_validation io record captured stop observed prior present ended ready
+
+theorem actual_accepted_type_continues_exact_tail (io : Ports) (record : Record) (represented : Representable record) (captured : Capture)
+    (saved : End) (typed : TypedEnd)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (selected : typedEnd record saved = .ok (.Ok (some typed))) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = SourceEndReceiptOrder.tail io captured.full saved typed := by
+  rw [actual_contract io record represented]
+  exact SourceEndReceiptOrder.accepted_type_continues_exact_tail io record captured saved typed present ended ready selected
+
+theorem actual_final_full_error_before_last_end (io : Ports) (record : Record) (represented : Representable record) (captured : Capture)
+    (saved : End) (typed : TypedEnd) (error : JsonError)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (selected : typedEnd record saved = .ok (.Ok (some typed)))
+    (failed : SourceRequestEndMatchModel.binding (finalFull io) captured.full = .ok (.Err error)) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = .ok (.Err (.Json error)) := by
+  rw [actual_contract io record represented]
+  exact SourceEndReceiptOrder.final_full_error_before_last_end io record captured saved typed error present ended ready selected failed
+
+theorem actual_last_end_error_after_full (io : Ports) (record : Record) (represented : Representable record) (captured : Capture)
+    (saved : End) (typed : TypedEnd) (workBinding : SourceRequestEndMatchModel.Digest) (error : JsonError)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (selected : typedEnd record saved = .ok (.Ok (some typed)))
+    (bound : SourceRequestEndMatchModel.binding (finalFull io) captured.full = .ok (.Ok workBinding))
+    (failed : io.encode_end_again saved = .ok (.Err error)) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = .ok (.Err (.Json error)) := by
+  rw [actual_contract io record represented]
+  exact SourceEndReceiptOrder.last_end_error_after_full io record captured saved typed workBinding error present ended ready selected bound failed
+
+theorem actual_complete_output_fields (io : Ports) (record : Record) (represented : Representable record) (captured : Capture)
+    (saved : End) (typed : TypedEnd) (workBinding endBinding : SourceRequestEndMatchModel.Digest)
+    (bytes : alloc.vec.Vec U8)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (ready : SourceEndValidationModel.outcome io.validation record = .ok (.Ok ()))
+    (selected : typedEnd record saved = .ok (.Ok (some typed)))
+    (bound : SourceRequestEndMatchModel.binding (finalFull io) captured.full = .ok (.Ok workBinding))
+    (encoded : io.encode_end_again saved = .ok (.Ok bytes))
+    (hashed : io.validation.drain.full.digest bytes.slice = .ok endBinding) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = .ok (.Ok (some ⟨workBinding, endBinding, typed⟩)) := by
+  rw [actual_contract io record represented]
+  exact SourceEndReceiptOrder.complete_output_fields io record captured saved typed workBinding endBinding bytes present ended ready selected bound encoded hashed
+
+end
+end SandboxModel.Stage1Protocol.SourceEndReceiptProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.actual_missing_capture_skips_all
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.actual_missing_end_skips_validation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.actual_validation_error_first
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.actual_typed_error_before_final_bindings
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.actual_typed_none_skips_final_bindings
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.actual_terminated_none_after_validation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.actual_accepted_type_continues_exact_tail
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.actual_final_full_error_before_last_end
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.actual_last_end_error_after_full
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptProof.actual_complete_output_fields
