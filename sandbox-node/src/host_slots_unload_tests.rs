@@ -181,3 +181,42 @@ fn identical_bytes_on_a_different_inode_block_fresh_and_replayed_release() {
         HostSlotPhase::Free
     );
 }
+
+#[test]
+#[ignore = "requires isolated root Linux/KVM and SANDPROOF_NODE_AUDIT_TEST_PARENT"]
+fn exclusive_gate_survives_the_durable_free_write() {
+    let (_dir, config) = root_layout_fixture();
+    let state = Release::prepare(config);
+    let retired = state.releasing.retirement.as_ref().unwrap();
+    let slot = retired.runtime.host_slot.as_ref().unwrap();
+    let assert_locked = || {
+        assert!(matches!(
+            slot.helper_gate.try_acquire(Some(slot)),
+            Err(RuntimeError::HelperGateBusy)
+        ));
+    };
+    let runtime = Runtime::for_existing(retired.runtime.clone()).unwrap();
+    let id = state.worker.vm_name(state.occupied.context.binding.vm);
+    runtime
+        .with_fresh_unload_retirement(
+            &id,
+            &retired.manifest,
+            || state.worker.store_release_position(&state.releasing),
+            || {
+                assert_locked();
+                retired.remove_original_files()
+            },
+            || {
+                assert_locked();
+                state.worker.publish_free(&state.releasing)?;
+                assert_locked();
+                Ok::<_, Box<dyn std::error::Error>>(())
+            },
+        )
+        .unwrap();
+    assert_eq!(
+        state.worker.read_host_positions().unwrap()[0].phase,
+        HostSlotPhase::Free
+    );
+    assert!(slot.helper_gate.try_acquire(Some(slot)).is_ok());
+}
