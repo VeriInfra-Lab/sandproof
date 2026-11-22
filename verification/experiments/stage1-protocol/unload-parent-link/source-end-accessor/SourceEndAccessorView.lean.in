@@ -1,0 +1,11 @@
+import SourceEndAccessorTypes
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceEndAccessorActual
+noncomputable section
+variable (io : SourceEndReceiptModel.Ports)
+local notation "controller.lifecycle_inbox.source_work.full.end.receipt" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io
+-- ACTUAL COMPLETE ACCESSOR FUNCTIONS
+end
+end SandboxModel.Stage1Protocol.SourceEndAccessorActual

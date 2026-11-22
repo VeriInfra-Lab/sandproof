@@ -1,0 +1,70 @@
+import SourceEndAccessor
+import SourceEndAccessorConstructorWrong
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceEndAccessorModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+namespace SandboxModel.Stage1Protocol.SourceEndAccessorConstructorNegative
+noncomputable section
+local notation "WrongCtor" => SourceEndAccessorConstructorWrongActual.capture.continuation.OriginalContinueWorkRequest.from_ended_source
+local notation "CorrectCtor" => SourceEndAccessorActual.capture.continuation.OriginalContinueWorkRequest.from_ended_source
+
+theorem actual_complete_swapped_output (identity : Identity) (full : Full) (source : Requirement)
+    (receipt : Receipt) (networkPolicy : NetworkPolicy) (filePolicy : FilePolicy) :
+    WrongCtor identity full source receipt networkPolicy filePolicy =
+      .ok (⟨identity, full, source,
+        { receipt with work_binding := receipt.end_binding, end_binding := receipt.work_binding },
+        networkPolicy, filePolicy⟩ : Question) := rfl
+
+/-- Equal bytes are a legal control for arbitrary other fields, not a weaker
+    replacement of the complete ConstructorContract. -/
+theorem equal_bindings_control (identity : Identity) (full : Full) (source : Requirement)
+    (receipt : Receipt) (networkPolicy : NetworkPolicy) (filePolicy : FilePolicy)
+    (equal : receipt.work_binding = receipt.end_binding) :
+    WrongCtor identity full source receipt networkPolicy filePolicy =
+      CorrectCtor identity full source receipt networkPolicy filePolicy := by
+  cases receipt
+  simp_all [SourceEndAccessorConstructorWrongActual.capture.continuation.OriginalContinueWorkRequest.from_ended_source,
+    SourceEndAccessorActual.capture.continuation.OriginalContinueWorkRequest.from_ended_source]
+
+theorem differing_bindings_refute_complete_contract (identity : Identity) (full : Full) (source : Requirement)
+    (receipt : Receipt) (networkPolicy : NetworkPolicy) (filePolicy : FilePolicy)
+    (different : receipt.work_binding ≠ receipt.end_binding) :
+    ¬ ConstructorContract WrongCtor := by
+  intro claimed
+  have equality := claimed identity full source receipt networkPolicy filePolicy
+  have records := Result.ok_injective equality
+  have bindings := congrArg (fun question : Question => question.end_receipt.work_binding) records
+  change receipt.end_binding = receipt.work_binding at bindings
+  exact different bindings.symm
+
+theorem violates_same_complete_constructor_contract : ¬ ConstructorContract WrongCtor :=
+  differing_bindings_refute_complete_contract SourceEndAccessorValues.identity SourceEndAccessorValues.full
+    SourceEndAccessorValues.source SourceEndAccessorValues.receipt SourceEndAccessorValues.policy
+    SourceEndAccessorValues.filePolicy SourceEndAccessorValues.independent_bindings
+
+theorem all_reader_controls :
+    ReadersContract
+      SourceEndAccessorConstructorWrongActual.capture.continuation.OriginalContinueWorkRequest.impl.identity
+      SourceEndAccessorConstructorWrongActual.capture.continuation.OriginalContinueWorkRequest.impl.full
+      SourceEndAccessorConstructorWrongActual.capture.continuation.OriginalContinueWorkRequest.impl.source
+      SourceEndAccessorConstructorWrongActual.capture.continuation.OriginalContinueWorkRequest.impl.end_receipt
+      SourceEndAccessorConstructorWrongActual.capture.continuation.OriginalContinueWorkRequest.impl.network_policy
+      SourceEndAccessorConstructorWrongActual.capture.continuation.OriginalContinueWorkRequest.impl.file_policy := by
+  intro question
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+theorem public_getter_control (io : SourceEndReceiptModel.Ports) :
+    SourceEndReceiptModel.Contract io
+      (SourceEndAccessorConstructorWrongActual.controller.lifecycle_inbox.source_work.full.end.SourceWorkRecord.capture_work_end_receipt io) := by
+  intro record represented
+  change SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io record = _
+  exact SourceEndReceiptProof.actual_contract io record represented
+end
+end SandboxModel.Stage1Protocol.SourceEndAccessorConstructorNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorConstructorNegative.actual_complete_swapped_output
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorConstructorNegative.equal_bindings_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorConstructorNegative.differing_bindings_refute_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorConstructorNegative.violates_same_complete_constructor_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorConstructorNegative.all_reader_controls
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndAccessorConstructorNegative.public_getter_control

@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "ordinary_native_executed": false,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "parent_commit": "29a97e6441167ccbf0abd8f27655303c63e9925d",
+  "parent_package": "verification/experiments/stage1-protocol/unload-parent-link/source-end-receipt",
+  "parent_assertions": 60,
+  "additional_assertions": [
+    "source_end_accessor_preserves_complete_continuation_question"
+  ],
+  "total_assertions_per_view": 61,
+  "formal_expected_variants": [
+    "original",
+    "receipt-no-request-as-returned",
+    "swap-receipt-bindings"
+  ],
+  "native_expected_variants": [
+    "original",
+    "adapted-original",
+    "receipt-no-request-as-returned",
+    "adapted-receipt-no-request-as-returned",
+    "swap-receipt-bindings",
+    "adapted-swap-receipt-bindings"
+  ],
+  "correct_expected": {
+    "passed": 61,
+    "failed": 0
+  },
+  "receipt_mutant_expected": {
+    "passed": 60,
+    "failed": 1,
+    "assertion": "saved End receipt must preserve NoRequest tag"
+  },
+  "constructor_mutant_expected": {
+    "passed": 60,
+    "failed": 1,
+    "assertion": "continuation request must preserve all six complete fields"
+  },
+  "restore_after_each_wrong": {
+    "independent_original_recompile": true,
+    "all61_pass": true
+  },
+  "constructor_scope": "complete six decoded fields; equal/distinct receipt bindings and two complete network policies; no auth/permission/physical/hash claim",
+  "pending": [
+    "ning actual compile/test, own library and binary source binding and four original restores",
+    "public registration/coverage adoption and complete formal checks"
+  ]
+}

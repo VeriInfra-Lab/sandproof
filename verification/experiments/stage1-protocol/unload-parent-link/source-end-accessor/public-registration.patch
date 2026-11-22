@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-end-accessor 固定 b0d791cc，精确依赖#1014；公开 capture_work_end_receipt 复用父同一完整Contract/Representation，保留首错及独立末次编码。from_ended_source与六个真实读取方法保留任意完整六字段。116完整类型/183父函数逐字复用，新增1原类型/8方法，仍仅29项原接口。
++> 完整三视图候选213文件/1199审计、217/1210和215/1205；两个真实错误版分别NoRequest误标Returned和交换receipt双binding，由同一完整合同反驳，保留合法/等binding控制。原生61项六视图及四次恢复交ning；具体接口采用/生产staging连接、World/SQL/事务/未知提交/耐久/授权、binding_digest/Permit/实际派发、JSON/TLS/物理事实和系统未据此完成。公共根/登记/冻结/覆盖仅交候选。
+ ## V3 首次卸载使用同一条原执行记录
