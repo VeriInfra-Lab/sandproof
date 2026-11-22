@@ -42,7 +42,7 @@ impl Release {
     fn assert_releasing(&self) {
         assert_eq!(
             self.worker.read_host_positions().unwrap(),
-            [self.releasing.clone()]
+            std::slice::from_ref(&self.releasing)
         );
     }
 
@@ -99,7 +99,10 @@ fn restarted_release_uses_the_saved_manifest() {
     holder.kill().unwrap();
     holder.wait().unwrap();
     assert!(result.is_err());
-    assert_eq!(worker.read_host_positions().unwrap(), [saved.clone()]);
+    assert_eq!(
+        worker.read_host_positions().unwrap(),
+        std::slice::from_ref(&saved)
+    );
     worker
         .release_host_slot_mode(&saved.context, Some(1))
         .unwrap();
