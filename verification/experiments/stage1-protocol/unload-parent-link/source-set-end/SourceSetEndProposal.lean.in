@@ -1,0 +1,54 @@
+import SourceSetEndSpec
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceSetEndModel
+noncomputable section
+local instance proposalDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+def initialReceipt (io : Ports) : SourceEndReceiptModel.Ports := (initialPhase io).receipt
+
+/-- Specification of the moved original read-only prefix. This reuses the
+    same full request match, full binding, guards and error conversions.
+    It does not replace outcome or the complete result/poststate Contract. -/
+def proposal (io : Ports) (record : Record) (observed : Option Observation) :
+    Result (core.result.Result End Journal) :=
+  match record.capture with
+  | none => .ok (.Err .UnresolvedAction)
+  | some captured =>
+    match observed with
+    | some observed =>
+      match captured.action with
+      | none => .ok (.Err .UnresolvedAction)
+      | some action =>
+        match captured.worker with
+        | none => .ok (.Err .UnresolvedAction)
+        | some worker =>
+          SourceRetireSpec.tryJournal JournalError.Json
+            (SourceRequestEndMatchModel.outcome (initialFull io) observed action captured.full
+              record.work.requirement worker) fun matched =>
+            if !matched then .ok (.Err .InvalidHostEvidence)
+            else if captured.completed.isSome ∧ observed.outcome = .NoRequest then
+              .ok (.Err .InvalidHostEvidence)
+            else .ok (.Ok (.WorkerEnded observed))
+    | none =>
+      if captured.worker.isSome ∨ captured.completed.isSome then .ok (.Err .UnresolvedAction)
+      else SourceRetireSpec.tryJournal JournalError.Json
+        (SourceRequestEndMatchModel.binding (initialFull io) captured.full) fun workBinding =>
+          .ok (.Ok (.NeverReleased workBinding captured.action))
+
+/-- Match the candidate's extra ordinary shared read after the unchanged
+    read-only prefix. Equivalence to the original outcome remains an explicit
+    theorem obligation, including every failure and the complete state. -/
+def factoredOutcome (io : Ports) (record : Record) (observed : Option Observation) :
+    Result (Reply × Record) :=
+  continueAt record id (proposal io record observed) fun proposed =>
+    match record.capture with
+    | none => atState record (.Err .UnresolvedAction)
+    | some captured => install io record captured proposed
+
+def ProposalContract (io : Ports)
+    (root : Record → Option Observation → Result (core.result.Result End Journal)) : Prop :=
+  ∀ record observed, Representable record → root record observed = proposal io record observed
+end
+end SandboxModel.Stage1Protocol.SourceSetEndModel

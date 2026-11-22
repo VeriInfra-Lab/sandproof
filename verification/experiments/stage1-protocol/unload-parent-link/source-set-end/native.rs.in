@@ -1,0 +1,165 @@
+// Full decoded memory values from original API/SQLite fixtures and controlled
+// Host; no SQL commit, physical truth, permission or rollback claim.
+fn source_set_end_observation(record: &SourceWorkRecord) -> crate::capture::CaptureRequestEndObservation {
+    serde_json::from_value(full::source_continuation_end_for_test(record)["observation"].clone()).unwrap()
+}
+
+#[test]
+fn source_set_end_keeps_normal_install_and_complete_replay() {
+    let dir = tempfile::tempdir().unwrap();
+    for kind in [1, 2] {
+        let (journal, saved) = source_terminal_fixture(&dir.path().join(format!("set-end-normal-{kind}.db")), kind);
+        let before = source_retire_sql_rows(&journal.journal.connection);
+        let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+        let observed = if kind == 2 { Some(source_set_end_observation(&saved)) } else { None };
+        let mut record = saved.clone();
+        full::source_set_end_clear_for_test(&mut record);
+        let receipt = full::source_set_end_for_test(&mut record, observed.clone()).unwrap();
+        assert_eq!(record, saved);
+        assert_eq!(Some(receipt), record.capture_work_end_receipt().unwrap());
+        let complete = record.clone();
+        let replay = full::source_set_end_for_test(&mut record, observed).unwrap();
+        assert_eq!(record, complete);
+        assert_eq!(Some(replay), complete.capture_work_end_receipt().unwrap());
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+        assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+    }
+    let (journal, saved) = source_terminal_fixture(&dir.path().join("set-end-no-request.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut observed = source_set_end_observation(&saved);
+    observed.outcome = crate::capture::CaptureRequestEndOutcome::NoRequest;
+    let mut image = serde_json::to_value(&saved).unwrap();
+    image["capture"]["completed"] = serde_json::Value::Null;
+    image["capture"]["end"]["observation"] = serde_json::to_value(&observed).unwrap();
+    let expected: SourceWorkRecord = serde_json::from_value(image).unwrap();
+    let mut record = expected.clone();
+    full::source_set_end_clear_for_test(&mut record);
+    let receipt = full::source_set_end_for_test(&mut record, Some(observed)).unwrap();
+    assert!(matches!(receipt.end, core::capture::CaptureWorkEnd::NoRequest { .. }));
+    assert_eq!(record, expected);
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+}
+
+#[test]
+fn source_set_end_missing_prefix_guards_keep_complete_input() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, saved) = source_terminal_fixture(&dir.path().join("set-end-prefix.db"), 2);
+    let observed = source_set_end_observation(&saved);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    for field in 0..3 {
+        let mut record = saved.clone();
+        full::source_set_end_clear_for_test(&mut record);
+        match field {
+            0 => record.capture = None,
+            1 => record.capture.as_mut().unwrap().action = None,
+            2 => record.capture.as_mut().unwrap().worker = None,
+            _ => unreachable!(),
+        }
+        let original = record.clone();
+        assert!(matches!(full::source_set_end_for_test(&mut record, Some(observed.clone())), Err(JournalError::UnresolvedAction)));
+        assert_eq!(record, original);
+    }
+    let mut record = saved.clone();
+    let original = record.clone();
+    assert!(matches!(full::source_set_end_for_test(&mut record, None), Err(JournalError::UnresolvedAction)));
+    assert_eq!(record, original);
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+}
+
+#[test]
+fn source_set_end_compares_complete_existing_end_before_writing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, saved) = source_terminal_fixture(&dir.path().join("set-end-conflict.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut observed = source_set_end_observation(&saved);
+    observed.outcome = crate::capture::CaptureRequestEndOutcome::Returned { http_status: 205 };
+    let captured = saved.capture.as_ref().unwrap();
+    assert!(observed.matches(captured.action.as_ref().unwrap(), &captured.full, saved.work.requirement(), captured.worker.as_ref().unwrap()).unwrap());
+    let mut record = saved.clone();
+    assert!(matches!(full::source_set_end_for_test(&mut record, Some(observed)), Err(JournalError::Conflict)));
+    assert_eq!(record, saved);
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+}
+
+#[test]
+fn source_set_end_proposal_capacity_error_precedes_assignment() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, saved) = source_terminal_fixture(&dir.path().join("set-end-capacity.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    // Decoded input domain: the long worker identity is deliberately invalid
+    // for its constructor; every comparison read by this function still agrees.
+    let mut image = serde_json::to_value(&saved).unwrap();
+    image["capture"]["worker"]["process"]["boot_id"] = serde_json::json!("b".repeat(17_000));
+    image["capture"]["end"]["observation"]["worker"]["process"]["boot_id"] = image["capture"]["worker"]["process"]["boot_id"].clone();
+    let mut record: SourceWorkRecord = serde_json::from_value(image).unwrap();
+    let observed = source_set_end_observation(&record);
+    let captured = record.capture.as_ref().unwrap();
+    assert!(observed.matches(captured.action.as_ref().unwrap(), &captured.full, record.work.requirement(), captured.worker.as_ref().unwrap()).unwrap());
+    full::source_set_end_clear_for_test(&mut record);
+    let original = record.clone();
+    assert!(matches!(full::source_set_end_for_test(&mut record, Some(observed)), Err(JournalError::MaintenanceCapacity)));
+    assert_eq!(record, original);
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+}
+
+#[test]
+fn source_set_end_receipt_error_keeps_the_already_installed_end() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, saved) = source_terminal_fixture(&dir.path().join("set-end-late-error.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut record = saved.clone();
+    full::source_set_end_clear_for_test(&mut record);
+    let captured = record.capture.as_mut().unwrap();
+    captured.worker = None;
+    captured.completed = None;
+    let action = captured.action.as_mut().unwrap();
+    action.command.logical.command = core::Command::InstallFence {
+        sandbox: record.work.anchor.local.sandbox,
+        epoch: action.identity.epoch,
+        terminal: false,
+    };
+    let original = record.clone();
+    let mut expected = serde_json::to_value(&original).unwrap();
+    expected["capture"]["end"] = serde_json::json!({
+        "state": "never_released",
+        "full_work_binding": original.capture.as_ref().unwrap().full.binding_digest().unwrap(),
+        "seal_action": original.capture.as_ref().unwrap().action,
+    });
+    let expected: SourceWorkRecord = serde_json::from_value(expected).unwrap();
+    assert!(matches!(full::source_set_end_for_test(&mut record, None), Err(JournalError::CorruptStore)));
+    assert_ne!(record, original);
+    assert_eq!(record, expected, "receipt error preserves the complete record after installing End");
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+}
+
+#[test]
+fn source_set_end_completed_no_request_is_rejected_before_assignment() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, mut record) = source_terminal_fixture(&dir.path().join("set-end-completed-no-request.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut observed = source_set_end_observation(&record);
+    observed.outcome = crate::capture::CaptureRequestEndOutcome::NoRequest;
+    full::source_set_end_clear_for_test(&mut record);
+    let original = record.clone();
+    let captured = record.capture.as_ref().unwrap();
+    assert!(captured.completed.is_some());
+    assert!(observed.matches(captured.action.as_ref().unwrap(), &captured.full, record.work.requirement(), captured.worker.as_ref().unwrap()).unwrap());
+    let result = full::source_set_end_for_test(&mut record, Some(observed));
+    assert!(
+        matches!(result, Err(JournalError::InvalidHostEvidence)) && record == original,
+        "completed NoRequest must be rejected before installing End"
+    );
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+}

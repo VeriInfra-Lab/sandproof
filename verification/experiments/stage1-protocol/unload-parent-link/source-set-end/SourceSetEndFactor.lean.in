@@ -1,0 +1,66 @@
+import SourceSetEndProposal
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceSetEndModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceSetEndFactor
+noncomputable section
+
+theorem continue_original_prefix {A E : Type} (record : Record) (convert : E → Journal)
+    (step : Result (core.result.Result A E))
+    (propose : A → Result (core.result.Result End Journal))
+    (next : End → Result (Reply × Record)) :
+    continueAt record id (SourceRetireSpec.tryJournal convert step propose) next =
+      continueAt record convert step (fun value => continueAt record id (propose value) next) := by
+  unfold continueAt SourceRetireSpec.tryJournal
+  simp only [bind_assoc]
+  apply congrArg (fun continuation => step >>= continuation)
+  funext answer
+  cases answer <;> simp [bind_tc_ok]
+
+/-- Equality of the complete result and state for the moved read-only prefix.
+    All external fail/div and early/late Rust errors remain observable. -/
+theorem factorization (io : Ports) (record : Record) (observed : Option Observation) :
+    factoredOutcome io record observed = outcome io record observed := by
+  unfold factoredOutcome proposal outcome
+  cases present : record.capture with
+  | none => simp [continueAt]
+  | some captured =>
+    cases observed with
+    | none =>
+      by_cases busy : captured.worker.isSome ∨ captured.completed.isSome
+      · simp [busy, continueAt]
+      · simp only [busy, ↓reduceIte]
+        rw [continue_original_prefix]
+        unfold continueAt
+        apply congrArg (fun continuation => SourceRequestEndMatchModel.binding (initialFull io) captured.full >>= continuation)
+        funext answer
+        cases answer <;> simp [bind_tc_ok]
+    | some observed =>
+      simp only []
+      cases hasAction : captured.action with
+      | none => simp [continueAt]
+      | some action =>
+        simp only []
+        cases hasWorker : captured.worker with
+        | none => simp [continueAt]
+        | some worker =>
+          simp only []
+          rw [continue_original_prefix]
+          unfold continueAt
+          apply congrArg (fun continuation => SourceRequestEndMatchModel.outcome (initialFull io)
+            observed action captured.full record.work.requirement worker >>= continuation)
+          funext answer
+          cases answer with
+          | Err error => rfl
+          | Ok matched =>
+            cases matched
+            · simp [bind_tc_ok]
+            · by_cases denied : captured.completed.isSome ∧ observed.outcome = .NoRequest
+              · simp [denied, bind_tc_ok]
+              · simp [denied, bind_tc_ok]
+end
+end SandboxModel.Stage1Protocol.SourceSetEndFactor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFactor.continue_original_prefix
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFactor.factorization

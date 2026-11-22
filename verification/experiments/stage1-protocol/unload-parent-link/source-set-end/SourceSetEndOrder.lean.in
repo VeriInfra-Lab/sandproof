@@ -1,0 +1,142 @@
+import SourceSetEndSpec
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceSetEndModel
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceSetEndOrder
+noncomputable section
+
+theorem missing_capture_first (io : Ports) (record : Record) (observed : Option Observation)
+    (absent : record.capture = none) :
+    outcome io record observed = atState record (.Err .UnresolvedAction) := by
+  simp [outcome, absent]
+
+theorem missing_action_before_worker (io : Ports) (record : Record) (captured : Capture)
+    (observed : Observation) (present : record.capture = some captured)
+    (absent : captured.action = none) :
+    outcome io record (some observed) = atState record (.Err .UnresolvedAction) := by
+  simp [outcome, present, absent]
+
+theorem missing_worker_before_matching (io : Ports) (record : Record) (captured : Capture)
+    (observed : Observation) (action : SourceRequestEndMatchModel.Action)
+    (present : record.capture = some captured) (actionPresent : captured.action = some action)
+    (absent : captured.worker = none) :
+    outcome io record (some observed) = atState record (.Err .UnresolvedAction) := by
+  simp [outcome, present, actionPresent, absent]
+
+theorem match_error_before_completed (io : Ports) (record : Record) (captured : Capture)
+    (observed : Observation) (action : SourceRequestEndMatchModel.Action)
+    (worker : SourceRequestEndMatchModel.Worker) (error : JsonError)
+    (present : record.capture = some captured) (actionPresent : captured.action = some action)
+    (workerPresent : captured.worker = some worker)
+    (failed : SourceRequestEndMatchModel.outcome (initialFull io) observed action captured.full
+      record.work.requirement worker = .ok (.Err error)) :
+    outcome io record (some observed) = atState record (.Err (.Json error)) := by
+  simp [outcome, present, actionPresent, workerPresent, continueAt, failed]
+
+theorem false_match_before_completed (io : Ports) (record : Record) (captured : Capture)
+    (observed : Observation) (action : SourceRequestEndMatchModel.Action)
+    (worker : SourceRequestEndMatchModel.Worker)
+    (present : record.capture = some captured) (actionPresent : captured.action = some action)
+    (workerPresent : captured.worker = some worker)
+    (failed : SourceRequestEndMatchModel.outcome (initialFull io) observed action captured.full
+      record.work.requirement worker = .ok (.Ok false)) :
+    outcome io record (some observed) = atState record (.Err .InvalidHostEvidence) := by
+  simp [outcome, present, actionPresent, workerPresent, continueAt, failed]
+
+theorem completed_no_request_before_install (io : Ports) (record : Record) (captured : Capture)
+    (observed : Observation) (action : SourceRequestEndMatchModel.Action)
+    (worker : SourceRequestEndMatchModel.Worker) (completed : SourceRequestEndMatchModel.Digest)
+    (present : record.capture = some captured) (actionPresent : captured.action = some action)
+    (workerPresent : captured.worker = some worker)
+    (matched : SourceRequestEndMatchModel.outcome (initialFull io) observed action captured.full
+      record.work.requirement worker = .ok (.Ok true))
+    (wasCompleted : captured.completed = some completed) (noRequest : observed.outcome = .NoRequest) :
+    outcome io record (some observed) = atState record (.Err .InvalidHostEvidence) := by
+  simp [outcome, present, actionPresent, workerPresent, continueAt, matched, wasCompleted, noRequest]
+
+theorem no_observation_with_worker_before_encoding (io : Ports) (record : Record) (captured : Capture)
+    (worker : SourceRequestEndMatchModel.Worker) (present : record.capture = some captured)
+    (workerPresent : captured.worker = some worker) :
+    outcome io record none = atState record (.Err .UnresolvedAction) := by
+  simp [outcome, present, workerPresent]
+
+theorem no_observation_with_completed_before_encoding (io : Ports) (record : Record) (captured : Capture)
+    (completed : SourceRequestEndMatchModel.Digest) (present : record.capture = some captured)
+    (wasCompleted : captured.completed = some completed) :
+    outcome io record none = atState record (.Err .UnresolvedAction) := by
+  simp [outcome, present, wasCompleted]
+
+theorem differing_complete_end_before_encoding (io : Ports) (record : Record) (captured : Capture)
+    (old proposed : End) (saved : captured.«end» = some old) (different : old ≠ proposed) :
+    install io record captured proposed = atState record (.Err .Conflict) := by
+  simp [install, saved, different]
+
+theorem same_complete_end_goes_directly_to_receipt (io : Ports) (record : Record)
+    (captured : Capture) (proposed : End) (saved : captured.«end» = some proposed) :
+    install io record captured proposed = finish io record := by
+  simp [install, saved]
+
+theorem proposal_error_before_assignment (io : Ports) (record : Record) (captured : Capture)
+    (proposed : End) (error : JsonError) (absent : captured.«end» = none)
+    (failed : io.encode_proposed_end proposed = .ok (.Err error)) :
+    install io record captured proposed = atState record (.Err (.Json error)) := by
+  simp [install, absent, continueAt, failed]
+
+theorem proposal_over_budget_before_assignment (io : Ports) (record : Record) (captured : Capture)
+    (proposed : End) (bytes : alloc.vec.Vec U8) (absent : captured.«end» = none)
+    (encoded : io.encode_proposed_end proposed = .ok (.Ok bytes))
+    (tooLarge : (alloc.vec.Vec.len bytes).val > 16384) :
+    install io record captured proposed = atState record (.Err .MaintenanceCapacity) := by
+  simp only [install, absent, continueAt, encoded, bind_tc_ok, if_pos tooLarge]
+
+theorem accepted_budget_installs_before_receipt (io : Ports) (record : Record) (captured : Capture)
+    (proposed : End) (bytes : alloc.vec.Vec U8) (absent : captured.«end» = none)
+    (encoded : io.encode_proposed_end proposed = .ok (.Ok bytes))
+    (within : (alloc.vec.Vec.len bytes).val ≤ 16384) :
+    install io record captured proposed = finish io (withEnd record captured proposed) := by
+  simp only [install, absent, continueAt, encoded, bind_tc_ok, if_neg (Nat.not_lt_of_ge within)]
+
+theorem receipt_error_retains_its_complete_input (io : Ports) (record : Record) (error : Journal)
+    (failed : SourceEndReceiptModel.outcome io.receipt record = .ok (.Err error)) :
+    finish io record = atState record (.Err error) := by
+  simp [finish, continueAt, failed]
+
+theorem absent_receipt_is_corrupt_with_same_complete_state (io : Ports) (record : Record)
+    (absent : SourceEndReceiptModel.outcome io.receipt record = .ok (.Ok none)) :
+    finish io record = atState record (.Err .CorruptStore) := by
+  simp [finish, continueAt, absent]
+
+theorem receipt_success_retains_all_output_and_state (io : Ports) (record : Record) (receipt : Receipt)
+    (accepted : SourceEndReceiptModel.outcome io.receipt record = .ok (.Ok (some receipt))) :
+    finish io record = atState record (.Ok receipt) := by
+  simp [finish, continueAt, accepted]
+
+theorem fresh_end_late_error_keeps_written_record (io : Ports) (record : Record)
+    (captured : Capture) (proposed : End) (bytes : alloc.vec.Vec U8) (error : Journal)
+    (absent : captured.«end» = none) (encoded : io.encode_proposed_end proposed = .ok (.Ok bytes))
+    (within : (alloc.vec.Vec.len bytes).val ≤ 16384)
+    (failed : SourceEndReceiptModel.outcome io.receipt (withEnd record captured proposed) = .ok (.Err error)) :
+    install io record captured proposed = atState (withEnd record captured proposed) (.Err error) := by
+  rw [accepted_budget_installs_before_receipt io record captured proposed bytes absent encoded within]
+  exact receipt_error_retains_its_complete_input io _ error failed
+
+end
+end SandboxModel.Stage1Protocol.SourceSetEndOrder
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.missing_capture_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.missing_action_before_worker
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.missing_worker_before_matching
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.match_error_before_completed
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.false_match_before_completed
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.completed_no_request_before_install
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.no_observation_with_worker_before_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.no_observation_with_completed_before_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.differing_complete_end_before_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.same_complete_end_goes_directly_to_receipt
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.proposal_error_before_assignment
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.proposal_over_budget_before_assignment
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.accepted_budget_installs_before_receipt
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.receipt_error_retains_its_complete_input
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.absent_receipt_is_corrupt_with_same_complete_state
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.receipt_success_retains_all_output_and_state
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndOrder.fresh_end_late_error_keeps_written_record

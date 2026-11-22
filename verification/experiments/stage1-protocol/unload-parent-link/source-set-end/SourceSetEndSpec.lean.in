@@ -1,0 +1,104 @@
+import SourceSetEndTypes
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceSetEndModel
+noncomputable section
+local instance modelDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+abbrev Record := SourceEndReceiptModel.Record
+abbrev End := SourceEndReceiptModel.End
+abbrev Capture := controller.lifecycle_inbox.source_work.full.CaptureWork
+abbrev Observation := SourceRequestEndMatchModel.Observation
+abbrev Receipt := SourceEndReceiptModel.Receipt
+abbrev Journal := SourceEndReceiptModel.Journal
+abbrev JsonError := SourceEndReceiptModel.JsonError
+abbrev Representable := SourceEndReceiptModel.Representable
+abbrev Reply := core.result.Result Receipt Journal
+
+/-- Per-call encoding replies; the SHA provider is the same throughout.
+    The first encoding occurs either in observation.matches or in the
+    NeverReleased proposal. Receipt validation and its final encodings keep
+    their independent parent environments. No business predicate is a port. -/
+structure Ports where
+  receipt : SourceEndReceiptModel.Ports
+  encode_initial_full : SourceRequestEndMatchModel.Full →
+    Result (core.result.Result (alloc.vec.Vec U8) JsonError)
+  encode_proposed_end : End → Result (core.result.Result (alloc.vec.Vec U8) JsonError)
+
+def initialFull (io : Ports) : SourceRequestEndMatchModel.Ports :=
+  ⟨io.encode_initial_full, io.receipt.validation.drain.full.digest⟩
+
+/-- Call environments for the unchanged Full/match bodies. This only selects
+    the replies of the original call sites, not arbitrary mutable effects. -/
+def initialPhase (io : Ports) : Ports :=
+  { io with receipt := { io.receipt with validation := { io.receipt.validation with
+      drain := { io.receipt.validation.drain with full := initialFull io } } } }
+
+def receiptPhase (io : Ports) : Ports :=
+  { io with receipt := SourceEndReceiptModel.receiptPhase io.receipt }
+
+/-- Preserve the complete record with every returned Rust result, including
+    Err. An external fail/div is preserved as an Aeneas Result effect. -/
+def atState (record : Record) (reply : Reply) : Result (Reply × Record) := .ok (reply, record)
+
+def continueAt {α ε : Type} (record : Record) (convert : ε → Journal)
+    (step : Result (core.result.Result α ε))
+    (next : α → Result (Reply × Record)) : Result (Reply × Record) := do
+  let answer ← step
+  match answer with
+  | .Err error => atState record (.Err (convert error))
+  | .Ok value => next value
+
+/-- The original assignment changes only capture.end, retaining every other
+    CaptureWork and SourceWorkRecord field. This is memory, not SQL durability. -/
+def withEnd (record : Record) (captured : Capture) (proposed : End) : Record :=
+  { record with capture := some { captured with «end» := some proposed } }
+
+/-- A receipt error occurs after assignment on the fresh-End path and must
+    retain that poststate. Ok(None) becomes the original CorruptStore error. -/
+def finish (io : Ports) (record : Record) : Result (Reply × Record) :=
+  continueAt record id (SourceEndReceiptModel.outcome io.receipt record) fun reply =>
+    atState record (match reply with | none => .Err .CorruptStore | some value => .Ok value)
+
+/-- Whole old-End equality is checked before proposal encoding. The original
+    16 KiB bound applies only to a newly installed End; equal replay goes
+    straight to the full receipt validator. -/
+def install (io : Ports) (record : Record) (captured : Capture) (proposed : End) :
+    Result (Reply × Record) :=
+  match captured.«end» with
+  | some old => if old = proposed then finish io record else atState record (.Err .Conflict)
+  | none => continueAt record JournalError.Json (io.encode_proposed_end proposed) fun bytes =>
+      if (alloc.vec.Vec.len bytes).val > 16384 then atState record (.Err .MaintenanceCapacity)
+      else finish io (withEnd record captured proposed)
+
+/-- Same complete request-end and Full-binding specifications as the parent.
+    Preserve every short circuit, original conversion and error poststate. -/
+def outcome (io : Ports) (record : Record) (observed : Option Observation) : Result (Reply × Record) :=
+  match record.capture with
+  | none => atState record (.Err .UnresolvedAction)
+  | some captured =>
+    match observed with
+    | some observed =>
+      match captured.action with
+      | none => atState record (.Err .UnresolvedAction)
+      | some action =>
+        match captured.worker with
+        | none => atState record (.Err .UnresolvedAction)
+        | some worker =>
+          continueAt record JournalError.Json
+            (SourceRequestEndMatchModel.outcome (initialFull io) observed action captured.full
+              record.work.requirement worker) fun matched =>
+            if !matched then atState record (.Err .InvalidHostEvidence)
+            else if captured.completed.isSome ∧ observed.outcome = .NoRequest then
+              atState record (.Err .InvalidHostEvidence)
+            else install io record captured (.WorkerEnded observed)
+    | none =>
+      if captured.worker.isSome ∨ captured.completed.isSome then atState record (.Err .UnresolvedAction)
+      else continueAt record JournalError.Json
+        (SourceRequestEndMatchModel.binding (initialFull io) captured.full) fun workBinding =>
+          install io record captured (.NeverReleased workBinding captured.action)
+
+def Contract (io : Ports) (root : Record → Option Observation → Result (Reply × Record)) : Prop :=
+  ∀ record observed, Representable record → root record observed = outcome io record observed
+end
+end SandboxModel.Stage1Protocol.SourceSetEndModel

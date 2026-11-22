@@ -1,0 +1,12 @@
+#[cfg(test)]
+pub(crate) fn source_set_end_for_test(
+    record: &mut SourceWorkRecord,
+    observation: Option<crate::capture::CaptureRequestEndObservation>,
+) -> Result<core::capture::CaptureWorkEndReceipt, JournalError> {
+    end::source_set_end_for_test(record, observation)
+}
+
+#[cfg(test)]
+pub(crate) fn source_set_end_clear_for_test(record: &mut SourceWorkRecord) {
+    record.capture.as_mut().unwrap().end = None;
+}
