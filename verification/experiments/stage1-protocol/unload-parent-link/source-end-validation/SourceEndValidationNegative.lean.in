@@ -1,0 +1,109 @@
+import SourceEndValidationValues
+import SourceEndValidationWrong
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceEndValidationModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceEndValidationNegative
+noncomputable section
+open SourceEndValidationModel SourceEndValidationValues
+
+private theorem helper_same (ports : Ports) (saved : Capture)
+    (digest : SourceRequestEndMatchModel.Digest) (action : Option SourceRequestEndMatchModel.Action) :
+    SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.saved_never_released_matches
+      ports saved digest action =
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.saved_never_released_matches
+      ports saved digest action := rfl
+
+theorem doubled_budget :
+    SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.END_RECORD_BYTES * (2#usize) =
+      Result.ok (32768#usize) := by
+  unfold SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.END_RECORD_BYTES
+  change UScalar.mul (16384#usize) (2#usize) = _
+  unfold UScalar.mul UScalar.tryMk UScalar.tryMkOpt
+  have bounded : UScalar.check_bounds .Usize ((16384#usize).val * (2#usize).val) := by
+    rw [UScalar.check_bounds_eq_inBounds]
+    simp only [UScalar.inBounds]
+    scalar_tac
+  rw [dif_pos bounded]
+  simp only [Result.ofOption]
+  congr 1
+
+private theorem accepts_within_wrong_budget (bytes : alloc.vec.Vec U8)
+    (bounded : (alloc.vec.Vec.len bytes).val ≤ 32768) :
+    SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.validate_record
+      (io bytes) neverSaved = .ok (.Ok ()) := by
+  unfold SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.validate_record
+  simp only [SourceEndValidationWrongActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+    show neverSaved.capture = some neverCaptured from rfl, bind_tc_ok, core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTry.branch, show neverCaptured.«end» = some neverEnd from rfl]
+  have encoded : ∀ saved, (io bytes).encode_end saved = .ok (.Ok bytes) := fun _ => rfl
+  simp only [encoded, neverEnd, bind_tc_ok]
+  rw [doubled_budget]
+  simp only [bind_tc_ok]
+  have fits : ¬ alloc.vec.Vec.len bytes > (32768#usize) := Nat.not_lt.mpr bounded
+  rw [if_neg fits, helper_same,
+    SourceEndValidationProof.never_refines (io bytes) neverSaved neverCaptured
+      SourceWorkMatch.Values.digest (some SourceRequestEndMatchValues.action) rfl]
+  have accepted := never_matches bytes
+  change SourcePriorEndMatchModel.outcome (io bytes).drain.full neverSaved
+    (.NeverReleased SourceWorkMatch.Values.digest (some SourceRequestEndMatchValues.action)) = .ok (.Ok true) at accepted
+  rw [accepted]
+  simp
+
+theorem normal_control :
+    SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.validate_record
+      (io empty) neverSaved = .ok (.Ok ()) :=
+  accepts_within_wrong_budget empty (by decide)
+
+theorem boundary_control :
+    SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.validate_record
+      (io atLimit) neverSaved = .ok (.Ok ()) := by
+  apply accepts_within_wrong_budget
+  rw [at_limit_length]; decide
+
+theorem actual_oversized_accepted :
+    SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.validate_record
+      (io overLimit) neverSaved = .ok (.Ok ()) := by
+  apply accepts_within_wrong_budget
+  rw [over_limit_length]; decide
+
+theorem actual_oversized_writer_accepted :
+    SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed
+      (io overLimit) neverSaved = .ok (.Ok true) := by
+  unfold SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed
+  simp only [show neverSaved.capture = some neverCaptured from rfl, actual_oversized_accepted,
+    core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+  rfl
+
+theorem violates_same_complete_contract :
+    ¬ Contract (io overLimit)
+      (SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.validate_record (io overLimit)) := by
+  intro claimed
+  have h := claimed neverSaved represented_never
+  have correct := first_byte_over_boundary_rejected
+  rw [SourceEndValidationProof.actual_contract (io overLimit) neverSaved represented_never] at correct
+  rw [actual_oversized_accepted, correct] at h
+  simp at h
+
+theorem violates_same_writer_contract :
+    ¬ WriterContract (io overLimit)
+      (SourceEndValidationWrongActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed (io overLimit)) := by
+  intro claimed
+  have h := claimed neverSaved represented_never
+  have correct := oversized_writer_rejected
+  rw [SourceEndValidationProof.writer_actual_contract (io overLimit) neverSaved represented_never] at correct
+  rw [actual_oversized_writer_accepted, correct] at h
+  simp at h
+
+end
+end SandboxModel.Stage1Protocol.SourceEndValidationNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationNegative.doubled_budget
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationNegative.normal_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationNegative.boundary_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationNegative.actual_oversized_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationNegative.actual_oversized_writer_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationNegative.violates_same_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationNegative.violates_same_writer_contract

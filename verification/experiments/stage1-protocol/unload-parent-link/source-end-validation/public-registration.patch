@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 候选，待主控采用：#635 source-end-validation 在固定 b0d791cc 的实际抽取视图连接原 End 编码预算和 material_writer_closed；复用#1012完整 drain 及#1007完整 prior 规格、112类与169个完整原体。缺capture首拒绝，缺End不编码，Json错误早于16384上限，超限早于全部匹配；相等边界允许继续。同一 Contract/WriterContract 否定真实32768阈值错误。
++> Writer缺capture直接true；有capture先验End，Terminated再调用原drain::writer_closed，保留重复编码/错误/效果，不推物理关闭或释放。完整形式候选201/1115与203/1122；原生56项四视图及恢复交ning。receipt/set_end、当前World/SQL/事务/未知提交/耐久、物理事实/认证及完整JSON/TLS/系统仍开放；生产/staging一般等价与公共登记/覆盖待主控。
+ ## V3 首次卸载使用同一条原执行记录

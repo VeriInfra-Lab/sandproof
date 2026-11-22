@@ -1,0 +1,130 @@
+// Real API/SQLite/JSON data and controlled Host; no physical or durable claim.
+#[test]
+fn source_end_validation_preserves_all_saved_shapes_and_absent_capture_classifier() {
+    let dir = tempfile::tempdir().unwrap();
+    for kind in 0..4 {
+        let (journal, record) =
+            source_terminal_fixture(&dir.path().join(format!("end-shape-{kind}.db")), kind);
+        let before = source_retire_sql_rows(&journal.journal.connection);
+        let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+        full::source_end_validate_for_test(&record).unwrap();
+        assert_eq!(
+            full::source_end_material_writer_for_test(&record).unwrap(),
+            kind != 0
+        );
+        let mut absent = record.clone();
+        absent.capture = None;
+        assert!(matches!(
+            full::source_end_validate_for_test(&absent),
+            Err(JournalError::CorruptStore)
+        ));
+        assert!(full::source_end_material_writer_for_test(&absent).unwrap());
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+        assert_eq!(
+            codec::load(&journal.journal.connection).unwrap().unwrap(),
+            current
+        );
+    }
+}
+
+#[test]
+fn source_end_validation_keeps_original_worker_completed_no_request_rule() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&dir.path().join("end-request.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    assert!(record.capture.as_ref().unwrap().completed.is_some());
+    let mut value = serde_json::to_value(&record).unwrap();
+    value["capture"]["end"]["observation"]["outcome"] = serde_json::json!({"kind": "no_request"});
+    let changed: SourceWorkRecord = serde_json::from_value(value).unwrap();
+    assert!(matches!(
+        full::source_end_validate_for_test(&changed),
+        Err(JournalError::CorruptStore)
+    ));
+    let mut incomplete = changed;
+    incomplete.capture.as_mut().unwrap().completed = None;
+    full::source_end_validate_for_test(&incomplete).unwrap();
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_end_validation_propagates_original_terminal_question_first_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&dir.path().join("end-terminal.db"), 3);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let mut conflict = record.clone();
+    conflict.capture.as_mut().unwrap().full.state_bytes = 0;
+    assert!(matches!(
+        full::source_end_validate_for_test(&conflict),
+        Err(JournalError::Conflict)
+    ));
+    assert!(matches!(
+        full::source_end_material_writer_for_test(&conflict),
+        Err(JournalError::Conflict)
+    ));
+    let mut value = serde_json::to_value(&conflict).unwrap();
+    value["capture"]["end"]["observation"]["helper_gate_inode"] = serde_json::json!(0);
+    let zero_inode: SourceWorkRecord = serde_json::from_value(value).unwrap();
+    assert!(matches!(
+        full::source_end_validate_for_test(&zero_inode),
+        Err(JournalError::CorruptStore)
+    ));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
+
+#[test]
+fn source_end_validation_rejects_oversized_original_end_encoding() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&dir.path().join("end-oversized.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    full::source_end_validate_for_test(&record).unwrap();
+    // This is an unvalidated decoded value: it is deliberately outside the
+    // worker constructor's shape domain, without manufacturing a launch permit.
+    let mut value = serde_json::to_value(&record).unwrap();
+    let long_boot = "b".repeat(17_000);
+    value["capture"]["worker"]["process"]["boot_id"] = serde_json::json!(long_boot);
+    value["capture"]["end"]["observation"]["worker"]["process"]["boot_id"] =
+        value["capture"]["worker"]["process"]["boot_id"].clone();
+    let oversized: SourceWorkRecord = serde_json::from_value(value).unwrap();
+    assert!(
+        !oversized
+            .capture
+            .as_ref()
+            .unwrap()
+            .worker
+            .as_ref()
+            .unwrap()
+            .valid()
+    );
+    let image = full::source_continuation_end_for_test(&oversized);
+    assert!(serde_json::to_vec(&image).unwrap().len() > 16_384);
+    assert!(serde_json::to_vec(&image).unwrap().len() < 32_768);
+    // All original End WorkerEnded comparisons still match this decoded data.
+    assert!(full::drain::source_prior_matches_for_test(&oversized, image).unwrap());
+    assert!(
+        matches!(
+            full::source_end_validate_for_test(&oversized),
+            Err(JournalError::CorruptStore)
+        ),
+        "saved End validation must reject oversized encoded End"
+    );
+    assert!(matches!(
+        full::source_end_material_writer_for_test(&oversized),
+        Err(JournalError::CorruptStore)
+    ));
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(
+        codec::load(&journal.journal.connection).unwrap().unwrap(),
+        current
+    );
+}
