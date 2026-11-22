@@ -1,0 +1,7 @@
+import SourceEndReceiptValues
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceRetireTypes
+-- ACTUAL COMPLETE RECORD PROJECTION TYPES
+end SandboxModel.Stage1Protocol.SourceRetireTypes

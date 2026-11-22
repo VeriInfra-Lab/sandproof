@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "ordinary_native_executed": false,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "parent_commit": "29a97e6441167ccbf0abd8f27655303c63e9925d",
+  "parent_assertions": 60,
+  "additional_assertions": [
+    "source_record_projections_keep_complete_values_and_worker_end_selection",
+    "source_record_projections_distinguish_capture_presence_from_end_presence",
+    "source_record_projections_keep_observed_bytes_separate_from_reservation"
+  ],
+  "total_assertions_per_view": 63,
+  "native_expected_variants": [
+    "original",
+    "adapted-original",
+    "capture-presence-as-ended",
+    "adapted-capture-presence-as-ended",
+    "reserved-as-material-bytes",
+    "adapted-reserved-as-material-bytes"
+  ],
+  "expected": {
+    "original": {
+      "passed": 63,
+      "failed": 0
+    },
+    "adapted-original": {
+      "passed": 63,
+      "failed": 0
+    },
+    "capture-presence-as-ended": {
+      "passed": 62,
+      "failed": 1
+    },
+    "adapted-capture-presence-as-ended": {
+      "passed": 62,
+      "failed": 1
+    },
+    "reserved-as-material-bytes": {
+      "passed": 62,
+      "failed": 1
+    },
+    "adapted-reserved-as-material-bytes": {
+      "passed": 62,
+      "failed": 1
+    }
+  },
+  "rejection": {
+    "capture-presence-as-ended": "capture presence must not stand for saved End presence",
+    "reserved-as-material-bytes": "observed material bytes must not be replaced with reserved capacity"
+  },
+  "restoration": "independent original/source/target all63 after each of four wrong views",
+  "scope": "arbitrary decoded record; all nine readonly methods, complete fields and original End shape; no physical/authorization/durable fact",
+  "pending": [
+    "ning actual compile/test/library and binary source binding/four independent restores",
+    "complete formal checks and public adoption"
+  ]
+}

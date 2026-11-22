@@ -1,0 +1,71 @@
+// Original API/SQLite/JSON values and controlled Host; no physical observation.
+#[test]
+fn source_record_projections_keep_complete_values_and_worker_end_selection() {
+    let dir = tempfile::tempdir().unwrap();
+    for kind in 0..4 {
+        let (journal, saved) = source_terminal_fixture(&dir.path().join(format!("projection-{kind}.db")), kind);
+        let before = source_retire_sql_rows(&journal.journal.connection);
+        let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+        for clear in [false, true] {
+            let mut record = saved.clone();
+            if clear { record.capture = None; }
+            assert_eq!(record.source_sandbox(), record.work.anchor.local.sandbox);
+            assert_eq!(record.full_capture(), record.capture.as_ref().map(|c| &c.full));
+            assert_eq!(record.capture_worker(), record.capture.as_ref().and_then(|c| c.worker.as_ref()));
+            assert_eq!(record.capture_action(), record.capture.as_ref().and_then(|c| c.action.as_ref()));
+            assert_eq!(record.captured_manifest(), record.capture.as_ref().and_then(|c| c.completed));
+            assert_eq!(record.capture_operation(), record.capture.as_ref().map(|c| c.operation));
+            let end = full::source_continuation_end_for_test(&record);
+            let expected = if end["state"] == "worker_ended" { end["observation"].clone() } else { serde_json::Value::Null };
+            assert_eq!(serde_json::to_value(record.capture_request_end()).unwrap(), expected);
+        }
+        let mut different = saved.clone();
+        let captured = different.capture.as_mut().unwrap();
+        captured.full.state_bytes = 0; // typed value remains readable; no validity claim
+        captured.worker = None;
+        captured.action = None;
+        captured.completed = None;
+        assert_eq!(different.full_capture(), different.capture.as_ref().map(|c| &c.full));
+        assert!(different.capture_worker().is_none());
+        assert!(different.capture_action().is_none());
+        assert!(different.captured_manifest().is_none());
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+        assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+    }
+}
+
+#[test]
+fn source_record_projections_distinguish_capture_presence_from_end_presence() {
+    let dir = tempfile::tempdir().unwrap();
+    for kind in 0..4 {
+        let (journal, record) = source_terminal_fixture(&dir.path().join(format!("projection-end-{kind}.db")), kind);
+        let before = source_retire_sql_rows(&journal.journal.connection);
+        let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+        assert!(record.capture.is_some());
+        let image = full::source_continuation_end_for_test(&record);
+        assert_eq!(record.capture_has_end(), !image.is_null(), "capture presence must not stand for saved End presence");
+        let mut absent = record.clone(); absent.capture = None;
+        assert!(!absent.capture_has_end());
+        assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+        assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+    }
+}
+
+#[test]
+fn source_record_projections_keep_observed_bytes_separate_from_reservation() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, saved) = source_terminal_fixture(&dir.path().join("projection-material.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    for measured in [None, Some(0), Some(17), Some(u64::MAX)] {
+        let mut record = saved.clone();
+        let capture = record.capture.as_mut().unwrap();
+        capture.reserved_material_bytes = 12345;
+        capture.material_bytes = measured;
+        assert_eq!(record.captured_material_bytes(), measured, "observed material bytes must not be replaced with reserved capacity");
+    }
+    let mut absent = saved.clone(); absent.capture = None;
+    assert!(absent.captured_material_bytes().is_none());
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+}
