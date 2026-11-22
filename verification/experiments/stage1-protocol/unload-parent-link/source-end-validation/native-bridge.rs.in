@@ -1,0 +1,14 @@
+// Disposable cfg(test) forwarding only. No physical closure or permission fact.
+#[cfg(test)]
+pub(in crate::controller::lifecycle_inbox::source_work) fn source_end_validate_for_test(
+    record: &SourceWorkRecord,
+) -> Result<(), JournalError> {
+    end::validate_record(record)
+}
+
+#[cfg(test)]
+pub(in crate::controller::lifecycle_inbox::source_work) fn source_end_material_writer_for_test(
+    record: &SourceWorkRecord,
+) -> Result<bool, JournalError> {
+    end::material_writer_closed(record)
+}

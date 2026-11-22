@@ -1,0 +1,69 @@
+import SourceDrainValidationValues
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceEndValidationModel
+noncomputable section
+abbrev Record := SourceDrainValidationModel.Record
+abbrev End := SourceDrainValidationModel.End
+abbrev Prior := SourceDrainValidationModel.Prior
+abbrev Journal := SourceDrainValidationModel.Journal
+abbrev JsonError := SourceTerminalMatchModel.JsonError
+abbrev Reply := core.result.Result Unit Journal
+abbrev Representable := SourceDrainValidationModel.Representable
+
+/-- One additional exact original encoding call. Existing Full and whole
+    observation encoders/digest remain the same parent ports. No serializer,
+    validation, worker validity, authority or physical closure is assumed. -/
+structure Ports where
+  drain : SourceDrainValidationModel.Ports
+  encode_end : End → Result (core.result.Result (alloc.vec.Vec U8) JsonError)
+
+def limit : Usize := 16384#usize
+
+/-- Reuse the complete original prior specification for the two nonterminal
+    variants. Terminated reuses the complete original drain validator. -/
+def matched (io : Ports) (record : Record) (saved : End) :
+    Result (core.result.Result Bool Journal) :=
+  match saved with
+  | .NeverReleased digest action =>
+    SourcePriorEndMatchModel.outcome io.drain.full record (.NeverReleased digest action)
+  | .WorkerEnded observation =>
+    SourcePriorEndMatchModel.outcome io.drain.full record (.WorkerEnded observation)
+  | .Terminated stop observation _ =>
+    SourceRetireSpec.tryJournal id
+      (SourceDrainValidationModel.outcome io.drain record stop observation) fun _ => .ok (.Ok true)
+
+def outcome (io : Ports) (record : Record) : Result Reply :=
+  match record.capture with
+  | none => .ok (.Err .CorruptStore)
+  | some captured =>
+    match captured.«end» with
+    | none => .ok (.Ok ())
+    | some saved => SourceRetireSpec.tryJournal JournalError.Json (io.encode_end saved) fun bytes =>
+      if (alloc.vec.Vec.len bytes).val > limit.val then .ok (.Err .CorruptStore)
+      else SourceRetireSpec.tryJournal id (matched io record saved) fun isMatch =>
+        .ok (if isMatch then .Ok () else .Err .CorruptStore)
+
+/-- Preserve the original second drain check in the Terminated case.
+    Stateful/error-capable repeated encodings cannot be merged merely because
+    the first validation passed. True is only a decoded-value classification. -/
+def writerOutcome (io : Ports) (record : Record) :
+    Result (core.result.Result Bool Journal) :=
+  match record.capture with
+  | none => .ok (.Ok true)
+  | some captured => SourceRetireSpec.tryJournal id (outcome io record) fun _ =>
+    match captured.«end» with
+    | some (.Terminated _ _ _) => SourceDrainValidationModel.writerOutcome io.drain record
+    | other => .ok (.Ok other.isSome)
+
+def Contract (io : Ports) (root : Record → Result Reply) : Prop :=
+  ∀ record, Representable record → root record = outcome io record
+
+def WriterContract (io : Ports)
+    (root : Record → Result (core.result.Result Bool Journal)) : Prop :=
+  ∀ record, Representable record → root record = writerOutcome io record
+
+end
+end SandboxModel.Stage1Protocol.SourceEndValidationModel

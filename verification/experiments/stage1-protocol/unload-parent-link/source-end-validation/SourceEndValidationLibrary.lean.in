@@ -1,0 +1,89 @@
+import SourceEndValidationSpec
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceEndValidationActual
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+def Bool.Insts.CoreCmpPartialEqBool.ne := @SandproofSourceRetentionProviders.Bool.Insts.CoreCmpPartialEqBool.ne
+def I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from := @SourceFullBindingActual.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from
+def Str.Insts.CoreCmpPartialEqStr.eq := @SourceFullBindingActual.Str.Insts.CoreCmpPartialEqStr.eq
+def alloc.string.String.Insts.CoreCloneClone.clone := @SourceRetireLibrary.stringClone
+def alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq := @SourceFullBindingActual.alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq := @SourceFullBindingActual.alloc.string.String.Insts.CoreCmpPartialEqString.eq
+def alloc.string.String.Insts.CoreOpsDerefDerefStr.deref := @SourceFullBindingActual.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+def alloc.string.String.is_empty := @SourceFullBindingActual.alloc.string.String.is_empty
+def alloc.string.String.len := @SourceFullBindingActual.alloc.string.String.len
+def alloc.vec.Vec.is_empty := @SourceFullBindingActual.alloc.vec.Vec.is_empty
+def core.ops.range.RangeInclusive.contains := @SourceFullBindingActual.core.ops.range.RangeInclusive.contains
+def core.option.Option.Insts.CoreCloneClone.clone := @SourceRetireLibrary.optionClone
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq := @SourceRequestEndMatchActual.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+def core.option.Option.as_ref := @SourceRetireLibrary.optionRef
+def core.str.Str.as_bytes := @SourceFullBindingActual.core.str.Str.as_bytes
+def core.str.Str.bytes := @SourceFullBindingActual.core.str.Str.bytes
+def core.str.Str.is_empty := @SourceFullBindingActual.core.str.Str.is_empty
+def core.str.Str.len := @SourceFullBindingActual.core.str.Str.len
+def core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all := @SourceFullBindingActual.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all
+
+@[simp, rust_fun "core::option::{core::ops::try_trait::Try<core::option::Option<@T>>}::branch"]
+def core.option.Option.Insts.CoreOpsTry_traitTry.branch {T : Type}
+    (value : Option T) :
+    Result (core.ops.control_flow.ControlFlow (Option core.convert.Infallible) T) :=
+  match value with
+  | none => .ok (.Break none)
+  | some x => .ok (.Continue x)
+
+@[simp, rust_fun "core::option::{core::ops::try_trait::FromResidual<core::option::Option<@T>, core::option::Option<core::convert::Infallible>>}::from_residual"]
+def core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
+    (T : Type) (value : Option core.convert.Infallible) : Result (Option T) :=
+  match value with
+  | none => .ok none
+  | some impossible => nomatch impossible
+
+def core.option.Option.as_deref := @SourcePriorEndMatchActual.core.option.Option.as_deref
+end SandboxModel.Stage1Protocol.SourceEndValidationActual
+
+namespace SandboxModel.Stage1Protocol.SourceEndValidationWrongActual
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofSourceRowSqlSelect.toStr text bounded
+
+def Bool.Insts.CoreCmpPartialEqBool.ne := @SandproofSourceRetentionProviders.Bool.Insts.CoreCmpPartialEqBool.ne
+def I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from := @SourceFullBindingActual.I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from
+def Str.Insts.CoreCmpPartialEqStr.eq := @SourceFullBindingActual.Str.Insts.CoreCmpPartialEqStr.eq
+def alloc.string.String.Insts.CoreCloneClone.clone := @SourceRetireLibrary.stringClone
+def alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq := @SourceFullBindingActual.alloc.string.String.Insts.CoreCmpPartialEqShared0Str.eq
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq := @SourceFullBindingActual.alloc.string.String.Insts.CoreCmpPartialEqString.eq
+def alloc.string.String.Insts.CoreOpsDerefDerefStr.deref := @SourceFullBindingActual.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+def alloc.string.String.is_empty := @SourceFullBindingActual.alloc.string.String.is_empty
+def alloc.string.String.len := @SourceFullBindingActual.alloc.string.String.len
+def alloc.vec.Vec.is_empty := @SourceFullBindingActual.alloc.vec.Vec.is_empty
+def core.ops.range.RangeInclusive.contains := @SourceFullBindingActual.core.ops.range.RangeInclusive.contains
+def core.option.Option.Insts.CoreCloneClone.clone := @SourceRetireLibrary.optionClone
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq := @SourceRequestEndMatchActual.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+def core.option.Option.as_ref := @SourceRetireLibrary.optionRef
+def core.str.Str.as_bytes := @SourceFullBindingActual.core.str.Str.as_bytes
+def core.str.Str.bytes := @SourceFullBindingActual.core.str.Str.bytes
+def core.str.Str.is_empty := @SourceFullBindingActual.core.str.Str.is_empty
+def core.str.Str.len := @SourceFullBindingActual.core.str.Str.len
+def core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all := @SourceFullBindingActual.core.str.iter.Bytes.Insts.CoreIterTraitsIteratorIteratorU8.all
+
+@[simp, rust_fun "core::option::{core::ops::try_trait::Try<core::option::Option<@T>>}::branch"]
+def core.option.Option.Insts.CoreOpsTry_traitTry.branch {T : Type}
+    (value : Option T) :
+    Result (core.ops.control_flow.ControlFlow (Option core.convert.Infallible) T) :=
+  match value with
+  | none => .ok (.Break none)
+  | some x => .ok (.Continue x)
+
+@[simp, rust_fun "core::option::{core::ops::try_trait::FromResidual<core::option::Option<@T>, core::option::Option<core::convert::Infallible>>}::from_residual"]
+def core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
+    (T : Type) (value : Option core.convert.Infallible) : Result (Option T) :=
+  match value with
+  | none => .ok none
+  | some impossible => nomatch impossible
+
+def core.option.Option.as_deref := @SourcePriorEndMatchActual.core.option.Option.as_deref
+end SandboxModel.Stage1Protocol.SourceEndValidationWrongActual

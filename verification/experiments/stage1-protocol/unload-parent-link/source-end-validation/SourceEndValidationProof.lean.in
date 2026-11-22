@@ -1,0 +1,451 @@
+import SourceEndValidationView
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceEndValidationModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceEndValidationProof
+noncomputable section
+
+theorem original_limit :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.END_RECORD_BYTES = limit := rfl
+
+theorem full_binding_refines (io : Ports) (full : SourceRequestEndMatchModel.Full) :
+    SourceEndValidationActual.capture.work.FullCaptureWorkRequest.binding_digest io full =
+      SourceRequestEndMatchModel.binding io.drain.full full := by
+  change SourceRequestEndMatchActual.capture.work.FullCaptureWorkRequest.binding_digest io.drain.full full = _
+  exact SourceRequestEndMatchProof.binding_refines io.drain.full full
+
+theorem request_match_refines (io : Ports) (observed : SourceRequestEndMatchModel.Observation)
+    (action : SourceRequestEndMatchModel.Action) (full : SourceRequestEndMatchModel.Full)
+    (source : SourceRequestEndMatchModel.Requirement) (worker : SourceRequestEndMatchModel.Worker) :
+    SourceEndValidationActual.capture.CaptureRequestEndObservation.matches io observed action full source worker =
+      SourceRequestEndMatchModel.outcome io.drain.full observed action full source worker := by
+  change SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches
+    io.drain.full observed action full source worker = _
+  exact SourceRequestEndMatchProof.actual_contract io.drain.full observed action full source worker
+
+theorem drain_refines (io : Ports) (record : Record) (stop : SourceDrainValidationModel.Stop)
+    (observed : SourceDrainValidationModel.Observation) (represented : Representable record) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record io record stop observed =
+      SourceDrainValidationModel.outcome io.drain record stop observed := by
+  change SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.validate_record
+    io.drain record stop observed = _
+  exact SourceDrainValidationProof.actual_contract io.drain record stop observed represented
+
+theorem drain_writer_refines (io : Ports) (record : Record) (represented : Representable record) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io record =
+      SourceDrainValidationModel.writerOutcome io.drain record := by
+  change SourceDrainValidationActual.controller.lifecycle_inbox.source_work.full.drain.writer_closed io.drain record = _
+  exact SourceDrainValidationProof.writer_actual_contract io.drain record represented
+
+theorem late_guard_refines (completed : Bool) (observed : SourceRequestEndMatchModel.Observation) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.saved_completed_no_request completed observed =
+      .ok (completed && match observed.outcome with | .NoRequest => true | .Returned _ => false) := by
+  change SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_completed_no_request completed observed = _
+  exact SourcePriorEndMatchProof.guard_refines completed observed
+
+
+theorem capacity_test_exact (bytes : alloc.vec.Vec U8) :
+    (alloc.vec.Vec.len bytes > SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.END_RECORD_BYTES) ↔
+      ((alloc.vec.Vec.len bytes).val > limit.val) := Iff.rfl
+
+theorem never_refines (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (digest : SourceRequestEndMatchModel.Digest) (action : Option SourceRequestEndMatchModel.Action)
+    (present : record.capture = some captured) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.saved_never_released_matches
+      io captured digest action = SourcePriorEndMatchModel.outcome io.drain.full record (.NeverReleased digest action) := by
+  rw [← SourcePriorEndMatchProof.actual_contract io.drain.full record (.NeverReleased digest action)]
+  unfold SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches
+  unfold SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.saved_never_released_matches
+  simp only [SourcePriorEndMatchActual.core.option.Option.as_ref,
+    SourceEndValidationActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+    present, bind_tc_ok, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch]
+  rfl
+
+theorem worker_refines (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (observed : SourceRequestEndMatchModel.Observation) (present : record.capture = some captured) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.saved_worker_ended_matches
+      io record captured observed = SourcePriorEndMatchModel.outcome io.drain.full record (.WorkerEnded observed) := by
+  rw [← SourcePriorEndMatchProof.actual_contract io.drain.full record (.WorkerEnded observed)]
+  unfold SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_matches
+  unfold SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.saved_worker_ended_matches
+  simp only [SourcePriorEndMatchActual.core.option.Option.as_ref,
+    SourceEndValidationActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.SourceWork.impl.requirement,
+    SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.SourceWork.impl.requirement,
+    present, bind_tc_ok, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch]
+  rfl
+
+theorem actual_contract (io : Ports) (record : Record) (represented : Representable record) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record io record =
+      outcome io record := by
+  unfold SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record outcome
+  simp only [SourceEndValidationActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef,
+    bind_tc_ok]
+  cases present : record.capture with
+  | none =>
+    simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | some captured =>
+    simp only [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+    cases ended : captured.«end» with
+    | none => rfl
+    | some saved =>
+      simp only []
+      unfold SourceRetireSpec.tryJournal
+      apply congrArg (fun next => io.encode_end saved >>= next)
+      funext encoded
+      cases encoded with
+      | Err error =>
+        simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+          SourceEndValidationActual.JournalErrorFromJson.from_json]
+      | Ok bytes =>
+        simp only [bind_tc_ok, capacity_test_exact]
+        by_cases oversized : (alloc.vec.Vec.len bytes).val > limit.val
+        · simp only [oversized, ↓reduceIte]
+        · simp only [oversized, ↓reduceIte]
+          cases saved with
+          | NeverReleased digest sealAction =>
+            simp only [matched, never_refines io record captured digest sealAction present]
+            apply congrArg (fun next => SourcePriorEndMatchModel.outcome io.drain.full record
+              (.NeverReleased digest sealAction) >>= next)
+            funext checked
+            cases checked with
+            | Err error =>
+              simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+            | Ok isMatch =>
+              cases isMatch <;> simp
+          | WorkerEnded observed =>
+            simp only [matched, worker_refines io record captured observed present]
+            apply congrArg (fun next => SourcePriorEndMatchModel.outcome io.drain.full record
+              (.WorkerEnded observed) >>= next)
+            funext checked
+            cases checked with
+            | Err error =>
+              simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+            | Ok isMatch =>
+              cases isMatch <;> simp
+          | Terminated stop observed prior =>
+            simp only [matched, drain_refines io record stop observed represented,
+              SourceRetireSpec.tryJournal, bind_assoc]
+            apply congrArg (fun next => SourceDrainValidationModel.outcome io.drain record stop observed >>= next)
+            funext checked
+            cases checked <;> simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem complete_contract (io : Ports) :
+    Contract io (SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record io) :=
+  actual_contract io
+
+theorem writer_actual_contract (io : Ports) (record : Record) (represented : Representable record) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed io record =
+      writerOutcome io record := by
+  unfold SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed writerOutcome
+  cases present : record.capture with
+  | none => rfl
+  | some captured =>
+    simp only [actual_contract io record represented, SourceRetireSpec.tryJournal]
+    apply congrArg (fun next => outcome io record >>= next)
+    funext checked
+    cases checked with
+    | Err error =>
+      simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | Ok value =>
+      simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+      cases ended : captured.«end» with
+      | none => rfl
+      | some saved =>
+        cases saved with
+        | NeverReleased digest sealAction => simp
+        | WorkerEnded observed => simp
+        | Terminated stop observed prior => exact drain_writer_refines io record represented
+
+theorem complete_writer_contract (io : Ports) :
+    WriterContract io (SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed io) :=
+  writer_actual_contract io
+
+end
+end SandboxModel.Stage1Protocol.SourceEndValidationProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.original_limit
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.full_binding_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.request_match_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.drain_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.drain_writer_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.late_guard_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.capacity_test_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.never_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.worker_refines
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.complete_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.writer_actual_contract
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.complete_writer_contract
+
+namespace SandboxModel.Stage1Protocol.SourceEndValidationOrder
+open SourceEndValidationModel
+
+theorem missing_capture_first (io : Ports) (record : Record) (missing : record.capture = none) :
+    outcome io record = .ok (.Err .CorruptStore) := by
+  simp [outcome, missing]
+
+theorem missing_end_skips_encoding (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (present : record.capture = some captured) (missing : captured.«end» = none) :
+    outcome io record = .ok (.Ok ()) := by
+  simp [outcome, present, missing]
+
+theorem encoding_error_first (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End) (error : JsonError)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (failed : io.encode_end saved = .ok (.Err error)) :
+    outcome io record = .ok (.Err (.Json error)) := by
+  simp [outcome, present, ended, SourceRetireSpec.tryJournal, failed]
+
+theorem oversized_before_all_matches (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End)
+    (bytes : alloc.vec.Vec U8)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (encoded : io.encode_end saved = .ok (.Ok bytes))
+    (oversized : limit.val < (alloc.vec.Vec.len bytes).val) :
+    outcome io record = .ok (.Err .CorruptStore) := by
+  simp only [outcome, present, ended, SourceRetireSpec.tryJournal, encoded, bind_tc_ok]
+  rw [if_pos oversized]
+
+theorem within_limit_continues_to_matches (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End)
+    (bytes : alloc.vec.Vec U8)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (encoded : io.encode_end saved = .ok (.Ok bytes))
+    (bounded : (alloc.vec.Vec.len bytes).val ≤ limit.val) :
+    outcome io record = SourceRetireSpec.tryJournal id (matched io record saved)
+      (fun isMatch => .ok (if isMatch then .Ok () else .Err .CorruptStore)) := by
+  simp only [outcome, present, ended, SourceRetireSpec.tryJournal, encoded, bind_tc_ok]
+  rw [if_neg (Nat.not_lt.mpr bounded)]
+
+theorem matched_error_after_encoding (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End)
+    (bytes : alloc.vec.Vec U8) (error : Journal)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (encoded : io.encode_end saved = .ok (.Ok bytes))
+    (bounded : (alloc.vec.Vec.len bytes).val ≤ limit.val)
+    (failed : matched io record saved = .ok (.Err error)) :
+    outcome io record = .ok (.Err error) := by
+  rw [within_limit_continues_to_matches io record captured saved bytes present ended encoded bounded]
+  simp [SourceRetireSpec.tryJournal, failed]
+
+theorem matched_false_rejected (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End)
+    (bytes : alloc.vec.Vec U8)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (encoded : io.encode_end saved = .ok (.Ok bytes))
+    (bounded : (alloc.vec.Vec.len bytes).val ≤ limit.val)
+    (refused : matched io record saved = .ok (.Ok false)) :
+    outcome io record = .ok (.Err .CorruptStore) := by
+  rw [within_limit_continues_to_matches io record captured saved bytes present ended encoded bounded]
+  simp [SourceRetireSpec.tryJournal, refused]
+
+theorem matched_true_accepted (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End)
+    (bytes : alloc.vec.Vec U8)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (encoded : io.encode_end saved = .ok (.Ok bytes))
+    (bounded : (alloc.vec.Vec.len bytes).val ≤ limit.val)
+    (accepted : matched io record saved = .ok (.Ok true)) :
+    outcome io record = .ok (.Ok ()) := by
+  rw [within_limit_continues_to_matches io record captured saved bytes present ended encoded bounded]
+  simp [SourceRetireSpec.tryJournal, accepted]
+
+theorem material_missing_capture_true (io : Ports) (record : Record) (missing : record.capture = none) :
+    writerOutcome io record = .ok (.Ok true) := by
+  simp [writerOutcome, missing]
+
+theorem material_no_end_false (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (present : record.capture = some captured) (missing : captured.«end» = none) :
+    writerOutcome io record = .ok (.Ok false) := by
+  simp [writerOutcome, outcome, present, missing, SourceRetireSpec.tryJournal]
+
+theorem terminated_rechecks_drain (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (stop : SourceDrainValidationModel.Stop) (observed : SourceDrainValidationModel.Observation)
+    (prior : Option Prior) (present : record.capture = some captured)
+    (ended : captured.«end» = some (.Terminated stop observed prior)) :
+    writerOutcome io record = SourceRetireSpec.tryJournal id (outcome io record)
+      (fun _ => SourceDrainValidationModel.writerOutcome io.drain record) := by
+  simp only [writerOutcome, present, ended]
+
+theorem material_never_after_validation (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (digest : SourceRequestEndMatchModel.Digest) (action : Option SourceRequestEndMatchModel.Action)
+    (present : record.capture = some captured)
+    (ended : captured.«end» = some (.NeverReleased digest action))
+    (accepted : outcome io record = .ok (.Ok ())) :
+    writerOutcome io record = .ok (.Ok true) := by
+  simp [writerOutcome, present, ended, SourceRetireSpec.tryJournal, accepted]
+
+theorem material_worker_after_validation (io : Ports) (record : Record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (observation : SourceRequestEndMatchModel.Observation)
+    (present : record.capture = some captured)
+    (ended : captured.«end» = some (.WorkerEnded observation))
+    (accepted : outcome io record = .ok (.Ok ())) :
+    writerOutcome io record = .ok (.Ok true) := by
+  simp [writerOutcome, present, ended, SourceRetireSpec.tryJournal, accepted]
+
+end SandboxModel.Stage1Protocol.SourceEndValidationOrder
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.missing_capture_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.missing_end_skips_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.encoding_error_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.oversized_before_all_matches
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.within_limit_continues_to_matches
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.matched_error_after_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.matched_false_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.matched_true_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.material_missing_capture_true
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.material_no_end_false
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.terminated_rechecks_drain
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.material_never_after_validation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationOrder.material_worker_after_validation
+
+namespace SandboxModel.Stage1Protocol.SourceEndValidationProof
+noncomputable section
+theorem actual_missing_capture_first (io : Ports) (record : Record) (represented : Representable record) (missing : record.capture = none) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record io record = .ok (.Err .CorruptStore) := by
+  rw [actual_contract io record represented]
+  exact SourceEndValidationOrder.missing_capture_first io record missing
+
+theorem actual_missing_end_skips_encoding (io : Ports) (record : Record) (represented : Representable record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (present : record.capture = some captured) (missing : captured.«end» = none) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record io record = .ok (.Ok ()) := by
+  rw [actual_contract io record represented]
+  exact SourceEndValidationOrder.missing_end_skips_encoding io record captured present missing
+
+theorem actual_encoding_error_first (io : Ports) (record : Record) (represented : Representable record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End) (error : JsonError)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (failed : io.encode_end saved = .ok (.Err error)) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record io record = .ok (.Err (.Json error)) := by
+  rw [actual_contract io record represented]
+  exact SourceEndValidationOrder.encoding_error_first io record captured saved error present ended failed
+
+theorem actual_oversized_before_all_matches (io : Ports) (record : Record) (represented : Representable record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End)
+    (bytes : alloc.vec.Vec U8)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (encoded : io.encode_end saved = .ok (.Ok bytes))
+    (oversized : limit.val < (alloc.vec.Vec.len bytes).val) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record io record = .ok (.Err .CorruptStore) := by
+  rw [actual_contract io record represented]
+  exact SourceEndValidationOrder.oversized_before_all_matches io record captured saved bytes present ended encoded oversized
+
+theorem actual_within_limit_continues_to_matches (io : Ports) (record : Record) (represented : Representable record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End)
+    (bytes : alloc.vec.Vec U8)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (encoded : io.encode_end saved = .ok (.Ok bytes))
+    (bounded : (alloc.vec.Vec.len bytes).val ≤ limit.val) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record io record = SourceRetireSpec.tryJournal id (matched io record saved)
+      (fun isMatch => .ok (if isMatch then .Ok () else .Err .CorruptStore)) := by
+  rw [actual_contract io record represented]
+  exact SourceEndValidationOrder.within_limit_continues_to_matches io record captured saved bytes present ended encoded bounded
+
+theorem actual_matched_error_after_encoding (io : Ports) (record : Record) (represented : Representable record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End)
+    (bytes : alloc.vec.Vec U8) (error : Journal)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (encoded : io.encode_end saved = .ok (.Ok bytes))
+    (bounded : (alloc.vec.Vec.len bytes).val ≤ limit.val)
+    (failed : matched io record saved = .ok (.Err error)) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record io record = .ok (.Err error) := by
+  rw [actual_contract io record represented]
+  exact SourceEndValidationOrder.matched_error_after_encoding io record captured saved bytes error present ended encoded bounded failed
+
+theorem actual_matched_false_rejected (io : Ports) (record : Record) (represented : Representable record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End)
+    (bytes : alloc.vec.Vec U8)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (encoded : io.encode_end saved = .ok (.Ok bytes))
+    (bounded : (alloc.vec.Vec.len bytes).val ≤ limit.val)
+    (refused : matched io record saved = .ok (.Ok false)) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record io record = .ok (.Err .CorruptStore) := by
+  rw [actual_contract io record represented]
+  exact SourceEndValidationOrder.matched_false_rejected io record captured saved bytes present ended encoded bounded refused
+
+theorem actual_matched_true_accepted (io : Ports) (record : Record) (represented : Representable record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork) (saved : End)
+    (bytes : alloc.vec.Vec U8)
+    (present : record.capture = some captured) (ended : captured.«end» = some saved)
+    (encoded : io.encode_end saved = .ok (.Ok bytes))
+    (bounded : (alloc.vec.Vec.len bytes).val ≤ limit.val)
+    (accepted : matched io record saved = .ok (.Ok true)) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record io record = .ok (.Ok ()) := by
+  rw [actual_contract io record represented]
+  exact SourceEndValidationOrder.matched_true_accepted io record captured saved bytes present ended encoded bounded accepted
+
+theorem actual_material_missing_capture_true (io : Ports) (record : Record) (represented : Representable record) (missing : record.capture = none) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed io record = .ok (.Ok true) := by
+  rw [writer_actual_contract io record represented]
+  exact SourceEndValidationOrder.material_missing_capture_true io record missing
+
+theorem actual_material_no_end_false (io : Ports) (record : Record) (represented : Representable record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (present : record.capture = some captured) (missing : captured.«end» = none) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed io record = .ok (.Ok false) := by
+  rw [writer_actual_contract io record represented]
+  exact SourceEndValidationOrder.material_no_end_false io record captured present missing
+
+theorem actual_material_never_after_validation (io : Ports) (record : Record) (represented : Representable record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (digest : SourceRequestEndMatchModel.Digest) (action : Option SourceRequestEndMatchModel.Action)
+    (present : record.capture = some captured)
+    (ended : captured.«end» = some (.NeverReleased digest action))
+    (accepted : outcome io record = .ok (.Ok ())) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed io record = .ok (.Ok true) := by
+  rw [writer_actual_contract io record represented]
+  exact SourceEndValidationOrder.material_never_after_validation io record captured digest action present ended accepted
+
+theorem actual_material_worker_after_validation (io : Ports) (record : Record) (represented : Representable record)
+    (captured : controller.lifecycle_inbox.source_work.full.CaptureWork)
+    (observation : SourceRequestEndMatchModel.Observation)
+    (present : record.capture = some captured)
+    (ended : captured.«end» = some (.WorkerEnded observation))
+    (accepted : outcome io record = .ok (.Ok ())) :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed io record = .ok (.Ok true) := by
+  rw [writer_actual_contract io record represented]
+  exact SourceEndValidationOrder.material_worker_after_validation io record captured observation present ended accepted
+
+end
+end SandboxModel.Stage1Protocol.SourceEndValidationProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_missing_capture_first
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_missing_end_skips_encoding
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_encoding_error_first
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_oversized_before_all_matches
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_within_limit_continues_to_matches
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_matched_error_after_encoding
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_matched_false_rejected
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_matched_true_accepted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_material_missing_capture_true
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_material_no_end_false
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_material_never_after_validation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationProof.actual_material_worker_after_validation

@@ -1,0 +1,161 @@
+import SourceEndValidationProof
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceEndValidationModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceEndValidationValues
+noncomputable section
+open SourceEndValidationModel
+abbrev Capture := controller.lifecycle_inbox.source_work.full.CaptureWork
+
+def io (bytes : alloc.vec.Vec U8) : Ports :=
+  ⟨SourceDrainValidationValues.io, fun _ => .ok (.Ok bytes)⟩
+def empty : alloc.vec.Vec U8 := SourceRequestEndMatchValues.payload
+def atLimit : alloc.vec.Vec U8 :=
+  alloc.vec.Vec.from (List.replicate 16384 (0#u8)) (by simp only [List.length_replicate]; scalar_tac)
+def overLimit : alloc.vec.Vec U8 :=
+  alloc.vec.Vec.from (List.replicate 16385 (0#u8)) (by simp only [List.length_replicate]; scalar_tac)
+def neverEnd : End := .NeverReleased SourceWorkMatch.Values.digest
+  (some SourceRequestEndMatchValues.action)
+def neverCaptured : Capture :=
+  { SourcePriorEndMatchValues.captured with worker := none, completed := none, «end» := some neverEnd }
+def neverSaved : Record :=
+  { SourcePriorEndMatchValues.record with capture := some neverCaptured }
+def workerEnd : End := .WorkerEnded SourceDrainValidationValues.requestEnd
+def workerCaptured : Capture :=
+  { SourceDrainValidationValues.captured with «end» := some workerEnd }
+def workerSaved : Record :=
+  { SourceSavedQuestionValues.saved with capture := some workerCaptured }
+def terminatedSaved : Record := SourceDrainValidationValues.ended
+
+theorem represented_never : Representable neverSaved := by
+  intro value present
+  have same : neverCaptured = value := Option.some.inj present
+  subst value
+  exact SourceFullBindingValues.represented
+
+theorem represented_worker : Representable workerSaved := by
+  intro value present
+  have same : workerCaptured = value := Option.some.inj present
+  subst value
+  exact SourceFullBindingValues.represented
+
+theorem never_matches (bytes : alloc.vec.Vec U8) :
+    matched (io bytes) neverSaved neverEnd = .ok (.Ok true) := by
+  change SourcePriorEndMatchModel.outcome SourcePriorEndMatchValues.io
+    SourcePriorEndMatchValues.neverRecord SourcePriorEndMatchValues.never = _
+  have accepted := SourcePriorEndMatchValues.normal_never_released
+  rw [SourcePriorEndMatchProof.actual_contract] at accepted
+  exact accepted
+
+theorem worker_matches (bytes : alloc.vec.Vec U8) :
+    matched (io bytes) workerSaved workerEnd = .ok (.Ok true) := by
+  change SourcePriorEndMatchModel.outcome SourceDrainValidationValues.io.full
+    SourceDrainValidationValues.matchingPrior SourceDrainValidationValues.returned = _
+  exact SourceDrainValidationValues.worker_prior_true
+
+theorem terminated_matches (bytes : alloc.vec.Vec U8) :
+    matched (io bytes) terminatedSaved
+      (.Terminated SourceDrainValidationValues.stop SourceDrainValidationValues.observation none) = .ok (.Ok true) := by
+  change SourceRetireSpec.tryJournal id
+    (SourceDrainValidationModel.outcome SourceDrainValidationValues.io SourceDrainValidationValues.ended
+      SourceDrainValidationValues.stop SourceDrainValidationValues.observation) (fun _ => .ok (.Ok true)) = _
+  have accepted := SourceDrainValidationValues.normal_no_prior
+  rw [SourceDrainValidationProof.actual_contract SourceDrainValidationValues.io SourceDrainValidationValues.ended
+    SourceDrainValidationValues.stop SourceDrainValidationValues.observation (SourceDrainValidationValues.represented none)] at accepted
+  simp only [SourceRetireSpec.tryJournal, accepted, bind_tc_ok]
+
+theorem at_limit_length : (alloc.vec.Vec.len atLimit).val = 16384 := by
+  simp only [alloc.vec.Vec.len_val, alloc.vec.Vec.length, atLimit, alloc.vec.Vec.from_val, List.length_replicate]
+theorem over_limit_length : (alloc.vec.Vec.len overLimit).val = 16385 := by
+  simp only [alloc.vec.Vec.len_val, alloc.vec.Vec.length, overLimit, alloc.vec.Vec.from_val, List.length_replicate]
+
+theorem normal_never :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record
+      (io empty) neverSaved = .ok (.Ok ()) := by
+  apply SourceEndValidationProof.actual_matched_true_accepted (io empty) neverSaved represented_never
+    neverCaptured neverEnd empty rfl rfl rfl (by decide)
+  exact never_matches empty
+
+theorem normal_worker :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record
+      (io empty) workerSaved = .ok (.Ok ()) := by
+  apply SourceEndValidationProof.actual_matched_true_accepted (io empty) workerSaved represented_worker
+    workerCaptured workerEnd empty rfl rfl rfl (by decide)
+  exact worker_matches empty
+
+theorem normal_terminated :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record
+      (io empty) terminatedSaved = .ok (.Ok ()) := by
+  apply SourceEndValidationProof.actual_matched_true_accepted (io empty) terminatedSaved
+    (SourceDrainValidationValues.represented none) (SourceDrainValidationValues.capturedWith none)
+    (.Terminated SourceDrainValidationValues.stop SourceDrainValidationValues.observation none)
+    empty rfl rfl rfl (by decide)
+  exact terminated_matches empty
+
+theorem exact_boundary_accepted :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record
+      (io atLimit) neverSaved = .ok (.Ok ()) := by
+  apply SourceEndValidationProof.actual_matched_true_accepted (io atLimit) neverSaved represented_never
+    neverCaptured neverEnd atLimit rfl rfl rfl
+  · rw [at_limit_length]; decide
+  · exact never_matches atLimit
+
+theorem first_byte_over_boundary_rejected :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.validate_record
+      (io overLimit) neverSaved = .ok (.Err .CorruptStore) := by
+  apply SourceEndValidationProof.actual_oversized_before_all_matches (io overLimit) neverSaved represented_never
+    neverCaptured neverEnd overLimit rfl rfl rfl
+  rw [over_limit_length]; decide
+
+theorem oversized_writer_rejected :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed
+      (io overLimit) neverSaved = .ok (.Err .CorruptStore) := by
+  rw [SourceEndValidationProof.writer_actual_contract _ _ represented_never]
+  unfold writerOutcome
+  change SourceRetireSpec.tryJournal id (outcome (io overLimit) neverSaved) _ = _
+  rw [← SourceEndValidationProof.actual_contract _ _ represented_never,
+    first_byte_over_boundary_rejected]
+  simp [SourceRetireSpec.tryJournal]
+
+theorem normal_writer :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed
+      (io empty) neverSaved = .ok (.Ok true) := by
+  apply SourceEndValidationProof.actual_material_never_after_validation (io empty) neverSaved represented_never
+    neverCaptured SourceWorkMatch.Values.digest (some SourceRequestEndMatchValues.action) rfl rfl
+  rw [← SourceEndValidationProof.actual_contract _ _ represented_never]
+  exact normal_never
+
+theorem normal_terminated_writer :
+    SourceEndValidationActual.controller.lifecycle_inbox.source_work.full.end.material_writer_closed
+      (io empty) terminatedSaved = .ok (.Ok true) := by
+  rw [SourceEndValidationProof.writer_actual_contract (io empty) terminatedSaved (SourceDrainValidationValues.represented none)]
+  unfold writerOutcome
+  change SourceRetireSpec.tryJournal id (outcome (io empty) terminatedSaved)
+    (fun _ => SourceDrainValidationModel.writerOutcome SourceDrainValidationValues.io terminatedSaved) = _
+  rw [← SourceEndValidationProof.actual_contract (io empty) terminatedSaved (SourceDrainValidationValues.represented none), normal_terminated]
+  simp only [SourceRetireSpec.tryJournal, bind_tc_ok]
+  have accepted := SourceDrainValidationValues.writer_normal
+  rw [SourceDrainValidationProof.writer_actual_contract SourceDrainValidationValues.io SourceDrainValidationValues.ended
+    (SourceDrainValidationValues.represented none)] at accepted
+  exact accepted
+
+end
+end SandboxModel.Stage1Protocol.SourceEndValidationValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.represented_never
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.represented_worker
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.never_matches
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.worker_matches
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.terminated_matches
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.at_limit_length
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.over_limit_length
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.normal_never
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.normal_worker
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.normal_terminated
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.exact_boundary_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.first_byte_over_boundary_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.oversized_writer_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.normal_writer
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndValidationValues.normal_terminated_writer
