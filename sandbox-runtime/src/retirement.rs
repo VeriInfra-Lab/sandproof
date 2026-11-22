@@ -302,16 +302,59 @@ impl Runtime {
     pub fn retire(&self, id: &str, manifest: &RetirementManifest) -> Result<(), RuntimeError> {
         self.validate_retirement_manifest(id, manifest)?;
         let gate = self.acquire_helper_gate()?;
+        self.retire_claim_locked(id, manifest, gate.as_ref())?;
+        self.observe_retired_locked(id, manifest)
+    }
+
+    /// Finish a freshly observed unload on a single exclusive slot lock. Install the
+    /// original Releasing record before destructive work; the node publishes Free
+    /// under this same lock only after the final physical and node observations.
+    /// An interruption leaves only the durable manifest for the ordinary recovery path.
+    ///
+    /// # Errors
+    /// Gate, identity, observation, cleanup and publication errors propagate to
+    /// the caller, including an uncertain write of either durable slot record.
+    pub fn with_fresh_unload_retirement<E: From<RuntimeError>>(
+        &self,
+        id: &str,
+        manifest: &RetirementManifest,
+        install_releasing: impl FnOnce() -> Result<(), E>,
+        remove_node_files: impl FnOnce() -> Result<(), E>,
+        publish_free: impl FnOnce() -> Result<(), E>,
+    ) -> Result<(), E> {
+        self.validate_retirement_manifest(id, manifest)?;
+        let gate = self
+            .acquire_helper_gate()?
+            .ok_or(RuntimeError::InvalidConfiguration(
+                "unload retirement requires an exclusive physical slot",
+            ))?;
+        install_releasing()?;
+        self.retire_claim_locked(id, manifest, Some(&gate))?;
+        // Preserve named-resource and claim/flow checks before deleting the
+        // original node files. Both complete holder scans run again before Free.
+        self.verify_retirement_paths(id, manifest)?;
+        self.verify_retired_claim_and_flows(id)?;
+        remove_node_files()?;
+        self.observe_retired_locked(id, manifest)?;
+        publish_free()
+    }
+
+    fn retire_claim_locked(
+        &self,
+        id: &str,
+        manifest: &RetirementManifest,
+        gate: Option<&super::RuntimeHelperGuard>,
+    ) -> Result<(), RuntimeError> {
         self.verify_retirement_physical(id, manifest)?;
         let claim = self.config.chroot_base.join(".claims").join(id);
         verify_claim(&claim, manifest)?;
         if manifest.uplink_intent {
-            self.purge_retired_conntrack(id, gate.as_ref())?;
+            self.purge_retired_conntrack(id, gate)?;
         } else {
             self.require_retired_conntrack_absent(id)?;
         }
         retire_claim(&claim, manifest)?;
-        self.observe_retired_locked(id, manifest)
+        Ok(())
     }
 
     /// Read-only verification of a Free binding, including restart recovery.
@@ -329,8 +372,8 @@ impl Runtime {
 
     /// Recheck a binding whose complete retirement was durably confirmed Free.
     ///
-    /// The node must have persisted Free only after `retire` and
-    /// `observe_retired` succeeded under the original incarnation. At that
+    /// The node must have persisted Free only after final physical and node
+    /// verification under the original incarnation. At that
     /// point no thread or descriptor held the old namespace. Its inode may
     /// subsequently identify an unrelated namespace, so it is no longer a
     /// live identity witness. Named resources, original PID/start, claims and
@@ -357,6 +400,10 @@ impl Runtime {
         manifest: &RetirementManifest,
     ) -> Result<(), RuntimeError> {
         self.verify_retirement_physical(id, manifest)?;
+        self.verify_retired_claim_and_flows(id)
+    }
+
+    fn verify_retired_claim_and_flows(&self, id: &str) -> Result<(), RuntimeError> {
         if path_present(&self.config.chroot_base.join(".claims").join(id))? {
             return Err(RuntimeError::IdentityMismatch("retired claim still exists"));
         }
@@ -433,6 +480,19 @@ impl Runtime {
         id: &str,
         manifest: &RetirementManifest,
     ) -> Result<(), RuntimeError> {
+        self.verify_retirement_paths(id, manifest)?;
+        // The original position remains closed and its helper gate is held.
+        // UID absence supplements, rather than replaces, the exact process,
+        // namespace-holder, backing and exclusive-incarnation obligations.
+        super::uid_retirement::require_host_uid_unheld(self.config.vm_uid)?;
+        Ok(())
+    }
+
+    fn verify_retirement_paths(
+        &self,
+        id: &str,
+        manifest: &RetirementManifest,
+    ) -> Result<(), RuntimeError> {
         if let Some(process) = &manifest.process
             && verified_process(process)?.is_some()
         {
@@ -459,10 +519,6 @@ impl Runtime {
         if !self.uplink_resources_absent(id)? {
             return Err(RuntimeError::IdentityMismatch("retirement uplink remains"));
         }
-        // The original position remains closed and its helper gate is held.
-        // UID absence supplements, rather than replaces, the exact process,
-        // namespace-holder, backing and exclusive-incarnation obligations.
-        super::uid_retirement::require_host_uid_unheld(self.config.vm_uid)?;
         Ok(())
     }
 }
