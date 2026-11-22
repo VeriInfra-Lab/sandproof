@@ -1,0 +1,71 @@
+import SourceRecordProjectionsTypes
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceRecordProjectionsModel
+abbrev Record := controller.lifecycle_inbox.source_work.SourceWorkRecord
+abbrev Capture := controller.lifecycle_inbox.source_work.full.CaptureWork
+abbrev End := controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord
+abbrev Full := capture.work.FullCaptureWorkRequest
+abbrev Worker := capture.launch.CaptureWorkerBinding
+abbrev Action := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+abbrev Observation := capture.CaptureRequestEndObservation
+abbrev Digest := sandproof_protocol.lifecycle.digest.ContentDigest
+abbrev SandboxId := sandbox_controller_core.ids.SandboxId
+abbrev OperationId := sandbox_controller_core.ids.OperationId
+
+/-- Values returned by nine methods; no authorization or persistence fact. -/
+structure Projection where
+  sandbox : SandboxId
+  hasEnd : Bool
+  full : Option Full
+  worker : Option Worker
+  action : Option Action
+  requestEnd : Option Observation
+  manifest : Option Digest
+  materialBytes : Option U64
+  operation : Option OperationId
+
+/-- Complete value projection; no validation is performed by these methods. -/
+def expected (record : Record) : Projection :=
+  { sandbox := record.work.anchor.«local».sandbox
+    hasEnd := match record.capture with
+      | none => false
+      | some captured => match captured.«end» with | none => false | some _ => true
+    full := match record.capture with | none => none | some captured => some captured.full
+    worker := match record.capture with | none => none | some captured => captured.worker
+    action := match record.capture with | none => none | some captured => captured.action
+    requestEnd := match record.capture with
+      | none => none
+      | some captured => match captured.«end» with
+        | some (.WorkerEnded observation) => some observation
+        | _ => none
+    manifest := match record.capture with | none => none | some captured => captured.completed
+    materialBytes := match record.capture with | none => none | some captured => captured.material_bytes
+    operation := match record.capture with | none => none | some captured => some captured.operation }
+
+structure Readers where
+  sandbox : Record → Result SandboxId
+  hasEnd : Record → Result Bool
+  full : Record → Result (Option Full)
+  worker : Record → Result (Option Worker)
+  action : Record → Result (Option Action)
+  requestEnd : Record → Result (Option Observation)
+  manifest : Record → Result (Option Digest)
+  materialBytes : Record → Result (Option U64)
+  operation : Record → Result (Option OperationId)
+
+/-- The same complete property for correct and both real wrong views.
+    All records and every complete field, with no FullAllowed/domain premise. -/
+def Contract (readers : Readers) : Prop :=
+  ∀ record,
+    readers.sandbox record = .ok (expected record).sandbox ∧
+    readers.hasEnd record = .ok (expected record).hasEnd ∧
+    readers.full record = .ok (expected record).full ∧
+    readers.worker record = .ok (expected record).worker ∧
+    readers.action record = .ok (expected record).action ∧
+    readers.requestEnd record = .ok (expected record).requestEnd ∧
+    readers.manifest record = .ok (expected record).manifest ∧
+    readers.materialBytes record = .ok (expected record).materialBytes ∧
+    readers.operation record = .ok (expected record).operation
+end SandboxModel.Stage1Protocol.SourceRecordProjectionsModel

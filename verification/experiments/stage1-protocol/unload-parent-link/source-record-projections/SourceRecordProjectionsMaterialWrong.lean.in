@@ -1,0 +1,15 @@
+import SourceRecordProjections
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+set_option linter.unusedVariables false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceRecordProjectionsMaterialWrongActual
+local notation "core.option.Option.as_ref" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.core.option.Option.as_ref
+local notation "core.option.Option.Insts.CoreOpsTry_traitTry.branch" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch
+local notation "core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual
+-- ACTUAL COMPLETE WRONG RECORD PROJECTION FUNCTIONS
+end SandboxModel.Stage1Protocol.SourceRecordProjectionsMaterialWrongActual

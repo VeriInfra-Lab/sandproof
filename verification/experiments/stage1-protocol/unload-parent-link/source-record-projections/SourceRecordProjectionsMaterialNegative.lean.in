@@ -1,0 +1,55 @@
+import SourceRecordProjectionsMaterialWrong
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRecordProjectionsModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceRecordProjectionsMaterialNegative
+noncomputable section
+
+def readers : Readers :=
+  { sandbox := SourceRecordProjectionsMaterialWrongActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.source_sandbox
+    hasEnd := SourceRecordProjectionsMaterialWrongActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_has_end
+    full := SourceRecordProjectionsMaterialWrongActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.full_capture
+    worker := SourceRecordProjectionsMaterialWrongActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_worker
+    action := SourceRecordProjectionsMaterialWrongActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_action
+    requestEnd := SourceRecordProjectionsMaterialWrongActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_request_end
+    manifest := SourceRecordProjectionsMaterialWrongActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.captured_manifest
+    materialBytes := SourceRecordProjectionsMaterialWrongActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.captured_material_bytes
+    operation := SourceRecordProjectionsMaterialWrongActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_operation }
+
+theorem actual_wrong_projection (record : Record) :
+    readers.materialBytes record = .ok (match record.capture with
+      | none => none | some captured => some captured.reserved_material_bytes) := by
+  rcases record with ⟨work, observation, captured, restore, retirement, materialRelease⟩
+  cases captured <;> simp [readers, SourceRecordProjectionsMaterialWrongActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.captured_material_bytes, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual]
+
+theorem actual_missing_material_is_replaced_by_reservation :
+    readers.materialBytes (SourceRecordProjectionsValues.measured none) = .ok (some 12345#u64) := by
+  rw [actual_wrong_projection]; rfl
+
+theorem violates_same_complete_contract : ¬ Contract readers := by
+  intro all
+  have wrong := (all (SourceRecordProjectionsValues.measured none)).2.2.2.2.2.2.2.1
+  rw [actual_missing_material_is_replaced_by_reservation] at wrong
+  change (Result.ok (some 12345#u64) : Result (Option U64)) = .ok none at wrong
+  have values := Result.ok_injective wrong
+  cases values
+
+theorem missing_capture_control (record : Record) (missing : record.capture = none) :
+    readers.materialBytes record = .ok none := by
+  rw [actual_wrong_projection, missing]
+
+theorem coincident_bytes_control (record : Record) (captured : Capture)
+    (present : record.capture = some captured)
+    (coincident : captured.material_bytes = some captured.reserved_material_bytes) :
+    readers.materialBytes record = SourceRecordProjectionsProof.readers.materialBytes record := by
+  rw [actual_wrong_projection, SourceRecordProjectionsProof.materialBytes_reader]
+  simp [expected, present, coincident]
+end
+end SandboxModel.Stage1Protocol.SourceRecordProjectionsMaterialNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsMaterialNegative.actual_wrong_projection
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsMaterialNegative.actual_missing_material_is_replaced_by_reservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsMaterialNegative.violates_same_complete_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsMaterialNegative.missing_capture_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsMaterialNegative.coincident_bytes_control

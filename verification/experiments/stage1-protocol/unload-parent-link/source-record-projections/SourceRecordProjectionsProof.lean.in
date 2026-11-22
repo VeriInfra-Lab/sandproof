@@ -1,0 +1,149 @@
+import SourceRecordProjectionsView
+import SourceRecordProjectionsModel
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRecordProjectionsModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceRecordProjectionsProof
+
+def readers : Readers :=
+  { sandbox := SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.source_sandbox
+    hasEnd := SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_has_end
+    full := SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.full_capture
+    worker := SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_worker
+    action := SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_action
+    requestEnd := SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_request_end
+    manifest := SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.captured_manifest
+    materialBytes := SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.captured_material_bytes
+    operation := SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_operation }
+
+theorem sandbox_reader (record : Record) :
+    readers.sandbox record = .ok (expected record).sandbox := by
+  rfl
+
+theorem hasEnd_reader (record : Record) :
+    readers.hasEnd record = .ok (expected record).hasEnd := by
+  rcases record with ⟨work, observation, captured, restore, retirement, materialRelease⟩
+  cases captured with
+  | none => simp [readers, SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_has_end, expected,
+      SourceRecordProjectionsActual.core.option.Option.is_some_and, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef]
+  | some captured =>
+    rcases captured with ⟨operation, reserved, full, action, worker, completed, materialBytes, savedEnd⟩
+    cases savedEnd <;> simp [readers, SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_has_end, expected,
+      SourceRecordProjectionsActual.core.option.Option.is_some_and,
+      SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_has_end.closure.Insts.CoreOpsFunctionFnOnceTupleSharedCaptureWorkBool.call_once,
+      Aeneas.Std.core.option.Option.is_some, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef]
+
+theorem full_reader (record : Record) :
+    readers.full record = .ok (expected record).full := by
+  rcases record with ⟨work, observation, captured, restore, retirement, materialRelease⟩
+  cases captured <;> simp [readers, SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.full_capture, expected, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual]
+
+theorem worker_reader (record : Record) :
+    readers.worker record = .ok (expected record).worker := by
+  rcases record with ⟨work, observation, captured, restore, retirement, materialRelease⟩
+  cases captured <;> simp [readers, SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_worker, expected, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual]
+
+theorem action_reader (record : Record) :
+    readers.action record = .ok (expected record).action := by
+  rcases record with ⟨work, observation, captured, restore, retirement, materialRelease⟩
+  cases captured <;> simp [readers, SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_action, expected, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual]
+
+theorem requestEnd_reader (record : Record) :
+    readers.requestEnd record = .ok (expected record).requestEnd := by
+  rcases record with ⟨work, observation, captured, restore, retirement, materialRelease⟩
+  cases captured with
+  | none => simp [readers, SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_request_end, expected, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual]
+  | some captured =>
+    rcases captured with ⟨operation, reserved, full, action, worker, completed, materialBytes, savedEnd⟩
+    cases savedEnd with
+    | none => simp [readers, SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_request_end, expected, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual]
+    | some savedEnd => cases savedEnd <;> simp [readers, SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_request_end, expected, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual]
+
+theorem manifest_reader (record : Record) :
+    readers.manifest record = .ok (expected record).manifest := by
+  rcases record with ⟨work, observation, captured, restore, retirement, materialRelease⟩
+  cases captured <;> simp [readers, SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.captured_manifest, expected, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual]
+
+theorem materialBytes_reader (record : Record) :
+    readers.materialBytes record = .ok (expected record).materialBytes := by
+  rcases record with ⟨work, observation, captured, restore, retirement, materialRelease⟩
+  cases captured <;> simp [readers, SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.captured_material_bytes, expected, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual]
+
+theorem operation_reader (record : Record) :
+    readers.operation record = .ok (expected record).operation := by
+  rcases record with ⟨work, observation, captured, restore, retirement, materialRelease⟩
+  cases captured <;> simp [readers, SourceRecordProjectionsActual.controller.lifecycle_inbox.source_work.full.SourceWorkRecord.capture_operation, expected, SourceEndReceiptActual.core.option.Option.as_ref, SourceRetireLibrary.optionRef, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitTry.branch, SourceEndReceiptActual.core.option.Option.Insts.CoreOpsTry_traitFromResidualOptionInfallible.from_residual]
+
+theorem actual_contract : Contract readers := by
+  intro record
+  exact ⟨sandbox_reader record, hasEnd_reader record, full_reader record,
+    worker_reader record, action_reader record, requestEnd_reader record,
+    manifest_reader record, materialBytes_reader record, operation_reader record⟩
+
+theorem saved_end_iff (record : Record) :
+    readers.hasEnd record = .ok true ↔
+      ∃ captured savedEnd, record.capture = some captured ∧ captured.«end» = some savedEnd := by
+  rw [hasEnd_reader]
+  cases present : record.capture with
+  | none => simp [expected, present]
+  | some captured =>
+    cases ended : captured.«end» <;> simp [expected, present, ended]
+
+theorem worker_end_iff (record : Record) (observation : Observation) :
+    readers.requestEnd record = .ok (some observation) ↔
+      ∃ captured, record.capture = some captured ∧
+        captured.«end» = some (.WorkerEnded observation) := by
+  rw [requestEnd_reader]
+  cases present : record.capture with
+  | none => simp [expected, present]
+  | some captured =>
+    cases ended : captured.«end» with
+    | none => simp [expected, present, ended]
+    | some savedEnd => cases savedEnd <;> simp [expected, present, ended]
+
+theorem observed_material_iff (record : Record) (bytes : U64) :
+    readers.materialBytes record = .ok (some bytes) ↔
+      ∃ captured, record.capture = some captured ∧ captured.material_bytes = some bytes := by
+  rw [materialBytes_reader]
+  cases present : record.capture <;> simp [expected, present]
+
+theorem full_value_iff (record : Record) (full : Full) :
+    readers.full record = .ok (some full) ↔
+      ∃ captured, record.capture = some captured ∧ captured.full = full := by
+  rw [full_reader]
+  cases present : record.capture <;> simp [expected, present]
+
+theorem missing_capture_all (record : Record) (missing : record.capture = none) :
+    readers.hasEnd record = .ok false ∧ readers.full record = .ok none ∧
+    readers.worker record = .ok none ∧ readers.action record = .ok none ∧
+    readers.requestEnd record = .ok none ∧ readers.manifest record = .ok none ∧
+    readers.materialBytes record = .ok none ∧ readers.operation record = .ok none := by
+  have facts := (actual_contract record).2
+  simpa [expected, missing] using facts
+
+/-- Other record data cannot change these projections. This is value equality,
+    not a statement that a record is current, stored or independently observed. -/
+theorem only_original_sandbox_and_capture (first second : Record)
+    (sandbox : first.work.anchor.«local».sandbox = second.work.anchor.«local».sandbox)
+    (captured : first.capture = second.capture) :
+    expected first = expected second := by
+  simp [expected, sandbox, captured]
+end SandboxModel.Stage1Protocol.SourceRecordProjectionsProof
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.sandbox_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.hasEnd_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.full_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.worker_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.action_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.requestEnd_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.manifest_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.materialBytes_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.operation_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.saved_end_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.worker_end_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.observed_material_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.full_value_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.missing_capture_all
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsProof.only_original_sandbox_and_capture

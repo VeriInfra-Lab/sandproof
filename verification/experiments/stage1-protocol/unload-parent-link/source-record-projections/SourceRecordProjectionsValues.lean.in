@@ -1,0 +1,97 @@
+import SourceRecordProjectionsProof
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceRecordProjectionsModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceRecordProjectionsValues
+noncomputable section
+open SourceRecordProjectionsProof
+
+def normalCapture : Capture := SourceEndReceiptValues.returnedCapture
+def normal : Record := SourceEndReceiptValues.returnedSaved
+def pendingCapture : Capture := { normalCapture with «end» := none }
+def pending : Record := { normal with capture := some pendingCapture }
+def absent : Record := { normal with capture := none }
+def measured (bytes : Option U64) : Record :=
+  { normal with capture := some { normalCapture with reserved_material_bytes := 12345#u64, material_bytes := bytes } }
+def invalidFull : Full := SourceFullWorkGuardValues.emptyState
+def unchecked : Record := { normal with capture := some { normalCapture with full := invalidFull } }
+
+theorem normal_full_allowed : SourceFullWorkGuardModel.FullAllowed normalCapture.full :=
+  SourceFullWorkGuardValues.full_allowed
+
+theorem normal_full_originally_valid :
+    SourceFullWorkGuardActual.capture.work.FullCaptureWorkRequest.valid normalCapture.full = .ok true :=
+  SourceFullWorkGuardValues.normal_accepted
+
+theorem normal_full_complete : readers.full normal = .ok (some normalCapture.full) := by
+  rw [full_reader]; rfl
+
+theorem normal_worker_complete : readers.worker normal = .ok normalCapture.worker := by
+  rw [worker_reader]; rfl
+
+theorem normal_action_complete : readers.action normal = .ok normalCapture.action := by
+  rw [action_reader]; rfl
+
+theorem normal_observation_complete :
+    readers.requestEnd normal = .ok (some SourceDrainValidationValues.requestEnd) := by
+  rw [requestEnd_reader]; rfl
+
+theorem normal_manifest_complete : readers.manifest normal = .ok normalCapture.completed := by
+  rw [manifest_reader]; rfl
+
+theorem capture_without_end : readers.hasEnd pending = .ok false := by
+  rw [hasEnd_reader]; rfl
+
+theorem capture_without_end_still_has_full : readers.full pending = .ok (some normalCapture.full) := by
+  rw [full_reader]; rfl
+
+theorem never_released_has_end_without_observation :
+    readers.hasEnd (SourceEndReceiptValues.neverSaved none) = .ok true ∧
+    readers.requestEnd (SourceEndReceiptValues.neverSaved none) = .ok none := by
+  constructor
+  · rw [hasEnd_reader]; rfl
+  · rw [requestEnd_reader]; rfl
+
+theorem terminated_has_end_without_observation :
+    readers.hasEnd SourceEndValidationValues.terminatedSaved = .ok true ∧
+    readers.requestEnd SourceEndValidationValues.terminatedSaved = .ok none := by
+  constructor
+  · rw [hasEnd_reader]; rfl
+  · rw [requestEnd_reader]; rfl
+
+theorem measured_preserves_any_optional_u64 (bytes : Option U64) :
+    readers.materialBytes (measured bytes) = .ok bytes := by
+  rw [materialBytes_reader]; rfl
+
+theorem reservation_does_not_change_observed_bytes (record : Record) (captured : Capture) (reserved : U64) :
+    readers.materialBytes { record with capture := some { captured with reserved_material_bytes := reserved } } =
+      .ok captured.material_bytes := by
+  rw [materialBytes_reader]; rfl
+
+theorem invalid_full_is_still_readable : readers.full unchecked = .ok (some invalidFull) := by
+  rw [full_reader]; rfl
+
+theorem readable_full_is_not_valid_work : ¬ SourceFullWorkGuardModel.FullAllowed invalidFull := by
+  intro accepted
+  have positive := accepted.2.2.2.1.1
+  change (0 : Nat) < 0 at positive
+  omega
+end
+end SandboxModel.Stage1Protocol.SourceRecordProjectionsValues
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.normal_full_allowed
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.normal_full_originally_valid
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.normal_full_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.normal_worker_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.normal_action_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.normal_observation_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.normal_manifest_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.capture_without_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.capture_without_end_still_has_full
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.never_released_has_end_without_observation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.terminated_has_end_without_observation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.measured_preserves_any_optional_u64
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.reservation_does_not_change_observed_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.invalid_full_is_still_readable
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceRecordProjectionsValues.readable_full_is_not_valid_work
