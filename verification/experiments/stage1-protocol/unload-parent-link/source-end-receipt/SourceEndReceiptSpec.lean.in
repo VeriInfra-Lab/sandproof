@@ -1,0 +1,74 @@
+import SourceEndReceiptTypes
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceEndReceiptModel
+noncomputable section
+abbrev Record := SourceEndValidationModel.Record
+abbrev End := SourceEndValidationModel.End
+/-- Separate original call sites. In particular, a successful validation
+    does not fix the later encoding result. The digest provider stays shared. -/
+structure Ports where
+  validation : SourceEndValidationModel.Ports
+  encode_full_again : SourceRequestEndMatchModel.Full →
+    Result (core.result.Result (alloc.vec.Vec U8) SourceEndValidationModel.JsonError)
+  encode_end_again : End →
+    Result (core.result.Result (alloc.vec.Vec U8) SourceEndValidationModel.JsonError)
+
+def finalFull (io : Ports) : SourceRequestEndMatchModel.Ports :=
+  ⟨io.encode_full_again, io.validation.drain.full.digest⟩
+
+/-- Library environment for the original Full binding's later invocation.
+    This selects per-call replies without replacing that business algorithm. -/
+def receiptPhase (io : Ports) : Ports :=
+  { io with validation := { io.validation with drain :=
+      { io.validation.drain with full := finalFull io } } }
+abbrev Journal := SourceEndValidationModel.Journal
+abbrev JsonError := SourceEndValidationModel.JsonError
+abbrev Representable := SourceEndValidationModel.Representable
+abbrev TypedEnd := sandbox_controller_core.capture.continuation.CaptureWorkEnd
+abbrev Receipt := sandbox_controller_core.capture.continuation.CaptureWorkEndReceipt
+abbrev Reply := core.result.Result (Option Receipt) Journal
+
+/-- The original seal_end value specification, with exactly the original
+    optional action and outcome cases. No physical or authority fact. -/
+def typedEnd (record : Record) (saved : End) :
+    Result (core.result.Result (Option TypedEnd) Journal) :=
+  match saved with
+  | .Terminated _ _ _ => .ok (.Ok none)
+  | .NeverReleased _ none => .ok (.Ok (some (.NeverReleased none)))
+  | .NeverReleased _ (some action) =>
+    SourceRetireSpec.tryJournal id (SourceSealEndModel.outcome record action) fun sealResult =>
+      .ok (.Ok (some (.NeverReleased (some sealResult))))
+  | .WorkerEnded observed =>
+    SourceRetireSpec.tryJournal id (SourceSealEndModel.outcome record observed.action) fun sealResult =>
+      .ok (.Ok (some (match observed.outcome with
+        | .NoRequest => .NoRequest sealResult
+        | .Returned _ => .Returned sealResult)))
+
+/-- Preserve the original order and all repeated calls. End validation may
+    encode/hash; a nonterminal successful branch then binds Full again and
+    encodes End again before hashing those new bytes. No equality of separate
+    effectful/error-capable calls is assumed. -/
+def outcome (io : Ports) (record : Record) : Result Reply :=
+  match record.capture with
+  | none => .ok (.Ok none)
+  | some captured =>
+    match captured.«end» with
+    | none => .ok (.Ok none)
+    | some saved =>
+      SourceRetireSpec.tryJournal id (SourceEndValidationModel.outcome io.validation record) fun _ =>
+      SourceRetireSpec.tryJournal id (typedEnd record saved) fun typed =>
+      match typed with
+      | none => .ok (.Ok none)
+      | some typed =>
+        SourceRetireSpec.tryJournal JournalError.Json
+          (SourceRequestEndMatchModel.binding (finalFull io) captured.full) fun workBinding =>
+        SourceRetireSpec.tryJournal JournalError.Json (io.encode_end_again saved) fun bytes => do
+          let endBinding ← io.validation.drain.full.digest bytes.slice
+          .ok (.Ok (some ⟨workBinding, endBinding, typed⟩))
+
+def Contract (io : Ports) (root : Record → Result Reply) : Prop :=
+  ∀ record, Representable record → root record = outcome io record
+end
+end SandboxModel.Stage1Protocol.SourceEndReceiptModel

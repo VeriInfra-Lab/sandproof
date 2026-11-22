@@ -1,0 +1,244 @@
+import SourceEndReceiptProof
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceEndReceiptModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceEndReceiptValues
+noncomputable section
+open SourceEndReceiptModel
+abbrev Capture := controller.lifecycle_inbox.source_work.full.CaptureWork
+
+def empty : alloc.vec.Vec U8 := SourceEndValidationValues.empty
+def digest : SourceRequestEndMatchModel.Digest := SourceWorkMatch.Values.digest
+def io : Ports :=
+  ⟨SourceEndValidationValues.io empty, fun _ => .ok (.Ok empty), fun _ => .ok (.Ok empty)⟩
+def returnedEnd : End := .WorkerEnded SourceDrainValidationValues.requestEnd
+def returnedCapture : Capture := SourceEndValidationValues.workerCaptured
+def returnedSaved : Record := SourceEndValidationValues.workerSaved
+def noRequestObservation : SourceRequestEndMatchModel.Observation :=
+  { SourceDrainValidationValues.requestEnd with outcome := .NoRequest }
+def noRequestEnd : End := .WorkerEnded noRequestObservation
+def noRequestCapture : Capture :=
+  { returnedCapture with completed := none, «end» := some noRequestEnd }
+def noRequestSaved : Record := { returnedSaved with capture := some noRequestCapture }
+def neverEnd (action : Option SourceSealEndModel.Action) : End := .NeverReleased digest action
+def neverCapture (action : Option SourceSealEndModel.Action) : Capture :=
+  { SourceSavedQuestionValues.captured with
+    worker := none, completed := none, action := action, «end» := some (neverEnd action) }
+def neverSaved (action : Option SourceSealEndModel.Action) : Record :=
+  { SourceSavedQuestionValues.saved with capture := some (neverCapture action) }
+def sealResult : SourceSealEndModel.SealEnd := ⟨3#u64, 6#u64, 7#u64, ⟨8#u64⟩⟩
+def lateFullError : Ports :=
+  { io with encode_full_again := fun _ => .ok (.Err ⟨8⟩), encode_end_again := fun _ => .ok (.Err ⟨9⟩) }
+def lateEndError : Ports := { io with encode_end_again := fun _ => .ok (.Err ⟨9⟩) }
+
+theorem represented_never (action : Option SourceSealEndModel.Action) : Representable (neverSaved action) := by
+  intro value present
+  have same : neverCapture action = value := Option.some.inj present
+  subst value
+  exact SourceFullBindingValues.represented
+
+theorem represented_no_request : Representable noRequestSaved := by
+  intro value present
+  have same : noRequestCapture = value := Option.some.inj present
+  subst value
+  exact SourceFullBindingValues.represented
+
+theorem validation_returned :
+    SourceEndValidationModel.outcome io.validation returnedSaved = .ok (.Ok ()) := by
+  have accepted := SourceEndValidationValues.normal_worker
+  rw [SourceEndValidationProof.actual_contract _ _ SourceEndValidationValues.represented_worker] at accepted
+  exact accepted
+
+theorem validation_no_request :
+    SourceEndValidationModel.outcome io.validation noRequestSaved = .ok (.Ok ()) := by
+  simp [SourceEndValidationModel.outcome, SourceEndValidationModel.matched, SourceEndValidationModel.limit,
+    SourcePriorEndMatchModel.outcome, SourceRequestEndMatchModel.outcome, SourceRequestEndMatchModel.binding,
+    SourceRequestEndMatchModel.StatusAllowed, SourceRetireSpec.tryJournal,
+    io, SourceEndValidationValues.io, SourceDrainValidationValues.io, SourceTerminalMatchValues.io,
+    SourceRequestEndMatchValues.io, noRequestSaved, noRequestCapture, noRequestEnd, noRequestObservation,
+    returnedSaved, returnedCapture, SourceEndValidationValues.workerSaved, SourceEndValidationValues.workerCaptured,
+    SourceEndValidationValues.workerEnd, SourceDrainValidationValues.requestEnd, SourceDrainValidationValues.saved, SourceDrainValidationValues.captured,
+    SourceSavedQuestionValues.captured, SourcePriorEndMatchValues.captured,
+    SourceRequestEndMatchValues.observation, empty, SourceEndValidationValues.empty, SourceRequestEndMatchValues.payload]
+
+theorem validation_never (action : Option SourceSealEndModel.Action) :
+    SourceEndValidationModel.outcome io.validation (neverSaved action) = .ok (.Ok ()) := by
+  simp [SourceEndValidationModel.outcome, SourceEndValidationModel.matched, SourceEndValidationModel.limit,
+    SourcePriorEndMatchModel.outcome, SourceRequestEndMatchModel.binding, SourceRetireSpec.tryJournal,
+    io, SourceEndValidationValues.io, SourceDrainValidationValues.io, SourceTerminalMatchValues.io,
+    SourceRequestEndMatchValues.io, neverSaved, neverCapture, neverEnd, digest,
+    empty, SourceEndValidationValues.empty, SourceRequestEndMatchValues.payload]
+
+theorem final_binding_normal (full : SourceRequestEndMatchModel.Full) :
+    SourceRequestEndMatchModel.binding (finalFull io) full = .ok (.Ok digest) := by
+  simp [SourceRequestEndMatchModel.binding, finalFull, io, digest,
+    SourceEndValidationValues.io, SourceDrainValidationValues.io,
+    SourceTerminalMatchValues.io, SourceRequestEndMatchValues.io]
+
+theorem original_seal_value :
+    SourceSealEndModel.outcome SourceSavedQuestionValues.saved SourceSavedQuestionValues.sealAction =
+      .ok (.Ok sealResult) := by
+  classical
+  unfold SourceSealEndModel.outcome
+  change (if SourceSealEndModel.checks SourceSavedQuestionValues.saved SourceSavedQuestionValues.sealAction
+    SourceFullBindingValues.saved.work.anchor.local.sandbox 1#u64 101#u64 5#u64 then
+      (Result.ok (core.result.Result.Ok sealResult) : Result (core.result.Result SourceSealEndModel.SealEnd Journal))
+    else .ok (.Err JournalError.CorruptStore)) = _
+  rw [if_pos (show SourceSealEndModel.checks SourceSavedQuestionValues.saved SourceSavedQuestionValues.sealAction
+    SourceFullBindingValues.saved.work.anchor.local.sandbox 1#u64 101#u64 5#u64 from ⟨rfl,rfl,rfl,rfl,rfl,rfl⟩)]
+
+theorem seal_returned :
+    SourceSealEndModel.outcome returnedSaved SourceDrainValidationValues.requestEnd.action = .ok (.Ok sealResult) := by
+  change SourceSealEndModel.outcome SourceSavedQuestionValues.saved SourceSavedQuestionValues.sealAction = _
+  exact original_seal_value
+
+theorem seal_no_request :
+    SourceSealEndModel.outcome noRequestSaved noRequestObservation.action = .ok (.Ok sealResult) := by
+  change SourceSealEndModel.outcome SourceSavedQuestionValues.saved SourceSavedQuestionValues.sealAction = _
+  exact original_seal_value
+
+theorem typed_returned : typedEnd returnedSaved returnedEnd = .ok (.Ok (some (.Returned sealResult))) :=
+  SourceEndReceiptOrder.worker_returned_exact returnedSaved SourceDrainValidationValues.requestEnd sealResult 204#u16 rfl seal_returned
+
+theorem typed_no_request : typedEnd noRequestSaved noRequestEnd = .ok (.Ok (some (.NoRequest sealResult))) :=
+  SourceEndReceiptOrder.worker_no_request_exact noRequestSaved noRequestObservation sealResult rfl seal_no_request
+
+theorem normal_returned :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io returnedSaved =
+      .ok (.Ok (some ⟨digest, digest, .Returned sealResult⟩)) :=
+  SourceEndReceiptProof.actual_complete_output_fields io returnedSaved SourceEndValidationValues.represented_worker
+    returnedCapture returnedEnd (.Returned sealResult) digest digest empty rfl rfl
+    validation_returned typed_returned (final_binding_normal _) rfl rfl
+
+theorem normal_no_request :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io noRequestSaved =
+      .ok (.Ok (some ⟨digest, digest, .NoRequest sealResult⟩)) :=
+  SourceEndReceiptProof.actual_complete_output_fields io noRequestSaved represented_no_request
+    noRequestCapture noRequestEnd (.NoRequest sealResult) digest digest empty rfl rfl
+    validation_no_request typed_no_request (final_binding_normal _) rfl rfl
+
+theorem normal_never_without_seal :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io (neverSaved none) =
+      .ok (.Ok (some ⟨digest, digest, .NeverReleased none⟩)) :=
+  SourceEndReceiptProof.actual_complete_output_fields io (neverSaved none) (represented_never none)
+    (neverCapture none) (neverEnd none) (.NeverReleased none) digest digest empty rfl rfl
+    (validation_never none) rfl (final_binding_normal _) rfl rfl
+
+theorem normal_never_with_seal :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io
+      (neverSaved (some SourceSavedQuestionValues.sealAction)) =
+      .ok (.Ok (some ⟨digest, digest, .NeverReleased (some sealResult)⟩)) := by
+  apply SourceEndReceiptProof.actual_complete_output_fields io _ (represented_never _)
+    (neverCapture _) (neverEnd _) (.NeverReleased (some sealResult)) digest digest empty rfl rfl
+    (validation_never _)
+  · change SourceRetireSpec.tryJournal id
+      (SourceSealEndModel.outcome SourceSavedQuestionValues.saved SourceSavedQuestionValues.sealAction)
+      (fun v => .ok (.Ok (some (sandbox_controller_core.capture.continuation.CaptureWorkEnd.NeverReleased (some v))))) = _
+    simp [SourceRetireSpec.tryJournal, original_seal_value]
+  · exact final_binding_normal _
+  · rfl
+  · rfl
+
+theorem last_full_error_is_independent_of_validation :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt lateFullError returnedSaved =
+      .ok (.Err (.Json ⟨8⟩)) := by
+  apply SourceEndReceiptProof.actual_final_full_error_before_last_end lateFullError returnedSaved
+    SourceEndValidationValues.represented_worker returnedCapture returnedEnd (.Returned sealResult) ⟨8⟩ rfl rfl
+    validation_returned typed_returned
+  simp [SourceRequestEndMatchModel.binding, finalFull, lateFullError]
+
+theorem last_end_error_is_independent_of_validation :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt lateEndError returnedSaved =
+      .ok (.Err (.Json ⟨9⟩)) :=
+  SourceEndReceiptProof.actual_last_end_error_after_full lateEndError returnedSaved SourceEndValidationValues.represented_worker
+    returnedCapture returnedEnd (.Returned sealResult) digest ⟨9⟩ rfl rfl
+    validation_returned typed_returned (final_binding_normal _) rfl
+
+end
+end SandboxModel.Stage1Protocol.SourceEndReceiptValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.represented_never
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.represented_no_request
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.validation_returned
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.validation_no_request
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.validation_never
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.final_binding_normal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.original_seal_value
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.seal_returned
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.seal_no_request
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.typed_returned
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.typed_no_request
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.normal_returned
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.normal_no_request
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.normal_never_without_seal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.normal_never_with_seal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.last_full_error_is_independent_of_validation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.last_end_error_is_independent_of_validation
+
+
+namespace SandboxModel.Stage1Protocol.SourceEndReceiptValues
+noncomputable section
+open SourceEndReceiptModel
+
+theorem represented_missing_capture : Representable SourceSavedQuestionValues.missingCapture := by
+  intro value present
+  change (none : Option Capture) = some value at present
+  cases present
+
+theorem missing_capture_control :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt
+      lateFullError SourceSavedQuestionValues.missingCapture = .ok (.Ok none) :=
+  SourceEndReceiptProof.actual_missing_capture_skips_all lateFullError SourceSavedQuestionValues.missingCapture
+    represented_missing_capture rfl
+
+theorem missing_end_control :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt
+      lateFullError SourceSavedQuestionValues.saved = .ok (.Ok none) :=
+  SourceEndReceiptProof.actual_missing_end_skips_validation lateFullError SourceSavedQuestionValues.saved
+    SourceSavedQuestionValues.represented SourceSavedQuestionValues.captured rfl rfl
+
+theorem validation_terminated :
+    SourceEndValidationModel.outcome io.validation SourceEndValidationValues.terminatedSaved = .ok (.Ok ()) := by
+  have accepted := SourceEndValidationValues.normal_terminated
+  rw [SourceEndValidationProof.actual_contract
+    (SourceEndValidationValues.io SourceEndValidationValues.empty) SourceEndValidationValues.terminatedSaved
+    (SourceDrainValidationValues.represented none)] at accepted
+  exact accepted
+
+theorem normal_terminated :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt
+      io SourceEndValidationValues.terminatedSaved = .ok (.Ok none) :=
+  SourceEndReceiptProof.actual_terminated_none_after_validation io SourceEndValidationValues.terminatedSaved
+    (SourceDrainValidationValues.represented none) (SourceDrainValidationValues.capturedWith none)
+    SourceDrainValidationValues.stop SourceDrainValidationValues.observation none rfl rfl validation_terminated
+
+end
+end SandboxModel.Stage1Protocol.SourceEndReceiptValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.represented_missing_capture
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.missing_capture_control
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.missing_end_control
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.validation_terminated
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptValues.normal_terminated

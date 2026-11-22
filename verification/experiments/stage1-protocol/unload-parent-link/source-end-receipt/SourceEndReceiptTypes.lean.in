@@ -1,0 +1,7 @@
+import SourceEndValidationValues
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceRetireTypes
+-- ACTUAL COMPLETE RECEIPT TYPES
+end SandboxModel.Stage1Protocol.SourceRetireTypes

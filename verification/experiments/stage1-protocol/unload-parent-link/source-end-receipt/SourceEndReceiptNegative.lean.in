@@ -1,0 +1,114 @@
+import SourceEndReceiptValues
+import SourceEndReceiptWrong
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceTerminalMatchTypes SourceEndReceiptModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceEndReceiptNegative
+noncomputable section
+open SourceEndReceiptModel SourceEndReceiptValues
+
+private theorem validation_same (ports : Ports) (record : Record) :
+    SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.validate_record ports record =
+      SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.validate_record ports record := rfl
+private theorem seal_same (record : Record) (action : SourceSealEndModel.Action) :
+    SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.seal_end record action =
+      SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.seal_end record action := rfl
+private theorem full_same (ports : Ports) (full : SourceRequestEndMatchModel.Full) :
+    SourceEndReceiptWrongActual.capture.work.FullCaptureWorkRequest.binding_digest (receiptPhase ports) full =
+      SourceEndReceiptActual.capture.work.FullCaptureWorkRequest.binding_digest (receiptPhase ports) full := rfl
+private theorem digest_same (ports : Ports) (bytes : Slice U8) :
+    SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.digest ports bytes =
+      SourceEndReceiptActual.controller.lifecycle_inbox.source_work.digest ports bytes := rfl
+private theorem bytes_identity (value : SourceRequestEndMatchModel.Digest) :
+    SourceEndReceiptWrongActual.sandproof_protocol.lifecycle.digest.ContentDigest.as_bytes value = .ok value := rfl
+
+/-- A positive equation about the actual mutant, with unchanged encoding and
+    hash calls. No replacement Contract or assumed business callback. -/
+private theorem actual_worker_result (ports : Ports) (record : Record)
+    (captured : SourceEndReceiptProof.Capture) (observed : SourceRequestEndMatchModel.Observation)
+    (sealResult : SourceSealEndModel.SealEnd) (workBinding endBinding : SourceRequestEndMatchModel.Digest)
+    (bytes : alloc.vec.Vec U8) (represented : Representable record)
+    (present : record.capture = some captured) (ended : captured.«end» = some (.WorkerEnded observed))
+    (ready : SourceEndValidationModel.outcome ports.validation record = .ok (.Ok ()))
+    (sealedValue : SourceSealEndModel.outcome record observed.action = .ok (.Ok sealResult))
+    (bound : SourceRequestEndMatchModel.binding (finalFull ports) captured.full = .ok (.Ok workBinding))
+    (encoded : ports.encode_end_again (.WorkerEnded observed) = .ok (.Ok bytes))
+    (hashed : ports.validation.drain.full.digest bytes.slice = .ok endBinding) :
+    SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.receipt ports record =
+      .ok (.Ok (some ⟨workBinding, endBinding, .Returned sealResult⟩)) := by
+  unfold SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.receipt
+  simp only [present, ended]
+  rw [validation_same, SourceEndReceiptProof.validation_refines ports record represented, ready]
+  simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+  rw [seal_same, SourceEndReceiptProof.seal_refines, sealedValue]
+  simp only [bind_tc_ok]
+  cases observed with
+  | mk action digest worker source tag =>
+    cases tag <;> simp only [bind_tc_ok, full_same, SourceEndReceiptProof.final_full_refines]
+    all_goals
+      rw [bound]
+      simp only [bind_tc_ok, bytes_identity]
+      rw [encoded]
+      simp only [bind_tc_ok]
+      rw [digest_same, SourceEndReceiptProof.owned_digest_refines, SourceEndReceiptProof.vector_borrow, hashed]
+      simp
+
+private theorem never_same (ports : Ports) (record : Record) (captured : SourceEndReceiptProof.Capture)
+    (binding : SourceRequestEndMatchModel.Digest) (action : Option SourceSealEndModel.Action)
+    (present : record.capture = some captured) (ended : captured.«end» = some (.NeverReleased binding action)) :
+    SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.receipt ports record =
+      SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt ports record := by
+  unfold SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.receipt
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt
+  simp only [present, ended]
+  rfl
+
+theorem normal_returned_control :
+    SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.receipt io returnedSaved =
+      .ok (.Ok (some ⟨digest, digest, .Returned sealResult⟩)) :=
+  actual_worker_result io returnedSaved returnedCapture SourceDrainValidationValues.requestEnd
+    sealResult digest digest empty SourceEndValidationValues.represented_worker rfl rfl
+    validation_returned seal_returned (final_binding_normal _) rfl rfl
+
+theorem normal_never_without_seal_control :
+    SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.receipt io (neverSaved none) =
+      .ok (.Ok (some ⟨digest, digest, .NeverReleased none⟩)) := by
+  rw [never_same io (neverSaved none) (neverCapture none) digest none rfl rfl]
+  exact normal_never_without_seal
+
+theorem normal_never_with_seal_control :
+    SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.receipt io
+      (neverSaved (some SourceSavedQuestionValues.sealAction)) =
+      .ok (.Ok (some ⟨digest, digest, .NeverReleased (some sealResult)⟩)) := by
+  rw [never_same io (neverSaved _) (neverCapture _) digest (some SourceSavedQuestionValues.sealAction) rfl rfl]
+  exact normal_never_with_seal
+
+theorem actual_no_request_mistagged :
+    SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.receipt io noRequestSaved =
+      .ok (.Ok (some ⟨digest, digest, .Returned sealResult⟩)) :=
+  actual_worker_result io noRequestSaved noRequestCapture noRequestObservation sealResult digest digest empty
+    represented_no_request rfl rfl validation_no_request seal_no_request (final_binding_normal _) rfl rfl
+
+theorem violates_same_complete_contract :
+    ¬ Contract io (SourceEndReceiptWrongActual.controller.lifecycle_inbox.source_work.full.end.receipt io) := by
+  intro claimed
+  have h := claimed noRequestSaved represented_no_request
+  have correct := normal_no_request
+  rw [SourceEndReceiptProof.actual_contract io noRequestSaved represented_no_request] at correct
+  rw [actual_no_request_mistagged, correct] at h
+  simp at h
+
+end
+end SandboxModel.Stage1Protocol.SourceEndReceiptNegative
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptNegative.normal_returned_control
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptNegative.normal_never_without_seal_control
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptNegative.normal_never_with_seal_control
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptNegative.actual_no_request_mistagged
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReceiptNegative.violates_same_complete_contract
