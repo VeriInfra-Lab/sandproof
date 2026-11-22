@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "source_base": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "parent_commit": "2bb7a92f5dc61704d906dc81c3425219901fa4ee",
+  "ordinary_native_executed": false,
+  "parent_assertions": 61,
+  "additional_assertions": [
+    "continue_permit_value_preserves_complete_action_and_binding"
+  ],
+  "total_assertions_per_view": 62,
+  "native_expected_variants": [
+    "original",
+    "adapted-original",
+    "discard-work-binding",
+    "adapted-discard-work-binding"
+  ],
+  "expected": {
+    "original": {
+      "passed": 62,
+      "failed": 0
+    },
+    "adapted-original": {
+      "passed": 62,
+      "failed": 0
+    },
+    "discard-work-binding": {
+      "passed": 61,
+      "failed": 1
+    },
+    "adapted-discard-work-binding": {
+      "passed": 61,
+      "failed": 1
+    }
+  },
+  "rejection": {
+    "discard-work-binding": "continuation permit must preserve the complete supplied binding"
+  },
+  "restoration": "independent original/source/target all62 after each of two wrong views",
+  "scope": "decoded complete action and32byte value only;factory name does not prove committed dispatch or authority"
+}

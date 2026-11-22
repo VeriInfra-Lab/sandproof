@@ -1,0 +1,6 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -39 +39,3 @@
++> 待验候选，待主控采用：#635 continue-permit-values 固定b0d791cc，精确依赖#1018；原OriginalContinuePermit构造和两个读取方法对任意完整action与32字节binding保留全部值。工厂名字after_dispatch_commit不提供提交或授权事实。
++> 两视图计划219文件/1208审计与221/1213，14项新增审计；数字是输入库存，不是成功回执。真实错误版只把binding存为零值，正反共用完整ConstructorContract并保留零值控制。原生62项四视图及两次独立恢复交ning；真实派发、World/SQL/事务/未知提交/耐久、授权、物理事实、binding_digest、JSON/TLS/持久收件和系统结论仍开放。公共根/登记/冻结/覆盖仅交候选。
+ ## V3 首次卸载使用同一条原执行记录

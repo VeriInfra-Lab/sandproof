@@ -1,0 +1,18 @@
+// Original API/SQLite values and controlled Host; no dispatch or authority fact.
+#[test]
+fn continue_permit_value_preserves_complete_action_and_binding() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&dir.path().join("permit-values.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let current = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let action = record.capture_action().unwrap().clone();
+    let mut last = [0u8; 32]; last[31] = 19;
+    for bytes in [[0u8; 32], [17u8; 32], last] {
+        let binding = ContentDigest::from_sha256(bytes);
+        let permit = crate::capture::OriginalContinuePermit::after_dispatch_commit(action.clone(), binding);
+        assert_eq!(permit.action(), &action);
+        assert_eq!(permit.work_binding(), &binding, "continuation permit must preserve the complete supplied binding");
+    }
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), current);
+}

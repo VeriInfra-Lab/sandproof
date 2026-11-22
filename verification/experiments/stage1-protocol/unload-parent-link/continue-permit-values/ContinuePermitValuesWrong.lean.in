@@ -1,0 +1,13 @@
+import ContinuePermitValues
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+set_option linter.unusedVariables false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.ContinuePermitValuesWrongActual
+local notation "sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256" => SourceEndReceiptActual.sandproof_protocol.lifecycle.digest.ContentDigest.from_sha256
+-- ACTUAL COMPLETE WRONG PERMIT VALUE FUNCTIONS
+end SandboxModel.Stage1Protocol.ContinuePermitValuesWrongActual

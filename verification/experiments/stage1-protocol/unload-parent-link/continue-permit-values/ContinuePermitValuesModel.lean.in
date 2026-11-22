@@ -1,0 +1,17 @@
+import ContinuePermitValuesTypes
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.ContinuePermitValuesModel
+abbrev Permit := capture.continuation.OriginalContinuePermit
+abbrev Action := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+abbrev Digest := sandproof_protocol.lifecycle.digest.ContentDigest
+abbrev Constructor := Action → Digest → Result Permit
+
+/-- Complete input values, without a dispatch, authorization or storage premise. -/
+def ConstructorContract (root : Constructor) : Prop :=
+  ∀ action binding, root action binding = .ok { action, work_binding := binding }
+
+def ReadersContract (action : Permit → Result Action) (binding : Permit → Result Digest) : Prop :=
+  ∀ permit, action permit = .ok permit.action ∧ binding permit = .ok permit.work_binding
+end SandboxModel.Stage1Protocol.ContinuePermitValuesModel
