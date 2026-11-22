@@ -1,0 +1,93 @@
+import SourceEndReservationProof
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceEndReservationModel
+set_option autoImplicit false
+namespace SandboxModel.Stage1Protocol.SourceEndReservationValues
+noncomputable section
+
+theorem checked_zero_left (amount : Usize) : Usize.checked_add 0#usize amount = some amount := by
+  have spec := Usize.checked_add_bv_spec 0#usize amount
+  cases answer : Usize.checked_add 0#usize amount with
+  | none =>
+    simp [answer] at spec
+    have bound := UScalar.hmax amount
+    simp only [Usize.max, Usize.numBits] at spec
+    omega
+  | some total =>
+    simp only [answer] at spec
+    have same : total = amount := UScalar.eq_of_val_eq (by simpa using spec.2.1)
+    subst total
+    rfl
+
+theorem checked_zero_right (amount : Usize) : Usize.checked_add amount 0#usize = some amount := by
+  have spec := Usize.checked_add_bv_spec amount 0#usize
+  cases answer : Usize.checked_add amount 0#usize with
+  | none =>
+    simp [answer] at spec
+    have bound := UScalar.hmax amount
+    simp only [Usize.max, Usize.numBits] at spec
+    omega
+  | some total =>
+    simp only [answer] at spec
+    have same : total = amount := UScalar.eq_of_val_eq (by simpa using spec.2.1)
+    subst total
+    rfl
+
+theorem existing_end_for_any_encoded_bytes (ports : Ports) (captured : Capture)
+    (savedEnd : SourceEndReceiptModel.End) (bytes : alloc.vec.Vec U8)
+    (present : captured.«end» = some savedEnd)
+    (encoded : ports.encode_capture captured = .ok (.Ok bytes)) :
+    SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes ports captured =
+      .ok (.Ok (alloc.vec.Vec.len bytes)) := by
+  rw [SourceEndReservationProof.actual_contract,
+    SourceEndReservationOrder.successful_encoding_keeps_original_full_value ports captured bytes encoded,
+    cost, SourceEndReservationOrder.future_present captured savedEnd present, checked_zero_right]
+
+theorem future_end_for_any_successful_sum (ports : Ports) (captured : Capture)
+    (bytes : alloc.vec.Vec U8) (total : Usize) (absent : captured.«end» = none)
+    (encoded : ports.encode_capture captured = .ok (.Ok bytes))
+    (accepted : Usize.checked_add (alloc.vec.Vec.len bytes) 16384#usize = some total) :
+    SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes ports captured =
+      .ok (.Ok total) := by
+  rw [SourceEndReservationProof.actual_contract,
+    SourceEndReservationOrder.successful_encoding_keeps_original_full_value ports captured bytes encoded,
+    cost, SourceEndReservationOrder.future_absent captured absent, accepted]
+
+def empty : alloc.vec.Vec U8 := SourceEndReceiptValues.empty
+def io : Ports := ⟨fun _ => .ok (.Ok empty)⟩
+def saved : Capture := SourceEndReceiptValues.returnedCapture
+def pending : Capture := { saved with «end» := none }
+def errorIo : Ports := ⟨fun _ => .ok (.Err ⟨11⟩)⟩
+
+theorem normal_existing_end :
+    SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes io saved =
+      .ok (.Ok 0#usize) := by
+  rw [SourceEndReservationProof.actual_contract,
+    SourceEndReservationOrder.successful_encoding_keeps_original_full_value io saved empty rfl]
+  change (Result.ok (cost 0#usize saved) : Result Reply) = _
+  rw [cost, SourceEndReservationOrder.future_present saved SourceEndReceiptValues.returnedEnd rfl]
+  simp only [checked_zero_left]
+
+theorem normal_future_end :
+    SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes io pending =
+      .ok (.Ok 16384#usize) := by
+  rw [SourceEndReservationProof.actual_contract,
+    SourceEndReservationOrder.successful_encoding_keeps_original_full_value io pending empty rfl]
+  change (Result.ok (cost 0#usize pending) : Result Reply) = _
+  rw [cost, SourceEndReservationOrder.future_absent pending rfl]
+  simp only [checked_zero_left]
+
+theorem error_before_future_debt :
+    SourceEndReservationActual.controller.lifecycle_inbox.source_work.full.end.reserved_record_bytes errorIo pending =
+      .ok (.Err (.Json ⟨11⟩)) :=
+  SourceEndReservationProof.actual_encoding_error_first errorIo pending ⟨11⟩ rfl
+
+end
+end SandboxModel.Stage1Protocol.SourceEndReservationValues
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationValues.normal_existing_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationValues.normal_future_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationValues.error_before_future_debt
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationValues.checked_zero_left
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationValues.checked_zero_right
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationValues.existing_end_for_any_encoded_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceEndReservationValues.future_end_for_any_successful_sum
