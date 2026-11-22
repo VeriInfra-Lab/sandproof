@@ -1,0 +1,17 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@
++### 候选：V3 保存 End 的标准 Box 不等转发（待 V0/主控审查，未采用）
++
++固定 8fa1c96cf 抽取编译器的原 `alloc::boxed::PartialEq<Box<T>>::ne` 在完整 setter
++生成体中成为 `Box.Insts.CoreCmpPartialEqBox.ne`。原完整30接口准入仍拒绝新增符号。
++这不是业务反例，也不由候选文本表示准入或库正确性已证明。
++
++候选精确签名：`{T : Type} (A : Type) (dictionary : core.cmp.PartialEq T T) :
++T → T → Result Bool`。正常同一原 Box 借用/解引用表示下，只把原两份完整 T 值传给
++同一个 dictionary.ne，原样保留其结果、失败、发散及效果；分配器类型不参与值比较。
++不把 ne 重写为对 eq 结果取反，不假定任意 PartialEq 正确，不使用指针地址比较。
++
++提供方：V0 的固定标准库/普通 Box 借用表示及逐符号接线；本包仍须从实际透明
++业务字典证明具体 End、Action、观察和全部字段的相等/不等。整个 setter、授权、
++SQL、提交、物理对象存在或资源释放不进入这个库合同。公共登记/冻结由主控协调。

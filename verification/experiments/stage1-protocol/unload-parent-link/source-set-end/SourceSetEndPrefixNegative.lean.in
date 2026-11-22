@@ -1,0 +1,75 @@
+import SourceSetEndPrefix
+import SourceSetEndPrefixWrong
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceSetEndModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+namespace SandboxModel.Stage1Protocol.SourceSetEndPrefixNegative
+noncomputable section
+open SourceSetEndPrefixValues
+
+theorem actual_worker_result (ports : Ports) (record : Record) (captured : Capture)
+    (observed : Observation) (action : SourceRequestEndMatchModel.Action)
+    (worker : SourceRequestEndMatchModel.Worker)
+    (present : record.capture = some captured) (hasAction : captured.action = some action)
+    (hasWorker : captured.worker = some worker)
+    (matched : SourceRequestEndMatchModel.outcome (initialFull ports) observed action captured.full
+      record.work.requirement worker = .ok (.Ok true)) :
+    SourceSetEndPrefixWrongActual.controller.lifecycle_inbox.source_work.full.end.propose_end ports record (some observed) =
+      .ok (.Ok (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.WorkerEnded observed)) := by
+  simp [SourceSetEndPrefixWrongActual.controller.lifecycle_inbox.source_work.full.end.propose_end,
+    SourceRetireLibrary.optionRef, present, hasAction, hasWorker, core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.SourceWork.impl.requirement,
+    SourceSetEndPrefixProof.request_match_refines, matched]
+
+/-- The mutant keeps the entire no-observation branch for arbitrary ports. -/
+theorem no_observation_control (ports : Ports) (record : Record) :
+    SourceSetEndPrefixWrongActual.controller.lifecycle_inbox.source_work.full.end.propose_end ports record none =
+      SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end ports record none := by
+  unfold SourceSetEndPrefixWrongActual.controller.lifecycle_inbox.source_work.full.end.propose_end
+    SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end
+  cases record.capture <;> rfl
+
+theorem normal_returned_control :
+    SourceSetEndPrefixWrongActual.controller.lifecycle_inbox.source_work.full.end.propose_end io record (some observed) =
+      .ok (.Ok (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.WorkerEnded observed)) :=
+  actual_worker_result io record captured observed SourceRequestEndMatchValues.action
+    SourceRequestEndMatchValues.worker rfl rfl rfl matched_returned
+
+theorem normal_no_request_control :
+    SourceSetEndPrefixWrongActual.controller.lifecycle_inbox.source_work.full.end.propose_end io incomplete (some noRequest) =
+      .ok (.Ok (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.WorkerEnded noRequest)) :=
+  actual_worker_result io incomplete { captured with completed := none } noRequest SourceRequestEndMatchValues.action
+    SourceRequestEndMatchValues.worker rfl rfl rfl matched_no_request
+
+theorem normal_never_control :
+    SourceSetEndPrefixWrongActual.controller.lifecycle_inbox.source_work.full.end.propose_end io never none =
+      .ok (.Ok (.NeverReleased SourceWorkMatch.Values.digest (some SourceRequestEndMatchValues.action))) := by
+  rw [no_observation_control]
+  exact normal_never_released
+
+theorem actual_completed_no_request_accepted :
+    SourceSetEndPrefixWrongActual.controller.lifecycle_inbox.source_work.full.end.propose_end io record (some noRequest) =
+      .ok (.Ok (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.WorkerEnded noRequest)) :=
+  actual_worker_result io record captured noRequest SourceRequestEndMatchValues.action
+    SourceRequestEndMatchValues.worker rfl rfl rfl matched_no_request
+
+/-- The property and complete decoded witnesses are identical on both views. -/
+theorem violates_same_complete_contract :
+    ¬ ProposalContract io (SourceSetEndPrefixWrongActual.controller.lifecycle_inbox.source_work.full.end.propose_end io) := by
+  intro claimed
+  have same := claimed record (some noRequest) represented
+  have correct := completed_no_request_rejected
+  rw [SourceSetEndPrefixProof.actual_contract] at correct
+  rw [actual_completed_no_request_accepted, correct] at same
+  simp at same
+end
+end SandboxModel.Stage1Protocol.SourceSetEndPrefixNegative
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixNegative.actual_worker_result
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixNegative.no_observation_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixNegative.normal_returned_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixNegative.normal_no_request_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixNegative.normal_never_control
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixNegative.actual_completed_no_request_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixNegative.violates_same_complete_contract

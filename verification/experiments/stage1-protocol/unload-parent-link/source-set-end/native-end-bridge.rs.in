@@ -1,0 +1,7 @@
+#[cfg(test)]
+pub(super) fn source_set_end_for_test(
+    record: &mut SourceWorkRecord,
+    observation: Option<CaptureRequestEndObservation>,
+) -> Result<core::capture::CaptureWorkEndReceipt, JournalError> {
+    set_end(record, observation)
+}

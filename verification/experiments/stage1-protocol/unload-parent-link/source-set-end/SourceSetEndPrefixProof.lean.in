@@ -1,0 +1,116 @@
+import SourceSetEndPrefixView
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceSetEndModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceSetEndPrefixProof
+noncomputable section
+local instance proofDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem binding_refines (io : Ports) (full : SourceRequestEndMatchModel.Full) :
+    SourceEndReceiptActual.capture.work.FullCaptureWorkRequest.binding_digest (initialReceipt io) full =
+      SourceRequestEndMatchModel.binding (initialFull io) full := by
+  exact SourceEndReceiptProof.full_binding_refines (initialReceipt io) full
+
+theorem request_match_refines (io : Ports) (observed : Observation)
+    (action : SourceRequestEndMatchModel.Action) (full : SourceRequestEndMatchModel.Full)
+    (source : SourceRequestEndMatchModel.Requirement) (worker : SourceRequestEndMatchModel.Worker) :
+    SourceEndReceiptActual.capture.CaptureRequestEndObservation.matches (initialReceipt io)
+      observed action full source worker =
+      SourceRequestEndMatchModel.outcome (initialFull io) observed action full source worker := by
+  change SourceRequestEndMatchActual.capture.CaptureRequestEndObservation.matches
+    (initialFull io) observed action full source worker = _
+  exact SourceRequestEndMatchProof.actual_contract (initialFull io) observed action full source worker
+
+theorem late_guard_refines (completed : Bool) (observed : Observation) :
+    SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.saved_completed_no_request completed observed =
+      .ok (completed && match observed.outcome with | .NoRequest => true | .Returned _ => false) := by
+  change SourcePriorEndMatchActual.controller.lifecycle_inbox.source_work.full.drain.prior_completed_no_request completed observed = _
+  exact SourcePriorEndMatchProof.guard_refines completed observed
+
+theorem action_clone_refines (value : Option SourceRequestEndMatchModel.Action) :
+    SourceRetireLibrary.optionClone
+      (SourceRetireActual.sandproof_protocol.WorkAction.Insts.CoreCloneClone
+        SourceEndReceiptActual.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone) value = .ok value := by
+  apply SourceMaterialChargeProof.clone_option
+  intro item
+  exact SourceMaterialChargeProof.clone_work_action item
+
+theorem boxed_map_refines (value : Option SourceRequestEndMatchModel.Action) :
+    SourceEndReceiptActual.core.option.Option.map
+      SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end.closure.Insts.CoreOpsFunctionFnOnceTupleWorkActionEffectIdBoxWorkActionEffectId
+      value () = .ok value := by
+  cases value <;> simp [SourceEndReceiptActual.core.option.Option.map,
+
+    SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end.closure.Insts.CoreOpsFunctionFnOnceTupleWorkActionEffectIdBoxWorkActionEffectId.call_once]
+
+theorem actual_contract (io : Ports) (record : Record) (observed : Option Observation) :
+    SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io record observed =
+      proposal io record observed := by
+  unfold SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end proposal
+  cases present : record.capture with
+  | none => simp [SourceRetireLibrary.optionRef, core.option.Option.ok_or,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | some captured =>
+    simp only [SourceRetireLibrary.optionRef, core.option.Option.ok_or,
+      core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+    cases observed with
+    | none =>
+      cases hasWorker : captured.worker <;> cases completed : captured.completed
+      all_goals simp only [core.option.Option.is_some, Option.isSome,
+        Bool.false_eq_true,
+        or_false, false_or, false_or, ↓reduceIte]
+      · simp only [binding_refines, SourceRetireSpec.tryJournal]
+        apply congrArg (fun next => SourceRequestEndMatchModel.binding (initialFull io) captured.full >>= next)
+        funext answer
+        cases answer with
+        | Err error => simp [
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+            SourceEndReceiptActual.JournalErrorFromJson.from_json]
+        | Ok workBinding => simp [
+            action_clone_refines, boxed_map_refines]
+      all_goals rfl
+    | some observed =>
+      cases hasAction : captured.action with
+      | none => simp [
+
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | some action =>
+        simp only [
+          bind_tc_ok]
+        cases hasWorker : captured.worker with
+        | none => simp [
+
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | some worker =>
+          simp only [
+            bind_tc_ok,
+            SourceEndReceiptActual.controller.lifecycle_inbox.source_work.SourceWork.impl.requirement,
+            request_match_refines, SourceRetireSpec.tryJournal]
+          apply congrArg (fun next => SourceRequestEndMatchModel.outcome (initialFull io)
+            observed action captured.full record.work.requirement worker >>= next)
+          funext answer
+          cases answer with
+          | Err error => simp [
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+              SourceEndReceiptActual.JournalErrorFromJson.from_json]
+          | Ok matched =>
+            cases matched <;> simp [late_guard_refines]
+            cases ended : observed.outcome <;> cases completed : captured.completed <;>
+              simp []
+
+theorem complete_contract (io : Ports) :
+    ProposalContract io (SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io) :=
+  fun record observed _ => actual_contract io record observed
+end
+end SandboxModel.Stage1Protocol.SourceSetEndPrefixProof
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixProof.binding_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixProof.request_match_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixProof.late_guard_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixProof.action_clone_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixProof.boxed_map_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixProof.actual_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixProof.complete_contract

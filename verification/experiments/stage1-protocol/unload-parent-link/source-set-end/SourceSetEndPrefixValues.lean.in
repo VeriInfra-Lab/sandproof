@@ -1,0 +1,100 @@
+import SourceSetEndPrefixProof
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceSetEndModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+namespace SandboxModel.Stage1Protocol.SourceSetEndPrefixValues
+noncomputable section
+local instance valuesDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+def io : Ports := ⟨SourceEndReceiptValues.io, SourceRequestEndMatchValues.io.encode,
+  fun _ => .ok (.Ok SourceEndReceiptValues.empty)⟩
+def captured : Capture := SourcePriorEndMatchValues.captured
+def record : Record := SourcePriorEndMatchValues.record
+def observed : Observation := SourceRequestEndMatchValues.observation
+def noRequest : Observation := { observed with outcome := .NoRequest }
+def incomplete : Record := SourcePriorEndMatchValues.incomplete
+def never : Record := SourcePriorEndMatchValues.neverRecord
+
+theorem represented : Representable record := by
+  intro value present
+  have same : captured = value := Option.some.inj present
+  subst value
+  exact SourceFullBindingValues.represented
+
+theorem matched_returned :
+    SourceRequestEndMatchModel.outcome (initialFull io) observed SourceRequestEndMatchValues.action
+      captured.full record.work.requirement SourceRequestEndMatchValues.worker = .ok (.Ok true) := by
+  change SourceRequestEndMatchModel.outcome SourceRequestEndMatchValues.io SourceRequestEndMatchValues.observation
+    SourceRequestEndMatchValues.action SourceRequestEndMatchValues.full SourceRequestEndMatchValues.requirement
+    SourceRequestEndMatchValues.worker = _
+  have accepted := SourceRequestEndMatchValues.normal
+  rw [SourceRequestEndMatchProof.actual_contract] at accepted
+  exact accepted
+
+theorem matched_no_request :
+    SourceRequestEndMatchModel.outcome (initialFull io) noRequest SourceRequestEndMatchValues.action
+      captured.full record.work.requirement SourceRequestEndMatchValues.worker = .ok (.Ok true) := by
+  change SourceRequestEndMatchModel.outcome SourceRequestEndMatchValues.io
+    { SourceRequestEndMatchValues.observation with outcome := .NoRequest }
+    SourceRequestEndMatchValues.action SourceRequestEndMatchValues.full SourceRequestEndMatchValues.requirement
+    SourceRequestEndMatchValues.worker = _
+  have accepted := SourceRequestEndMatchValues.no_request
+  rw [SourceRequestEndMatchProof.actual_contract] at accepted
+  exact accepted
+
+theorem normal_returned :
+    SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io record (some observed) =
+      .ok (.Ok (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.WorkerEnded observed)) := by
+  rw [SourceSetEndPrefixProof.actual_contract]
+  change SourceRetireSpec.tryJournal JournalError.Json
+    (SourceRequestEndMatchModel.outcome (initialFull io) observed SourceRequestEndMatchValues.action
+      captured.full record.work.requirement SourceRequestEndMatchValues.worker)
+    (fun matched => if !matched then .ok (.Err JournalError.InvalidHostEvidence)
+      else if true ∧ observed.outcome = .NoRequest then .ok (.Err JournalError.InvalidHostEvidence)
+      else .ok (.Ok (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.WorkerEnded observed))) = _
+  rw [matched_returned]
+  simp [SourceRetireSpec.tryJournal, observed, SourceRequestEndMatchValues.observation]
+
+theorem normal_no_request :
+    SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io incomplete (some noRequest) =
+      .ok (.Ok (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.WorkerEnded noRequest)) := by
+  rw [SourceSetEndPrefixProof.actual_contract]
+  change SourceRetireSpec.tryJournal JournalError.Json
+    (SourceRequestEndMatchModel.outcome (initialFull io) noRequest SourceRequestEndMatchValues.action
+      captured.full record.work.requirement SourceRequestEndMatchValues.worker)
+    (fun matched => if !matched then .ok (.Err JournalError.InvalidHostEvidence)
+      else if false ∧ noRequest.outcome = .NoRequest then .ok (.Err JournalError.InvalidHostEvidence)
+      else .ok (.Ok (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.WorkerEnded noRequest))) = _
+  simp [matched_no_request, SourceRetireSpec.tryJournal]
+
+theorem normal_never_released :
+    SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io never none =
+      .ok (.Ok (.NeverReleased SourceWorkMatch.Values.digest (some SourceRequestEndMatchValues.action))) := by
+  rw [SourceSetEndPrefixProof.actual_contract]
+  change SourceRetireSpec.tryJournal JournalError.Json
+    (SourceRequestEndMatchModel.binding SourceRequestEndMatchValues.io SourceRequestEndMatchValues.full)
+    (fun bound => .ok (.Ok (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.NeverReleased bound (some SourceRequestEndMatchValues.action)))) = _
+  simp [SourceRetireSpec.tryJournal, SourceRequestEndMatchModel.binding, SourceRequestEndMatchValues.io]
+
+theorem completed_no_request_rejected :
+    SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io record (some noRequest) =
+      .ok (.Err .InvalidHostEvidence) := by
+  rw [SourceSetEndPrefixProof.actual_contract]
+  change SourceRetireSpec.tryJournal JournalError.Json
+    (SourceRequestEndMatchModel.outcome (initialFull io) noRequest SourceRequestEndMatchValues.action
+      captured.full record.work.requirement SourceRequestEndMatchValues.worker)
+    (fun matched => if !matched then .ok (.Err JournalError.InvalidHostEvidence)
+      else if true ∧ noRequest.outcome = .NoRequest then .ok (.Err JournalError.InvalidHostEvidence)
+      else .ok (.Ok (controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.WorkerEnded noRequest))) = _
+  rw [matched_no_request]
+  simp [SourceRetireSpec.tryJournal, noRequest]
+end
+end SandboxModel.Stage1Protocol.SourceSetEndPrefixValues
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixValues.represented
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixValues.matched_returned
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixValues.matched_no_request
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixValues.normal_returned
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixValues.normal_no_request
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixValues.normal_never_released
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndPrefixValues.completed_no_request_rejected

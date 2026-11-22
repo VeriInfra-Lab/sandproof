@@ -1,0 +1,25 @@
+import SourceSetEndPrefixProof
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceFullWorkGuardTypes SourceTerminalMatchTypes SourceSetEndModel
+set_option autoImplicit false
+set_option linter.unusedVariables false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceSetEndPrefixWrongActual
+noncomputable section
+variable (io : Ports)
+local notation "core.option.Option.as_ref" => SourceRetireLibrary.optionRef
+local notation "core.option.Option.Insts.CoreCloneClone.clone" => SourceRetireLibrary.optionClone
+local notation "JournalErrorFromJson" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.JournalErrorFromJson
+local notation "capture.CaptureRequestEndObservation.matches" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.capture.CaptureRequestEndObservation.matches (initialReceipt io)
+local notation "capture.work.FullCaptureWorkRequest.binding_digest" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.capture.work.FullCaptureWorkRequest.binding_digest (initialReceipt io)
+local notation "controller.lifecycle_inbox.source_work.SourceWork.impl.requirement" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.controller.lifecycle_inbox.source_work.SourceWork.impl.requirement
+local notation "controller.lifecycle_inbox.source_work.full.end.saved_completed_no_request" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.saved_completed_no_request
+local notation "core.option.Option.map" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.core.option.Option.map
+local notation "sandbox_controller_core.model.EffectId.Insts.CoreCloneClone" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.sandbox_controller_core.model.EffectId.Insts.CoreCloneClone
+local notation "sandproof_protocol.WorkAction.Insts.CoreCloneClone" => SandboxModel.Stage1Protocol.SourceRetireActual.sandproof_protocol.WorkAction.Insts.CoreCloneClone
+-- ACTUAL ORIGINAL SET END PREFIX FUNCTIONS
+end
+end SandboxModel.Stage1Protocol.SourceSetEndPrefixWrongActual
