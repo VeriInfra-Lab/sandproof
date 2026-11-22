@@ -1,0 +1,110 @@
+import SourceEndAccessor
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes
+set_option autoImplicit false
+
+-- Conditional interface model. Concrete JSON/SHA conformance and public
+-- use-point adoption remain external obligations; no hash injectivity is assumed.
+namespace SandboxModel.Stage1Protocol.ContinueWorkBindingModel
+abbrev Question := SourceEndAccessorModel.Question
+abbrev Identity := SourceEndAccessorModel.Identity
+abbrev Full := SourceEndAccessorModel.Full
+abbrev Requirement := SourceEndAccessorModel.Requirement
+abbrev Receipt := SourceEndAccessorModel.Receipt
+abbrev NetworkPolicy := SourceEndAccessorModel.NetworkPolicy
+abbrev FilePolicy := SourceEndAccessorModel.FilePolicy
+abbrev Digest := SourceRequestEndMatchModel.Digest
+abbrev JsonError := SourceRequestEndMatchModel.JsonError
+abbrev Bytes := alloc.vec.Vec U8
+abbrev Reply := core.result.Result Digest JsonError
+abbrev BindingInput := Identity × Full × Requirement × Receipt × NetworkPolicy × FilePolicy
+
+/-- Reuse the existing exact digest provider. No second hash semantics is made. -/
+structure Ports where
+  full : SourceRequestEndMatchModel.Ports
+  encode : BindingInput → Result (core.result.Result Bytes JsonError)
+
+def bindingInput (question : Question) : BindingInput :=
+  (question.identity, question.full, question.source, question.end_receipt,
+   question.network_policy, question.file_policy)
+
+/-- Exact first JSON result, then complete successful bytes, then digest value.
+    This does not add an input guard, a JSON law, or hash injectivity. -/
+def outcome (io : Ports) (question : Question) : Result Reply := do
+  let encoded ← io.encode (bindingInput question)
+  match encoded with
+  | .Err error => .ok (.Err error)
+  | .Ok bytes => do
+    let digest ← io.full.digest bytes.slice
+    .ok (.Ok digest)
+
+def Contract (io : Ports) (root : Question → Result Reply) : Prop :=
+  ∀ question, root question = outcome io question
+
+/-- Full tuple equality only; this says nothing about JSON or digest equality. -/
+theorem full_input_eq_iff (left right : Question) :
+    bindingInput left = bindingInput right ↔ left = right := by
+  cases left
+  cases right
+  simp_all [bindingInput]
+
+theorem json_error_first (io : Ports) (question : Question) (error : JsonError)
+    (encoded : io.encode (bindingInput question) = .ok (.Err error)) :
+    outcome io question = .ok (.Err error) := by
+  simp [outcome, encoded]
+
+theorem encoding_failure (io : Ports) (question : Question) (error : Error)
+    (encoded : io.encode (bindingInput question) = .fail error) :
+    outcome io question = .fail error := by
+  simp [outcome, encoded]
+
+theorem encoding_divergence (io : Ports) (question : Question)
+    (encoded : io.encode (bindingInput question) = Result.div) :
+    outcome io question = Result.div := by
+  simp [outcome, encoded]
+
+theorem complete_bytes_to_digest (io : Ports) (question : Question) (bytes : Bytes)
+    (encoded : io.encode (bindingInput question) = .ok (.Ok bytes)) :
+    outcome io question = (do let digest ← io.full.digest bytes.slice; .ok (.Ok digest)) := by
+  simp [outcome, encoded]
+
+theorem digest_failure (io : Ports) (question : Question) (bytes : Bytes) (error : Error)
+    (encoded : io.encode (bindingInput question) = .ok (.Ok bytes))
+    (hashed : io.full.digest bytes.slice = .fail error) :
+    outcome io question = .fail error := by
+  simp [outcome, encoded, hashed]
+
+theorem normal_reply (io : Ports) (question : Question) (bytes : Bytes) (digest : Digest)
+    (encoded : io.encode (bindingInput question) = .ok (.Ok bytes))
+    (hashed : io.full.digest bytes.slice = .ok digest) :
+    outcome io question = .ok (.Ok digest) := by
+  simp [outcome, encoded, hashed]
+
+/-- Semantic independence of later providers on this error branch. This is
+    not a statement about physical calls, elapsed time or allocation events. -/
+theorem later_provider_independence (left right : Ports) (question : Question) (error : JsonError)
+    (left_error : left.encode (bindingInput question) = .ok (.Err error))
+    (right_error : right.encode (bindingInput question) = .ok (.Err error)) :
+    outcome left question = outcome right question := by
+  rw [json_error_first left question error left_error,
+      json_error_first right question error right_error]
+
+/-- Preserve every field presented to the actual JSON boundary. No hash law. -/
+def InputContract (input : Question → Result BindingInput) : Prop :=
+  ∀ question, input question = .ok (bindingInput question)
+
+/-- One complete property, shared unchanged by correct and wrong views.
+    Includes the original whole-result contract and complete encoded inputs. -/
+def CompleteContract (io : Ports) (input : Question → Result BindingInput)
+    (root : Question → Result Reply) : Prop :=
+  InputContract input ∧ Contract io root
+end SandboxModel.Stage1Protocol.ContinueWorkBindingModel
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingModel.full_input_eq_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingModel.json_error_first
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingModel.encoding_failure
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingModel.encoding_divergence
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingModel.complete_bytes_to_digest
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingModel.digest_failure
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingModel.normal_reply
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinueWorkBindingModel.later_provider_independence

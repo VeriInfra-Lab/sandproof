@@ -1,0 +1,90 @@
+{
+  "component": "stage1-protocol-continue-work-binding",
+  "source": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+  "parent": "2bb7a92f5dc61704d906dc81c3425219901fa4ee",
+  "parent_pr": 1018,
+  "development_only": true,
+  "public_registration_adopted": false,
+  "interface_adoption_complete": false,
+  "formal_views": [
+    {
+      "variant": "combined-conditional",
+      "formal_root": "ContinueWorkBinding",
+      "physical_files": 220,
+      "full_audits": 1222,
+      "own_audits": [
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingModel.full_input_eq_iff",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingModel.json_error_first",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingModel.encoding_failure",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingModel.encoding_divergence",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingModel.complete_bytes_to_digest",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingModel.digest_failure",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingModel.normal_reply",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingModel.later_provider_independence",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.actual_contract",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.actual_complete_result_contract",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.factored_same_original",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.actual_input_contract",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.same_complete_contract",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.actual_json_first",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.actual_complete_bytes",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.wrong_complete_tuple",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.file_policy_omission_refutes_complete_contract",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.real_wrong_refutes_same_complete_contract",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.zero_policy_factored_control",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.zero_policy_control",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.normal_full_question",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.wrong_factored_same_original",
+        "SandboxModel.Stage1Protocol.ContinueWorkBindingProof.same_unfactored_complete_contract"
+      ],
+      "required_raw_views": [
+        "inline/original",
+        "inline/file-policy-as-zero",
+        "tuple/original",
+        "tuple/file-policy-as-zero"
+      ]
+    }
+  ],
+  "candidate_interfaces": [
+    "capture.continuation.encode_continue_work_binding",
+    "capture.continuation.digest_continue_work_binding"
+  ],
+  "public_gate": "reject until both exact use points adopted and Ning/native/public acceptance complete",
+  "native": {
+    "development_candidate": true,
+    "source": "b0d791ccc4d4e058b710dbf8f46766652b2853df",
+    "parent_pr": 1018,
+    "parent": "2bb7a92f5dc61704d906dc81c3425219901fa4ee",
+    "variants": [
+      "original",
+      "adapted-original",
+      "factored-original",
+      "network-policy-as-deny-all",
+      "adapted-network-policy-as-deny-all",
+      "file-policy-as-zero",
+      "adapted-file-policy-as-zero",
+      "factored-file-policy-as-zero"
+    ],
+    "all_assertions": 63,
+    "correct_assertions": {
+      "passed": 63,
+      "failed": 0
+    },
+    "wrong_assertions": {
+      "passed": 62,
+      "failed": 1
+    },
+    "independent_original_restores": 5,
+    "compiled": false,
+    "tests_executed": false,
+    "public_acceptance": false
+  },
+  "network_policy_formal_counterexample_complete": false,
+  "unproved": [
+    "concrete JSON/SHA use-point conformity and adoption",
+    "ordinary/native compilation, assertion results and five independent restores",
+    "shared public registration/freeze/coverage and full verification",
+    "current authority, same World/SQL/parent transaction and commit/durable facts",
+    "actual dispatch, process/material facts and JSON/TLS/system closure"
+  ]
+}

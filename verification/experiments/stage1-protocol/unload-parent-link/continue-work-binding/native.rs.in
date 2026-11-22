@@ -1,0 +1,74 @@
+// One shared actual fixture per pair: only the named complete input differs.
+fn source_continue_binding_pair(
+    left_network: core::NetworkPolicy,
+    right_network: core::NetworkPolicy,
+    left_file: core::FilePolicyRef,
+    right_file: core::FilePolicyRef,
+) -> (
+    crate::capture::OriginalContinueWorkRequest,
+    crate::capture::OriginalContinueWorkRequest,
+) {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, record) = source_terminal_fixture(&dir.path().join("continue-binding.db"), 2);
+    let before = source_retire_sql_rows(&journal.journal.connection);
+    let stored = codec::load(&journal.journal.connection).unwrap().unwrap();
+    let captured = record.capture.as_ref().unwrap();
+    let identity = core::capture::OriginalContinueIdentity {
+        key: core::OperationKey {
+            sandbox: record.work.anchor.local.sandbox,
+            operation: captured.operation,
+        },
+        epoch: record.work.anchor.native.epoch,
+        generation: record.work.anchor.native.generation,
+        vm: record.work.anchor.native.current_vm.unwrap(),
+    };
+    let receipt = record.capture_work_end_receipt().unwrap().unwrap();
+    let construct = |network, file| {
+        crate::capture::OriginalContinueWorkRequest::from_ended_source(
+            identity,
+            captured.full.clone(),
+            record.work.requirement().clone(),
+            receipt,
+            network,
+            file,
+        )
+    };
+    let pair = (
+        construct(left_network, left_file),
+        construct(right_network, right_file),
+    );
+    assert_eq!(source_retire_sql_rows(&journal.journal.connection), before);
+    assert_eq!(codec::load(&journal.journal.connection).unwrap().unwrap(), stored);
+    pair
+}
+
+#[test]
+fn source_continue_binding_preserves_file_policy() {
+    let zero = core::FilePolicyRef { digest: core::PolicyDigest(0) };
+    let other = core::FilePolicyRef { digest: core::PolicyDigest(9) };
+    let (left, right) = source_continue_binding_pair(
+        core::NetworkPolicy::DenyAll, core::NetworkPolicy::DenyAll, zero, other,
+    );
+    let left_binding = left.binding_digest().unwrap();
+    assert_eq!(left_binding, left.binding_digest().unwrap());
+    assert_ne!(left_binding, right.binding_digest().unwrap(),
+        "continuation binding must include the complete supplied file policy");
+}
+
+#[test]
+fn source_continue_binding_preserves_network_policy() {
+    let file = core::FilePolicyRef { digest: core::PolicyDigest(9) };
+    let (left, right) = source_continue_binding_pair(
+        core::NetworkPolicy::DenyAll,
+        core::NetworkPolicy::Ipv4 {
+            internet_access: false,
+            allow_out: vec![core::Ipv4Cidr { network: 0x0a00_0000, prefix_length: 8 }],
+            deny_out: vec![core::Ipv4Cidr { network: 0x0a01_0000, prefix_length: 16 }],
+        },
+        file, file,
+    );
+    let left_binding = left.binding_digest().unwrap();
+    assert_eq!(left_binding, left.binding_digest().unwrap());
+    assert_ne!(left_binding, right.binding_digest().unwrap(),
+        "continuation binding must include the complete supplied network policy");
+}
