@@ -1,0 +1,24 @@
+import SourceSetEndPrefix
+open Aeneas Aeneas.Std Result ControlFlow Error SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceSetEndModel
+set_option autoImplicit false
+set_option linter.unusedVariables false
+set_option linter.style.longLine false
+set_option linter.style.whitespace false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceSetEndFinishActual
+noncomputable section
+variable (io : Ports)
+local notation "capture.CaptureRequestEndObservation" => SandproofSourceRetentionProviders.capture.CaptureRequestEndObservation
+local notation "core.option.Option.as_ref" => SourceRetireLibrary.optionRef
+local notation "controller.lifecycle_inbox.source_work.full.end.encode_proposed_end" => io.encode_proposed_end
+local notation "JournalErrorFromJson" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.JournalErrorFromJson
+local notation "capture.CaptureRequestEndObservation.Insts.CoreCmpPartialEqCaptureRequestEndObservation.eq" => SandboxModel.Stage1Protocol.SourceRetireActual.capture.CaptureRequestEndObservation.Insts.CoreCmpPartialEqCaptureRequestEndObservation.eq
+local notation "controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord" => SandboxModel.Stage1Protocol.SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord
+local notation "controller.lifecycle_inbox.source_work.full.end.END_RECORD_BYTES" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.END_RECORD_BYTES
+local notation "controller.lifecycle_inbox.source_work.full.end.propose_end" => SandboxModel.Stage1Protocol.SourceSetEndPrefixActual.controller.lifecycle_inbox.source_work.full.end.propose_end io
+local notation "controller.lifecycle_inbox.source_work.full.end.receipt" => SandboxModel.Stage1Protocol.SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io.receipt
+-- EXACT ORIGINAL COMPLETE SET END DECLARATIONS
+end
+end SandboxModel.Stage1Protocol.SourceSetEndFinishActual

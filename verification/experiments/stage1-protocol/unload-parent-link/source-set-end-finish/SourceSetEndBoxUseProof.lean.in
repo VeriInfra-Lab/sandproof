@@ -1,0 +1,110 @@
+import SourceSetEndBoxUseView
+open Aeneas Aeneas.Std Result SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceSetEndModel SourceSetEndBoxUseModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof
+noncomputable section
+abbrev Prior := controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd
+
+theorem prior_dictionary_representation :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd =
+      derivedDictionary SourceRetireActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd.eq := by
+  unfold SourceRetireActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd derivedDictionary
+  congr 1
+  funext self other
+  simp [core.cmp.PartialEq.ne.default]
+
+theorem end_dictionary_representation :
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord =
+      derivedDictionary SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord.eq := by
+  unfold SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord derivedDictionary
+  congr 1
+  funext self other
+  simp [core.cmp.PartialEq.ne.default]
+
+/-- The registered Option equality uses exactly the eq slot. The Box ne
+    method remains completely arbitrary, including fail/div. -/
+theorem option_box_eq [provider : UnknownBoxNe] {T : Type} (original : core.cmp.PartialEq T T) (left right : Option T) :
+    SandproofSourceRetentionProviders.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      (dictionary original) left right =
+    SandproofSourceRetentionProviders.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      (core.cmp.PartialEqBox original) left right := by
+  cases left <;> cases right <;> rfl
+
+theorem prior_eq_same [provider : UnknownBoxNe] (left right : Prior) :
+    SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd.eq left right =
+      SourceRetireActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd.eq left right := by
+  unfold SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd.eq
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd.eq
+  simp only [option_box_eq]
+  rfl
+
+theorem option_prior_eq_same [provider : UnknownBoxNe] (left right : Option Prior) :
+    SandproofSourceRetentionProviders.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      (derivedDictionary SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd.eq) left right =
+    SandproofSourceRetentionProviders.core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      SourceRetireActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd left right := by
+  cases left with
+  | none => cases right <;> rfl
+  | some left =>
+    cases right with
+    | none => rfl
+    | some right =>
+      change SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.drain.PriorCaptureEnd.Insts.CoreCmpPartialEqPriorCaptureEnd.eq left right = _
+      exact prior_eq_same left right
+
+theorem end_eq_same [provider : UnknownBoxNe] (left right : End) :
+    SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord.eq left right =
+      SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord.eq left right := by
+  unfold SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord.eq
+    SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord.eq
+  simp only [option_box_eq, option_prior_eq_same]
+  rfl
+
+theorem original_root_same [provider : UnknownBoxNe] (io : Ports) (record : Record) (observed : Option Observation) :
+    SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.end.set_end io record observed =
+      SourceSetEndFinishActual.controller.lifecycle_inbox.source_work.full.end.set_end io record observed := by
+  have functions :
+      SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord.eq =
+        SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord.eq := by
+    funext left right
+    exact end_eq_same left right
+  unfold SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.end.set_end
+    SourceSetEndFinishActual.controller.lifecycle_inbox.source_work.full.end.set_end
+  rw [functions, ← end_dictionary_representation]
+  rfl
+
+/-- No behavior condition on the opaque Box method is assumed. -/
+theorem generated_body_contract [provider : UnknownBoxNe] (io : Ports) (record : Record) (observed : Option Observation)
+    (represented : Representable record) :
+    SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.end.set_end io record observed =
+      outcome io record observed := by
+  rw [original_root_same]
+  exact SourceSetEndFinishProof.generated_body_contract io record observed represented
+
+theorem complete_generated_body_contract [provider : UnknownBoxNe] (io : Ports) :
+    Contract io (SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.end.set_end io) :=
+  fun record observed represented => generated_body_contract io record observed represented
+
+/-- Whole result and complete state are invariant under every choice of the
+    unprovided standard ne method. This is an exact-root use certificate. -/
+theorem independent_of_box_ne (first second : UnknownBoxNe) (io : Ports) (record : Record)
+    (observed : Option Observation) (represented : Representable record) :
+    SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.end.set_end (provider := first) io record observed =
+      SourceSetEndBoxUseActual.controller.lifecycle_inbox.source_work.full.end.set_end (provider := second) io record observed := by
+  rw [generated_body_contract (provider := first) io record observed represented,
+    generated_body_contract (provider := second) io record observed represented]
+end
+end SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof.prior_dictionary_representation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof.end_dictionary_representation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof.option_box_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof.prior_eq_same
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof.option_prior_eq_same
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof.end_eq_same
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof.original_root_same
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof.generated_body_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof.complete_generated_body_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndBoxUseProof.independent_of_box_ne

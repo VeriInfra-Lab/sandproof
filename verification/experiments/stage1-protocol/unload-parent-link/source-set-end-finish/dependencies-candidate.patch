@@ -1,0 +1,15 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@
++### 候选：V3 完整 set_end 的 Box.ne 精确使用证书（待主控采用）
++
++原固定完整捕获仍保留31项外部元数据，原30项准入仍拒绝新增Box.ne。
++本候选不增加Box.ne行为合同，也不删除其映射或把它设成not eq。
++完整原根的两个Box构造点分别位于PriorCaptureEnd.eq及CaptureEndRecord.eq；
++将两处ne槽解释为完全任意的方法，在原Option.eq只读取eq、两个具体enum字典
++表示等式及完整父合同下，生成setter的全部返回值和内存状态对任意方法选择不变。
++证书为SourceSetEndBoxUseProof.independent_of_box_ne；原raw生成体/全部映射、
++具体表示及完整正确/错误文件闭包都须核对，不能只据无直接引用或hash采用。
++公共准入如何消费该精确证书仍交主控；尚未采用前，原拒绝不变。
++从已解码值开始。普通借用/分配与生产staging一般连接、具体标准实例、JSON/TLS、
++SQL/WorldTransaction/未知提交/耐久及物理事实仍由原逐符号提供方承担。

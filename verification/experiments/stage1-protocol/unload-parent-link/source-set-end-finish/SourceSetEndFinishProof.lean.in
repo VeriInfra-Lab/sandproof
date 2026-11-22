@@ -1,0 +1,114 @@
+import SourceSetEndFinishView
+open Aeneas Aeneas.Std Result ControlFlow SandproofSourceRetentionProviders
+open SandboxModel.Stage1Protocol SourceRetireTypes SourceSetEndModel
+set_option autoImplicit false
+set_option maxHeartbeats 1000000
+set_option maxRecDepth 2048
+namespace SandboxModel.Stage1Protocol.SourceSetEndFinishProof
+noncomputable section
+local instance proofDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem end_ne_refines (left right : End) :
+    core.cmp.impls.PartialEqShared.ne
+      SourceRetireActual.controller.lifecycle_inbox.source_work.full.end.CaptureEndRecord.Insts.CoreCmpPartialEqCaptureEndRecord
+      left right = .ok (!decide (left = right)) := by
+  simp [core.cmp.impls.PartialEqShared.ne,
+    core.cmp.PartialEq.ne.default, SourceRetireEquality.capture_end_eq]
+
+theorem budget_test (bytes : alloc.vec.Vec U8) :
+    (alloc.vec.Vec.len bytes > SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.END_RECORD_BYTES) ↔
+      (alloc.vec.Vec.len bytes).val > 16384 := Iff.rfl
+
+theorem represented_with_end (record : Record) (captured : Capture) (proposed : End)
+    (represented : Representable record) (present : record.capture = some captured) :
+    Representable (withEnd record captured proposed) := by
+  intro value saved
+  change some { captured with «end» := some proposed } = some value at saved
+  have same := Option.some.inj saved
+  subst value
+  exact represented captured present
+
+/-- Normalizes only the original Result/Option continuation. The actual
+    receipt remains the proved parent body, with the supplied complete state. -/
+theorem receipt_continuation_refines (io : Ports) (record : Record)
+    (represented : Representable record) :
+    (do
+      let reply ← SourceEndReceiptActual.controller.lifecycle_inbox.source_work.full.end.receipt io.receipt record
+      let control ← core.result.Result.Insts.CoreOpsTry.branch reply
+      match control with
+      | .Continue value =>
+        let result ← core.option.Option.ok_or value JournalError.CorruptStore
+        ok (result, record)
+      | .Break residual =>
+        let result ← core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+          Receipt (core.convert.FromSame JournalError) residual
+        ok (result, record)) = finish io record := by
+  rw [SourceEndReceiptProof.actual_contract io.receipt record represented]
+  unfold finish continueAt
+  apply congrArg (fun continuation => SourceEndReceiptModel.outcome io.receipt record >>= continuation)
+  funext reply
+  cases reply with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, atState]
+  | Ok optional => cases optional <;> simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.option.Option.ok_or, atState]
+
+/-- Local theorem about the exact generated body. The original capture's
+    conservative31/30 interface rejection remains a separate open admission. -/
+theorem generated_body_contract (io : Ports) (record : Record) (observed : Option Observation)
+    (represented : Representable record) :
+    SourceSetEndFinishActual.controller.lifecycle_inbox.source_work.full.end.set_end io record observed =
+      outcome io record observed := by
+  rw [← SourceSetEndFactor.factorization io record observed]
+  unfold SourceSetEndFinishActual.controller.lifecycle_inbox.source_work.full.end.set_end factoredOutcome
+  rw [SourceSetEndPrefixProof.actual_contract]
+  unfold continueAt
+  apply congrArg (fun continuation => proposal io record observed >>= continuation)
+  funext answer
+  cases answer with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, atState]
+  | Ok proposed =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+    cases present : record.capture with
+    | none => simp [SourceRetireLibrary.optionRef, core.option.Option.ok_or,
+
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, atState]
+    | some captured =>
+      simp only [SourceRetireLibrary.optionRef, core.option.Option.ok_or,
+        bind_tc_ok]
+      unfold install
+      cases saved : captured.«end» with
+      | none =>
+        simp only [continueAt]
+        apply congrArg (fun continuation => io.encode_proposed_end proposed >>= continuation)
+        funext encoded
+        cases encoded with
+        | Err error => simp [
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+            SourceEndReceiptActual.JournalErrorFromJson.from_json, atState]
+        | Ok bytes =>
+          simp only [bind_tc_ok, budget_test]
+          by_cases over : (alloc.vec.Vec.len bytes).val > 16384
+          · simp only [if_pos over, atState]
+          · simp only [over, ↓reduceIte]
+            exact receipt_continuation_refines io (withEnd record captured proposed)
+              (represented_with_end record captured proposed represented present)
+      | some old =>
+        simp only [end_ne_refines, bind_tc_ok]
+        by_cases same : old = proposed
+        · simp only [same, decide_true, Bool.not_true, Bool.false_eq_true, ↓reduceIte]
+          exact receipt_continuation_refines io record represented
+        · simp [same, atState]
+
+theorem complete_generated_body_contract (io : Ports) :
+    Contract io (SourceSetEndFinishActual.controller.lifecycle_inbox.source_work.full.end.set_end io) :=
+  fun record observed represented => generated_body_contract io record observed represented
+end
+end SandboxModel.Stage1Protocol.SourceSetEndFinishProof
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishProof.end_ne_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishProof.budget_test
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishProof.represented_with_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishProof.receipt_continuation_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishProof.generated_body_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSetEndFinishProof.complete_generated_body_contract
