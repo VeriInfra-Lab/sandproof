@@ -60,7 +60,7 @@ bash scripts/python-entry.sh "$package/check.py" --inputs "$permit_inputs" \
 ```
 
 输入 JSON 为 correct/wrong/reads/reads_audit/retention/retention_audit 六项。correct
-是完整正确捕获目录；wrong 是包含 discard-work-binding-01 的父目录。reads 使用
+是完整正确捕获目录；wrong 直接指向完整 discard-work-binding-01 捕获目录。reads 使用
 #1018 原 213 文件/1199 审计的完整正确项目，retention 保留原 26/127。完整两视图
 库存为 219/1208 和 221/1213；这些数字不表示检查通过。入口保留所有父文件、全部
 实际文件同服务完整诊断、审计、固定依赖检查，以及完整计划和文件的新目录逐字复现。
