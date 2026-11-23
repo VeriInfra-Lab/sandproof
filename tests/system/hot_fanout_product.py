@@ -25,6 +25,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.request
 
 from _complete_runtime import complete_runtime, terminal_cleanup_confirmed
 from _hot_fanout_config import descriptor_digest
@@ -32,9 +33,9 @@ from _runtime_services import RuntimeServices
 from hot_fanout_guest import make_package
 from hot_fanout_host import SDK_COMMIT
 from lifecycle_unload_runtime import original_json
-from lifecycle_unload_scenario import PublicStatusMismatch, PublicUnloadScenario, failure_details
+from lifecycle_unload_scenario import PREFIX, PublicStatusMismatch, PublicUnloadScenario, failure_details
 from sdk_c02_acceptance import processes_in_uid_range
-from server_process_crash import free_loopback_port, process_start_ticks
+from server_process_crash import fetch, free_loopback_port, process_start_ticks
 from server_vm_id_capacity import check_no_resources
 from tools import service_cgroup
 from tools.capture_acceptance import bind_settings
@@ -43,7 +44,7 @@ from tools.ci_e2e_prepare import contract_versions
 from tools.ci_redis import check_material
 from tools.runtime_acceptance_budget import profile_declaration, service_declarations
 from tools.single_host_storage import original_project, plan, provision, reopen
-from tools.system_acceptance import digest, json_file, private_path, write_once
+from tools.system_acceptance import digest, json_file, private_path, unique_keys, write_once
 from tools.template_physical_storage import activation_budget
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -51,6 +52,7 @@ MIB = 1024**2
 GIB = 1024**3
 ENV = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
 MARKER = "/etc/fanout-sdk-marker"
+COMMAND_MARKER = "/etc/fanout-command-marker"
 PARENT_MARKER = "/tmp/sandproof-hot-parent-restart"
 PACKAGE_MARKER = "/usr/share/sandproof-hot-fanout-check/marker"
 
@@ -77,7 +79,8 @@ def make_cgroup(path):
     (path / "cgroup.subtree_control").write_text("+cpu +memory +pids")
 
 
-def build_deployment(args, receipt, storage, services_paths, report, *, slots=1, hot_fanout=True):
+def build_deployment(args, receipt, storage, services_paths, report, *, slots=1, hot_fanout=True,
+                     extra_credentials=None):
     data = storage / "data"
     root, staging = data / "r" / "a", data / "s"
     artifact = receipt["binding"]
@@ -165,7 +168,7 @@ def build_deployment(args, receipt, storage, services_paths, report, *, slots=1,
     key = secrets.token_hex(32)
     services = RuntimeServices.prepare(params, root, [native], [catalog], key,
         "127.0.0.1:" + str(free_loopback_port()), record, slots, registry_config=registry,
-        hot_fanout=receipt if hot_fanout else None)
+        extra_credentials=extra_credentials, hot_fanout=receipt if hot_fanout else None)
     return services, root, record, (vm_parent, service_parent), installation
 
 
@@ -240,11 +243,16 @@ def start_batch(client, running, checkpoint, count, report, *, await_reclaimed_p
                 raise
             time.sleep(min(.1, client.remaining()))
     report["batch_post_seconds"] = time.monotonic() - start
+    return wait_batch_ready(client, request, accepted, start, report)
+
+
+def wait_batch_ready(client, request, accepted, start, report):
+    sequence, count = request["sequence"], request["count"]
     key = client.key(sequence)
     assert accepted["operation"] == key and accepted["parent"] == client.session
     assert accepted["result"] in ({"state": "pending"}, {"state": "cleaning_up"}) or (
         accepted["result"]["state"] == "ready" and len(accepted["result"]["branches"]) == count)
-    path += f"/{client.window}/{sequence}"
+    path = f"{client.path()}/branch-batches/{client.window}/{sequence}"
     while True:
         result = get_batch(client, path, key)
         if result["state"] == "ready":
@@ -257,6 +265,54 @@ def start_batch(client, running, checkpoint, count, report, *, await_reclaimed_p
             return path, key, branches
         assert result in ({"state": "pending"}, {"state": "cleaning_up"}), "batch did not become ready"
         time.sleep(min(.1, client.remaining()))
+
+
+def race_last_branch_slot(client, running, checkpoint, report):
+    path = client.path() + "/branch-batches"
+    first = batch_request(client, running, checkpoint, 1)
+    second = dict(first, sequence=first["sequence"] + 1)
+    client.sequence = second["sequence"]
+    requests = (first, second)
+    start = time.monotonic()
+
+    def dispatch(request, barrier):
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        barrier.wait()
+        return fetch(opener, client.base_url, "POST", path, client.owner_key, request,
+                     timeout=min(15, client.remaining()))
+
+    with limit_public_deadline(client, 30), ThreadPoolExecutor(max_workers=2) as executor:
+        attempts = 0
+        while True:
+            attempts += 1
+            barrier = threading.Barrier(2, timeout=min(5, client.remaining()))
+            pending = [executor.submit(dispatch, request, barrier) for request in requests]
+            replies = [call.result(timeout=client.remaining()) for call in pending]
+            statuses = [status for status, _ in replies]
+            if any(status not in (202, 429) for status in statuses):
+                raise AssertionError(f"unexpected concurrent admission statuses: {statuses}")
+            for request, status in zip(requests, statuses):
+                if status == 429:
+                    query = f'{path}/{request["window"]}/{request["sequence"]}'
+                    actual, _ = client.call("GET", query, key=client.owner_key)
+                    if actual != 404:
+                        raise PublicStatusMismatch(actual, 404)
+            if sorted(statuses) == [202, 429]:
+                [winner] = [i for i, status in enumerate(statuses) if status == 202]
+                accepted = json.loads(replies[winner][1], object_pairs_hook=unique_keys)
+                break
+            assert statuses == [429, 429], "two requests acquired the sole final branch slot"
+            # The individual close may still be draining. Both requests had
+            # definite refusals and are absent. Run the same two keys again.
+            time.sleep(min(.1, client.remaining()))
+    report["last_slot_race"] = dict(attempts=attempts, public_statuses=statuses,
+                                    winner_sequence=requests[winner]["sequence"],
+                                    rejected_sequence=requests[1 - winner]["sequence"])
+    report["batch_post_seconds"] = time.monotonic() - start
+    ready = wait_batch_ready(client, requests[winner], accepted, start, report)
+    report["last_slot_race"]["full_after_winner_ready"] = check_batch_rejection(
+        client, running, checkpoint, 1, 429)
+    return ready
 
 
 def concurrent_sdk(branch_ids, options, inherited, report):
@@ -296,6 +352,45 @@ def concurrent_sdk(branch_ids, options, inherited, report):
     return [sandbox for sandbox, _ in connected]
 
 
+def check_reverse_branch_writes(client, sandboxes):
+    def exercise(index, sandbox):
+        content = "command-" + str(index)
+        command_line = "printf %s " + shlex.quote(content) + " > " + shlex.quote(COMMAND_MARKER)
+        result = sandbox.commands.run(command_line, user="root", timeout=min(15, client.remaining()),
+                                      request_timeout=min(30, client.remaining()))
+        assert result.exit_code == 0
+        assert sandbox.files.read(COMMAND_MARKER, user="root",
+                                  request_timeout=min(30, client.remaining())) == content
+
+    with ThreadPoolExecutor(max_workers=len(sandboxes)) as executor:
+        checks = [executor.submit(exercise, index, sandbox) for index, sandbox in enumerate(sandboxes)]
+        for check in checks:
+            check.result(timeout=client.remaining())
+
+
+def check_foreign_branch_access(client, running, checkpoint, batch_path, branch_id, options):
+    # Obtain this registered tenant's own request window so the foreign POST
+    # reaches the parent ownership check instead of failing a stale window.
+    foreign = client.read_json("GET", PREFIX + "/request-window", key=client.foreign_key)
+    assert set(foreign) == {"window"} and type(foreign["window"]) is int and foreign["window"] > 0
+    request = dict(window=foreign["window"], sequence=1, expected_version=running["current_version"],
+                   checkpoint=checkpoint, count=1)
+    status_checks = (
+        ("parent_query", "GET", client.path(), None),
+        ("batch_query", "GET", batch_path, None),
+        ("batch_start", "POST", client.path() + "/branch-batches", request),
+    )
+    result = {}
+    for label, method, path, body in status_checks:
+        status, _ = client.call(method, path, key=client.foreign_key, body=body)
+        if status != 404:
+            raise PublicStatusMismatch(status, 404)
+        result[label] = status
+    check_sdk_not_found(branch_id, options | {"api_key": client.foreign_key})
+    result["sdk_connect"] = "not_found"
+    return result
+
+
 def check_batch_replay(client, path, key, request, branches):
     post = client.path() + "/branch-batches"
     expected = {"state": "ready", "branches": branches}
@@ -331,7 +426,7 @@ def check_sdk_not_found(branch_id, options):
         Sandbox.connect(branch_id, **options)
     except SandboxNotFoundException:
         return
-    raise AssertionError("stock SDK still connects to a released branch")
+    raise AssertionError("stock SDK connected to an unavailable branch")
 
 
 def slot_and_claim(native):
@@ -441,8 +536,11 @@ def run(args, receipt, report):
     storage.chmod(0o711)
     report["storage"] = str(storage)
     write_once(args.output/"location.json", {"storage": str(storage)})
+    foreign_key = secrets.token_hex(32)
     with phase(report, "provision"):
-        services, root, record, groups, installation = build_deployment(args, receipt, storage, paths, report)
+        services, root, record, groups, installation = build_deployment(
+            args, receipt, storage, paths, report,
+            extra_credentials=[dict(tenant=2, secret=foreign_key)])
     client = None
     cleaned = False
     native = services.native_pools[0]
@@ -452,7 +550,7 @@ def run(args, receipt, report):
             services.start()
             ready = services.wait_ready(timeout=180)
             expected_processes = services.processes.observe()
-        client = PublicUnloadScenario(services.sdk_url, services.key, secrets.token_hex(32),
+        client = PublicUnloadScenario(services.sdk_url, services.key, foreign_key,
                                       services.center_config["deployment_id"], time.monotonic() + 480)
         with phase(report, "parent_create", client):
             from e2b import Sandbox
@@ -482,8 +580,15 @@ def run(args, receipt, report):
             report["public_rejections"]["over_remaining_branch_limit"] = check_batch_rejection(
                 client, running, checkpoint, branch_limit - args.n + 1, 429)
             report["public_rejections"]["hot_parent_active_unload"] = check_hot_unload_rejection(client, running)
+        with phase(report, "authorized_tenant_isolation", client):
+            report["foreign_authorized_tenant"] = check_foreign_branch_access(
+                client, running, checkpoint, path, branches[0], owner)
         with phase(report, "stock_sdk_concurrent", client):
             sandboxes = concurrent_sdk(branches, owner, receipt["expected_inherited_mark"], report)
+        with phase(report, "command_to_file", client):
+            check_reverse_branch_writes(client, sandboxes)
+            parent.commands.run("test ! -e " + shlex.quote(COMMAND_MARKER), user="root", timeout=10)
+            report["command_to_file_branches"] = len(sandboxes)
         with phase(report, "package_isolation", client):
             with tempfile.TemporaryDirectory(dir=args.output, prefix="package-") as work:
                 package = make_package(Path(work))
@@ -511,8 +616,11 @@ def run(args, receipt, report):
         if args.n == branch_limit and receipt["native_hot_fanout"]["max_batches"] >= 2:
             with phase(report, "reclaimed_port_reuse", client):
                 reused = report["port_reuse"] = {}
-                new_path, new_key, replacement = start_batch(
-                    client, running, checkpoint, 1, reused, await_reclaimed_port=True)
+                if receipt["native_hot_fanout"]["max_batches"] >= 3:
+                    new_path, new_key, replacement = race_last_branch_slot(client, running, checkpoint, reused)
+                else:
+                    new_path, new_key, replacement = start_batch(
+                        client, running, checkpoint, 1, reused, await_reclaimed_port=True)
                 [new_branch] = replacement
                 # Before the close the original batch owned the full port range.
                 # With no other release, only branch zero's port can be reused.
