@@ -3,12 +3,15 @@ use crate::{application::authority_error, branch_batch::BatchError, projection::
 use sandproof_api::PortError;
 use sandproof_center_core::DecisionError;
 use sandproof_protocol::{
-    SandboxId, TenantId,
+    ResourceId, SandboxId, TenantId,
     branching::{
         BranchBatchIdentity, BranchStartFailure, BranchTarget, PublicBranchBatch,
         PublicBranchBatchRequest,
     },
-    lifecycle::{LifecycleOperation, OperationKey, SessionId},
+    lifecycle::{
+        IncarnationId, LifecycleOperation, OperationKey, RequestSequence, RequestWindowId,
+        SessionId,
+    },
 };
 
 impl SharedBusinessAuthority {
@@ -20,9 +23,9 @@ impl SharedBusinessAuthority {
     pub fn reserve_branch_batch(
         &self,
         owner: &TenantId,
+        parent: SessionId,
         request: PublicBranchBatchRequest,
-        identity: BranchBatchIdentity,
-        plan: Vec<BranchTarget>,
+        batch: ResourceId,
         now_ms: u64,
     ) -> Result<PublicBranchBatch, PortError> {
         let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
@@ -43,7 +46,7 @@ impl SharedBusinessAuthority {
                     .ok_or(DecisionError::Unavailable)?;
                 if let Some(original) = ledger.find(&operation) {
                     let result = original
-                        .replay(&operation, &identity.parent, &request)
+                        .replay(&operation, &parent, &request)
                         .map_err(map_error)?
                         .ok_or(DecisionError::Conflict)?;
                     return Ok((next, result));
@@ -51,14 +54,35 @@ impl SharedBusinessAuthority {
                 if current.center.public_request_window(owner)? != Some(request.window) {
                     return Err(DecisionError::Stale.into());
                 }
-                require_parent(
+                let incarnation = live_incarnation(
                     current,
                     owner,
-                    &identity,
+                    &parent,
                     now_ms,
                     Some(request.expected_version),
                 )
                 .map_err(to_authority)?;
+                let parent_record = current
+                    .center
+                    .lifecycle_session(owner, &parent)
+                    .ok_or(DecisionError::NotFound)?;
+                let original = parent_record
+                    .operations()
+                    .first()
+                    .ok_or(DecisionError::NotFound)?
+                    .intent();
+                let LifecycleOperation::Create { create, .. } = &original.request.operation else {
+                    return Err(DecisionError::NotFound.into());
+                };
+                if !ledger.templates().contains(&create.template_revision) {
+                    return Err(DecisionError::Invalid.into());
+                }
+                let identity = BranchBatchIdentity {
+                    parent,
+                    incarnation,
+                    checkpoint: request.checkpoint.clone(),
+                    batch,
+                };
                 ledger.retire_closed(|original| {
                     match current.center.public_request_window(&original.owner) {
                         Ok(Some(window)) => window.get() > original.window.get(),
@@ -66,6 +90,20 @@ impl SharedBusinessAuthority {
                         Err(_) => false,
                     }
                 });
+                let ports = ledger
+                    .available_ports(&identity.parent, usize::from(request.count.get()))
+                    .map_err(map_error)?;
+                let plan = ports
+                    .into_iter()
+                    .enumerate()
+                    .map(|(ordinal, port)| {
+                        let sandbox = format!("branch-{}-{ordinal}", identity.batch.as_str())
+                            .try_into()
+                            .map_err(|_| DecisionError::Invalid)?;
+                        let port = port.try_into().map_err(|_| DecisionError::Invalid)?;
+                        Ok(BranchTarget { sandbox, port })
+                    })
+                    .collect::<Result<Vec<_>, DecisionError>>()?;
                 let result = ledger
                     .start(operation, identity, request, plan)
                     .map_err(map_error)?;
@@ -80,18 +118,22 @@ impl SharedBusinessAuthority {
         &self,
         owner: &TenantId,
         parent: &SessionId,
-        operation: &OperationKey,
+        window: RequestWindowId,
+        sequence: RequestSequence,
     ) -> Result<PublicBranchBatch, PortError> {
         let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
         let current = authority.snapshot_envelope().map_err(authority_error)?;
-        if owner != &operation.owner || current.center.deployment() != &operation.deployment {
-            return Err(PortError::NotFound);
-        }
+        let operation = OperationKey {
+            deployment: current.center.deployment().clone(),
+            owner: owner.clone(),
+            window,
+            sequence,
+        };
         let record = current
             .metadata
             .branch_batches
             .as_ref()
-            .and_then(|ledger| ledger.find(operation))
+            .and_then(|ledger| ledger.find(&operation))
             .ok_or(PortError::NotFound)?;
         let result = record.public_result();
         if &result.parent != parent {
@@ -226,16 +268,32 @@ fn require_parent(
     now_ms: u64,
     expected_version: Option<u64>,
 ) -> Result<(), PortError> {
+    if live_incarnation(current, owner, &identity.parent, now_ms, expected_version)?
+        == identity.incarnation
+    {
+        Ok(())
+    } else {
+        Err(PortError::Conflict)
+    }
+}
+
+fn live_incarnation(
+    current: &Envelope,
+    owner: &TenantId,
+    session: &SessionId,
+    now_ms: u64,
+    expected_version: Option<u64>,
+) -> Result<IncarnationId, PortError> {
     if current
         .metadata
         .private_sandboxes()
-        .contains(identity.parent.as_protocol_id())
+        .contains(session.as_protocol_id())
     {
         return Err(PortError::NotFound);
     }
     let parent = current
         .center
-        .lifecycle_session(owner, &identity.parent)
+        .lifecycle_session(owner, session)
         .ok_or(PortError::NotFound)?;
     let origin = parent
         .current_execution_origin()
@@ -254,7 +312,7 @@ fn require_parent(
         }
         | LifecycleOperation::Resume {
             target_incarnation, ..
-        } if target_incarnation == identity.incarnation => Ok(()),
+        } => Ok(target_incarnation),
         _ => Err(PortError::Conflict),
     }
 }

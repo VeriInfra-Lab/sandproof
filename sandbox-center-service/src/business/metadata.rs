@@ -84,7 +84,9 @@ impl RegistryMetadata {
             self.registry.config(),
             &self.budget,
             self.private_build_config(),
-            self.branch_batches.as_ref().map(BranchBatchLedger::limits),
+            self.branch_batches
+                .as_ref()
+                .map(|ledger| (ledger.limits(), ledger.templates())),
         ))
     }
     /// Internal validation remains hidden even after its active pin settles.
@@ -138,11 +140,16 @@ impl RegistryMetadata {
     /// Explicitly provision bounded training metadata with the original center state.
     /// # Errors
     /// Rejects impossible capacity or port ranges.
-    pub fn with_branch_batches(mut self, limits: BranchBatchLimits) -> Result<Self, PortError> {
+    pub fn with_branch_batches(
+        mut self,
+        limits: BranchBatchLimits,
+        templates: Vec<ResourceId>,
+    ) -> Result<Self, PortError> {
         if self.branch_batches.is_some() {
             return Err(PortError::Conflict);
         }
-        self.branch_batches = Some(BranchBatchLedger::new(limits).map_err(|_| PortError::Invalid)?);
+        self.branch_batches =
+            Some(BranchBatchLedger::new(limits, templates).map_err(|_| PortError::Invalid)?);
         Ok(self)
     }
     #[must_use]

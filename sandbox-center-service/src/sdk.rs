@@ -87,3 +87,48 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> ControllerPort for Cent
         self.0.templates.delete_alias(tenant, name)
     }
 }
+
+impl<H: HostPort, T: TemplateProvider> sandproof_api::branching::BranchingPort
+    for CenterPort<crate::business::SharedBusinessAuthority, H, T>
+{
+    fn start_branch_batch(
+        &self,
+        owner: &str,
+        parent: sandproof_protocol::lifecycle::SessionId,
+        request: sandproof_protocol::branching::PublicBranchBatchRequest,
+    ) -> Result<sandproof_protocol::branching::PublicBranchBatch, PortError> {
+        use ring::rand::SecureRandom as _;
+        use std::fmt::Write as _;
+
+        let owner = crate::application::tenant_id(owner)?;
+        let mut random = [0_u8; 24];
+        ring::rand::SystemRandom::new()
+            .fill(&mut random)
+            .map_err(|_| PortError::Busy)?;
+        let mut id = String::with_capacity(random.len() * 2);
+        for byte in random {
+            write!(id, "{byte:02x}").map_err(|_| PortError::Busy)?;
+        }
+        let batch = id.try_into().map_err(|_| PortError::Busy)?;
+        self.0
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .reserve_branch_batch(&owner, parent, request, batch, self.0.now()?)
+    }
+
+    fn branch_batch(
+        &self,
+        owner: &str,
+        parent: sandproof_protocol::lifecycle::SessionId,
+        window: sandproof_protocol::lifecycle::RequestWindowId,
+        sequence: sandproof_protocol::lifecycle::RequestSequence,
+    ) -> Result<sandproof_protocol::branching::PublicBranchBatch, PortError> {
+        let owner = crate::application::tenant_id(owner)?;
+        self.0
+            .authority
+            .lock()
+            .map_err(|_| PortError::OutcomeUnknown)?
+            .query_branch_batch(&owner, &parent, window, sequence)
+    }
+}

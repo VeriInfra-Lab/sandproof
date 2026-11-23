@@ -2,10 +2,11 @@
 //! before dispatch or publication. Guest observations require trusted transport
 //! and a current parent check at the caller.
 use sandproof_protocol::{
-    SandboxId,
+    ResourceId, SandboxId,
     branching::{
-        BranchAccessSelector, BranchBatchIdentity, BranchStartFailure, BranchTarget,
-        PublicBranchBatch, PublicBranchBatchRequest, PublicBranchBatchResult, valid_ready_targets,
+        BranchAccessSelector, BranchBatchIdentity, BranchRelayPort, BranchStartFailure,
+        BranchTarget, PublicBranchBatch, PublicBranchBatchRequest, PublicBranchBatchResult,
+        valid_ready_targets,
     },
     lifecycle::{OperationKey, SessionId},
 };
@@ -257,6 +258,7 @@ impl BranchBatchRecord {
 #[serde(deny_unknown_fields)]
 pub(crate) struct BranchBatchLedger {
     limits: BranchBatchLimits,
+    templates: Vec<ResourceId>,
     batches: Vec<BranchBatchRecord>,
 }
 
@@ -282,7 +284,12 @@ impl BranchBatchLimits {
                 .first_port
                 .checked_add(self.max_branches_per_vm - 1)
                 .is_some()
-            && !self.contains(49_983)
+            && BranchRelayPort::new(self.first_port).is_some()
+            && self
+                .first_port
+                .checked_add(self.max_branches_per_vm - 1)
+                .and_then(BranchRelayPort::new)
+                .is_some()
     }
 }
 
@@ -291,19 +298,51 @@ impl BranchBatchLedger {
         self.limits
     }
 
+    pub(crate) fn templates(&self) -> &[ResourceId] {
+        &self.templates
+    }
+
     pub(crate) fn required_bytes(&self) -> usize {
         usize::from(self.limits.max_batches)
             .saturating_mul(usize::from(self.limits.max_branches_per_vm) * 384 + 2048)
     }
 
-    pub(crate) fn new(limits: BranchBatchLimits) -> Result<Self, BatchError> {
-        if !limits.is_valid() {
+    pub(crate) fn new(
+        limits: BranchBatchLimits,
+        templates: Vec<ResourceId>,
+    ) -> Result<Self, BatchError> {
+        if !limits.is_valid() || !valid_templates(&templates) {
             return Err(BatchError::Capacity);
         }
         Ok(Self {
             limits,
+            templates,
             batches: Vec::new(),
         })
+    }
+
+    pub(crate) fn available_ports(
+        &self,
+        parent: &SessionId,
+        count: usize,
+    ) -> Result<Vec<u16>, BatchError> {
+        let ports: Vec<_> = (0..self.limits.max_branches_per_vm)
+            .map(|offset| self.limits.first_port + offset)
+            .filter(|port| {
+                !self.batches.iter().any(|batch| {
+                    &batch.identity.parent == parent
+                        && batch
+                            .plan
+                            .iter()
+                            .any(|target| target.port.get() == *port && batch.holds(target))
+                })
+            })
+            .take(count)
+            .collect();
+        if ports.len() != count {
+            return Err(BatchError::Capacity);
+        }
+        Ok(ports)
     }
 
     pub(crate) fn start(
@@ -389,6 +428,7 @@ impl BranchBatchLedger {
 
     pub(crate) fn is_valid(&self) -> bool {
         self.limits.is_valid()
+            && valid_templates(&self.templates)
             && self.batches.len() <= usize::from(self.limits.max_batches)
             && self.batches.iter().enumerate().all(|(index, batch)| {
                 batch.is_valid()
@@ -401,6 +441,14 @@ impl BranchBatchLedger {
                         .all(|original| !conflicts(original, batch))
             })
     }
+}
+
+fn valid_templates(templates: &[ResourceId]) -> bool {
+    !templates.is_empty()
+        && templates
+            .iter()
+            .enumerate()
+            .all(|(index, template)| !templates[..index].contains(template))
 }
 
 fn conflicts(a: &BranchBatchRecord, b: &BranchBatchRecord) -> bool {
@@ -445,11 +493,11 @@ mod tests {
             vec![
                 BranchTarget {
                     sandbox: "branch-a".try_into().unwrap(),
-                    port: NonZeroU16::new(4070).unwrap(),
+                    port: NonZeroU16::new(31_000).unwrap(),
                 },
                 BranchTarget {
                     sandbox: "branch-b".try_into().unwrap(),
-                    port: NonZeroU16::new(4071).unwrap(),
+                    port: NonZeroU16::new(31_001).unwrap(),
                 },
             ],
             2,
@@ -520,11 +568,14 @@ mod tests {
 
     #[test]
     fn active_ports_remain_reserved_until_cleanup_and_old_ids_are_not_reused() {
-        let mut ledger = BranchBatchLedger::new(BranchBatchLimits {
-            max_batches: 4,
-            max_branches_per_vm: 3,
-            first_port: 4070,
-        })
+        let mut ledger = BranchBatchLedger::new(
+            BranchBatchLimits {
+                max_batches: 4,
+                max_branches_per_vm: 3,
+                first_port: 31_000,
+            },
+            vec!["template-a".try_into().unwrap()],
+        )
         .unwrap();
         let first = batch();
         let second_op = OperationKey {
