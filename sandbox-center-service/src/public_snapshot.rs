@@ -11,6 +11,7 @@ use sandproof_protocol::{ResourceId, SandboxId, TenantId};
 pub struct PublicSnapshot {
     pub state: CenterState,
     pub hidden_sandboxes: Vec<SandboxId>,
+    pub branch_routes: Vec<sandproof_protocol::branching::BranchAccessSelector>,
     /// Immutable bindings projected from the SAME confirmed envelope, not
     /// resolved again through a provider or a mutable alias during a query.
     pub templates: Vec<PublicTemplate>,

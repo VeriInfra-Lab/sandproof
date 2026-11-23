@@ -7,6 +7,7 @@ use sandproof_controller_service::{
     CreateOptions,
     application::{InstanceDetail, InstanceInfo, InstancePage, ListSelection, Session},
 };
+use sandproof_protocol::branching::BranchAccessSelector;
 use sandproof_protocol::internal::lifecycle::CreateBinding;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, LifecycleAccessIdentity, LifecycleOperation,
@@ -17,6 +18,7 @@ use sandproof_protocol::{SandboxId, TenantId};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DataRoute {
     pub identity: LifecycleAccessIdentity,
+    pub branch: Option<BranchAccessSelector>,
     pub authorized_at_ms: u64,
     pub max_end_at_ms: u64,
 }
@@ -201,7 +203,67 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
                 result = Some(route);
             }
         }
+        for selector in &view.branch_routes {
+            if !self.tokens.verify_branch(selector, token) {
+                continue;
+            }
+            if result.is_some() {
+                return Err(PortError::Busy);
+            }
+            let mut route = Self::branch_route(&view, selector, now)?;
+            route.branch = Some(selector.clone());
+            result = Some(route);
+        }
         result.ok_or(PortError::NotFound)
+    }
+
+    pub(crate) fn branch_session_attempt(
+        &self,
+        tenant: &TenantId,
+        sandbox: &SandboxId,
+    ) -> Result<Option<Session>, PortError> {
+        let view = self.public_snapshot()?;
+        let Some(selector) = view
+            .branch_routes
+            .iter()
+            .find(|selector| &selector.branch == sandbox)
+        else {
+            return Ok(None);
+        };
+        if &selector.operation.owner != tenant {
+            return Err(PortError::NotFound);
+        }
+        Self::branch_route(&view, selector, self.now()?)?;
+        let parent = view.find(tenant, selector.batch.parent.as_protocol_id())?;
+        let (_, create) = original_create(parent)?;
+        let template = view.bound_template(&create.template_revision, &create.template_digest)?;
+        Ok(Some(Session {
+            template_id: template.template_id.clone(),
+            sandbox_id: sandbox.as_str().to_owned(),
+            owner: tenant.as_str().parse().map_err(|_| PortError::Busy)?,
+            envd_version: template.envd_version.clone(),
+            envd_access_token: self.tokens.issue_branch(selector)?,
+            domain: self.config.domain.clone(),
+        }))
+    }
+
+    fn branch_route(
+        view: &crate::PublicSnapshot,
+        selector: &BranchAccessSelector,
+        now: u64,
+    ) -> Result<DataRoute, PortError> {
+        let parent = view.find(
+            &selector.operation.owner,
+            selector.batch.parent.as_protocol_id(),
+        )?;
+        let route = Self::route_for_record(&view.state, parent, now)?;
+        if !selector.matches_parent(&route.identity) {
+            return Err(PortError::NotFound);
+        }
+        if !view.state.node_is_reachable(&route.identity.node, now) {
+            return Err(PortError::Busy);
+        }
+        Ok(route)
     }
     pub(crate) fn route_for_record(
         state: &CenterState,
@@ -242,6 +304,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             _ => return Err(PortError::NotFound),
         };
         Ok(DataRoute {
+            branch: None,
             identity: LifecycleAccessIdentity {
                 protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
                 center: current.center.clone(),

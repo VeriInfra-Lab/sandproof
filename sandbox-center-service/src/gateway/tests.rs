@@ -21,6 +21,7 @@ impl DataRouteAuthorizer for Routes {
             ready = wake.wait(ready).unwrap();
         }
         Ok(DataRoute {
+            branch: None,
             identity: sandproof_protocol::lifecycle::LifecycleAccessIdentity {
                 protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
                 center: sandproof_protocol::lifecycle::CenterIdentity {

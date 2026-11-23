@@ -649,6 +649,10 @@ impl AuthorityPort for SharedBusinessAuthority {
             .projection_templates()
             .map_err(to_authority)?;
         Ok(crate::PublicSnapshot {
+            branch_routes: value.metadata.branch_batches.as_ref().map_or_else(
+                Vec::new,
+                crate::branch_batch::BranchBatchLedger::active_routes,
+            ),
             state: value.center,
             hidden_sandboxes,
             templates,

@@ -2,7 +2,7 @@
 //! Changing an intent (renewal) does not invalidate an existing SDK connection.
 use ring::hmac;
 use sandproof_api::PortError;
-use sandproof_protocol::lifecycle::LifecycleAccessIdentity;
+use sandproof_protocol::{branching::BranchAccessSelector, lifecycle::LifecycleAccessIdentity};
 
 pub(crate) struct Tokens(hmac::Key);
 impl Tokens {
@@ -30,10 +30,18 @@ impl Tokens {
         Ok(message)
     }
     pub(crate) fn issue(&self, identity: &LifecycleAccessIdentity) -> Result<String, PortError> {
+        Self::message(identity).map(|message| self.sign(&message))
+    }
+    pub(crate) fn issue_branch(
+        &self,
+        selector: &BranchAccessSelector,
+    ) -> Result<String, PortError> {
+        branch_message(selector).map(|message| self.sign(&message))
+    }
+    fn sign(&self, message: &[u8]) -> String {
         const HEX: &[u8; 16] = b"0123456789abcdef";
-        let tag = hmac::sign(&self.0, &Self::message(identity)?);
-        Ok(tag
-            .as_ref()
+        let tag = hmac::sign(&self.0, message);
+        tag.as_ref()
             .iter()
             .flat_map(|byte| {
                 [
@@ -41,9 +49,21 @@ impl Tokens {
                     char::from(HEX[usize::from(byte & 15)]),
                 ]
             })
-            .collect())
+            .collect()
     }
     pub(crate) fn verify(&self, identity: &LifecycleAccessIdentity, token: &str) -> bool {
+        self.verify_message(|| Self::message(identity), token)
+    }
+
+    pub(crate) fn verify_branch(&self, selector: &BranchAccessSelector, token: &str) -> bool {
+        self.verify_message(|| branch_message(selector), token)
+    }
+
+    fn verify_message(
+        &self,
+        message: impl FnOnce() -> Result<Vec<u8>, PortError>,
+        token: &str,
+    ) -> bool {
         if token.len() != 64 {
             return false;
         }
@@ -57,8 +77,13 @@ impl Tokens {
             };
             *target = high * 16 + low;
         }
-        Self::message(identity).is_ok_and(|message| hmac::verify(&self.0, &message, &bytes).is_ok())
+        message().is_ok_and(|message| hmac::verify(&self.0, &message, &bytes).is_ok())
     }
+}
+fn branch_message(selector: &BranchAccessSelector) -> Result<Vec<u8>, PortError> {
+    let mut message = b"sandproof/center/branch-token\0".to_vec();
+    message.extend(serde_json::to_vec(selector).map_err(|_| PortError::Busy)?);
+    Ok(message)
 }
 fn digit(byte: u8) -> Option<u8> {
     match byte {

@@ -4,8 +4,8 @@
 use sandproof_protocol::{
     SandboxId,
     branching::{
-        BranchBatchIdentity, BranchStartFailure, BranchTarget, PublicBranchBatch,
-        PublicBranchBatchRequest, PublicBranchBatchResult, valid_ready_targets,
+        BranchAccessSelector, BranchBatchIdentity, BranchStartFailure, BranchTarget,
+        PublicBranchBatch, PublicBranchBatchRequest, PublicBranchBatchResult, valid_ready_targets,
     },
     lifecycle::{OperationKey, SessionId},
 };
@@ -64,7 +64,11 @@ impl BranchBatchRecord {
         if usize::from(request.count.get()) > available {
             return Err(BatchError::Capacity);
         }
-        if !valid_ready_targets(&plan, &plan, request.count) {
+        if !valid_ready_targets(&plan, &plan, request.count)
+            || !plan
+                .iter()
+                .all(|target| target.sandbox.as_str().starts_with("branch-"))
+        {
             return Err(BatchError::InvalidTargets);
         }
         Ok(Self {
@@ -211,7 +215,10 @@ impl BranchBatchRecord {
     }
 
     fn is_valid(&self) -> bool {
-        self.operation.window == self.request.window
+        self.plan
+            .iter()
+            .all(|target| target.sandbox.as_str().starts_with("branch-"))
+            && self.operation.window == self.request.window
             && self.operation.sequence == self.request.sequence
             && self.identity.checkpoint == self.request.checkpoint
             && valid_ready_targets(&self.plan, &self.plan, self.request.count)
@@ -363,6 +370,21 @@ impl BranchBatchLedger {
         self.batches
             .iter()
             .any(|batch| &batch.identity.parent == parent && batch.reserved() != 0)
+    }
+
+    pub(crate) fn active_routes(&self) -> Vec<BranchAccessSelector> {
+        self.batches
+            .iter()
+            .flat_map(|batch| {
+                batch.plan.iter().filter_map(|target| {
+                    batch.target(&target.sandbox).map(|_| BranchAccessSelector {
+                        batch: batch.identity.clone(),
+                        operation: batch.operation.clone(),
+                        branch: target.sandbox.clone(),
+                    })
+                })
+            })
+            .collect()
     }
 
     pub(crate) fn is_valid(&self) -> bool {
