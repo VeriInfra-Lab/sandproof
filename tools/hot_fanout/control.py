@@ -225,7 +225,9 @@ class GuestFanout:
     def release(self, batch_id, branch_id=None):
         row = self._load(batch_id)
         if row is None:
-            return {"batch_id": batch_id, "status": "lost"}
+            if branch_id is not None:
+                return {"batch_id": batch_id, "status": "lost"}
+            return self._record_closed_before_start(batch_id)
         if branch_id is not None and identifier(branch_id) not in {b["branch_id"] for b in row["branches"]}:
             raise ValueError("branch identity does not belong to this batch")
         if row["phase"] in ("failed_clean", "released"):
@@ -238,6 +240,22 @@ class GuestFanout:
         if not indexes:
             return self._observe(row)
         return self._retire(row, sorted(indexes), "released" if len(indexes) == len(remaining) else "ready")
+
+    def _record_closed_before_start(self, batch_id):
+        # Dispatch occurs only after committing the original plan, and both
+        # requests run under this same live journal owner. Fence a later Start
+        # before reporting absence as cleanup.
+        _, _, count = self._occupied()
+        try:
+            absent = count < self.max_batches and not self.backend.has_batch(batch_id)
+        except OSError:
+            absent = False
+        if not absent:
+            return {"batch_id": batch_id, "status": "pending"}
+        row = {"batch_id": batch_id, "identity": None, "phase": "released",
+               "branches": [], "released": [], "retiring": []}
+        self._save(row)
+        return self._public(row, "released")
 
     def _retire(self, row, indexes, terminal):
         row["retiring"] = list(indexes)

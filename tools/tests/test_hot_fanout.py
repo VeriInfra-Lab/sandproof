@@ -33,6 +33,9 @@ class FakeGuest:
                 raise RuntimeError("unknown partial fork")
             self.active.add((plan.batch_id, ordinal))
 
+    def has_batch(self, batch_id):
+        return any(existing == batch_id for existing, _ in self.active)
+
     def release(self, batch_id, ordinal):
         if ordinal == self.cleanup_failure:
             raise OSError("cleanup not yet confirmed")
@@ -201,6 +204,30 @@ class HotFanoutTests(unittest.TestCase):
             self.assertEqual(owner.start(plan("new", (31000,), "next"))["status"], "ready")
             self.assertEqual(owner.release("batchA")["status"], "released")
             self.assertEqual(self.backend.active, {("new", 0)})
+
+    def test_full_release_before_start_fences_delayed_dispatch_across_reopen(self):
+        with self.own() as owner:
+            self.assertEqual(owner.start(plan("peer", (31003,), "peer"))["status"], "ready")
+            self.assertEqual(owner.release("batchA", "branch0")["status"], "lost")
+            self.assertEqual(owner.observe("batchA")["status"], "lost")
+            self.assertEqual(owner.release("batchA")["status"], "released")
+        with self.own() as owner:
+            self.assertEqual(owner.observe("batchA")["status"], "released")
+            self.assertEqual(owner.release("batchA")["status"], "released")
+            with self.assertRaises(ValueError):
+                owner.start(plan())
+            self.assertEqual(self.backend.starts, 1)
+            self.assertEqual(self.backend.active, {("peer", 0)})
+
+    def test_absent_full_release_leaves_residue_unknown_and_respects_journal_budget(self):
+        self.backend.active.add(("untracked", 0))
+        with self.own() as owner:
+            self.assertEqual(owner.release("untracked")["status"], "pending")
+            self.assertEqual(owner.observe("untracked")["status"], "lost")
+            for index in range(4):
+                self.assertEqual(owner.release(f"closed{index}")["status"], "released")
+            self.assertEqual(owner.release("overflow")["status"], "pending")
+            self.assertIn(("untracked", 0), self.backend.active)
 
     def test_lost_and_unknown_ready_checks_expose_no_endpoint(self):
         with self.own() as owner:

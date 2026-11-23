@@ -511,6 +511,11 @@ class LinuxGuest:
         except FileNotFoundError:
             return False
 
+    def has_batch(self, batch_id):
+        prefix = identifier(batch_id) + "."
+        return any(entry.name.startswith(prefix)
+                   for parent in (self.data, self.cgroups) for entry in parent.iterdir())
+
     def release(self, batch_id, ordinal):
         slot, cgroup = self._paths(batch_id, ordinal)
         if cgroup.exists():
