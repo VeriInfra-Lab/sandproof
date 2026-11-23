@@ -1,5 +1,6 @@
 //! One production role; no legacy public server alias or implicit mode.
-use sandproof_protocol::branching::BranchRelayPort;
+#[cfg(target_os = "linux")]
+use sandproof_controller_service::application::branching::BranchRelayPort;
 use std::{ffi::OsString, path::PathBuf};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -11,6 +12,7 @@ pub(crate) enum Command {
     Audit(PathBuf),
     ObserveCenter(PathBuf),
     Relay,
+    #[cfg(target_os = "linux")]
     RelayBranch(BranchRelayPort),
     ContractVersions,
     CaptureWorker(String),
@@ -23,6 +25,7 @@ pub(crate) fn parse(
     let command = arguments.next().ok_or("a host command is required")?;
     let result = match command.to_str() {
         Some("relay") => Command::Relay,
+        #[cfg(target_os = "linux")]
         Some("relay-branch") => {
             let raw = arguments.next().ok_or("branch relay port missing")?;
             let raw = raw.to_str().ok_or("branch relay port is not ASCII")?;
@@ -118,6 +121,7 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "linux")]
     #[test]
     fn branch_relay_accepts_only_the_reserved_namespace_local_ports() {
         for port in [BranchRelayPort::FIRST, BranchRelayPort::LAST] {

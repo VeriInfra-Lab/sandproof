@@ -2,7 +2,8 @@
 //! Changing an intent (renewal) does not invalidate an existing SDK connection.
 use ring::hmac;
 use sandproof_api::PortError;
-use sandproof_protocol::{branching::BranchAccessSelector, lifecycle::LifecycleAccessIdentity};
+use sandproof_controller_service::application::branching::BranchAccessSelector;
+use sandproof_protocol::lifecycle::LifecycleAccessIdentity;
 
 pub(crate) struct Tokens(hmac::Key);
 impl Tokens {
@@ -96,8 +97,8 @@ fn digit(byte: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sandproof_controller_service::application::branching::BranchBatchIdentity;
     use sandproof_protocol::{
-        branching::BranchBatchIdentity,
         internal::NodeIdentity,
         lifecycle::{CenterIdentity, OperationKey, SessionId},
     };

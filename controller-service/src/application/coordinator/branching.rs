@@ -3,14 +3,13 @@ use super::{
     ApplicationError, ControllerApplication, ControllerHost, DataAuthorization, DataKind,
     DataLease, DataTarget, RelayReaper, TrackedRelayChild, map_journal, same_secret, watch,
 };
-use crate::{
+use crate::JournalError;
+use crate::application::branching::{BranchAccessIdentity, BranchAccessSelector, BranchTarget};
+use crate::application::{
     HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits, HostBranchParent,
-    HostBranchRoute, HostGuestBranch, JournalError,
+    HostBranchRoute, HostGuestBranch,
 };
-use sandproof_protocol::{
-    branching::{BranchAccessIdentity, BranchAccessSelector, BranchTarget},
-    lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity},
-};
+use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
 
 pub(super) struct BranchPins {
     selector: BranchAccessSelector,

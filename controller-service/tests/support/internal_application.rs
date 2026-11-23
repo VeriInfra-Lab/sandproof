@@ -14,7 +14,7 @@ use sandproof_controller_service::{
     application::{
         ApplicationConfig, ApplicationError, Clock, ControllerApplication, DataRelay, HostCapacity,
         HostSlots, LaunchConfiguration, TemplateArtifacts, WorkEvidence, WorkExecution,
-        WorkRecovery,
+        WorkRecovery, branching::BranchRelayPort,
     },
     physical_storage::{PhysicalPool, PhysicalStorageProfile},
     template_registry::CandidateVerification,
@@ -398,7 +398,7 @@ impl DataRelay for TestHost {
         _: core::SandboxId,
         _: core::VmId,
         _: core::Generation,
-        port: sandproof_protocol::branching::BranchRelayPort,
+        port: BranchRelayPort,
         _: bool,
     ) -> Result<std::process::Child, ApplicationError> {
         use std::process::{Command, Stdio};
@@ -444,7 +444,7 @@ impl DataRelay for TestHost {
         _: core::SandboxId,
         _: core::VmId,
         _: core::Generation,
-        port: sandproof_protocol::branching::BranchRelayPort,
+        port: BranchRelayPort,
     ) -> Result<bool, ApplicationError> {
         Ok(self.0.lock().unwrap().live_branch_relay != Some(port.get()))
     }

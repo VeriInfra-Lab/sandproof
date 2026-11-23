@@ -3,6 +3,7 @@
 use crate::fault::{busy, project};
 use crate::{HostObservation, LinuxWorker, PhysicalProfileLease, ProtectedHostEpochSource};
 use sandbox_controller_core as core;
+use sandproof_controller_service::application::branching::BranchRelayPort;
 use sandproof_controller_service::application::fault::{FaultContext, FaultStage};
 use sandproof_controller_service::application::{
     ApplicationError, DataRelay, HostCapacity, HostSlots, LaunchConfiguration, TemplateArtifacts,
@@ -12,7 +13,7 @@ use sandproof_controller_service::{
     CreateOptions, HostSlotContext, WorkerTransportError, template_registry::CandidateVerification,
     templates::TemplateBinding,
 };
-use sandproof_protocol::{ResourceId, WorkAction, WorkReceipt, branching::BranchRelayPort};
+use sandproof_protocol::{ResourceId, WorkAction, WorkReceipt};
 use std::sync::Arc;
 #[cfg(debug_assertions)]
 pub(crate) mod faults;

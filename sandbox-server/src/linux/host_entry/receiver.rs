@@ -4,6 +4,9 @@ use axum::{
     body::Body,
     http::{Request, Response},
 };
+use sandproof_controller_service::application::branching::{
+    BranchAccessIdentity, BranchControlReply, BranchControlRequest,
+};
 use sandproof_controller_service::templates::ComputeLimits;
 use sandproof_host_service::HostFacade;
 use sandproof_internal::{
@@ -14,7 +17,6 @@ use sandproof_internal::{
 };
 use sandproof_node::{NativeBranchControl, NodeHost};
 use sandproof_protocol::{
-    branching::{BranchAccessIdentity, BranchControlReply, BranchControlRequest},
     internal::NodeIdentity,
     lifecycle::{
         AcceptedLifecycleIntent, AuthenticatedCenterContext, CreateObservation,

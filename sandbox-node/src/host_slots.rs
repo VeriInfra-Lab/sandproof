@@ -9,7 +9,7 @@ use sandbox_controller_core::maintenance::slots::{
     HostBinding, HostSlotId, HostSlotPhase, HostSlotRecord, SlotInput, reduce_slot,
 };
 use sandbox_runtime::RetirementManifest;
-use sandproof_protocol::branching::BranchRelayPort;
+use sandproof_controller_service::application::branching::BranchRelayPort;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::os::unix::{

@@ -3,11 +3,11 @@ use crate::application::tenant_id;
 use crate::{AuthorityPort, CenterApplication, HostPort, PublicTemplate, TemplateProvider};
 use sandproof_api::PortError;
 use sandproof_center_core::{CenterState, Sandbox, SessionPhase};
+use sandproof_controller_service::application::branching::BranchAccessSelector;
 use sandproof_controller_service::{
     CreateOptions,
     application::{InstanceDetail, InstanceInfo, InstancePage, ListSelection, Session},
 };
-use sandproof_protocol::branching::BranchAccessSelector;
 use sandproof_protocol::internal::lifecycle::CreateBinding;
 use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, LifecycleAccessIdentity, LifecycleOperation,

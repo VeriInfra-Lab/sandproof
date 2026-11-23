@@ -1,8 +1,8 @@
 use super::{InternalClient, TransportError, timeout};
-use sandproof_controller_service::template_registry::evidence::encode_bounded;
-use sandproof_protocol::branching::{
+use sandproof_controller_service::application::branching::{
     BRANCH_CONTROL_BODY_BYTES, BRANCH_CONTROL_PATH, BranchControlReply, BranchControlRequest,
 };
+use sandproof_controller_service::template_registry::evidence::encode_bounded;
 
 impl InternalClient {
     /// Enter the original host plan on the fixed mutually authenticated endpoint.

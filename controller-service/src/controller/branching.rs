@@ -1,14 +1,13 @@
 //! Native training batch ownership. The guest sees only the original host plan.
 use super::{ControllerJournal, transaction::WorldTransaction};
+use crate::application::branching::{
+    BranchAccessIdentity, BranchBatchIdentity, BranchRelayPort, BranchTarget, valid_ready_targets,
+};
 use crate::{InternalLocalBinding, JournalError};
 use rusqlite::{Connection, OptionalExtension, params};
 use sandbox_controller_core as core;
 use sandproof_protocol::{
     SandboxId,
-    branching::{
-        BranchAccessIdentity, BranchBatchIdentity, BranchRelayPort, BranchTarget,
-        valid_ready_targets,
-    },
     internal::NodeIdentity,
     lifecycle::{
         AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleAccessIdentity, OperationKey,
@@ -37,7 +36,7 @@ impl HostBranchLimits {
     #[must_use]
     pub fn is_valid(self) -> bool {
         (1..=MAX_BATCH_RECORDS).contains(&self.max_batches)
-            && (1..=sandproof_protocol::branching::MAX_HOT_FANOUT_BRANCHES)
+            && (1..=crate::application::branching::MAX_HOT_FANOUT_BRANCHES)
                 .contains(&self.max_branches_per_vm)
     }
 }

@@ -1,9 +1,10 @@
 //! Wire types for same-VM training fan-out.
-use crate::{
+use sandproof_protocol::{
     ResourceId, SandboxId,
+    internal::NodeIdentity,
     lifecycle::{
         AuthenticatedCenterContext, IncarnationId, LifecycleAccessIdentity, OperationKey,
-        RequestSequence, RequestWindowId, SessionId,
+        PROTOCOL_VERSION, RequestSequence, RequestWindowId, SessionId,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -155,6 +156,10 @@ pub fn valid_ready_targets(
         .all(|target| ids.insert(&target.sandbox) && ports.insert(target.port))
 }
 
+/// Distinct prefix so an older host cannot treat a branch stream as parent data.
+pub const BRANCH_DATA_PATH_PREFIX: &str = "/internal/branch-data";
+pub const BRANCH_DATA_SELECTOR_HEADER: &str = "x-sandproof-branch-selector";
+
 pub const BRANCH_CONTROL_PATH: &str = "/internal/v2/branch-control";
 pub const BRANCH_CONTROL_BODY_BYTES: usize = 24 * 1024;
 /// Maximum covered by the guest control protocol and native template policy.
@@ -202,13 +207,13 @@ impl BranchControlRequest {
     }
 
     #[must_use]
-    pub fn matches_node(&self, node: &crate::internal::NodeIdentity) -> bool {
+    pub fn matches_node(&self, node: &NodeIdentity) -> bool {
         let count = u16::try_from(self.targets.len())
             .ok()
             .filter(|count| *count <= MAX_HOT_FANOUT_BRANCHES)
             .and_then(NonZeroU16::new);
         self.parent.node == *node
-            && self.parent.protocol_version == crate::lifecycle::PROTOCOL_VERSION
+            && self.parent.protocol_version == PROTOCOL_VERSION
             && self.parent.accepted_version != 0
             && node.deployment_id == self.parent.center.deployment
             && node.deployment_id == self.parent.operation.deployment

@@ -9,10 +9,10 @@ use axum::{
     http::{Request, Response},
 };
 use sandproof_api::admission::RequestAdmission;
+use sandproof_controller_service::application::branching::BranchAccessIdentity;
 use sandproof_controller_service::application::{ControllerApplication, ControllerHost};
 use sandproof_internal::template::{ValidationEvidence, ValidationReceiver, ValidationRequest};
 use sandproof_internal::{DataReceiver, LifecycleReceiver, ReceiveError};
-use sandproof_protocol::branching::BranchAccessIdentity;
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
 use std::sync::Arc;
 

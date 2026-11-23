@@ -1,14 +1,16 @@
 use super::{State, TestEpoch, advance, application, context, fixture, request};
-use sandproof_controller_service::{
+use sandproof_controller_service::application::branching::{
+    BranchAccessIdentity, BranchAccessSelector, BranchBatchIdentity, BranchTarget,
+};
+use sandproof_controller_service::application::{
     HostBranchBatchKey, HostBranchClose, HostBranchLimits,
+};
+use sandproof_controller_service::{
     application::{ApplicationError, ControllerApplication, DataAuthorization, DataKind},
     capture::SourceProcessIdentity,
 };
-use sandproof_protocol::{
-    branching::{BranchAccessIdentity, BranchAccessSelector, BranchBatchIdentity, BranchTarget},
-    lifecycle::{
-        AcceptedLifecycleIntent, ExpectedSession, LifecycleAccessIdentity, LifecycleOperation,
-    },
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, ExpectedSession, LifecycleAccessIdentity, LifecycleOperation,
 };
 use std::{
     path::Path,

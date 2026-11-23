@@ -16,12 +16,12 @@ use axum::{
 use hyper::client::conn::http1;
 use hyper_util::rt::TokioIo;
 use sandproof_api::admission::{RequestAdmission, RequestClass, RequestLease};
+use sandproof_controller_service::application::branching::BranchAccessIdentity;
 use sandproof_controller_service::application::fault::{FaultContext, FaultRecord, FaultStage};
 use sandproof_controller_service::application::{
     ApplicationError as PortError, ControllerApplication, ControllerHost, DataAccessPort,
     DataAuthorization, DataKind, DataPermit, HostBranchPermit, TrackedRelayChild,
 };
-use sandproof_protocol::branching::BranchAccessIdentity;
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
@@ -48,8 +48,8 @@ use sandproof_data_transport::{FILE_REQUEST_LIMIT, RESPONSE_LIMIT};
 pub use sandproof_data_transport::{GatewayListener, TransferLimits};
 #[cfg(target_os = "linux")]
 use {
+    sandproof_controller_service::application::branching::BranchRelayPort,
     sandproof_data_transport::tunnel,
-    sandproof_protocol::branching::BranchRelayPort,
     std::{
         error::Error,
         net::{Ipv4Addr, SocketAddr, SocketAddrV4},

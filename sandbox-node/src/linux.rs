@@ -6,6 +6,7 @@ use sandbox_runtime::{
 };
 use sandproof_controller_service::{
     BoundedHostConfig, CreateOptions, HostSlotContext,
+    application::branching::MAX_HOT_FANOUT_BRANCHES,
     template_registry::CandidateVerification,
     templates::{TemplateArtifact, TemplateBinding},
 };
@@ -96,8 +97,7 @@ impl HotFanoutTemplate {
     #[must_use]
     pub fn is_valid(&self) -> bool {
         self.descriptor_digest != [0; 32]
-            && (1..=sandproof_protocol::branching::MAX_HOT_FANOUT_BRANCHES)
-                .contains(&u16::from(self.max_branches))
+            && (1..=MAX_HOT_FANOUT_BRANCHES).contains(&u16::from(self.max_branches))
             && (1..=64).contains(&self.checkpoint_id.len())
             && self.checkpoint_id.as_bytes()[0].is_ascii_alphanumeric()
             && self

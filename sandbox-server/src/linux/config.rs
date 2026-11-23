@@ -1,10 +1,9 @@
 //! Parsed deployment settings and pure configuration obligations.
 
 use sandbox_controller_core as core;
-use sandproof_controller_service::application::ApplicationConfig;
+use sandproof_controller_service::application::{ApplicationConfig, HostBranchLimits};
 use sandproof_controller_service::{
-    AdmissionLimits, BoundedHostConfig, HostBranchLimits, MaintenanceConfig,
-    templates::TemplateCatalog,
+    AdmissionLimits, BoundedHostConfig, MaintenanceConfig, templates::TemplateCatalog,
 };
 use sandproof_data_transport::TransferLimits;
 use sandproof_node::{HotFanoutTemplate, NodeConfig};

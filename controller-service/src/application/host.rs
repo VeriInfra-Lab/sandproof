@@ -1,5 +1,5 @@
 //! Host capabilities use application errors, never HTTP types.
-use super::ApplicationError;
+use super::{ApplicationError, branching::BranchRelayPort};
 use crate::{
     CreateOptions, HostEvidence, HostSlotContext, WorkerTransportError,
     template_registry::CandidateVerification, templates::TemplateBinding,
@@ -363,7 +363,7 @@ pub trait DataRelay {
         _sandbox: core::SandboxId,
         _vm: core::VmId,
         _generation: core::Generation,
-        _port: sandproof_protocol::branching::BranchRelayPort,
+        _port: BranchRelayPort,
         _control: bool,
     ) -> Result<std::process::Child, ApplicationError> {
         Err(ApplicationError::Busy)
@@ -377,7 +377,7 @@ pub trait DataRelay {
         _sandbox: core::SandboxId,
         _vm: core::VmId,
         _generation: core::Generation,
-        _port: sandproof_protocol::branching::BranchRelayPort,
+        _port: BranchRelayPort,
     ) -> Result<bool, ApplicationError> {
         Ok(false)
     }

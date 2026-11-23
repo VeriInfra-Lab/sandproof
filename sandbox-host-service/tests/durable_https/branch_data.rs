@@ -5,9 +5,11 @@ use axum::{
     http::{Request, StatusCode},
 };
 use http_body_util::BodyExt;
-use sandproof_controller_service::{HostBranchBatchKey, HostBranchClose, HostBranchLimits};
-use sandproof_protocol::branching::{
+use sandproof_controller_service::application::branching::{
     BranchAccessIdentity, BranchAccessSelector, BranchBatchIdentity, BranchTarget,
+};
+use sandproof_controller_service::application::{
+    HostBranchBatchKey, HostBranchClose, HostBranchLimits,
 };
 
 fn request(public_value: &str) -> Request<Body> {

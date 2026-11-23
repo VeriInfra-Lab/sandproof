@@ -5,6 +5,9 @@ use sandproof_api::{
     ConnectRequest, ControllerPort, CreateRequest, ListQuery, PortError, PublicationView,
     SandboxDetail, SandboxPage, SandboxSession, TemplatePage, TemplateView,
 };
+use sandproof_controller_service::application::branching::{
+    PublicBranchBatch, PublicBranchBatchRequest,
+};
 use std::sync::Arc;
 
 pub struct CenterPort<A: AuthorityPort, H: HostPort, T: TemplateProvider>(
@@ -95,8 +98,8 @@ impl<H: HostPort, T: TemplateProvider> sandproof_api::branching::BranchingPort
         &self,
         owner: &str,
         parent: sandproof_protocol::lifecycle::SessionId,
-        request: sandproof_protocol::branching::PublicBranchBatchRequest,
-    ) -> Result<sandproof_protocol::branching::PublicBranchBatch, PortError> {
+        request: PublicBranchBatchRequest,
+    ) -> Result<PublicBranchBatch, PortError> {
         use ring::rand::SecureRandom as _;
         use std::fmt::Write as _;
 
@@ -123,7 +126,7 @@ impl<H: HostPort, T: TemplateProvider> sandproof_api::branching::BranchingPort
         parent: sandproof_protocol::lifecycle::SessionId,
         window: sandproof_protocol::lifecycle::RequestWindowId,
         sequence: sandproof_protocol::lifecycle::RequestSequence,
-    ) -> Result<sandproof_protocol::branching::PublicBranchBatch, PortError> {
+    ) -> Result<PublicBranchBatch, PortError> {
         let owner = crate::application::tenant_id(owner)?;
         self.0
             .authority

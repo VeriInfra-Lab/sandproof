@@ -1,13 +1,15 @@
 //! `SQLite` plus the original native Running admission, with protected guest
 //! readiness/cleanup observations supplied by each test.
 use super::{ControllerJournal, tests as fixture};
-use crate::{
-    HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits,
-    InternalLocalBinding, JournalError, NeverCrash,
+use crate::application::branching::{
+    BranchAccessIdentity, BranchAccessSelector, BranchBatchIdentity, BranchTarget,
 };
+use crate::application::{
+    HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits,
+};
+use crate::{InternalLocalBinding, JournalError, NeverCrash};
 use sandproof_protocol::{
     DataKind, SandboxId,
-    branching::{BranchAccessIdentity, BranchAccessSelector, BranchBatchIdentity, BranchTarget},
     lifecycle::{
         AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleAccessIdentity,
         LifecycleOperation, LifecycleWindowClose, TerminalLifecycleObservation, TerminalStatus,

@@ -1,16 +1,13 @@
 //! Original branch control through the protected native parent.
 use super::{ApplicationError, ControllerApplication, ControllerHost, HostLifecycle, ReceiveError};
-use sandproof_controller_service::{
+use sandproof_controller_service::application::branching::{
+    BranchAccessIdentity, BranchAccessSelector, BranchControlAction, BranchControlReply,
+    BranchControlRequest, BranchControlStatus, BranchStartFailure, BranchTarget,
+};
+use sandproof_controller_service::application::{
     HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchParent, HostGuestBranch,
 };
-use sandproof_protocol::{
-    ResourceId, SandboxId,
-    branching::{
-        BranchAccessIdentity, BranchAccessSelector, BranchControlAction, BranchControlReply,
-        BranchControlRequest, BranchControlStatus, BranchStartFailure, BranchTarget,
-    },
-    lifecycle::AuthenticatedCenterContext,
-};
+use sandproof_protocol::{ResourceId, SandboxId, lifecycle::AuthenticatedCenterContext};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 

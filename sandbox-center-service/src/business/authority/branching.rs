@@ -2,13 +2,13 @@ use super::{Envelope, SharedBusinessAuthority, to_authority};
 use crate::{application::authority_error, branch_batch::BatchError, projection::live};
 use sandproof_api::PortError;
 use sandproof_center_core::DecisionError;
+use sandproof_controller_service::application::branching::{
+    BranchBatchIdentity, BranchControlAction, BranchControlReply, BranchControlRequest,
+    BranchControlStatus, BranchStartFailure, BranchTarget, PublicBranchBatch,
+    PublicBranchBatchRequest,
+};
 use sandproof_protocol::{
     ResourceId, SandboxId, TenantId,
-    branching::{
-        BranchBatchIdentity, BranchControlAction, BranchControlReply, BranchControlRequest,
-        BranchControlStatus, BranchStartFailure, BranchTarget, PublicBranchBatch,
-        PublicBranchBatchRequest,
-    },
     lifecycle::{
         IncarnationId, LifecycleOperation, OperationKey, RequestSequence, RequestWindowId,
         SessionId,

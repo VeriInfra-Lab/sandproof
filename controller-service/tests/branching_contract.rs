@@ -1,9 +1,7 @@
-use sandproof_protocol::{
-    SandboxId,
-    branching::{
-        BranchTarget, PublicBranchBatchRequest, PublicBranchBatchResult, valid_ready_targets,
-    },
+use sandproof_controller_service::application::branching::{
+    BranchTarget, PublicBranchBatchRequest, PublicBranchBatchResult, valid_ready_targets,
 };
+use sandproof_protocol::SandboxId;
 use serde_json::json;
 use std::num::NonZeroU16;
 

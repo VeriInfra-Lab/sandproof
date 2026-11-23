@@ -1,13 +1,13 @@
 //! Decisions for one training batch. Persist transitions in the center authority
 //! before dispatch or publication. Guest observations require trusted transport
 //! and a current parent check at the caller.
+use sandproof_controller_service::application::branching::{
+    BranchAccessSelector, BranchBatchIdentity, BranchControlAction, BranchRelayPort,
+    BranchStartFailure, BranchTarget, MAX_HOT_FANOUT_BRANCHES, PublicBranchBatch,
+    PublicBranchBatchRequest, PublicBranchBatchResult, valid_ready_targets,
+};
 use sandproof_protocol::{
     ResourceId, SandboxId,
-    branching::{
-        BranchAccessSelector, BranchBatchIdentity, BranchControlAction, BranchRelayPort,
-        BranchStartFailure, BranchTarget, MAX_HOT_FANOUT_BRANCHES, PublicBranchBatch,
-        PublicBranchBatchRequest, PublicBranchBatchResult, valid_ready_targets,
-    },
     lifecycle::{OperationKey, SessionId},
 };
 use serde::{Deserialize, Serialize};

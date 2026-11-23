@@ -1,15 +1,13 @@
 use super::*;
-use sandproof_controller_service::{
-    HostBranchBatchKey, HostBranchLimits,
-    application::{ApplicationError, ControllerApplication, DataKind},
+use sandproof_controller_service::application::branching::{
+    BranchAccessIdentity, BranchAccessSelector, BranchControlAction, BranchControlRequest,
+    BranchControlStatus, BranchStartFailure,
 };
-use sandproof_protocol::{
-    branching::{
-        BranchAccessIdentity, BranchAccessSelector, BranchControlAction, BranchControlRequest,
-        BranchControlStatus, BranchStartFailure,
-    },
-    lifecycle::AuthenticatedCenterContext,
+use sandproof_controller_service::application::{
+    ApplicationError, ControllerApplication, DataKind,
 };
+use sandproof_controller_service::application::{HostBranchBatchKey, HostBranchLimits};
+use sandproof_protocol::lifecycle::AuthenticatedCenterContext;
 use serde_json::{Value, json};
 
 struct Fixture {

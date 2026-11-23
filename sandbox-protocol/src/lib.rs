@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fmt::{self, Display};
 
-pub mod branching;
 mod identifiers;
 pub mod internal;
 pub mod lifecycle;

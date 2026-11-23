@@ -5,12 +5,12 @@ use super::{
     TlsConnector, TokioIo, TransportError, http1, timeout,
 };
 use axum::body::Body;
-use sandproof_data_transport::WriteIdle;
-use sandproof_protocol::branching::{BranchAccessIdentity, BranchAccessSelector};
-use sandproof_protocol::internal::{
-    BRANCH_DATA_PATH_PREFIX, BRANCH_DATA_SELECTOR_HEADER, DATA_IDENTITY_BYTES,
-    DATA_IDENTITY_HEADER, DATA_PATH_PREFIX,
+use sandproof_controller_service::application::branching::{
+    BRANCH_DATA_PATH_PREFIX, BRANCH_DATA_SELECTOR_HEADER, BranchAccessIdentity,
+    BranchAccessSelector,
 };
+use sandproof_data_transport::WriteIdle;
+use sandproof_protocol::internal::{DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX};
 use sandproof_protocol::lifecycle::LifecycleAccessIdentity;
 use std::{
     future::Future,

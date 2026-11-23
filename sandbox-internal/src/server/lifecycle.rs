@@ -4,7 +4,9 @@ use super::{
     ReceiveError, Request, Response, StatusCode, ValidationReceiver, json_response, response,
 };
 use crate::lifecycle::{CREATE_OBSERVATION_BODY_BYTES, CenterPeerRegistration, REQUEST_BODY_BYTES};
-use sandproof_protocol::branching::{BRANCH_CONTROL_BODY_BYTES, BranchControlRequest};
+use sandproof_controller_service::application::branching::{
+    BRANCH_CONTROL_BODY_BYTES, BranchControlRequest,
+};
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, RecordedLifecycleIntent};
 
 #[derive(Clone, Copy)]

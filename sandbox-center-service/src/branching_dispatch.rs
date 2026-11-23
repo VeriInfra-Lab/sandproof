@@ -6,7 +6,7 @@ use sandproof_api::{
     PortError,
     admission::{RequestAdmission, RequestClass},
 };
-use sandproof_protocol::branching::BranchControlAction;
+use sandproof_controller_service::application::branching::BranchControlAction;
 use std::sync::Arc;
 use tokio::task::{JoinSet, spawn_blocking};
 

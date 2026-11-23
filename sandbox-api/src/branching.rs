@@ -10,10 +10,10 @@ use axum::{
     http::{HeaderMap, StatusCode},
     routing::{get, post},
 };
-use sandproof_protocol::{
-    branching::{PublicBranchBatch, PublicBranchBatchRequest},
-    lifecycle::{RequestSequence, RequestWindowId, SessionId},
+use sandproof_controller_service::application::branching::{
+    PublicBranchBatch, PublicBranchBatchRequest,
 };
+use sandproof_protocol::lifecycle::{RequestSequence, RequestWindowId, SessionId};
 use std::sync::Arc;
 
 pub trait BranchingPort: Send + Sync + 'static {
@@ -101,7 +101,8 @@ async fn query<P: BranchingPort>(
 mod tests {
     use super::*;
     use axum::{body::Body, http::Request};
-    use sandproof_protocol::{branching::PublicBranchBatchResult, lifecycle::OperationKey};
+    use sandproof_controller_service::application::branching::PublicBranchBatchResult;
+    use sandproof_protocol::lifecycle::OperationKey;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use tower::ServiceExt;
 

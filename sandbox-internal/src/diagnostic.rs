@@ -7,7 +7,7 @@ use crate::{
 };
 use axum::body::Body;
 use hyper::{Request, Response};
-use sandproof_protocol::branching::{
+use sandproof_controller_service::application::branching::{
     BranchAccessIdentity, BranchControlReply, BranchControlRequest,
 };
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};

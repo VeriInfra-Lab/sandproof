@@ -219,10 +219,11 @@ impl Gateway {
         };
         let response_result = match route.branch {
             Some(selector) => {
-                let access = sandproof_protocol::branching::BranchAccessIdentity {
-                    parent: identity,
-                    selector,
-                };
+                let access =
+                    sandproof_controller_service::application::branching::BranchAccessIdentity {
+                        parent: identity,
+                        selector,
+                    };
                 client
                     .stream_branch_data(&access, request, lease, deadline)
                     .await

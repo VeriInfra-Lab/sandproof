@@ -17,14 +17,13 @@ use hyper::{
     Method, Request, Response, StatusCode,
     body::{Bytes, Incoming},
 };
-use sandproof_protocol::branching::{
-    BRANCH_CONTROL_PATH, BranchAccessIdentity, BranchAccessSelector, BranchControlReply,
-    BranchControlRequest,
+use sandproof_controller_service::application::branching::{
+    BRANCH_CONTROL_PATH, BRANCH_DATA_PATH_PREFIX, BRANCH_DATA_SELECTOR_HEADER,
+    BranchAccessIdentity, BranchAccessSelector, BranchControlReply, BranchControlRequest,
 };
 use sandproof_protocol::internal::{
-    BRANCH_DATA_PATH_PREFIX, BRANCH_DATA_SELECTOR_HEADER, DATA_IDENTITY_BYTES,
-    DATA_IDENTITY_HEADER, DATA_PATH_PREFIX, NodeIdentity, PROBE_BODY_BYTES, PROBE_PATH,
-    ProbeRequest, ProbeResponse,
+    DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX, NodeIdentity, PROBE_BODY_BYTES,
+    PROBE_PATH, ProbeRequest, ProbeResponse,
 };
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
 use std::{convert::Infallible, sync::Arc};
