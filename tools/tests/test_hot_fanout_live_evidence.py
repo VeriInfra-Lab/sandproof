@@ -33,6 +33,17 @@ class HotFanoutLiveEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "occupied slot"):
             capture_live_native_ids(self.native, self.claims, self.read_slot)
 
+    def test_first_allocated_vm_id_zero_is_a_valid_original_claim(self):
+        slot = self.rows[Path("/protected/native/host-slots/0.json")]
+        slot["value"]["context"]["binding"]["vm"] = 0
+        claims = [self.claims[0], {"resource_id": "vm-example-0"}]
+        self.assertEqual(capture_live_native_ids(self.native, claims, self.read_slot),
+                         ("sb-example-4", "sb-example-23"))
+        for invalid in (-1, False, 2**64):
+            with self.subTest(vm=invalid), self.assertRaisesRegex(ValueError, "original native sandbox"):
+                slot["value"]["context"]["binding"]["vm"] = invalid
+                capture_live_native_ids(self.native, claims, self.read_slot)
+
     def test_unknown_or_foreign_original_claim_does_not_complete_cohort(self):
         for claims in ([], self.claims[:1], [self.claims[0], self.claims[0]]):
             with self.subTest(claims=claims), self.assertRaisesRegex(ValueError, "distinct original VM"):

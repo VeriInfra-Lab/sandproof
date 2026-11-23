@@ -28,7 +28,7 @@ def capture_live_native_ids(native, claims, read_slot):
         binding = context["binding"]
         sandbox, vm = binding["sandbox"], binding["vm"]
         if (context["position"] != position or type(sandbox) is not int or sandbox <= 0
-                or type(vm) is not int or vm <= 0 or sandbox in sandbox_ids):
+                or type(vm) is not int or not 0 <= vm < 2**64 or sandbox in sandbox_ids):
             raise ValueError("slot does not identify a distinct original native sandbox")
         resource = f"vm-{namespace}-{vm}"
         if resource not in resources:
