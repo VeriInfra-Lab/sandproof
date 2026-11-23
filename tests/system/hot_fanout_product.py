@@ -29,6 +29,7 @@ import urllib.request
 
 from _complete_runtime import complete_runtime, terminal_cleanup_confirmed
 from _hot_fanout_config import descriptor_digest
+from _hot_fanout_evidence import capture_live_native_ids
 from _runtime_services import RuntimeServices
 from hot_fanout_guest import make_package
 from hot_fanout_host import SDK_COMMIT
@@ -545,6 +546,7 @@ def run(args, receipt, report):
     cleaned = False
     native = services.native_pools[0]
     claim = None
+    native_id = None
     try:
         with phase(report, "service_readiness"):
             services.start()
@@ -560,8 +562,9 @@ def run(args, receipt, report):
             report["parent"] = client.session
             running = client.wait_running()
             owner = sdk_options(services.key, services.sdk_url, services.sdk_url)
-            parent = Sandbox.connect(client.session, **owner)
             slot_path, context, claim = slot_and_claim(native)
+            [native_id] = capture_live_native_ids(native, [claim], original_json)
+            parent = Sandbox.connect(client.session, **owner)
         pin = receipt["native_hot_fanout"]["template"]
         checkpoint, branch_limit = pin["checkpoint_id"], pin["max_branches"]
         with phase(report, "public_idle_boundaries", client):
@@ -692,7 +695,7 @@ def run(args, receipt, report):
             if cleaned:
                 check_no_resources(root/"0", native["namespace"], args.firecracker, args.vm_uid,
                                    [] if claim is None else [claim], native=native)
-                native_id = services.native_id_for(client.session)
+                assert native_id is not None, "no original occupied native binding was observed"
                 assert terminal_cleanup_confirmed(Path(native["database"]), native_id)
                 report["native_parent_terminal"] = True
             report["service_cgroup"] = service_cgroup.remove(record)

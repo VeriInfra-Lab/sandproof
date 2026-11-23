@@ -35,6 +35,7 @@ import time
 
 import hot_fanout_product as product
 from _complete_runtime import terminal_cleanup_confirmed
+from _hot_fanout_evidence import capture_live_native_ids
 from lifecycle_unload_runtime import original_json, original_process
 from lifecycle_unload_scenario import PREFIX, PublicUnloadScenario, failure_details
 from sdk_c02_acceptance import processes_in_uid_range
@@ -271,7 +272,7 @@ def guest_workload_rss(sandbox, hot):
     return rss
 
 
-def measure_workload(args, receipt, services, native, ready, vm_group, data, clients, claims, report):
+def measure_workload(args, receipt, services, native, ready, vm_group, data, clients, claims, native_ids, report):
     from e2b import Sandbox
     from sdk_server_smoke import options as sdk_options
 
@@ -304,6 +305,7 @@ def measure_workload(args, receipt, services, native, ready, vm_group, data, cli
         report.update(cold_to_all_sdk_seconds=sdk_complete - started,
                       prepared_to_all_sdk_seconds=sdk_complete - preparation_end)
         claims.extend(source_claims(native, slots))
+        native_ids.extend(capture_live_native_ids(native, claims, original_json))
         report["sdk_ready_resources"] = resource_observation(
             args, services, claims, vm_group, data, before_volume)
         # Per-process RSS counts common forked pages in each branch. Use the
@@ -390,6 +392,7 @@ def run(args, receipt, report):
     native = services.native_pools[0]
     clients = []
     claims = []
+    native_ids = []
     data = storage / "data"
     try:
         with product.phase(report, "service_readiness"):
@@ -400,7 +403,7 @@ def run(args, receipt, report):
                    for _ in range(slots)]
         with product.phase(report, "workload"):
             measure_workload(args, receipt, services, native, ready, groups[0],
-                             data, clients, claims, report)
+                             data, clients, claims, native_ids, report)
     finally:
         with product.phase(report, "cleanup"):
             # Allocate sequences disjoint from every keyed Create. Hot setup
@@ -410,8 +413,10 @@ def run(args, receipt, report):
             check_no_resources(root / "0", native["namespace"], args.firecracker, args.vm_uid,
                                claims, native=native)
             assert not report.get("unresolved_creation") and not report.get("cleanup_errors")
-            assert all(terminal_cleanup_confirmed(Path(native["database"]), services.native_id_for(session))
-                       for session in known)
+            assert len(set(known)) == len(native_ids) == len(known), (
+                "known terminal sessions lack a complete original occupied native cohort")
+            assert all(terminal_cleanup_confirmed(Path(native["database"]), native_id)
+                       for native_id in native_ids)
             service_cgroup.remove(record)
             services.cleanup_staging()
             for group in groups:

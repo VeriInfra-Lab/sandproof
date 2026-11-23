@@ -1,0 +1,41 @@
+from pathlib import Path
+import runpy
+import unittest
+
+
+MODULE = runpy.run_path(str(Path(__file__).resolve().parents[2] / "tests/system/_hot_fanout_evidence.py"))
+capture_live_native_ids = MODULE["capture_live_native_ids"]
+
+
+class HotFanoutLiveEvidenceTests(unittest.TestCase):
+    def setUp(self):
+        self.native = dict(namespace="example", node_state_dir="/protected/native",
+                           bounded_host={"maintenance": {"max_host_slots": 2}})
+        self.claims = [{"resource_id": f"vm-example-{vm}"} for vm in (87, 45)]
+        self.rows = {
+            Path(f"/protected/native/host-slots/{position}.json"): {
+                "position": position,
+                "value": {"phase": "Occupied", "context": {
+                    "position": position, "binding": {"sandbox": sandbox, "vm": vm}}}}
+            for position, (sandbox, vm) in enumerate(((4, 45), (23, 87)))
+        }
+
+    def read_slot(self, path, limit):
+        self.assertEqual(limit, 65536)
+        return self.rows[path]
+
+    def test_identity_survives_window_retirement_without_another_binding_read(self):
+        captured = capture_live_native_ids(self.native, self.claims, self.read_slot)
+        for slot in self.rows.values():
+            slot["value"]["phase"] = "Free"
+        self.assertEqual(captured, ("sb-example-4", "sb-example-23"))
+        with self.assertRaisesRegex(ValueError, "occupied slot"):
+            capture_live_native_ids(self.native, self.claims, self.read_slot)
+
+    def test_unknown_or_foreign_original_claim_does_not_complete_cohort(self):
+        for claims in ([], self.claims[:1], [self.claims[0], self.claims[0]]):
+            with self.subTest(claims=claims), self.assertRaisesRegex(ValueError, "distinct original VM"):
+                capture_live_native_ids(self.native, claims, self.read_slot)
+        wrong_pool = [self.claims[0], {"resource_id": "vm-other-45"}]
+        with self.assertRaisesRegex(ValueError, "original VM claim"):
+            capture_live_native_ids(self.native, wrong_pool, self.read_slot)
