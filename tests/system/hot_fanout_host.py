@@ -37,7 +37,7 @@ mount -t tmpfs -o mode=0755 tmpfs /run
 mount -t tmpfs -o mode=1777 tmpfs /tmp
 ip link set lo up
 mount -o remount,rw /
-mkdir /opt/sandproof-fanout-test
+mkdir -p /opt/sandproof-fanout-test
 tar xf /sandproof-fanout.tar -C /opt/sandproof-fanout-test
 cd /opt/sandproof-fanout-test
 export PYTHONPATH=/opt/sandproof-fanout-test:/opt/sandproof-fanout-test/deps
