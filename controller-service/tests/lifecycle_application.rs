@@ -5,6 +5,9 @@
 )]
 #[path = "support/lifecycle_application.rs"]
 mod v3;
+
+#[path = "lifecycle_application/branching.rs"]
+mod branching;
 use sandbox_controller_core as core;
 use sandproof_controller_service::{JournalError, application::ApplicationError};
 use sandproof_protocol::lifecycle::{CreateRefusalReason, ExpectedSession, LifecycleOperation};

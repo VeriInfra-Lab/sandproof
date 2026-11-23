@@ -389,11 +389,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
                     }
                 }
                 Err(JournalError::CommitUncertain(_)) => {
-                    for signals in inner.data_revocations.values() {
-                        for signal in signals {
-                            signal.send_replace(true);
-                        }
-                    }
+                    inner.revoke_all_data();
                 }
                 Err(_) => {}
             }

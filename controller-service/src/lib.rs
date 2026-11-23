@@ -54,6 +54,11 @@ pub use controller::{
     MaintenanceConfig, MaterialRetirementQuestion, NativeCreateSnapshot, RetirementCandidate,
     SourceWork, SourceWorkRecord,
 };
+#[cfg(feature = "durable")]
+pub use controller::{
+    HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits, HostBranchParent,
+    HostBranchRoute, HostGuestBranch,
+};
 
 #[cfg(feature = "durable")]
 pub use dispatch::DispatchResult;

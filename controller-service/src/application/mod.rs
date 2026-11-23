@@ -47,8 +47,8 @@ pub use clock::{Clock, SystemClock};
 pub use coordinator::recovery::can_install_host_slot_binding;
 #[cfg(feature = "durable")]
 pub use coordinator::{
-    ApplicationConfig, ControllerApplication, DataPermit, ExpiryReport, MaintenanceReport,
-    RecoveryReport,
+    ApplicationConfig, ControllerApplication, DataPermit, ExpiryReport, HostBranchPermit,
+    MaintenanceReport, RecoveryReport,
 };
 pub use listing::{InstancePage, ListCursor, ListSelection, Order};
 pub use models::*;
