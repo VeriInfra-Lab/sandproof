@@ -6,6 +6,7 @@
 
 pub mod admission;
 mod authentication;
+pub mod branching;
 mod build_vm_api;
 pub mod lifecycle;
 mod list;
