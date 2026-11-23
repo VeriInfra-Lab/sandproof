@@ -3,7 +3,7 @@
 //! `VmmConfig::from` omits custom CPU/logger/metrics state even when configured;
 //! their null fields cannot prove absence. The original protected launch path
 //! and exclusive API writer condition remain necessary.
-use super::BootPlan;
+use super::{BootPlan, Vsock};
 use crate::RuntimeError;
 use serde::Deserialize;
 
@@ -19,10 +19,17 @@ struct FullConfiguration {
     metrics: (),
     mmds_config: Option<Mmds>,
     network_interfaces: Vec<Network>,
-    vsock: (),
+    vsock: VisibleVsock,
     entropy: (),
     pmem: Vec<()>,
     memory_hotplug: (),
+}
+
+#[derive(Debug, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+enum VisibleVsock {
+    Absent(()),
+    Enabled(Vsock),
 }
 
 #[derive(Debug, PartialEq, Eq, Deserialize)]
@@ -137,7 +144,10 @@ impl BootPlan {
                     tx_rate_limiter: (),
                 })
                 .collect(),
-            vsock: (),
+            vsock: self
+                .vsock
+                .clone()
+                .map_or(VisibleVsock::Absent(()), VisibleVsock::Enabled),
             entropy: (),
             pmem: Vec::new(),
             memory_hotplug: (),

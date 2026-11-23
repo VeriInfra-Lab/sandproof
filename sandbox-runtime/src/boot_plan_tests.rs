@@ -104,4 +104,36 @@ fn mutable_credential_rotation_does_not_change_the_device_boot_plan() {
     let bytes = serde_json::to_string(&before).unwrap();
     assert!(!bytes.contains(&"a".repeat(128)) && !bytes.contains(&"b".repeat(128)));
     assert!(!bytes.contains("InstanceStart"));
+    assert!(!bytes.contains("vsock"));
+}
+
+#[test]
+fn hot_fanout_adds_only_the_exact_private_device_to_an_explicit_boot() {
+    let base = config();
+    let standard = BootPlan::for_runtime(&base);
+    let hot = BootPlan::for_hot_fanout(&base);
+    assert!(!standard.uses_hot_fanout());
+    assert!(hot.uses_hot_fanout());
+    assert_ne!(standard.digest().unwrap(), hot.digest().unwrap());
+    let mut actions = Vec::new();
+    hot.configure(|path, body| {
+        actions.push((path.to_owned(), body.clone()));
+        Ok(())
+    })
+    .unwrap();
+    assert_eq!(
+        actions.pop().unwrap(),
+        (
+            "/vsock".into(),
+            json!({"guest_cid": 3, "uds_path": "/fanout.vsock"})
+        )
+    );
+    let mut legacy = Vec::new();
+    standard
+        .configure(|path, body| {
+            legacy.push((path.to_owned(), body.clone()));
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(actions, legacy);
 }
