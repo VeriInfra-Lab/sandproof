@@ -51,6 +51,7 @@ MIB = 1024**2
 GIB = 1024**3
 ENV = {"PATH": "/usr/bin:/bin", "LANG": "C.UTF-8"}
 MARKER = "/etc/fanout-sdk-marker"
+PARENT_MARKER = "/tmp/sandproof-hot-parent-restart"
 PACKAGE_MARKER = "/usr/share/sandproof-hot-fanout-check/marker"
 
 
@@ -344,6 +345,92 @@ def slot_and_claim(native):
     return path, slot["value"]["context"], claim
 
 
+@contextmanager
+def limit_public_deadline(client, seconds):
+    original = client.deadline
+    client.deadline = min(original, time.monotonic() + seconds)
+    try:
+        yield
+    finally:
+        client.deadline = original
+
+
+def restart_management_role(services, client, role, expected_processes, original_slot):
+    from _center_host_services import process_facts, role_facts
+
+    processes = services.processes
+    native = services.native_pools[0]
+    assert role in ("center", "host-0")
+    assert processes.observe() == expected_processes
+    assert slot_and_claim(native) == original_slot
+
+    def staged_roles():
+        return {name: role_facts(Path(binding["config"]).parent, binding["config"],
+                                 uid=binding["uid"], gid=binding["gid"])
+                for name, binding in processes.bindings.items()}
+
+    approved = staged_roles()
+    old = processes.children[role]
+    try:
+        processes.stop(role)
+        assert old.poll() is not None
+        assert slot_and_claim(native) == original_slot
+        for name, binding in processes.bindings.items():
+            if name == role:
+                continue
+            argv = [str(binding["binary"]), str(binding["config"])] if name == "redis" else None
+            actual = process_facts(processes.children[name], **binding, record=processes.record, argv=argv)
+            assert actual == expected_processes[name]
+    finally:
+        if old.poll() is not None:
+            # Leave the existing cleanup path an opportunity to finish even
+            # after failed evidence. Never initialize or substitute a role.
+            assert staged_roles() == approved
+            processes.start(role)
+    services.wait_ready(timeout=client.remaining(), for_admission=False)
+    observed = processes.observe()
+    assert staged_roles() == approved
+    assert slot_and_claim(native) == original_slot
+    for name, previous in expected_processes.items():
+        current = observed[name]
+        if name == role:
+            assert (current["pid"], current["start_time_ticks"]) != (previous["pid"], previous["start_time_ticks"])
+            assert {key: current[key] for key in ("uid", "gid", "executable")} == {
+                key: previous[key] for key in ("uid", "gid", "executable")}
+        else:
+            assert current == previous
+    return observed
+
+
+def check_live_routes_after_restart(client, running, options, batches, witnesses, released):
+    from e2b import Sandbox
+
+    assert client.query() == running
+    for path, key, identities in batches:
+        assert get_batch(client, path, key) == {"state": "ready", "branches": identities}
+
+    def check_witness(witness):
+        original, path, contents = witness
+        chosen = options | {"request_timeout": min(15, client.remaining())}
+        # Each command and file request runs once through the stock SDK. Any
+        # unknown result fails the check under the original operation deadline.
+        current = Sandbox.connect(original.sandbox_id, **chosen)
+        assert current.sandbox_id == original.sandbox_id
+        assert current._envd_access_token == original._envd_access_token
+        response = current.commands.run("cat " + shlex.quote(path), user="root",
+                                        timeout=min(10, client.remaining()),
+                                        request_timeout=min(15, client.remaining()))
+        assert response.exit_code == 0 and response.stdout == contents
+        assert current.files.read(path, user="root", request_timeout=min(15, client.remaining())) == contents
+
+    with ThreadPoolExecutor(max_workers=len(witnesses), thread_name_prefix="hot-fanout-reopen") as pool:
+        observations = [pool.submit(check_witness, witness) for witness in witnesses]
+        for observed in observations:
+            observed.result(timeout=client.remaining())
+    check_sdk_not_found(released.sandbox_id, options | {"request_timeout": min(15, client.remaining())})
+    return check_stale_data_route(client, released)
+
+
 def run(args, receipt, report):
     paths = dict(center=args.center, host=args.host)
     versions = {role: contract_versions(path, ENV) for role, path in paths.items()}
@@ -364,7 +451,7 @@ def run(args, receipt, report):
         with phase(report, "service_readiness"):
             services.start()
             ready = services.wait_ready(timeout=180)
-            original_pids = {name: child.pid for name, child in services.processes.children.items()}
+            expected_processes = services.processes.observe()
         client = PublicUnloadScenario(services.sdk_url, services.key, secrets.token_hex(32),
                                       services.center_config["deployment_id"], time.monotonic() + 480)
         with phase(report, "parent_create", client):
@@ -417,8 +504,10 @@ def run(args, receipt, report):
                 assert sibling.files.read(MARKER, user="root") == "branch-" + str(index)
             assert parent.commands.run("printf parent-alive", timeout=10).stdout == "parent-alive"
             report["remaining_siblings_after_kill"] = len(sandboxes) - 1
-        active_batches = [(path, batch_key)]
+        active_batches = [(path, batch_key, branches)]
         active_branches = list(zip(branches[1:], sandboxes[1:]))
+        witnesses = [(branch, MARKER, "branch-" + str(index))
+                     for index, branch in enumerate(sandboxes[1:], start=1)]
         if args.n == branch_limit and receipt["native_hot_fanout"]["max_batches"] >= 2:
             with phase(report, "reclaimed_port_reuse", client):
                 reused = report["port_reuse"] = {}
@@ -433,13 +522,34 @@ def run(args, receipt, report):
                 fresh = replacement_sdk.commands.run("test ! -e " + shlex.quote(MARKER), user="root", timeout=10)
                 assert fresh.exit_code == 0
                 reused["old_branch_data_token"] = check_stale_data_route(client, sandboxes[0])
-                active_batches.append((new_path, new_key))
+                active_batches.append((new_path, new_key, replacement))
                 active_branches.append((new_branch, replacement_sdk))
+                witnesses.append((replacement_sdk, "/run/inherited", receipt["expected_inherited_mark"]))
+        with phase(report, "mark_original_parent", client):
+            parent_marker = secrets.token_hex(16)
+            parent.files.write(PARENT_MARKER, parent_marker, user="root",
+                               request_timeout=min(15, client.remaining()))
+            witnesses.append((parent, PARENT_MARKER, parent_marker))
+
+        restarts = report["management_restart"] = {}
+        for role in ("center", "host-0"):
+            with phase(report, "restart_" + role, client), limit_public_deadline(client, 75):
+                previous = expected_processes[role]
+                expected_processes = restart_management_role(
+                    services, client, role, expected_processes, (slot_path, context, claim))
+                denied = check_live_routes_after_restart(
+                    client, running, owner, active_batches, witnesses, sandboxes[0])
+                restarts[role] = dict(previous_process=previous, new_process=expected_processes[role],
+                                     redis_process=expected_processes["redis"],
+                                     original_vm_pid=claim["pid"],
+                                     original_vm_start_time_ticks=claim["start_time_ticks"],
+                                     recovered_parent=True, recovered_branches=len(active_branches),
+                                     released_branch_token_status=denied)
         with phase(report, "parent_destroy", client):
             client.destroy(running)
             client.wait_cleaned()
             cleaned = True
-            for batch_path, key in active_batches:
+            for batch_path, key, _ in active_batches:
                 while get_batch(client, batch_path, key) != {"state": "failed", "reason": "parent_ended"}:
                     time.sleep(min(.1, client.remaining()))
             for branch, sandbox in active_branches:
@@ -452,7 +562,7 @@ def run(args, receipt, report):
             assert slot["value"]["phase"] == "Free"
             check_no_resources(root/"0", native["namespace"], args.firecracker, args.vm_uid,
                                [claim], native=native)
-            assert {name: child.pid for name, child in services.processes.children.items()} == original_pids
+            assert services.processes.observe() == expected_processes
             report["exact_parent_slot_free"] = True
     finally:
         if not cleaned and client is not None and client.session is not None:
