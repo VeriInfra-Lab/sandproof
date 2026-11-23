@@ -289,17 +289,24 @@ impl SharedBusinessAuthority {
             (_, BranchControlStatus::Pending {} | BranchControlStatus::CleaningUp {}) => Ok(()),
             (BranchControlAction::Start {}, BranchControlStatus::Ready {}) => self
                 .publish_branch_batch(&request.operation, &request.batch, &request.targets, now_ms),
-            (BranchControlAction::Start {}, BranchControlStatus::Failed { reason }) => self
-                .change_branch_batch(&request.operation, |_, record| {
-                    record
-                        .require_identity(&request.batch)
-                        .map_err(port_error)?;
-                    if record.next_action() != Some(BranchControlAction::Start {}) {
-                        return Err(PortError::Conflict);
-                    }
-                    record.begin_cleanup(reason);
-                    record.confirm_cleanup(&request.batch).map_err(port_error)
-                }),
+            (
+                action @ (BranchControlAction::Start {} | BranchControlAction::Observe {}),
+                BranchControlStatus::Failed { reason },
+            ) => self.change_branch_batch(&request.operation, |_, record| {
+                record
+                    .require_identity(&request.batch)
+                    .map_err(port_error)?;
+                let allowed = if matches!(action, BranchControlAction::Start {}) {
+                    record.next_action().as_ref() == Some(action)
+                } else {
+                    record.reserved() != 0 && reason == BranchStartFailure::GuestSetupFailed
+                };
+                if !allowed {
+                    return Err(PortError::Conflict);
+                }
+                record.begin_cleanup(reason);
+                record.confirm_cleanup(&request.batch).map_err(port_error)
+            }),
             (
                 BranchControlAction::Release {
                     branch: Some(branch),

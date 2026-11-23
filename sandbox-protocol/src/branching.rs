@@ -54,6 +54,7 @@ pub enum PublicBranchBatchResult {
 pub enum BranchStartFailure {
     CheckpointUnavailable,
     GuestSetupFailed,
+    GuestCapacity,
     ParentEnded,
 }
 

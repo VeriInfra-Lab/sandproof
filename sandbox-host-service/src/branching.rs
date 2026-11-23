@@ -81,6 +81,9 @@ enum GuestReply {
     FailedClean {
         batch_id: ResourceId,
     },
+    NeverStarted {
+        batch_id: ResourceId,
+    },
     Released {
         batch_id: ResourceId,
     },
@@ -100,6 +103,7 @@ enum GuestObservation {
         released: Vec<SandboxId>,
     },
     FailedClean,
+    NeverStarted,
     Released,
 }
 
@@ -117,6 +121,7 @@ impl GuestObservation {
                 Self::Inconclusive
             }
             GuestReply::FailedClean { batch_id } if &batch_id == batch => Self::FailedClean,
+            GuestReply::NeverStarted { batch_id } if &batch_id == batch => Self::NeverStarted,
             GuestReply::Released { batch_id } if &batch_id == batch => Self::Released,
             GuestReply::Ready {
                 batch_id,
@@ -154,7 +159,7 @@ impl GuestObservation {
         match self {
             Self::Released | Self::FailedClean => true,
             Self::Ready { released, .. } => branch.is_some_and(|branch| released.contains(branch)),
-            Self::Inconclusive => false,
+            Self::Inconclusive | Self::NeverStarted => false,
         }
     }
 }
@@ -268,6 +273,27 @@ fn drive<H: ControllerHost, B>(
         .ok()
         .and_then(|bytes| GuestObservation::from_wire(&bytes, request))
         .unwrap_or(GuestObservation::Inconclusive);
+    let failure = match (&request.action, &observation) {
+        (
+            BranchControlAction::Start {} | BranchControlAction::Observe {},
+            GuestObservation::FailedClean,
+        ) => Some(BranchStartFailure::GuestSetupFailed),
+        (BranchControlAction::Start {}, GuestObservation::NeverStarted)
+            if matches!(
+                phase,
+                HostBranchBatchPhase::Pending | HostBranchBatchPhase::Released
+            ) =>
+        {
+            Some(BranchStartFailure::GuestCapacity)
+        }
+        _ => None,
+    };
+    if let Some(reason) = failure {
+        app.change_host_branch_close(parent, context, &key, HostBranchClose::Begin(None))?;
+        drop(control);
+        app.change_host_branch_close(parent, context, &key, HostBranchClose::ConfirmGone(None))?;
+        return Ok(BranchControlStatus::Failed { reason });
+    }
     match (&request.action, observation) {
         (BranchControlAction::Release { branch }, observation) => {
             if !observation.proves_gone(branch.as_ref()) {
@@ -281,19 +307,6 @@ fn drive<H: ControllerHost, B>(
                 HostBranchClose::ConfirmGone(branch.as_ref()),
             )?;
             Ok(BranchControlStatus::Released {})
-        }
-        (BranchControlAction::Start {}, GuestObservation::FailedClean) => {
-            app.change_host_branch_close(parent, context, &key, HostBranchClose::Begin(None))?;
-            drop(control);
-            app.change_host_branch_close(
-                parent,
-                context,
-                &key,
-                HostBranchClose::ConfirmGone(None),
-            )?;
-            Ok(BranchControlStatus::Failed {
-                reason: BranchStartFailure::GuestSetupFailed,
-            })
         }
         (BranchControlAction::Start {}, GuestObservation::Ready { active, released })
             if released.is_empty() =>

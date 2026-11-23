@@ -35,8 +35,8 @@ vsock。启动、观察和释放的成功都绑定原计划，未收到可信响
 创建返回 `202`，状态为 `pending`、`cleaning_up`、`ready`、`failed` 或 `retired`。
 `ready` 返回原计划顺序中的 ID。个别 ID 被关闭后仍可出现在原批次结果中，但已经没有独立连接权限。
 参数无效返回 `400`，其他租户或未知身份返回 `404`，同键不同参数返回 `409`，预算不足返回 `429`。
-`failed` 表示已确认清理或已确认原 VM 终止，原因分别为 `checkpoint_unavailable`、
-`guest_setup_failed` 或 `parent_ended`。无需通过重发命令探测未知结果。
+`failed` 表示已确认未启动、已清理原分支或已确认原 VM 终止，原因包括 `checkpoint_unavailable`、
+`guest_setup_failed`、`guest_capacity` 和 `parent_ended`。无需通过重发命令探测未知结果。
 
 启用模板固定为同信任域。分支共用 VM 的内核、网络和逻辑磁盘额度。分支有独立的进程与挂载视图、
 整根可写覆盖层以及 `/tmp`、`/run` 和 `/dev/shm`。只有经模板验证的只读文件系统可以作为共享底层，

@@ -157,6 +157,68 @@ fn partial_ready() -> Value {
 }
 
 #[tokio::test]
+async fn exact_capacity_refusal_survives_reopen_without_restarting_work() {
+    let fixture = Fixture::new().await;
+    assert_eq!(
+        fixture
+            .exchange(|command| {
+                assert_eq!(command["operation"], "start");
+                Ok(json!({"batch_id": "old", "status": "never_started"}))
+            })
+            .await,
+        Ok(BranchControlStatus::Pending {}),
+    );
+    let refusal = json!({"batch_id": "batch", "status": "never_started"});
+    let original = refusal.clone();
+    assert_eq!(
+        fixture.exchange(move |_| Ok(original)).await,
+        Ok(BranchControlStatus::Failed {
+            reason: BranchStartFailure::GuestCapacity
+        })
+    );
+    assert!(!fixture.route_open(0));
+    let fixture = fixture.restarted();
+    assert_eq!(
+        fixture
+            .exchange(move |command| {
+                assert_eq!(command["operation"], "observe");
+                Ok(refusal)
+            })
+            .await,
+        Ok(BranchControlStatus::Failed {
+            reason: BranchStartFailure::GuestCapacity
+        })
+    );
+    assert!(!fixture.route_open(0));
+}
+
+#[tokio::test]
+async fn observed_batch_loss_closes_both_original_routes() {
+    let mut fixture = Fixture::new().await;
+    assert_eq!(
+        fixture.exchange(|_| Ok(complete_ready())).await,
+        Ok(BranchControlStatus::Ready {})
+    );
+    assert!(fixture.route_open(0) && fixture.route_open(1));
+    fixture.request.action = BranchControlAction::Observe {};
+    assert_eq!(
+        fixture
+            .exchange(|_| Ok(json!({"batch_id": "batch", "status": "lost"})))
+            .await,
+        Ok(BranchControlStatus::Pending {})
+    );
+    assert_eq!(
+        fixture
+            .exchange(|_| Ok(json!({"batch_id": "batch", "status": "failed_clean"})))
+            .await,
+        Ok(BranchControlStatus::Failed {
+            reason: BranchStartFailure::GuestSetupFailed
+        })
+    );
+    assert!(!fixture.route_open(0) && !fixture.route_open(1));
+}
+
+#[tokio::test]
 async fn native_branch_control_start_reuses_plan_and_requires_exact_ready() {
     let mut fixture = Fixture::new().await;
     let (sent, received) = oneshot::channel();

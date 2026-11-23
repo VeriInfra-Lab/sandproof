@@ -401,8 +401,9 @@ def checked_args():
     args.storage_parent = args.storage_parent.resolve(strict=True)
     args.output = args.output.parent.resolve(strict=True) / args.output.name
     if (not os.path.ismount(mount) or mount.stat().st_dev == Path("/").stat().st_dev
-            or any(not path.is_relative_to(mount) or path.stat().st_dev != mount.stat().st_dev
-                   for path in (args.output.parent, args.storage_parent))):
+            or not args.output.parent.is_relative_to(mount)
+            or args.output.parent.stat().st_dev != mount.stat().st_dev
+            or args.storage_parent.stat().st_dev != mount.stat().st_dev):
         parser.error("evidence and runtime volume must stay on the designated separate data mount")
     for name in ("receipt", "center", "host", "firecracker", "jailer", "redis_material", "tls_material"):
         setattr(args, name, getattr(args, name).resolve(strict=True))
