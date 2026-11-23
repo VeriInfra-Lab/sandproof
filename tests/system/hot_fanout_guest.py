@@ -5,6 +5,14 @@ This exercises the guest adapter and pinned SDK data endpoints directly.
 Launch with a private /run, cgroup v2, mounted /proc, and active loopback.
 """
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import ExitStack

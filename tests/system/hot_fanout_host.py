@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 """Boot one disposable offline Firecracker VM to run hot_fanout_guest.py."""
 
+import runpy as _runpy
+from pathlib import Path as _GuardPath
+_require_assertions = _runpy.run_path(
+    str(_GuardPath(__file__).with_name("_assertions_required.py"))
+)["require_assertions"]
+_require_assertions()
+
+
 import argparse
 import hashlib
 import json
@@ -119,6 +127,7 @@ def populate(tmp, disk, args):
         payload.add(ROOT / "tools/__init__.py", arcname="tools/__init__.py")
         payload.add(ROOT / "tools/hot_fanout", arcname="tools/hot_fanout", filter=omit_cache)
         payload.add(ROOT / "tests/system/hot_fanout_guest.py", arcname="hot_fanout_guest.py")
+        payload.add(ROOT / "tests/system/_assertions_required.py", arcname="_assertions_required.py")
         binary_info = payload.gettarinfo(str(args.envd), arcname="envd")
         binary_info.mode = 0o500
         with args.envd.open("rb") as binary:
