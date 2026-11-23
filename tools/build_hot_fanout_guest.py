@@ -24,6 +24,8 @@ PLATFORM = "/opt/sandproof-hot-fanout"
 UNIT = "/etc/systemd/system/sandproof-hot-fanout.service"
 LINK = "/etc/systemd/system/multi-user.target.wants/sandproof-hot-fanout.service"
 MIB = 1024 * 1024
+PARTIAL_START = "partial-start"
+PARTIAL_START_EVIDENCE = "/run/sandproof-hot-fanout/partial-start.json"
 
 SERVICE = f"""[Unit]
 Description=Sandproof approved hot fan-out checkpoint
@@ -65,13 +67,48 @@ serve_prepared_checkpoint(CHECKPOINT, ["/run/sandproof-hot-lower"],
                           max_batches=BATCHES, workload=on_branch)
 """
 
+# This prefix is present only in the separately built fault image. The donor
+# runs it once in its own process and uses the production start for all peers.
+PARTIAL_START_WORKLOAD = """import errno
+import json
+from pathlib import Path
+from tools.hot_fanout import linux
+
+spawn_member = linux._spawn_member
+previous_scopes = []
+injected = False
+
+def fail_third_once(cgroup, child):
+    global injected
+    if not injected:
+        batch, ordinal = cgroup.name.rsplit(".", 1)
+        if ordinal == "0":
+            previous_scopes.clear()
+        if ordinal == "2":
+            injected = True
+            complete_prefix = [scope.name for scope in previous_scopes] == [batch + ".0", batch + ".1"]
+            if not complete_prefix or not all((scope / "cgroup.procs").read_text().strip()
+                                              for scope in previous_scopes):
+                raise OSError(errno.EIO, "fixture lacks the two original live child scopes")
+            with Path(PARTIAL_START_EVIDENCE).open("x") as evidence:
+                json.dump({"live_ordinals_before_failure": [0, 1], "failed_ordinal": 2}, evidence)
+            raise OSError(errno.EAGAIN, "fixture stopped the third branch spawn")
+    spawn_member(cgroup, child)
+    if not injected:
+        previous_scopes.append(cgroup)
+
+linux._spawn_member = fail_third_once
+"""
+
 
 def expected_memory_mark(checkpoint):
     return hashlib.shake_256(("sandproof-fanout-fixture:" + checkpoint).encode()).hexdigest(16)
 
 
-def install_archive(path, checkpoint, branch_cap, batch_cap):
+def install_archive(path, checkpoint, branch_cap, batch_cap, *, fault_case=None):
     prefix = f"CHECKPOINT = {checkpoint!r}\nBRANCHES = {branch_cap}\nBATCHES = {batch_cap}\n"
+    if fault_case == PARTIAL_START:
+        prefix += f"PARTIAL_START_EVIDENCE = {PARTIAL_START_EVIDENCE!r}\n" + PARTIAL_START_WORKLOAD
     with zipfile.ZipFile(path, "x", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("__main__.py", prefix + WORKLOAD)
         archive.write(PROJECT / "tools/__init__.py", "tools/__init__.py")
@@ -117,6 +154,8 @@ def build(args):
             or not 1 <= args.vcpus <= 32 or not 128 <= args.memory_mib < args.host_memory_mib
             or not 0 < args.owner <= (1 << 64) - 1):
         raise ValueError("invalid fixture resource bounds")
+    if args.fault_case == PARTIAL_START and (args.max_branches != 4 or args.max_batches < 3):
+        raise ValueError("partial-start fixture requires four branch slots and three batch records")
     for label in (args.template_id, args.revision, args.checkpoint):
         identifier(label)
 
@@ -143,7 +182,7 @@ def build(args):
         start, unit, payload = work / "start", work / "unit", work / "checkpoint.pyz"
         start.write_text(START)
         unit.write_text(SERVICE)
-        install_archive(payload, args.checkpoint, args.max_branches, args.max_batches)
+        install_archive(payload, args.checkpoint, args.max_branches, args.max_batches, fault_case=args.fault_case)
         for source, destination, mode in (
             (start, PLATFORM + "/start", 0o500),
             (unit, UNIT, 0o444),
@@ -182,6 +221,8 @@ def build(args):
              "native_hot_fanout": {"template": {"descriptor_digest": pin, "checkpoint_id": args.checkpoint,
                                                 "max_branches": args.max_branches},
                                    "max_batches": args.max_batches, "max_branches_per_vm": args.max_branches}}
+    if args.fault_case is not None:
+        ready["fault_case"] = args.fault_case
     receipt = output / "receipt.json"
     with receipt.open("x") as result:
         json.dump(ready, result, indent=2)
@@ -204,6 +245,8 @@ def main():
     parser.add_argument("--vcpus", type=int, required=True)
     parser.add_argument("--memory-mib", type=int, required=True)
     parser.add_argument("--host-memory-mib", type=int, required=True)
+    parser.add_argument("--fault-case", choices=(PARTIAL_START,),
+                        help="build a separate checkpoint fixture for one explicit failure")
     print(build(parser.parse_args()))
 
 

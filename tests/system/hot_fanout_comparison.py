@@ -471,6 +471,8 @@ def main():
     assert package.version == "2.51.0" and provenance["vcs_info"]["commit_id"] == product.SDK_COMMIT
     os.umask(0o077)
     receipt = json_file(private_path(args.receipt), limit=65536)
+    if "fault_case" in receipt:
+        parser.error("comparison requires an ordinary checkpoint fixture")
     assert args.n <= receipt["native_hot_fanout"]["template"]["max_branches"]
     args.output.mkdir(mode=0o700)
     report = dict(mode=args.mode, candidate=args.candidate, requested_branches=args.n,

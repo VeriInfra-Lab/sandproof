@@ -40,6 +40,7 @@ from sdk_c02_acceptance import processes_in_uid_range
 from server_process_crash import fetch, free_loopback_port, process_start_ticks
 from server_vm_id_capacity import check_no_resources
 from tools import service_cgroup
+from tools.build_hot_fanout_guest import PARTIAL_START, PARTIAL_START_EVIDENCE
 from tools.capture_acceptance import bind_settings
 from tools.ci_e2e_artifacts import publish
 from tools.ci_e2e_prepare import contract_versions
@@ -676,6 +677,70 @@ def check_batch_parent_ended(client, path, key):
         time.sleep(min(.1, client.remaining()))
 
 
+def guest_branch_scopes(client, parent):
+    scopes = []
+    for directory in ("/run/sandproof-hot-fanout/branches", "/sys/fs/cgroup/sandproof-hot-fanout"):
+        result = parent.commands.run(
+            f"find {directory} -mindepth 1 -maxdepth 1 -type d -printf '%f\\n'",
+            user="root", timeout=min(10, client.remaining()),
+        )
+        assert result.exit_code == 0
+        scopes.append(sorted(result.stdout.splitlines()))
+    assert scopes[0] == scopes[1]
+    return scopes[0]
+
+
+def verify_public_partial_start(client, running, parent, owner, checkpoint, inherited, report):
+    steady_path, steady_key, steady_ids = start_batch(client, running, checkpoint, 1, report["steady"])
+    [steady] = concurrent_sdk(steady_ids, owner, inherited, report["steady"])
+    steady.files.write(MARKER, "partial-steady", user="root")
+    original_scopes = guest_branch_scopes(client, parent)
+    assert len(original_scopes) == 1
+
+    post = client.path() + "/branch-batches"
+    request = batch_request(client, running, checkpoint, 3)
+    client.sequence = request["sequence"]
+    key = client.key(client.sequence)
+    path = f"{post}/{client.window}/{client.sequence}"
+    pending = ({"state": "pending"}, {"state": "cleaning_up"})
+    failure = {"state": "failed", "reason": "guest_setup_failed"}
+    accepted = client.read_json("POST", post, key=client.owner_key, body=request, status=202)
+    assert set(accepted) == {"operation", "parent", "result"}
+    assert accepted["operation"] == key and accepted["parent"] == client.session
+    assert accepted["result"] in (*pending, failure)
+    observed_states = {accepted["result"]["state"]}
+    while True:
+        result = get_batch(client, path, key)
+        assert result in (*pending, failure), "partially started batch exposed a public handle or wrong failure"
+        observed_states.add(result["state"])
+        if result == failure:
+            break
+        time.sleep(min(.1, client.remaining()))
+
+    raw_evidence = parent.files.read(PARTIAL_START_EVIDENCE, user="root",
+                                     request_timeout=min(10, client.remaining()))
+    assert 0 < len(raw_evidence) <= 256
+    evidence = json.loads(raw_evidence, object_pairs_hook=unique_keys)
+    assert evidence == {"live_ordinals_before_failure": [0, 1], "failed_ordinal": 2}
+    assert guest_branch_scopes(client, parent) == original_scopes
+    replay = client.read_json("POST", post, key=client.owner_key, body=request, status=202)
+    assert replay == {"operation": key, "parent": client.session, "result": failure}
+    assert get_batch(client, path, key) == failure
+    assert guest_branch_scopes(client, parent) == original_scopes
+    assert steady.files.read(MARKER, user="root") == "partial-steady"
+
+    refill_path, refill_key, refill_ids = start_batch(client, running, checkpoint, 3, report["refill"])
+    assert not set(steady_ids).intersection(refill_ids)
+    refilled = concurrent_sdk(refill_ids, owner, inherited, report["refill"])
+    assert len(guest_branch_scopes(client, parent)) == 4
+    assert steady.commands.run("cat " + shlex.quote(MARKER), user="root", timeout=10).stdout == "partial-steady"
+    assert client.query() == running
+    report.update(evidence, public_failure=failure, operation=key, exact_key_replayed=True,
+                  observed_public_states=sorted(observed_states), public_handles_exposed=False,
+                  fault_scopes_removed=True, steady_branch_preserved=True, refilled_branches=len(refilled))
+    return (path, key, failure), ((steady_path, steady_key), (refill_path, refill_key)), [steady, *refilled]
+
+
 def run(args, receipt, report):
     paths = dict(center=args.center, host=args.host)
     versions = {role: contract_versions(path, ENV) for role, path in paths.items()}
@@ -732,6 +797,26 @@ def run(args, receipt, report):
 
         pin = receipt["native_hot_fanout"]["template"]
         checkpoint, branch_limit = pin["checkpoint_id"], pin["max_branches"]
+        if args.fault_case == PARTIAL_START:
+            with phase(report, "partial_start", client), limit_public_deadline(client, 90):
+                partial = report["partial_start"] = {"steady": {}, "refill": {}}
+                (path, key, failure), active, sandboxes = verify_public_partial_start(
+                    client, running, parent, owner, checkpoint, receipt["expected_inherited_mark"], partial)
+                assert slot_and_claim(native) == (slot_path, context, claim)
+            with phase(report, "parent_destroy_after_partial_start", client):
+                client.destroy(running)
+                client.wait_cleaned()
+                cleaned = True
+                assert get_batch(client, path, key) == failure
+                for active_path, active_key in active:
+                    check_batch_parent_ended(client, active_path, active_key)
+                for sandbox in sandboxes:
+                    check_sdk_not_found(sandbox.sandbox_id, owner)
+                    check_stale_data_route(client, sandbox)
+                report["parent_ended_batch"] = True
+            confirm_native_release()
+            return
+
         if args.fault_case == "natural-expiry":
             with phase(report, "sdk_before_expiry", client):
                 path, key, sandboxes = verify_expiring_branches(
@@ -970,7 +1055,8 @@ def checked_args(parser=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fault-case", choices=("inflight-close", "unload-race", "natural-expiry", "parent-vmm-loss"),
+    parser.add_argument("--fault-case", choices=("inflight-close", "unload-race", "natural-expiry", "parent-vmm-loss",
+                                                 PARTIAL_START),
                         help="run one explicit independent branch acceptance case")
     args = checked_args(parser)
     if args.fault_case == "parent-vmm-loss" and not (
@@ -984,6 +1070,12 @@ def main():
     os.umask(0o077)
     receipt = json_file(private_path(args.receipt), limit=65536)
     limits = receipt["native_hot_fanout"]
+    if args.fault_case == PARTIAL_START:
+        if (receipt.get("fault_case") != PARTIAL_START or args.n != 4
+                or limits["template"]["max_branches"] != 4 or limits["max_batches"] < 3):
+            parser.error("partial-start requires its separate fixture, --n 4 and three batch records")
+    elif "fault_case" in receipt:
+        parser.error("this acceptance requires an ordinary checkpoint fixture")
     assert args.n <= limits["template"]["max_branches"]
     if args.fault_case == "inflight-close" and not (
             args.n == limits["template"]["max_branches"] and limits["max_batches"] >= 2):
