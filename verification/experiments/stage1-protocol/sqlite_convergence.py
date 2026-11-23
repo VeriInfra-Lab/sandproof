@@ -23,6 +23,13 @@ HERE = Path('verification/experiments/sqlite-commit')
 LIB = Path('verification/aeneas/sqlite/SandproofSqlite')
 MEMO = 'controller-service/src/controller/transaction/memo.rs'
 SOURCE_COMMIT = '8fc694185a4ccbe2ea181564ba860b14bea9f6e1'
+# #1000's tested candidate contains this capture in its Git history. Its
+# squash commit on integration has the same verified tree, with new parents.
+SQUASHED_CAPTURE = (
+    '912edc5043eeae9c05fcf25d109eb35409b6d149',
+    '3bb50958d9b9b8693b4ce03e3f10af5212b3099a',
+    '2941c6b1bdc61f5a183cf9a9019f6ae1d9984f4b',
+)
 INPUTS_ENV = 'SANDPROOF_SQLITE_CONVERGENCE_INPUTS'
 FILES = [str(LIB/(name+'.lean')) for name in (
     'Audit', 'Examples', 'Funs', 'FunsExternal', 'Model', 'Results', 'Types', 'TypesExternal')]
@@ -88,6 +95,20 @@ def head(root):
     return subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
 
 
+def capture_reaches(root, capture, revision):
+    def git(*args):
+        return subprocess.run(['git', *args], cwd=root, text=True, capture_output=True)
+
+    if git('merge-base', '--is-ancestor', capture, revision).returncode == 0:
+        return True
+    original, integrated, expected_tree = SQUASHED_CAPTURE
+    if capture != original:
+        return False
+    tree = git('rev-parse', '--verify', integrated+'^{tree}')
+    return (tree.returncode == 0 and tree.stdout.strip() == expected_tree
+            and git('merge-base', '--is-ancestor', integrated, revision).returncode == 0)
+
+
 def inventory(root):
     profile = read(root/HERE/'candidate.json')
     if profile.get('production_adopted') is not True:
@@ -97,8 +118,8 @@ def inventory(root):
         if (profile.get('historical_capture_source_commit') != SOURCE_COMMIT
                 or re.fullmatch('[a-f0-9]{40}', capture) is None):
             raise ValueError('current SQLite capture lacks its historical source anchor')
-        subprocess.run(['git', 'merge-base', '--is-ancestor', capture, head(root)],
-                       cwd=root, check=True)
+        if not capture_reaches(root, capture, head(root)):
+            raise ValueError('current SQLite capture is outside its original or reviewed integration history')
     for name, digest in profile['source_files'].items():
         if sha(root/name) != digest:
             raise ValueError('current SQLite source closure changed: '+name)
