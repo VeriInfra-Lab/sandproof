@@ -36,3 +36,19 @@ def capture_live_native_ids(native, claims, read_slot):
         resources.remove(resource)
         sandbox_ids.add(sandbox)
     return tuple(f"sb-{namespace}-{sandbox}" for sandbox in sorted(sandbox_ids))
+
+
+def automatic_expiry_acceptance(view, original):
+    """Bind the automatic Destroy to the original Create and reserved SDK lane."""
+    key = view["operation"]
+    create_key = original["key"]
+    version = original["accepted_version"] + 1
+    if (view["session"] != original["session"] or view["phase"] not in ("terminating", "cleaned")
+            or type(view["current_version"]) is not int or view["current_version"] != version
+            or set(key) != {"deployment", "owner", "window", "sequence"}
+            or key["deployment"] != create_key["deployment"] or key["owner"] != create_key["owner"]
+            or type(key["window"]) is not int or key["window"] != 2
+            or key["window"] == create_key["window"]
+            or type(key["sequence"]) is not int or not 0 < key["sequence"] < 2**64):
+        raise ValueError("expected the center's exact automatic Destroy after the original Create")
+    return dict(session=original["session"], key=key.copy(), accepted_version=version)

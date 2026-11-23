@@ -5,6 +5,7 @@ import unittest
 
 MODULE = runpy.run_path(str(Path(__file__).resolve().parents[2] / "tests/system/_hot_fanout_evidence.py"))
 capture_live_native_ids = MODULE["capture_live_native_ids"]
+automatic_expiry_acceptance = MODULE["automatic_expiry_acceptance"]
 
 
 class HotFanoutLiveEvidenceTests(unittest.TestCase):
@@ -39,3 +40,32 @@ class HotFanoutLiveEvidenceTests(unittest.TestCase):
         wrong_pool = [self.claims[0], {"resource_id": "vm-other-45"}]
         with self.assertRaisesRegex(ValueError, "original VM claim"):
             capture_live_native_ids(self.native, wrong_pool, self.read_slot)
+
+
+class HotFanoutAutomaticExpiryTests(unittest.TestCase):
+    def setUp(self):
+        self.original = dict(session="parent", accepted_version=1,
+                             key=dict(deployment="deployment", owner="1", window=1, sequence=1))
+        self.key = dict(self.original["key"], window=2, sequence=9)
+        self.view = dict(session="parent", current_version=2, phase="terminating", operation=self.key)
+
+    def test_original_automatic_destroy_can_be_seen_in_either_terminal_phase(self):
+        expected = dict(session="parent", key=self.key, accepted_version=2)
+        for phase in ("terminating", "cleaned"):
+            actual = automatic_expiry_acceptance(dict(self.view, phase=phase), self.original)
+            self.assertEqual(expected, actual)
+            self.assertIsNot(actual["key"], self.key)
+
+    def test_public_request_or_unrelated_identity_cannot_certify_expiry(self):
+        wrong = (
+            dict(self.view, phase="running"),
+            dict(self.view, session="other"),
+            dict(self.view, current_version=3),
+            dict(self.view, operation=self.original["key"]),
+            dict(self.view, operation=dict(self.key, owner="2")),
+            dict(self.view, operation=dict(self.key, deployment="other")),
+            dict(self.view, operation=dict(self.key, sequence=True)),
+        )
+        for view in wrong:
+            with self.subTest(view=view), self.assertRaisesRegex(ValueError, "automatic Destroy"):
+                automatic_expiry_acceptance(view, self.original)

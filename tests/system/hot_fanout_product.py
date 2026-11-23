@@ -29,7 +29,7 @@ import urllib.request
 
 from _complete_runtime import complete_runtime, terminal_cleanup_confirmed
 from _hot_fanout_config import descriptor_digest
-from _hot_fanout_evidence import capture_live_native_ids
+from _hot_fanout_evidence import automatic_expiry_acceptance, capture_live_native_ids
 from _runtime_services import RuntimeServices
 from hot_fanout_guest import make_package
 from hot_fanout_host import SDK_COMMIT
@@ -56,6 +56,7 @@ MARKER = "/etc/fanout-sdk-marker"
 COMMAND_MARKER = "/etc/fanout-command-marker"
 PARENT_MARKER = "/tmp/sandproof-hot-parent-restart"
 PACKAGE_MARKER = "/usr/share/sandproof-hot-fanout-check/marker"
+EXPIRY_TTL_MS = 45_000
 
 
 def command(*args):
@@ -561,6 +562,56 @@ def check_live_routes_after_restart(client, running, options, batches, witnesses
     return check_stale_data_route(client, released)
 
 
+def observe_automatic_destroy(client):
+    assert client.destroy_request is None, "explicit Destroy cannot witness natural expiry"
+    recovered = None
+    client.step("automatic-expiry-destroy", 200)
+    while True:
+        status, raw = client.call("GET", client.path(), key=client.owner_key)
+        if status == 200:
+            view = json.loads(raw, object_pairs_hook=unique_keys)
+            if view["phase"] in ("terminating", "cleaned"):
+                accepted = automatic_expiry_acceptance(view, client.create_acceptance)
+                if recovered is not None:
+                    assert accepted == recovered["acceptance"]
+                else:
+                    recovered = dict(acceptance=accepted, first_phase=view["phase"],
+                                     first_observed_at_ms=time.time_ns() // 1_000_000)
+                client.check_view(view, accepted)
+                if view["phase"] == "cleaned":
+                    assert client.destroy_request is None
+                    recovered["cleaned_observed_at_ms"] = time.time_ns() // 1_000_000
+                    return recovered
+            else:
+                assert recovered is None and view["phase"] in ("creating", "running")
+                client.check_view(view, client.create_acceptance)
+        elif status != 503:
+            raise PublicStatusMismatch(status, 200)
+        time.sleep(min(.1, client.remaining()))
+
+
+def verify_expiring_branches(client, running, parent, owner, checkpoint, count, inherited, report):
+    initial = parent.get_info()
+    assert initial.sandbox_id == client.session
+    assert round((initial.end_at - initial.started_at).total_seconds() * 1000) == EXPIRY_TTL_MS
+    path, key, branches = start_batch(client, running, checkpoint, count, report)
+    sandboxes = concurrent_sdk(branches, owner, inherited, report)
+    current = parent.get_info()
+    assert (current.started_at, current.end_at) == (initial.started_at, initial.end_at)
+    assert client.query() == running
+    end_at_ms = round(initial.end_at.timestamp() * 1000)
+    useful_at_ms = time.time_ns() // 1_000_000
+    assert useful_at_ms < end_at_ms, "SDK work must be observed before the original parent expiry"
+    report["natural_expiry"] = dict(requested_ttl_ms=EXPIRY_TTL_MS, end_at_ms=end_at_ms,
+                                    sdk_all_usable_at_ms=useful_at_ms, usable_branches=len(sandboxes))
+    return path, key, sandboxes
+
+
+def check_batch_parent_ended(client, path, key):
+    while get_batch(client, path, key) != {"state": "failed", "reason": "parent_ended"}:
+        time.sleep(min(.1, client.remaining()))
+
+
 def run(args, receipt, report):
     paths = dict(center=args.center, host=args.host)
     versions = {role: contract_versions(path, ENV) for role, path in paths.items()}
@@ -592,15 +643,52 @@ def run(args, receipt, report):
             from e2b import Sandbox
             from sdk_server_smoke import options as sdk_options
 
-            client.create(create_parameters(services, ready, receipt["binding"]))
+            parameters = create_parameters(services, ready, receipt["binding"])
+            if args.fault_case == "natural-expiry":
+                parameters["timeout_ms"] = EXPIRY_TTL_MS
+            client.create(parameters)
             report["parent"] = client.session
             running = client.wait_running()
             owner = sdk_options(services.key, services.sdk_url, services.sdk_url)
             slot_path, context, claim = slot_and_claim(native)
             [native_id] = capture_live_native_ids(native, [claim], original_json)
-            parent = Sandbox.connect(client.session, **owner)
+            # Parent Connect can renew a short lease. The original read-only
+            # projection constructs the same SDK without a management write.
+            parent = client.sdk() if args.fault_case == "natural-expiry" else Sandbox.connect(client.session, **owner)
+
+        def confirm_native_release():
+            with phase(report, "native_release", client):
+                slot = original_json(slot_path, 65536)
+                assert slot["position"] == 0 and slot["value"]["context"] == context
+                assert slot["value"]["phase"] == "Free"
+                check_no_resources(root/"0", native["namespace"], args.firecracker, args.vm_uid,
+                                   [claim], native=native)
+                assert services.processes.observe() == expected_processes
+                report["exact_parent_slot_free"] = True
+
         pin = receipt["native_hot_fanout"]["template"]
         checkpoint, branch_limit = pin["checkpoint_id"], pin["max_branches"]
+        if args.fault_case == "natural-expiry":
+            with phase(report, "sdk_before_expiry", client):
+                path, key, sandboxes = verify_expiring_branches(
+                    client, running, parent, owner, checkpoint, args.n, receipt["expected_inherited_mark"], report)
+                assert slot_and_claim(native) == (slot_path, context, claim)
+            with phase(report, "natural_expiry", client), limit_public_deadline(client, 100):
+                observed = observe_automatic_destroy(client)
+                cleaned = True
+                expiry = report["natural_expiry"]
+                assert observed["first_observed_at_ms"] >= expiry["end_at_ms"]
+                expiry.update(automatic_destroy=observed, explicit_destroy_sent=False)
+                check_batch_parent_ended(client, path, key)
+                for sandbox in sandboxes:
+                    check_sdk_not_found(sandbox.sandbox_id, owner)
+                    check_stale_data_route(client, sandbox)
+                expiry["old_branch_tokens_refused"] = len(sandboxes)
+                expiry["old_parent_token_status"] = check_stale_data_route(client, parent)
+                report["parent_ended_batch"] = True
+            confirm_native_release()
+            return
+
         with phase(report, "public_idle_boundaries", client):
             report["public_rejections"] = {
                 "empty_batch": check_batch_rejection(client, running, checkpoint, 0, 400),
@@ -713,29 +801,24 @@ def run(args, receipt, report):
             client.wait_cleaned()
             cleaned = True
             for batch_path, key, _ in active_batches:
-                while get_batch(client, batch_path, key) != {"state": "failed", "reason": "parent_ended"}:
-                    time.sleep(min(.1, client.remaining()))
+                check_batch_parent_ended(client, batch_path, key)
             for branch, sandbox in active_branches:
                 check_sdk_not_found(branch, owner)
                 check_stale_data_route(client, sandbox)
             report["parent_ended_batch"] = True
-        with phase(report, "native_release", client):
-            slot = original_json(slot_path, 65536)
-            assert slot["position"] == 0 and slot["value"]["context"] == context
-            assert slot["value"]["phase"] == "Free"
-            check_no_resources(root/"0", native["namespace"], args.firecracker, args.vm_uid,
-                               [claim], native=native)
-            assert services.processes.observe() == expected_processes
-            report["exact_parent_slot_free"] = True
+        confirm_native_release()
     finally:
         if not cleaned and client is not None and client.session is not None:
             try:
                 client.deadline = time.monotonic() + 120
-                current = client.query()
-                if current["phase"] not in ("terminating", "cleaned"):
-                    client.destroy(current)
-                if current["phase"] != "cleaned":
-                    client.wait_cleaned()
+                if args.fault_case == "natural-expiry":
+                    observe_automatic_destroy(client)
+                else:
+                    current = client.query()
+                    if current["phase"] not in ("terminating", "cleaned"):
+                        client.destroy(current)
+                    if current["phase"] != "cleaned":
+                        client.wait_cleaned()
                 cleaned = True
             except Exception as failure:
                 report["cleanup_request_error"] = type(failure).__name__
@@ -805,7 +888,7 @@ def checked_args(parser=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fault-case", choices=("inflight-close", "unload-race"),
+    parser.add_argument("--fault-case", choices=("inflight-close", "unload-race", "natural-expiry"),
                         help="run one explicit independent branch acceptance case")
     args = checked_args(parser)
     package = importlib.metadata.distribution("e2b")
