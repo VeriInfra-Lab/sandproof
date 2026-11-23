@@ -44,6 +44,7 @@ from tools.ci_redis import check_material
 from tools.runtime_acceptance_budget import profile_declaration, service_declarations
 from tools.single_host_storage import original_project, plan, provision, reopen
 from tools.system_acceptance import digest, json_file, private_path, write_once
+from tools.template_physical_storage import activation_budget
 
 ROOT = Path(__file__).resolve().parents[2]
 MIB = 1024**2
@@ -75,7 +76,7 @@ def make_cgroup(path):
     (path / "cgroup.subtree_control").write_text("+cpu +memory +pids")
 
 
-def build_deployment(args, receipt, storage, services_paths, report):
+def build_deployment(args, receipt, storage, services_paths, report, *, slots=1, hot_fanout=True):
     data = storage / "data"
     root, staging = data / "r" / "a", data / "s"
     artifact = receipt["binding"]
@@ -86,7 +87,7 @@ def build_deployment(args, receipt, storage, services_paths, report):
         assert path.resolve(strict=True) == path and path.parent == args.receipt.parent
         assert path.stat().st_size == metadata["size_bytes"]
     catalog = dict(templates=[artifact], aliases={"base": artifact["template_id"]}, compute_limits={
-        f"max_{key}_{level}": value
+        f"max_{key}_{level}": slots * value
         for key, value in (("vcpus", shape["cpu_count"]), ("memory_bytes", shape["host_memory_bytes"]))
         for level in ("global", "per_tenant")})
     namespace = secrets.token_hex(8)
@@ -97,22 +98,28 @@ def build_deployment(args, receipt, storage, services_paths, report):
     native = complete_runtime(dict(
         namespace=namespace, database=str(root/"0/db/controller.db"),
         node_state_dir=str(root/"0/state"), chroot_base=str(root/"0/p/v"), uid_base=args.vm_uid,
-        max_active_global=1, max_active_per_tenant=1, max_disk_bytes_global=disk + GIB,
-        max_disk_bytes_per_tenant=disk, cleanup_reserve_bytes=GIB, kernel=str(kernel),
+        max_active_global=slots, max_active_per_tenant=slots,
+        max_disk_bytes_global=slots * disk + GIB,
+        max_disk_bytes_per_tenant=slots * disk, cleanup_reserve_bytes=GIB, kernel=str(kernel),
         rootfs=str(rootfs), firecracker=str(args.firecracker), jailer=str(args.jailer),
         file_policy_digest=1, vcpu_count=shape["cpu_count"], memory_mib=shape["memory_mib"],
         host_resources=dict(cgroup_parent=str(vm_parent), memory_max_bytes=shape["host_memory_bytes"]),
         max_timeout_secs=600, max_lifetime_secs=600, startup_timeout_secs=90,
-        expiry_scan_seconds=1, public_ipv4_enabled=False, templates=catalog), slots=1, inbox_sessions=1)
+        expiry_scan_seconds=1, public_ipv4_enabled=False, templates=catalog), slots=slots, inbox_sessions=slots)
     native["bounded_host"]["physical_storage"]["filesystem_overhead_bytes"] = 64*MIB
     transfers = native["data_transfer"]
     transfers["max_transfers"] = max(transfers["max_transfers"], args.n + 6)
     transfers["max_transfers_per_vm"] = max(transfers["max_transfers_per_vm"], args.n + 2)
-    project = dict(project_id=args.project_id, hard_bytes=56*GIB, hard_inodes=4096,
+    capture_state_bytes = 10_000_000
+    capture_memory_bytes = shape["memory_mib"] * MIB
+    capture_overlap = slots * (4 * (capture_state_bytes + capture_memory_bytes) + 2 * disk)
+    project_bytes = max(56 * GIB, ((capture_overlap // GIB) + 2) * GIB)
+    project = dict(project_id=args.project_id, hard_bytes=project_bytes,
+                   hard_inodes=max(4096, 512 * slots),
                    **{tool.name: dict(path=str(tool), sha256=list(bytes.fromhex(digest(tool))))
                       for tool in map(Path, ("/usr/bin/chattr", "/usr/bin/lsattr"))})
-    captures = bind_settings(dict(schema_version=1, hosts=[dict(state_copy_bytes=10_000_000,
-        memory_copy_bytes=shape["memory_mib"]*MIB, disk_copy_bytes=disk, api_timeout_ms=30000,
+    captures = bind_settings(dict(schema_version=1, hosts=[dict(state_copy_bytes=capture_state_bytes,
+        memory_copy_bytes=capture_memory_bytes, disk_copy_bytes=disk, api_timeout_ms=30000,
         worker_timeout_ms=120000, material_project=project)]), [root/"0"])
     capture_file = args.output / "capture.json"
     write_once(capture_file, captures)
@@ -126,13 +133,16 @@ def build_deployment(args, receipt, storage, services_paths, report):
     ids = dict(center=layout["center_identity"], redis=(args.redis_uid, args.redis_uid), host=(0, 0))
     service_peaks = service_declarations(layout, ids, services_paths, kernel.stat().st_size + disk,
                                         check_material(args.redis_material, protected=True), None, captures)
+    physical_inodes = max(8192, native["bounded_host"]["physical_storage"]["filesystem_overhead_inodes"])
     profile = profile_declaration([native], [catalog], layout, registry=registry,
-                                  service_peaks=service_peaks, physical_inodes=8192)
-    storage_plan = plan(profile, storage, image_bytes=74*GIB, host_reserve_bytes=GIB)
+                                  service_peaks=service_peaks, physical_inodes=physical_inodes)
+    required = activation_budget(profile)["required_bytes"]
+    image_bytes = max(74 * GIB, ((required // GIB) + 2) * GIB)
+    storage_plan = plan(profile, storage, image_bytes=image_bytes, host_reserve_bytes=GIB)
     assert storage_plan["fits"]
     write_once(args.output/"storage-plan.json", storage_plan)
     installation = provision(storage, profile, original_project(profile, captures, data),
-                             image_bytes=74*GIB, host_reserve_bytes=GIB)
+                             image_bytes=image_bytes, host_reserve_bytes=GIB)
     write_once(args.output/"installation.json", installation)
     staging.mkdir(mode=0o711)
     staging.chmod(0o711)
@@ -149,11 +159,12 @@ def build_deployment(args, receipt, storage, services_paths, report):
         candidate_manifest=args.output/"candidate.json", redis_material=args.redis_material,
         tls_material=args.tls_material, service_staging_parent=staging, service_cgroup_record=record,
         capture_settings=capture_file, center_uid=args.center_uid, center_gid=args.center_uid,
-        redis_uid=args.redis_uid, redis_gid=args.redis_uid, physical_inodes=8192,
+        redis_uid=args.redis_uid, redis_gid=args.redis_uid, physical_inodes=physical_inodes,
         redis_operation_timeout_ms=20000)
     key = secrets.token_hex(32)
     services = RuntimeServices.prepare(params, root, [native], [catalog], key,
-        "127.0.0.1:" + str(free_loopback_port()), record, 1, registry_config=registry, hot_fanout=receipt)
+        "127.0.0.1:" + str(free_loopback_port()), record, slots, registry_config=registry,
+        hot_fanout=receipt if hot_fanout else None)
     return services, root, record, (vm_parent, service_parent), installation
 
 
@@ -378,8 +389,9 @@ def run(args, receipt, report):
                 report["physical_test_volume_removed"] = True
 
 
-def checked_args():
-    parser = argparse.ArgumentParser(description=__doc__)
+def checked_args(parser=None):
+    if parser is None:
+        parser = argparse.ArgumentParser(description=__doc__)
     for name in ("receipt", "center", "host", "firecracker", "jailer", "redis-material", "tls-material",
                  "output", "data-mount", "storage-parent"):
         parser.add_argument("--" + name, type=Path, required=True)
