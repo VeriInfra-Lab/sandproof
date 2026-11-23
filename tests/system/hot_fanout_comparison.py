@@ -47,7 +47,7 @@ from tools.single_host_storage import reopen
 from tools.system_acceptance import digest, json_file, private_path, write_once
 
 INHERITED = "/run/inherited"
-PAYLOAD = "/var/tmp/sp1026-comparison-data"
+PAYLOAD = "/root/sp1026-comparison-data"
 WORKER_PID = "/run/sp1026-comparison-worker.pid"
 # Linux fs.h and fiemap.h UAPI, for the fixture's x86_64/aarch64 XFS host.
 FS_IOC_FIEMAP = 0xC020660B
@@ -315,8 +315,20 @@ def measure_workload(args, receipt, services, native, ready, vm_group, data, cli
             args.n, lambda index: guest_workload_rss(sandboxes[index], arm == "hot"))
 
         def write(index):
-            snippet = f"python3 -c {shlex.quote(WRITE_PAYLOAD)} {index} {args.write_mib} {PAYLOAD}"
-            result = sandboxes[index].commands.run(snippet, user="root", timeout=45)
+            from e2b.sandbox.commands.command_handle import CommandExitException
+
+            snippet = f"/usr/bin/python3 -c {shlex.quote(WRITE_PAYLOAD)} {index} {args.write_mib} {PAYLOAD}"
+            try:
+                result = sandboxes[index].commands.run(snippet, user="root", timeout=45)
+            except CommandExitException as error:
+                # Scratch code only. Preserve a bounded failure category and
+                # original exit code without keeping guest command output.
+                label = next((name for name in ("FileNotFoundError", "FileExistsError", "PermissionError",
+                                                "OSError", "RuntimeError")
+                              if name + ":" in error.stderr), "unexpected")
+                report.setdefault("payload_write_failures", {})[str(index)] = dict(
+                    exit_code=error.exit_code, category=label)
+                raise
             assert result.exit_code == 0
             return int(result.stdout.strip())
 

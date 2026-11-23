@@ -142,7 +142,10 @@ def build_deployment(args, receipt, storage, services_paths, report, *, slots=1,
     ids = dict(center=layout["center_identity"], redis=(args.redis_uid, args.redis_uid), host=(0, 0))
     service_peaks = service_declarations(layout, ids, services_paths, kernel.stat().st_size + disk,
                                         check_material(args.redis_material, protected=True), None, captures)
-    physical_inodes = max(8192, native["bounded_host"]["physical_storage"]["filesystem_overhead_inodes"])
+    base_inodes = native["bounded_host"]["physical_storage"]["filesystem_overhead_inodes"]
+    # Reserve room for the two declarations added by profile_declaration
+    # (the static template cache and registry) as well as the service roots.
+    physical_inodes = max(8192, base_inodes + 32 + sum(service["inode_budget"] for service in service_peaks))
     profile = profile_declaration([native], [catalog], layout, registry=registry,
                                   service_peaks=service_peaks, physical_inodes=physical_inodes)
     required = activation_budget(profile)["required_bytes"]
