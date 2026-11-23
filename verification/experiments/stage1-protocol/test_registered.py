@@ -798,6 +798,62 @@ class Registration(OriginalReadPlanFixture):
             with self.assertRaisesRegex(ValueError, 'crate test inventory'):
                 registered._crate_native(registered.ROOT, Path(temporary)/'output', 'envelope-schema')
 
+    def test_native_parallel_schedule_preserves_order_and_serial_boundaries(self):
+        drivers = registered.NATIVE_DRIVERS
+        batches = list(registered._native_batches(drivers, 2))
+        self.assertEqual([row for batch in batches for row in batch], list(drivers))
+        self.assertTrue(any(len(batch) == 2 for batch in batches))
+        for batch in batches:
+            if len(batch) == 2:
+                for label, path, archive in batch:
+                    self.assertFalse(archive)
+                    self.assertIn(Path(path).parent.name, registered._PRIVATE_NATIVE_COMPONENTS)
+                    self.assertEqual(label, 'stage1-' + Path(path).parent.name)
+        self.assertEqual(list(registered._native_batches(drivers, 1)), [[row] for row in drivers])
+
+    def test_two_private_native_drivers_overlap_and_failed_pair_blocks_next(self):
+        labels = ('stage1-inbox-save', 'stage1-inbox-load', 'stage1-inbox-state')
+        drivers = tuple(next(row for row in registered.NATIVE_DRIVERS if row[0] == label)
+                        for label in labels)
+        for fail in (False, True):
+            barrier = threading.Barrier(2, timeout=10)
+            invoked = {}
+
+            def invoke(root, driver, args, *, pass_fds, cpu_affinity, cpu_admission):
+                label = Path(args[1]).name
+                invoked[label] = cpu_affinity
+                if label in labels[:2]:
+                    self.assertEqual(cpu_admission.name, label + '-cpu-admission.json')
+                    barrier.wait()
+                if fail and label == labels[0]:
+                    raise ValueError('original native assertion failed')
+
+            def native_case(label, root, output, action, *, scope):
+                if label != 'stage1-protocol':
+                    action()
+                return {'label': label}
+
+            with (self.subTest(fail=fail), tempfile.TemporaryDirectory() as tmp,
+                  patch.dict(os.environ, SANDPROOF_STAGE1_NATIVE_JOBS='2',
+                             SANDPROOF_ACCEPTANCE_ROLE='native', CARGO_TARGET_DIR=tmp),
+                  patch.object(registered.os, 'sched_getaffinity', return_value=set(range(8)), create=True),
+                  patch.object(registered, 'validate_registration'),
+                  patch.object(registered, 'check_create_sources'),
+                  patch.object(registered, 'NATIVE_DRIVERS', drivers),
+                  patch.object(registered, 'CRATE_CASES', ()),
+                  patch.object(registered, '_shared', return_value=SimpleNamespace(native_case=native_case)),
+                  patch.object(registered, '_original_file', return_value=Path(tmp)/'result.json'),
+                  patch.object(registered, '_read', return_value={'complete': True}),
+                  patch.object(registered, '_invoke', side_effect=invoke)):
+                if fail:
+                    with self.assertRaisesRegex(ValueError, 'original native assertion failed'):
+                        registered.run_native(registered.ROOT, Path(tmp))
+                    self.assertNotIn(labels[2], invoked)
+                else:
+                    self.assertEqual(list(registered.run_native(registered.ROOT, Path(tmp))), list(labels))
+                self.assertEqual(set(invoked[labels[0]]) | set(invoked[labels[1]]), set(range(8)))
+                self.assertFalse(set(invoked[labels[0]]) & set(invoked[labels[1]]))
+
     def test_full_native_accepted_parser_inherits_lock_and_four_cpus(self):
         label = 'stage1-accepted-json-parser'
         driver, = [row for row in registered.NATIVE_DRIVERS if row[0] == label]

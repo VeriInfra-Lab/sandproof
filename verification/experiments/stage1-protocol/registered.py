@@ -643,10 +643,51 @@ def validate_registration(root=ROOT, *, profile='full'):
     validate_metadata_inputs(root, profile=profile)
 
 
+# These original drivers build every variant under its own output directory.
+# Other components share targets, a lock or a producer and remain serial.
+_PRIVATE_NATIVE_COMPONENTS = frozenset("""
+    inbox-lookup inbox-admission inbox-record inbox-append inbox-state inbox-position
+    inbox-lineage inbox-retained inbox-lifetimes inbox-renewal-session inbox-unload-resolution
+    inbox-entry-validation inbox-retired-identities inbox-origin-selection inbox-config
+    inbox-config-validation terminal-binding retention-lane native-retirement session-shape
+    inbox-validation inbox-save inbox-record-validation inbox-load
+""".split())
+
+
+def _native_batches(drivers, workers):
+    batch = []
+    for row in drivers:
+        label, driver, needs_archive = row
+        component = Path(driver).parent.name
+        if (workers == 1 or needs_archive or component not in _PRIVATE_NATIVE_COMPONENTS
+                or label != 'stage1-' + component or Path(driver) != HERE/component/'native.py'):
+            if batch:
+                yield batch
+                batch = []
+            yield [row]
+            continue
+        batch.append(row)
+        if len(batch) == workers:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
 def run_native(root, work, *, profile='full', scope=None):
     """Call after the retained stage1 case, inside the original ning suite."""
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'native':
         raise ValueError('native registration must execute on the native host')
+    setting = os.environ.get('SANDPROOF_STAGE1_NATIVE_JOBS', '1')
+    if setting not in ('1', '2'):
+        raise ValueError('SANDPROOF_STAGE1_NATIVE_JOBS must be 1 or 2')
+    workers = int(setting) if profile == 'full' else 1
+    slots = []
+    if workers > 1:
+        allowed = sorted(os.sched_getaffinity(0))
+        if len(allowed) < workers * CREATE_CPUS_PER_JOB:
+            raise ValueError('two native workers require eight admitted CPUs')
+        slots = _cpu_slots(profile, workers, allowed)
     validate_registration(root, profile=profile)
     check_create_sources(root)
     scope = native_scope(profile) if scope is None else scope
@@ -666,7 +707,8 @@ def run_native(root, work, *, profile='full', scope=None):
     receipts = {}
     drivers = (CREATE_NATIVE_DRIVERS if profile == 'create-delivery' else
                CONVERGENCE.NATIVE_DRIVERS if profile == CONVERGENCE.PROFILE else NATIVE_DRIVERS)
-    for label, driver, needs_archive in drivers:
+    def run_driver(row, slot=None):
+        label, driver, needs_archive = row
         output = work/label
         args = ['--output', output]
         if label in ('stage1-sqlite-commit', 'source-live', *CPU_PINNED_UNLOAD_JOBS):
@@ -691,8 +733,8 @@ def run_native(root, work, *, profile='full', scope=None):
                          if accepted_parser else 'complete')
         def action(driver=Path(driver), args=args, output=output, pass_fds=native_pass_fds,
                    success_field=success_field, accepted_parser=accepted_parser):
-            affinity = None
-            admission = None
+            affinity = slot
+            admission = work/(output.name+'-cpu-admission.json') if slot is not None else None
             if accepted_parser or profile == CONVERGENCE.PROFILE or driver.parent.name in CONVERGENCE.CASES:
                 allowed = sorted(os.sched_getaffinity(0))
                 if len(allowed) < CREATE_CPUS_PER_JOB:
@@ -718,7 +760,16 @@ def run_native(root, work, *, profile='full', scope=None):
             _check_create_native_result(root, name, original.parent, _read(original), **admitted)
         if label == 'stage1-sqlite-commit':
             CONVERGENCE.extra(root, 'sqlite-commit').check_native(_read(original), root, original.parent)
-        receipts[label] = receipt
+        return label, receipt
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for batch in _native_batches(drivers, workers):
+            if len(batch) == 1:
+                label, receipt = run_driver(batch[0])
+                receipts[label] = receipt
+            else:
+                futures = [pool.submit(run_driver, row, slot) for row, slot in zip(batch, slots, strict=True)]
+                receipts.update(future.result() for future in futures)
     for name in CRATE_CASES if profile == 'full' else ():
         label = 'stage1-protocol-'+name
         output = work/label
