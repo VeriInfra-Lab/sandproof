@@ -124,7 +124,7 @@
     "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",
     "tools/tests/test_acceptance_receipts.py": "5e39e9fed8127aee90e31501dd623ce35cd10633689b8f7fbb92891e94d922fe",
     "tools/tests/test_native_scopes.py": "b18c8db0423ca0ee8e345439d7d347954870f1496f229cac1d346d03e8ce9898",
-    "tools/tests/test_stage1_protocol_entry.py": "a2dd5198fc1f32bd809e94b94b8554e4e3285bf028ef0770eefac6ef476d00eb",
+    "tools/tests/test_stage1_protocol_entry.py": "468f0f7b424ebd2c90d9b9922a7571dc5962daaefeffa973caf7c8f4debd1225",
     "verification/aeneas/foundations/SandproofFoundations/Funs.lean": "fae9c5ccc60e8bccf35f3812eb173dbdb59f5bb4f23645e9ba2070bcc0092c62",
     "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
     "verification/aeneas/foundations/SandproofFoundations/IdentifierLibrary.lean": "e4d24aa239104ab0c362ba246d53072398b8f9be79109e015f1b1d68523f4c9c",
