@@ -77,6 +77,8 @@ impl<B> HostBranchControl<B> {
 
 impl<H: ControllerHost> ControllerApplication<H> {
     /// Keep the exact native VM gate while the trusted driver talks to the guest.
+    /// When appropriate, reserve the original plan after the protected driver
+    /// has verified its checkpoint pin, under the same management lock.
     /// # Errors
     /// An unrecorded or changed plan, expired VM or unavailable gate refuses I/O.
     pub fn prepare_host_branch_control<B>(
@@ -85,25 +87,44 @@ impl<H: ControllerHost> ControllerApplication<H> {
         context: &AuthenticatedCenterContext,
         key: &HostBranchBatchKey,
         targets: &[BranchTarget],
-        prepare: impl FnOnce(&H, &HostBranchParent) -> Result<B, ApplicationError>,
-    ) -> Result<(HostBranchControl<B>, HostBranchBatchPhase), ApplicationError> {
-        let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
-        let (parent, phase) = inner
+        reserve: bool,
+        prepare: impl FnOnce(&H, &HostBranchParent) -> Result<Option<B>, ApplicationError>,
+    ) -> Result<Option<(HostBranchControl<B>, HostBranchBatchPhase)>, ApplicationError> {
+        let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        let now = self.clock.now_ms()?;
+        let (native, phase) = inner
             .journal
-            .host_branch_control_parent(parent, context, key, targets, self.clock.now_ms()?)
+            .host_branch_control_parent(parent, context, key, targets, now)
             .map_err(route_error)?;
+        if phase.is_none() && !reserve {
+            return Err(ApplicationError::NotFound);
+        }
         let gate = inner
             .host
-            .acquire_data_gate(parent.sandbox(), parent.vm(), parent.generation())?
+            .acquire_data_gate(native.sandbox(), native.vm(), native.generation())?
             .ok_or(ApplicationError::Busy)?;
-        let driver = prepare(&inner.host, &parent)?;
-        Ok((
+        let Some(driver) = prepare(&inner.host, &native)? else {
+            return if phase.is_none() {
+                Ok(None)
+            } else {
+                Err(ApplicationError::OutcomeUnknown)
+            };
+        };
+        let phase = if let Some(original) = phase {
+            original
+        } else {
+            inner
+                .journal
+                .reserve_host_branch_batch(parent, context, key, targets, now)
+                .map_err(route_error)?
+        };
+        Ok(Some((
             HostBranchControl {
                 driver,
                 _gate: gate,
             },
             phase,
-        ))
+        )))
     }
 
     /// Configure the bounded native ledger from trusted startup configuration.

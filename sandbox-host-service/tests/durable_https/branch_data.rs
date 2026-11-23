@@ -36,7 +36,7 @@ async fn branch_get(
     (status, String::from_utf8(bytes.to_vec()).unwrap())
 }
 
-fn branch_plan(
+pub(super) fn branch_plan(
     parent: &sandproof_protocol::lifecycle::LifecycleAccessIdentity,
 ) -> (HostBranchBatchKey, [BranchTarget; 2]) {
     let mut operation = parent.operation.clone();

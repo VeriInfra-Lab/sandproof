@@ -12,9 +12,9 @@ use sandproof_internal::{
     status::{HostStatus, StatusReceiver, StatusRequest},
     template::{ValidationEvidence, ValidationRequest},
 };
-use sandproof_node::NodeHost;
+use sandproof_node::{NativeBranchControl, NodeHost};
 use sandproof_protocol::{
-    branching::BranchAccessIdentity,
+    branching::{BranchAccessIdentity, BranchControlReply, BranchControlRequest},
     internal::NodeIdentity,
     lifecycle::{
         AcceptedLifecycleIntent, AuthenticatedCenterContext, CreateObservation,
@@ -31,6 +31,32 @@ pub(super) struct RegisteredHost {
     pub(super) retention_slots: u16,
 }
 impl LifecycleReceiver for RegisteredHost {
+    async fn branch_control(
+        &self,
+        request: BranchControlRequest,
+        context: AuthenticatedCenterContext,
+    ) -> Result<BranchControlReply, ReceiveError> {
+        let checkpoint = request.batch.checkpoint.clone();
+        let count = request.targets.len();
+        self.facade
+            .lifecycle()
+            .drive_branch_control(
+                request,
+                context,
+                move |host, parent| {
+                    host.prepare_branch_control(
+                        parent.sandbox(),
+                        parent.vm(),
+                        parent.generation(),
+                        &checkpoint,
+                        count,
+                    )
+                },
+                NativeBranchControl::exchange,
+            )
+            .await
+    }
+
     async fn observe_resume(
         &self,
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,

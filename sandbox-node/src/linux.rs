@@ -29,6 +29,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 type NodeResult<T> = Result<T, Box<dyn Error>>;
+mod branch_control;
+pub use branch_control::NativeBranchControl;
 mod capture;
 pub(crate) use capture::PauseNotStarted;
 #[cfg(test)]

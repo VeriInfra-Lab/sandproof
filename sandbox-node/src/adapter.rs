@@ -12,7 +12,7 @@ use sandproof_controller_service::{
     CreateOptions, HostSlotContext, WorkerTransportError, template_registry::CandidateVerification,
     templates::TemplateBinding,
 };
-use sandproof_protocol::{WorkAction, WorkReceipt, branching::BranchRelayPort};
+use sandproof_protocol::{ResourceId, WorkAction, WorkReceipt, branching::BranchRelayPort};
 use std::sync::Arc;
 #[cfg(debug_assertions)]
 pub(crate) mod faults;
@@ -51,6 +51,22 @@ impl NodeHost {
 }
 
 impl NodeHost {
+    /// Pin the registered VM's protected checkpoint before native branch work.
+    /// The caller independently holds its original native management gate.
+    /// # Errors
+    /// Unknown provenance, source identity or configured capacity refuses.
+    pub fn prepare_branch_control(
+        &self,
+        sandbox: core::SandboxId,
+        vm: core::VmId,
+        generation: core::Generation,
+        checkpoint: &ResourceId,
+        count: usize,
+    ) -> Result<Option<crate::NativeBranchControl>, ApplicationError> {
+        self.worker
+            .prepare_branch_control(sandbox, vm, generation, checkpoint, count)
+    }
+
     /// Pause only the source of an already committed and claimed `FreezeVm`.
     /// The service independently binds the full external operation to this
     /// native action and supplies the requirement from the original saved work.

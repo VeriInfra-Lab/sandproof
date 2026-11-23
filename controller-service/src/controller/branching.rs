@@ -602,21 +602,27 @@ impl ControllerJournal {
         key: &HostBranchBatchKey,
         targets: &[BranchTarget],
         now_ms: i64,
-    ) -> Result<(HostBranchParent, HostBranchBatchPhase), JournalError> {
+    ) -> Result<(HostBranchParent, Option<HostBranchBatchPhase>), JournalError> {
         if !key.matches_parent(identity) {
             return Err(JournalError::Conflict);
         }
         let parent = self.current_branch_parent(identity, context, now_ms)?;
         let connection = &self.journal.connection;
         let limits = read_limits(connection)?.ok_or(JournalError::UnsupportedStore)?;
-        let original =
-            read_record(connection, &key.operation, limits)?.ok_or(JournalError::Conflict)?;
-        self.committed_world.check_identity(connection)?;
-        original.require_key(key, &parent)?;
-        if original.targets != targets {
+        if !valid_targets(targets, limits) {
             return Err(JournalError::Conflict);
         }
-        Ok((parent, original.phase))
+        let original = read_record(connection, &key.operation, limits)?;
+        self.committed_world.check_identity(connection)?;
+        if let Some(original) = original {
+            original.require_key(key, &parent)?;
+            if original.targets != targets {
+                return Err(JournalError::Conflict);
+            }
+            Ok((parent, Some(original.phase)))
+        } else {
+            Ok((parent, None))
+        }
     }
 
     /// Reserve the complete original plan and host secrets before guest work.
