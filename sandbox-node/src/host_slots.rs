@@ -63,6 +63,22 @@ struct FileStamp {
     digest: String,
 }
 
+impl NodeRetirement {
+    fn remove_original_files(&self) -> NodeResult<()> {
+        // A fresh run must still own every original. Only replay may
+        // treat a previously removed entry as completed cleanup.
+        for (path, expected) in &self.files {
+            if &stamp(path)? != expected {
+                return Err("original unload file changed".into());
+            }
+        }
+        for (path, expected) in &self.files {
+            remove_exact(path, expected.as_ref())?;
+        }
+        Ok(())
+    }
+}
+
 impl StoredPosition {
     fn initialize(
         phase: MappingPhase,
@@ -1094,25 +1110,27 @@ impl LinuxWorker {
             return self.observe_position_free(&row);
         }
         if row.phase == HostSlotPhase::Occupied {
-            let binding = context.binding;
-            row.retirement = Some(self.capture_retirement(context, unload_epoch)?);
-            row.phase = reduce_slot(
+            let retired = self.capture_retirement(context, unload_epoch)?;
+            let mut releasing = row.clone();
+            releasing.retirement = Some(retired);
+            releasing.phase = reduce_slot(
                 Some(row.record()),
                 SlotInput::BeginRelease {
                     position: context.position,
-                    binding,
+                    binding: context.binding,
                 },
             )
             .map_err(|_| "invalid host release")?
             .phase;
-            self.replace_node_json(
-                &self.host_position_path(context.position),
-                &StoredPosition {
-                    position: context.position,
-                    helper_gate: self.helper_gate(context.position)?,
-                    value: Some(row.clone()),
-                },
-            )?;
+            if unload_epoch.is_some() {
+                return self.finish_fresh_unload(
+                    &row,
+                    &releasing,
+                    NodeRetirement::remove_original_files,
+                );
+            }
+            self.store_release_position(&releasing)?;
+            row = releasing;
         }
         let retired = row
             .retirement
@@ -1125,20 +1143,77 @@ impl LinuxWorker {
             remove_exact(path, expected.as_ref())?;
         }
         runtime.observe_retired(&self.vm_name(context.binding.vm), &retired.manifest)?;
-        row.phase = reduce_slot(
+        self.publish_free(&row)
+    }
+
+    fn finish_fresh_unload(
+        &self,
+        occupied: &HostPosition,
+        releasing: &HostPosition,
+        remove_files: impl FnOnce(&NodeRetirement) -> NodeResult<()>,
+    ) -> NodeResult<()> {
+        let retired = releasing
+            .retirement
+            .as_ref()
+            .ok_or("missing original unload manifest")?;
+        self.validate_retirement(releasing, retired)?;
+        let runtime = Runtime::for_existing(retired.runtime.clone())?;
+        runtime.with_fresh_unload_retirement(
+            &self.vm_name(releasing.context.binding.vm),
+            &retired.manifest,
+            || {
+                self.require_release_position(occupied, retired)?;
+                self.store_release_position(releasing)
+            },
+            || {
+                self.require_release_position(releasing, retired)?;
+                remove_files(retired)
+            },
+            || {
+                self.require_release_position(releasing, retired)?;
+                for (path, _) in &retired.files {
+                    require_absent(path)?;
+                    require_absent(&node_staging::path(path)?)?;
+                }
+                self.publish_free(releasing)
+            },
+        )
+    }
+
+    fn require_release_position(
+        &self,
+        expected: &HostPosition,
+        retired: &NodeRetirement,
+    ) -> NodeResult<()> {
+        let current = self.read_host_positions()?;
+        if !current.iter().any(|row| row == expected) {
+            return Err("original unload position changed".into());
+        }
+        // Includes the locked gate's device/inode and full slot incarnation.
+        self.validate_retirement(expected, retired)
+    }
+
+    fn publish_free(&self, row: &HostPosition) -> NodeResult<()> {
+        let mut free = row.clone();
+        free.phase = reduce_slot(
             Some(row.record()),
             SlotInput::ConfirmRelease {
-                position: context.position,
-                binding: context.binding,
+                position: row.context.position,
+                binding: row.context.binding,
             },
         )
         .map_err(|_| "invalid host release confirmation")?
         .phase;
+        self.store_release_position(&free)
+    }
+
+    fn store_release_position(&self, row: &HostPosition) -> NodeResult<()> {
+        let position = row.context.position;
         self.replace_node_json(
-            &self.host_position_path(context.position),
+            &self.host_position_path(position),
             &StoredPosition {
-                position: context.position,
-                helper_gate: self.helper_gate(context.position)?,
+                position,
+                helper_gate: self.helper_gate(position)?,
                 value: Some(row.clone()),
             },
         )
@@ -1627,7 +1702,7 @@ mod tests {
         }
     }
 
-    fn context(vm: u64, predecessor: Option<u64>) -> HostSlotContext {
+    pub(super) fn context(vm: u64, predecessor: Option<u64>) -> HostSlotContext {
         HostSlotContext {
             position: HostSlotId(0),
             expected_previous: predecessor.map(core::VmId),
@@ -2205,3 +2280,7 @@ mod tests {
         assert!(!data_route_has_capacity(&config, 3, 3, false));
     }
 }
+
+#[cfg(test)]
+#[path = "host_slots_unload_tests.rs"]
+mod unload_tests;
