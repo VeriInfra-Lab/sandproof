@@ -3,7 +3,7 @@
 The batched single-threaded donor and per-child OverlayFS root follow DeltaBox
 at 1054de552758229f34daebd34f696da0d56e7919 (MIT, see DELTABOX-LICENSE).
 A trusted template supplies the prepared process and frozen root layers.
-Sandproof's cgroup attachment gate fences effects before a child may run.
+Sandproof places each child in its reserved cgroup in the fork syscall.
 """
 
 import ctypes
@@ -11,6 +11,7 @@ import fcntl
 import hashlib
 import http.client
 import json
+import logging
 import os
 from pathlib import Path
 import re
@@ -27,6 +28,8 @@ ENVD_SHA256 = "cef25869662d730fcfe0df28dc1a43d1cf019abd9285d1aa33505940b6adc749"
 MAX_MESSAGE = 16384
 CLONE_NEWNS = 0x00020000
 CLONE_NEWPID = 0x20000000
+CLONE_INTO_CGROUP = 0x200000000
+SYS_CLONE3 = 435  # Linux x86_64 and aarch64.
 MS_RDONLY = 1
 MS_NOSUID = 2
 MS_NODEV = 4
@@ -38,6 +41,7 @@ PR_CAPBSET_DROP = 24
 MNT_DETACH = 2
 DEVICE_CAPS = {0, 1, 3, 4, 5, 6, 7}
 OVERLAY_PATH = re.compile(r"/[A-Za-z0-9_./-]+")
+LOGGER = logging.getLogger(__name__)
 
 
 def _checked(result, operation):
@@ -105,15 +109,19 @@ def _root(libc, slot, lowers, last_cap):
     restricted = MS_NODEV | MS_NOSUID | MS_NOEXEC
     _mount(libc, "proc", "/proc", "proc", flags=restricted | MS_RDONLY)
     _mount(libc, "tmpfs", "/dev", "tmpfs", flags=MS_NOSUID | MS_NOEXEC, options="mode=0755")
-    for name, minor in (("null", 3), ("zero", 5), ("full", 7), ("random", 8), ("urandom", 9)):
+    nodes = (("null", 1, 3), ("zero", 1, 5), ("full", 1, 7),
+             ("random", 1, 8), ("urandom", 1, 9), ("tty", 5, 0))
+    for name, major, minor in nodes:
         path = "/dev/" + name
-        os.mknod(path, stat.S_IFCHR | 0o666, os.makedev(1, minor))
+        os.mknod(path, stat.S_IFCHR | 0o666, os.makedev(major, minor))
         os.chmod(path, 0o666)
     os.makedirs("/dev/pts")
     _mount(libc, "devpts", "/dev/pts", "devpts", flags=MS_NOSUID | MS_NOEXEC,
            options="newinstance,ptmxmode=0666,mode=0620")
     os.symlink("pts/ptmx", "/dev/ptmx")
     os.symlink("/proc/self/fd", "/dev/fd")
+    for index, name in enumerate(("stdin", "stdout", "stderr")):
+        os.symlink(f"/proc/self/fd/{index}", "/dev/" + name)
     os.mkdir("/dev/shm")
     _mount(libc, "tmpfs", "/dev/shm", "tmpfs", flags=restricted, options="mode=1777")
     _mount(libc, "tmpfs", "/run", "tmpfs", flags=restricted, options="mode=0755")
@@ -137,40 +145,47 @@ def _write_control(path, value):
         os.close(fd)
 
 
-def _spawn_gated(cgroup, work):
-    """Fork, attach the blocked child, then allow it to touch branch resources."""
-    reader, writer = os.pipe2(os.O_CLOEXEC)
-    # Keep the original child PID allocated until migration completes, even
-    # if it unexpectedly exits while blocked on the pipe.
-    mask = signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGCHLD})
-    try:
-        pid = os.fork()
-    except OSError:
-        os.close(reader)
-        os.close(writer)
-        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
-        raise
-    if pid == 0:
-        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
-        os.close(writer)
-        try:
-            allowed = os.read(reader, 1) == b"G"
-            os.close(reader)
-            if allowed:
-                work()
-        finally:
-            os._exit(0)
-    os.close(reader)
-    try:
-        _write_control(cgroup / "cgroup.procs", str(pid).encode())
-        if os.write(writer, b"G") != 1:
-            raise OSError("short fan-out gate write")
-    finally:
-        # Any interrupted attachment/permission drops the gate and the child
-        # exits before running. A child which received G is part of the cgroup.
-        os.close(writer)
-        signal.pthread_sigmask(signal.SIG_SETMASK, mask)
+class CloneArgs(ctypes.Structure):
+    """Linux struct clone_args version 2, including the cgroup field."""
+    _fields_ = [(name, ctypes.c_uint64) for name in (
+        "flags", "pidfd", "child_tid", "parent_tid", "exit_signal", "stack",
+        "stack_size", "tls", "set_tid", "set_tid_size", "cgroup",
+    )]
 
+
+def _spawn_member(cgroup, work):
+    """Start a new process directly inside one reserved cgroup v2 scope."""
+    fd = os.open(cgroup, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW)
+    args = CloneArgs(flags=CLONE_INTO_CGROUP, exit_signal=signal.SIGCHLD, cgroup=fd)
+    # PyDLL keeps the GIL while crossing the syscall. The donor is verified
+    # single-threaded and the CPython fork hooks reset interpreter state.
+    api = ctypes.pythonapi
+    syscall = ctypes.PyDLL(None, use_errno=True).syscall
+    syscall.restype = ctypes.c_long
+    api.PyOS_BeforeFork.restype = None
+    api.PyOS_AfterFork_Parent.restype = None
+    api.PyOS_AfterFork_Child.restype = None
+    try:
+        api.PyOS_BeforeFork()
+        pid = syscall(ctypes.c_long(SYS_CLONE3), ctypes.byref(args),
+                      ctypes.c_size_t(ctypes.sizeof(args)))
+        error = ctypes.get_errno()
+        if pid == 0:
+            api.PyOS_AfterFork_Child()
+            os.close(fd)
+            try:
+                work()
+            except OSError as error:
+                LOGGER.warning("fan-out child setup failed (errno %s)", error.errno)
+            except (RuntimeError, ValueError):
+                LOGGER.warning("fan-out child setup rejected")
+            finally:
+                os._exit(1)
+        api.PyOS_AfterFork_Parent()
+        if pid < 0:
+            raise OSError(error, "clone3 into fan-out cgroup")
+    finally:
+        os.close(fd)
 
 
 def _wait_exit(pid):
@@ -294,8 +309,8 @@ class LinuxGuest:
         self.default_workdir = default_workdir
         self.channel = None
         self.donor = None
-        if sys.platform != "linux" or os.geteuid() != 0:
-            raise ValueError("fan-out requires a privileged Linux guest")
+        if sys.platform != "linux" or os.geteuid() != 0 or os.uname().machine not in ("x86_64", "aarch64"):
+            raise ValueError("fan-out requires a privileged Linux guest with a supported architecture")
         private_directory(self.data)
         if (not self.cgroups.is_dir() or self.cgroups.resolve() != self.cgroups
                 or not (self.cgroups / "cgroup.controllers").is_file()):
@@ -388,8 +403,9 @@ class LinuxGuest:
                         _enter_branch(slot, self.lowers, envd, self.last_cap, branch["port"],
                                       branch["branch_id"], workload)
 
-                    _spawn_gated(cgroup, start_child)
-            except OSError:
+                    _spawn_member(cgroup, start_child)
+            except OSError as error:
+                LOGGER.warning("fan-out clone did not complete (errno %s)", error.errno)
                 success = False
             _packet(channel, {"batch_id": batch_id, "all_forked": success})
 
@@ -478,7 +494,7 @@ class LinuxGuest:
             while True:
                 events = dict(line.split() for line in (cgroup / "cgroup.events").read_text().splitlines())
                 if events.get("populated") == "0":
-                    # rmdir fences the late attach of a still-gated child.
+                    # rmdir fences any later clone3 against this cgroup FD.
                     cgroup.rmdir()
                     break
                 if time.monotonic() >= deadline:

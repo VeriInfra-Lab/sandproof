@@ -132,14 +132,14 @@ def run(envd, count):
 
         # The donor inherits this fixture-only injection. No runtime fault
         # option is available to a production caller.
-        spawn = linux._spawn_gated
+        spawn = linux._spawn_member
 
         def fail_third(cgroup, child):
             if cgroup.name == "fault.2":
                 raise OSError("fixture stopped the third fork")
             spawn(cgroup, child)
 
-        linux._spawn_gated = fail_third
+        linux._spawn_member = fail_third
         try:
             backend = linux.LinuxGuest(work / "slots", cgroups, [base], envd,
                                        default_user="root", default_workdir="/root")
@@ -191,7 +191,7 @@ def run(envd, count):
                     finally:
                         backend.close()
         finally:
-            linux._spawn_gated = spawn
+            linux._spawn_member = spawn
 
 
 def main():

@@ -1,9 +1,11 @@
+import ctypes
 import json
 from pathlib import Path
 import tempfile
 import unittest
 
 from tools.hot_fanout.control import GuestFanout
+from tools.hot_fanout.linux import CLONE_INTO_CGROUP, CloneArgs
 from tools.hot_fanout.service import _dispatch
 
 
@@ -51,6 +53,12 @@ class HotFanoutTests(unittest.TestCase):
     def own(self, max_branches=4):
         return GuestFanout(Path(self.tmp.name) / "journal", "outer", self.backend,
                            max_branches=max_branches, max_batches=4, ports=range(31000, 31005))
+
+    def test_linux_clone_layout_matches_version_two_abi(self):
+        self.assertEqual(ctypes.sizeof(CloneArgs), 88)
+        self.assertEqual(CloneArgs.exit_signal.offset, 32)
+        self.assertEqual(CloneArgs.cgroup.offset, 80)
+        self.assertEqual(CLONE_INTO_CGROUP, 1 << 33)
 
     def test_same_plan_replays_once_and_redacts_credentials(self):
         request = plan()

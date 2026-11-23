@@ -77,8 +77,7 @@ def sync_directory(path):
 class GuestFanout:
     """Serialized exact-batch journal scoped to one runtime incarnation.
 
-    The backend attaches every child to its already-reserved ordinal before
-    allowing workload execution. Its cleanup must prove empty and must fence
+    The backend creates each child inside its already-reserved ordinal. Its cleanup must prove empty and must fence
     any late start for that ordinal before returning.
     """
 
