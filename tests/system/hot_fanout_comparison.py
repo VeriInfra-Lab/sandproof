@@ -232,12 +232,10 @@ class WindowClient(PublicUnloadScenario):
         self.operation_accepted()
 
 
-def prepare_independent(client, owner, checkpoint, parameters, window, index):
-    from e2b import Sandbox
-
+def prepare_independent(client, checkpoint, parameters, window, index):
     client.create_at(parameters, window, index + 1)
     client.wait_running()
-    sandbox = Sandbox.connect(client.session, **owner)
+    sandbox = client.sdk()
     # Pin the same image bytes. The image unit's boot attempt cannot start
     # a host-controlled donor without the channel, and is stopped before the
     # independent resident workload is started.
@@ -273,7 +271,6 @@ def guest_workload_rss(sandbox, hot):
 
 
 def measure_workload(args, receipt, services, native, ready, vm_group, data, clients, claims, native_ids, report):
-    from e2b import Sandbox
     from sdk_server_smoke import options as sdk_options
 
     arm = args.mode
@@ -289,18 +286,22 @@ def measure_workload(args, receipt, services, native, ready, vm_group, data, cli
         if arm == "hot":
             client.create(prepare)
             running = client.wait_running()
-            parent = Sandbox.connect(client.session, **owner)
+            parent = client.sdk()
             assert parent.sandbox_id == client.session
             preparation_end = time.monotonic()
             _, _, identities = product.start_batch(client, running, checkpoint, args.n, report)
         else:
             window = client.reserve_window()
             identities = parallel(args.n, lambda index: prepare_independent(
-                clients[index], owner, checkpoint, prepare, window, index))
+                clients[index], checkpoint, prepare, window, index))
             assert len(set(identities)) == args.n
             preparation_end = time.monotonic()
         report["preparation_seconds"] = preparation_end - started
-        sandboxes = product.concurrent_sdk(identities, owner, receipt["expected_inherited_mark"], report)
+        # Independent VMs use the original SDK with a read-only session
+        # lookup, so their comparison excludes an implicit lifetime renewal.
+        connect = None if arm == "hot" else lambda index: clients[index].sdk()
+        sandboxes = product.concurrent_sdk(
+            identities, owner, receipt["expected_inherited_mark"], report, connect=connect)
         sdk_complete = time.monotonic()
         report.update(cold_to_all_sdk_seconds=sdk_complete - started,
                       prepared_to_all_sdk_seconds=sdk_complete - preparation_end)

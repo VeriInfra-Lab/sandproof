@@ -352,7 +352,7 @@ def race_last_branch_slot(client, running, checkpoint, report):
     return ready
 
 
-def concurrent_sdk(branch_ids, options, inherited, report):
+def concurrent_sdk(branch_ids, options, inherited, report, *, connect=None):
     from e2b import Sandbox
 
     count = len(branch_ids)
@@ -363,7 +363,7 @@ def concurrent_sdk(branch_ids, options, inherited, report):
         marks = {}
         order.wait()
         before = time.monotonic()
-        sandbox = Sandbox.connect(branch_id, **options)
+        sandbox = Sandbox.connect(branch_id, **options) if connect is None else connect(index)
         assert sandbox.sandbox_id == branch_id
         marks["connect"] = time.monotonic() - before
         order.wait()
@@ -546,7 +546,8 @@ def check_live_routes_after_restart(client, running, options, batches, witnesses
         chosen = options | {"request_timeout": min(15, client.remaining())}
         # Each command and file request runs once through the stock SDK. Any
         # unknown result fails the check under the original operation deadline.
-        current = Sandbox.connect(original.sandbox_id, **chosen)
+        current = (client.sdk() if original.sandbox_id == client.session
+                   else Sandbox.connect(original.sandbox_id, **chosen))
         assert current.sandbox_id == original.sandbox_id
         assert current._envd_access_token == original._envd_access_token
         response = current.commands.run("cat " + shlex.quote(path), user="root",
@@ -712,12 +713,9 @@ def run(args, receipt, report):
             owner = sdk_options(services.key, services.sdk_url, services.sdk_url)
             slot_path, context, claim = slot_and_claim(native)
             [native_id] = capture_live_native_ids(native, [claim], original_json)
-            # Parent Connect can renew a short lease. The original read-only
-            # projection constructs the same SDK without a management write.
-            if args.fault_case in ("natural-expiry", "parent-vmm-loss"):
-                parent = client.sdk()
-            else:
-                parent = Sandbox.connect(client.session, **owner)
+            # Preserve the original accepted parent version for the keyed
+            # operations below. Branch connections use the stock Connect API.
+            parent = client.sdk()
 
         def confirm_native_release():
             with phase(report, "native_release", client):
