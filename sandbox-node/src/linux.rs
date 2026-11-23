@@ -80,6 +80,30 @@ const NODE_STATE_DIRECTORIES: &[&str] = &["secrets", "fences", "slots", "startup
 
 const ENVD_URL: &str = "http://172.16.0.2:49983";
 
+/// Host-local opt-in. The digest covers the full sealed local launch
+/// descriptor, including the rebased owner and the protected artifact paths.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HotFanoutTemplate {
+    pub descriptor_digest: [u8; 32],
+    pub checkpoint_id: String,
+    pub max_branches: u8,
+}
+
+impl HotFanoutTemplate {
+    #[must_use]
+    pub fn is_valid(&self) -> bool {
+        self.descriptor_digest != [0; 32]
+            && (1..=64).contains(&self.max_branches)
+            && (1..=64).contains(&self.checkpoint_id.len())
+            && self.checkpoint_id.as_bytes()[0].is_ascii_alphanumeric()
+            && self
+                .checkpoint_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+    }
+}
+
 /// Deployment inputs are fixed, root-owned host paths, not API request data.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -99,11 +123,21 @@ pub struct NodeConfig {
     /// V1 has one deployment-controlled managed-disk policy, not arbitrary
     /// user-supplied host paths or a directory ACL implementation.
     pub file_policy_digest: core::PolicyDigest,
+    /// Operator approval of one local immutable template descriptor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hot_fanout_template: Option<HotFanoutTemplate>,
 }
 
 impl NodeConfig {
     fn validate_deployment(&self) -> NodeResult<()> {
         host_slots::validate_limits(&self.bounded_host)?;
+        if self
+            .hot_fanout_template
+            .as_ref()
+            .is_some_and(|pin| !pin.is_valid())
+        {
+            return Err("invalid protected hot fan-out template pin".into());
+        }
         if self.bounded_host.physical_storage.is_none()
             || self.bounded_host.console_policy
                 != Some(sandproof_controller_service::ConsolePolicy::Discard)
@@ -159,6 +193,8 @@ struct GuestSecret {
     env_vars: BTreeMap<String, String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     template: Option<TemplateBinding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    hot_fanout: Option<HotFanoutTemplate>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

@@ -18,6 +18,8 @@ def _dispatch(owner, message):
     if type(message) is not dict:
         raise ValueError("invalid fan-out operation")
     operation = message.get("operation")
+    if operation == "probe" and message.keys() == {"operation"}:
+        return owner.probe()
     if operation == "start" and message.keys() == {"operation", "plan"}:
         return owner.start(message["plan"])
     if operation == "observe" and message.keys() == {"operation", "batch_id"}:

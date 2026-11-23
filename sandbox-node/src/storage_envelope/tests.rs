@@ -38,6 +38,7 @@ fn config() -> NodeConfig {
         memory_mib: 128,
         host_resources: None,
         file_policy_digest: PolicyDigest(1),
+        hot_fanout_template: None,
     }
 }
 
@@ -245,6 +246,7 @@ fn admitted_options_bound_secret_startup_and_request_payloads() {
         sha512: "f".repeat(128),
         env_vars: options.env_vars.clone(),
         template: options.template.clone(),
+        hot_fanout: None,
     };
     let startup = crate::startup::StartupRecord {
         sandbox: u64::MAX,

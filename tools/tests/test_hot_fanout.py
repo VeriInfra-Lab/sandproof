@@ -9,6 +9,7 @@ import unittest
 
 from tools.hot_fanout.control import GuestFanout
 from tools.hot_fanout.linux import CLONE_INTO_CGROUP, CloneArgs
+from tools.hot_fanout.prepared import validate_frozen_mounts
 from tools.hot_fanout.service import _dispatch, _firecracker_exchange, _read_frame, _write_frame
 
 
@@ -20,6 +21,10 @@ class FakeGuest:
         self.cleanup_failure = None
         self.starts = 0
         self.fail_presence = False
+        self.has_checkpoint = True
+
+    def checkpoint_available(self):
+        return self.has_checkpoint
 
     def start(self, plan):
         self.starts += 1
@@ -103,6 +108,28 @@ class HotFanoutTests(unittest.TestCase):
         self.assertEqual(CloneArgs.exit_signal.offset, 32)
         self.assertEqual(CloneArgs.cgroup.offset, 80)
         self.assertEqual(CLONE_INTO_CGROUP, 1 << 33)
+
+    def test_prepared_root_requires_readonly_superblock_without_writable_alias(self):
+        sealed = "100 90 7:2 / /run/frozen ro - squashfs /dev/loop2 ro"
+        validate_frozen_mounts([Path("/run/frozen")], sealed)
+        for broken in [
+            sealed.replace("/dev/loop2 ro", "/dev/loop2 rw"),
+            sealed + "\n101 90 7:2 / /run/alias rw - squashfs /dev/loop2 ro",
+            sealed.replace("7:2 / /run/frozen", "7:2 /child /run/frozen"),
+            sealed.replace("/run/frozen", "/run/wrong"),
+        ]:
+            with self.assertRaises(ValueError):
+                validate_frozen_mounts([Path("/run/frozen")], broken)
+
+    def test_probe_requires_original_live_checkpoint(self):
+        with self.own() as owner:
+            self.assertEqual(_dispatch(owner, {"operation": "probe"}),
+                             {"status": "checkpoint_ready", "checkpoint_id": "outer",
+                              "max_branches": 4})
+            self.backend.has_checkpoint = False
+            self.assertEqual(_dispatch(owner, {"operation": "probe"}), {"status": "unavailable"})
+            with self.assertRaises(ValueError):
+                _dispatch(owner, {"operation": "probe", "checkpoint_id": "outer"})
 
     def test_same_plan_replays_once_and_redacts_credentials(self):
         request = plan()

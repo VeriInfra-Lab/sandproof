@@ -15,6 +15,7 @@ import logging
 import os
 from pathlib import Path
 import re
+import select
 import shutil
 import signal
 import sys
@@ -396,6 +397,14 @@ class LinuxGuest:
             self.channel = manager
         finally:
             os.close(envd)
+
+    def checkpoint_available(self):
+        if self.channel is None:
+            return False
+        poller = select.poll()
+        failure = select.POLLERR | select.POLLHUP | select.POLLNVAL
+        poller.register(self.channel, failure)
+        return all(not flags & failure for _, flags in poller.poll(0))
 
     def _paths(self, batch_id, ordinal):
         name = f"{identifier(batch_id)}.{ordinal}"

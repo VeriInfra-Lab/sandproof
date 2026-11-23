@@ -177,6 +177,7 @@ mod tests {
             sha512: hash_token(token),
             env_vars: std::collections::BTreeMap::default(),
             template: None,
+            hot_fanout: None,
         }
     }
 

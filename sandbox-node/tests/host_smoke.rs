@@ -49,6 +49,7 @@ fn test_config() -> NodeConfig {
             .ok()
             .map(|value| serde_json::from_str(&value).expect("valid host resource configuration")),
         file_policy_digest: core::PolicyDigest(1),
+        hot_fanout_template: None,
     }
 }
 

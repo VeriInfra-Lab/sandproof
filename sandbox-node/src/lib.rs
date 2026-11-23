@@ -38,9 +38,9 @@ mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::{
     CAPTURE_WORKER_INPUT_BYTES, CAPTURE_WORKER_OUTPUT_BYTES, CredentialFault, ExecutionReport,
-    HostInventory, HostMetadataEnvelope, HostObservation, LaunchCredentialStatus, LinuxObservation,
-    LinuxWorker, NodeConfig, ObservedSlot, PreparedCaptureWorker, ProtectedCaptureSettings,
-    RouteCapacityExceeded, run_capture_worker,
+    HostInventory, HostMetadataEnvelope, HostObservation, HotFanoutTemplate,
+    LaunchCredentialStatus, LinuxObservation, LinuxWorker, NodeConfig, ObservedSlot,
+    PreparedCaptureWorker, ProtectedCaptureSettings, RouteCapacityExceeded, run_capture_worker,
 };
 
 #[cfg(target_os = "linux")]

@@ -190,6 +190,12 @@ class GuestFanout:
         self._save(row)
         return self._observe(row)
 
+    def probe(self):
+        if self._lock is None or not self.backend.checkpoint_available():
+            return {"status": "unavailable"}
+        return {"status": "checkpoint_ready", "checkpoint_id": self.checkpoint_id,
+                "max_branches": self.max_branches}
+
     def observe(self, batch_id):
         row = self._load(batch_id)
         if row is None:
