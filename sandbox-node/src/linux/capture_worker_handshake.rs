@@ -175,7 +175,7 @@ pub(super) fn run(expected_job_digest: &str) -> NodeResult<()> {
     let released = await_release(&mut input, &source, deadline).unwrap_or(false);
     let outcome = if released {
         match job.execute(expected) {
-            Ok(manifest_digest) => CaptureWorkerOutcome::Captured { manifest_digest },
+            Ok(success) => CaptureWorkerOutcome::Captured(success),
             Err(_) => CaptureWorkerOutcome::Failed,
         }
     } else {

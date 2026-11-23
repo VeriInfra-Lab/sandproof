@@ -7,7 +7,8 @@ use crate::{
     full_snapshot::{self, CheckedStoredCapture, ExpectedFullCapture},
 };
 use sandbox_runtime::{
-    OriginalPauseObservation, RuntimeProcessIdentity, snapshot_store::BundleReadLimits,
+    OriginalPauseObservation, RuntimeProcessIdentity,
+    snapshot_store::{BundleReadLimits, LiveCaptureHandoff},
 };
 use sandproof_controller_service::capture::{
     CommittedCaptureExpectation, FullCaptureWorkRequest, PauseWorkRequest, RawSourceObservation,
@@ -426,16 +427,7 @@ impl LinuxWorker {
         )?;
         require_expected_request(&prepared.job.full, &expected)?;
         let worker = prepared.worker_binding()?;
-        prepared.release_and_read(permit, |job, manifest| {
-            // Read the actual original bundle under the SAME retained gate.
-            // This is material observation, not durable adoption or new access.
-            let stored = self.observe_full_capture(
-                provider,
-                profile,
-                &job.full,
-                &job.source,
-                Some(*manifest.as_bytes()),
-            )?;
+        prepared.release_and_read(permit, |job, reply| {
             let completion = super::capture_worker::read_completion(
                 &profile.layout,
                 &job.action,
@@ -443,13 +435,26 @@ impl LinuxWorker {
                 &job.source,
                 &worker,
             )?;
+            if completion.manifest_digest != reply.manifest_digest {
+                return Err("worker reply differs from durable completion".into());
+            }
+            // Reopen original objects under the same retained gate. Only this
+            // path can reuse privately handed off artifact measurements.
+            let stored = self.observe_completed_full_capture(
+                provider,
+                profile,
+                &job.full,
+                &job.source,
+                *completion.manifest_digest.as_bytes(),
+                reply.handoff.as_deref(),
+            )?;
             let bytes = stored
                 .manifest()
                 .files
                 .iter()
                 .try_fold(0_u64, |n, f| n.checked_add(f.length))
                 .ok_or("material length overflow")?;
-            if completion.manifest_digest != manifest || completion.material_bytes != bytes {
+            if completion.material_bytes != bytes {
                 return Err("worker completion differs from actual published material".into());
             }
             self.require_full_action(&job.action, &job.full)?;
@@ -493,12 +498,15 @@ impl LinuxWorker {
         ) {
             return Err("completed Full original source no longer paused".into());
         }
-        let stored = self.observe_full_capture(
+        // A replacement manager only has the original durable completion.
+        // Even a warm cache cannot substitute for fresh content verification.
+        let stored = self.observe_completed_full_capture(
             provider,
             profile,
             full,
             source,
-            Some(*completion.manifest_digest.as_bytes()),
+            *completion.manifest_digest.as_bytes(),
+            None,
         )?;
         let bytes = stored
             .manifest()
@@ -521,13 +529,14 @@ impl LinuxWorker {
         })
     }
 
-    pub(crate) fn observe_full_capture(
+    fn observe_completed_full_capture(
         &self,
         provider: &ProtectedHostEpochSource,
         profile: &ProtectedCaptureProfile,
         request: &FullCaptureWorkRequest,
         original: &SourceObservationRequirement,
-        manifest: Option<[u8; 32]>,
+        manifest: [u8; 32],
+        handoff: Option<&LiveCaptureHandoff>,
     ) -> NodeResult<CheckedStoredCapture> {
         // No live-source assumption for this FILE observation. It cannot prove
         // a prior Full/helper/copy worker ended, or replace saved provenance.
@@ -545,7 +554,7 @@ impl LinuxWorker {
             start_time_ticks: original.source.start_time_ticks,
             boot_id: original.source.boot_id.clone(),
         };
-        full_snapshot::observe_stored_capture(
+        full_snapshot::observe_after_capture_worker(
             &profile.layout,
             &ExpectedFullCapture {
                 resource_id: request.pause.source_resource.id.as_str(),
@@ -555,6 +564,7 @@ impl LinuxWorker {
             },
             manifest,
             read_limits(&expected),
+            handoff,
         )
     }
 }

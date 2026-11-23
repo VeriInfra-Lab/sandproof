@@ -12,6 +12,7 @@ use std::error::Error;
 
 #[path = "full_snapshot_observation.rs"]
 mod observation;
+pub(crate) use observation::observe_after_capture_worker;
 pub use observation::{CheckedStoredCapture, observe_stored_capture};
 #[path = "full_snapshot_execution.rs"]
 mod execution;
