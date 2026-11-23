@@ -1411,6 +1411,35 @@ impl Runtime {
         self.api_with_timeout(id, method, path, body, Duration::from_secs(2))
     }
 
+    /// Exchange one bounded guest request on the original control connection.
+    /// The caller supplies accepted work and its serialized request, and
+    /// checks the reply with the original operation identity. Unknown
+    /// outcomes require an observation of that operation.
+    /// # Errors
+    /// Rejects malformed or oversized frames, expired deadlines, and any
+    /// original VM identity or connection mismatch.
+    pub fn exchange_hot_fanout_control(
+        &self,
+        id: &str,
+        expected: &RuntimeProcessIdentity,
+        request: &[u8],
+        timeout: Duration,
+    ) -> Result<Vec<u8>, RuntimeError> {
+        crate::hot_fanout_wire::request_length(request)?;
+        let deadline =
+            Instant::now()
+                .checked_add(timeout)
+                .ok_or(RuntimeError::InvalidConfiguration(
+                    "hot fan-out deadline overflow",
+                ))?;
+        let mut stream = self.connect_hot_fanout_before(id, expected, deadline)?;
+        Ok(crate::hot_fanout_wire::exchange(
+            &mut stream,
+            request,
+            deadline,
+        )?)
+    }
+
     /// Connect to the protected control socket of this exact opted-in VMM.
     ///
     /// The caller holds the original runtime's helper gate and accepted work.
@@ -1424,18 +1453,32 @@ impl Runtime {
         expected: &RuntimeProcessIdentity,
         timeout: Duration,
     ) -> Result<UnixStream, RuntimeError> {
-        if timeout.is_zero() {
-            return Err(RuntimeError::InvalidConfiguration(
-                "hot fan-out control timeout must be positive",
-            ));
-        }
+        let deadline =
+            Instant::now()
+                .checked_add(timeout)
+                .ok_or(RuntimeError::InvalidConfiguration(
+                    "hot fan-out deadline overflow",
+                ))?;
+        self.connect_hot_fanout_before(id, expected, deadline)
+    }
+
+    fn connect_hot_fanout_before(
+        &self,
+        id: &str,
+        expected: &RuntimeProcessIdentity,
+        deadline: Instant,
+    ) -> Result<UnixStream, RuntimeError> {
+        crate::hot_fanout_wire::time_left(deadline)?;
         let original = self.open_original_source(id, expected)?;
-        boot_plan::BootPlan::for_hot_fanout(&self.config).check_full_configuration(&self.api(
+        let configuration = self.api_with_timeout(
             id,
             "GET",
             "/vm/config",
             None,
-        )?)?;
+            crate::hot_fanout_wire::time_left(deadline)?.min(Duration::from_secs(2)),
+        )?;
+        boot_plan::BootPlan::for_hot_fanout(&self.config)
+            .check_full_configuration(&configuration)?;
         let path = self.root_path(id).join(HOT_FANOUT_VSOCK);
         let metadata = fs::symlink_metadata(&path)?;
         if !metadata.file_type().is_socket()
@@ -1467,8 +1510,9 @@ impl Runtime {
             ));
         }
         self.verify_original_source(&original, false)?;
-        stream.set_read_timeout(Some(timeout))?;
-        stream.set_write_timeout(Some(timeout))?;
+        let remaining = crate::hot_fanout_wire::time_left(deadline)?;
+        stream.set_read_timeout(Some(remaining))?;
+        stream.set_write_timeout(Some(remaining))?;
         Ok(stream)
     }
 
