@@ -469,18 +469,25 @@ impl BranchBatchLedger {
     }
 
     pub(crate) fn active_routes(&self) -> Vec<BranchAccessSelector> {
-        self.batches
-            .iter()
-            .flat_map(|batch| {
-                batch.plan.iter().filter_map(|target| {
-                    batch.target(&target.sandbox).map(|_| BranchAccessSelector {
+        let mut routes = Vec::new();
+        for batch in &self.batches {
+            let State::Ready { branches } = &batch.state else {
+                continue;
+            };
+            routes.extend(
+                batch
+                    .plan
+                    .iter()
+                    .zip(branches)
+                    .filter(|(_, phase)| **phase == BranchPhase::Active)
+                    .map(|(target, _)| BranchAccessSelector {
                         batch: batch.identity.clone(),
                         operation: batch.operation.clone(),
                         branch: target.sandbox.clone(),
-                    })
-                })
-            })
-            .collect()
+                    }),
+            );
+        }
+        routes
     }
 
     pub(crate) fn is_valid(&self) -> bool {

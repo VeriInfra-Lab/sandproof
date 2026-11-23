@@ -6,6 +6,7 @@ use sandproof_api::{
     PortError,
     admission::{RequestAdmission, RequestClass},
 };
+use sandproof_protocol::branching::BranchControlAction;
 use std::sync::Arc;
 use tokio::task::{JoinSet, spawn_blocking};
 
@@ -42,7 +43,13 @@ impl<T: TemplateProvider> CenterApplication<SharedBusinessAuthority, RegisteredH
         work.rotate_left(*cursor % available);
         let mut tasks = JoinSet::new();
         for request in work.into_iter().take(MAX_BRANCH_DISPATCHES_PER_ROUND) {
-            let Some(lease) = admission.try_acquire(RequestClass::Background) else {
+            let class = match request.action {
+                BranchControlAction::Release { .. } => RequestClass::Control,
+                BranchControlAction::Start {} | BranchControlAction::Observe {} => {
+                    RequestClass::Ordinary
+                }
+            };
+            let Some(lease) = admission.try_acquire(class) else {
                 break;
             };
             *cursor = cursor.wrapping_add(1);
@@ -65,12 +72,15 @@ impl<T: TemplateProvider> CenterApplication<SharedBusinessAuthority, RegisteredH
                 .map_err(|_| PortError::OutcomeUnknown)?
             });
         }
+        let mut failure = None;
         while let Some(result) = tasks.join_next().await {
-            match result.map_err(|_| PortError::OutcomeUnknown)? {
-                Ok(()) | Err(PortError::Conflict | PortError::NotFound) => {}
-                Err(error) => return Err(error),
+            let result = result.unwrap_or(Err(PortError::OutcomeUnknown));
+            if let Err(error) = result
+                && !matches!(error, PortError::Conflict | PortError::NotFound)
+            {
+                failure.get_or_insert(error);
             }
         }
-        Ok(())
+        failure.map_or(Ok(()), Err)
     }
 }
