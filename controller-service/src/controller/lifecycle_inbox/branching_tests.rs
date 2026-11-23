@@ -2,13 +2,16 @@
 //! readiness/cleanup observations supplied by each test.
 use super::{ControllerJournal, tests as fixture};
 use crate::{
-    HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits, JournalError,
-    NeverCrash,
+    HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits,
+    InternalLocalBinding, JournalError, NeverCrash,
 };
 use sandproof_protocol::{
     DataKind, SandboxId,
     branching::{BranchAccessIdentity, BranchAccessSelector, BranchBatchIdentity, BranchTarget},
-    lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity, LifecycleOperation},
+    lifecycle::{
+        AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleAccessIdentity,
+        LifecycleOperation, LifecycleWindowClose, TerminalLifecycleObservation, TerminalStatus,
+    },
 };
 use std::path::Path;
 
@@ -31,16 +34,25 @@ fn running(
         request.center.clone(),
         request.request.binding.node.clone(),
     );
+    let (parent, _) = admit_running(&mut journal, &request, &context);
+    (journal, parent, context)
+}
+
+fn admit_running(
+    journal: &mut ControllerJournal,
+    request: &AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+) -> (LifecycleAccessIdentity, InternalLocalBinding) {
     journal
-        .record_lifecycle_intent(&request, &context, &mut NeverCrash)
+        .record_lifecycle_intent(request, context, &mut NeverCrash)
         .unwrap();
     let local = journal
-        .admit_lifecycle_create(&request, &context, fixture::admission(), &mut NeverCrash)
+        .admit_lifecycle_create(request, context, fixture::admission(), &mut NeverCrash)
         .unwrap()
         .local
         .unwrap();
     crate::finish_admitted_create_timed(
-        &mut journal,
+        journal,
         local.sandbox,
         local.operation,
         &mut crate::controller::tests_support::worker,
@@ -54,15 +66,15 @@ fn running(
         unreachable!();
     };
     let parent = LifecycleAccessIdentity {
-        center: request.center,
-        node: request.request.binding.node,
-        session: request.request.binding.session,
-        operation: request.request.binding.key,
+        center: request.center.clone(),
+        node: request.request.binding.node.clone(),
+        session: request.request.binding.session.clone(),
+        operation: request.request.binding.key.clone(),
         accepted_version: request.accepted_version,
         incarnation: target_incarnation,
         protocol_version: request.request.binding.protocol_version,
     };
-    (journal, parent, context)
+    (parent, local)
 }
 
 fn key(parent: &LifecycleAccessIdentity, batch: &str, sequence: u64) -> HostBranchBatchKey {
@@ -371,4 +383,157 @@ fn unknown_branch_reservation_commit_reconciles_only_the_original_plan() {
             assert_eq!(after[0].token(), existing);
         }
     }
+}
+
+#[test]
+fn host_branch_quota_retires_with_exact_terminal_parent_window_and_rejects_old_replay() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("db");
+    let (mut journal, original, context) = running(&path);
+    journal
+        .configure_host_branching(HostBranchLimits {
+            max_batches: 2,
+            ..LIMITS
+        })
+        .unwrap();
+    let first = key(&original, "first", 10);
+    let first_targets = [target("first", 31_000)];
+    journal
+        .reserve_host_branch_batch(&original, &context, &first, &first_targets, NOW)
+        .unwrap();
+    let create = fixture::create("alpha", "session-a");
+    let local = journal
+        .lifecycle_work_state(&create, &context)
+        .unwrap()
+        .local
+        .unwrap();
+
+    let (survivor, _) = admit_running(
+        &mut journal,
+        &fixture::create("bravo", "session-b"),
+        &context,
+    );
+    let other = key(&survivor, "surviving", 10);
+    let other_targets = [target("other", 31_000)];
+    journal
+        .reserve_host_branch_batch(&survivor, &context, &other, &other_targets, NOW)
+        .unwrap();
+    let other_token = journal
+        .pending_host_branch_guest_plan(&survivor, &context, &other, NOW)
+        .unwrap()[0]
+        .token()
+        .to_owned();
+    let successor = key(&survivor, "next", 11);
+    let successor_targets = [target("next", 31_001)];
+    let must_retain_quota = |journal: &mut ControllerJournal| {
+        assert!(matches!(
+            journal.reserve_host_branch_batch(
+                &survivor,
+                &context,
+                &successor,
+                &successor_targets,
+                NOW
+            ),
+            Err(JournalError::MaintenanceCapacity)
+        ));
+    };
+    must_retain_quota(&mut journal);
+
+    let close =
+        confirm_terminal_branch_parent(&mut journal, &create, local, &context, must_retain_quota);
+    crate::controller::transaction::fail_next_commit(false);
+    assert!(matches!(
+        journal.close_lifecycle_window(&close, &context, &mut NeverCrash),
+        Err(JournalError::CommitUncertain(_))
+    ));
+    drop(journal);
+    let mut journal = fixture::open(&path);
+    fixture::refresh_epoch(&mut journal);
+    must_retain_quota(&mut journal);
+
+    crate::controller::transaction::fail_next_commit(true);
+    assert!(matches!(
+        journal.close_lifecycle_window(&close, &context, &mut NeverCrash),
+        Err(JournalError::CommitUncertain(_))
+    ));
+    drop(journal);
+    let mut journal = fixture::open(&path);
+    fixture::refresh_epoch(&mut journal);
+    let ack = journal
+        .close_lifecycle_window(&close, &context, &mut NeverCrash)
+        .unwrap();
+    assert_eq!(ack.terminal, close.terminal);
+    assert_eq!(ack.retired_through, close.terminal.request.retention.window);
+    assert_eq!(
+        journal
+            .pending_host_branch_guest_plan(&survivor, &context, &other, NOW)
+            .unwrap()[0]
+            .token(),
+        other_token,
+    );
+    assert!(matches!(
+        journal.reserve_host_branch_batch(&original, &context, &first, &first_targets, NOW),
+        Err(JournalError::Conflict)
+    ));
+    assert_eq!(
+        journal
+            .reserve_host_branch_batch(&survivor, &context, &successor, &successor_targets, NOW)
+            .unwrap(),
+        HostBranchBatchPhase::Pending,
+    );
+}
+
+fn confirm_terminal_branch_parent(
+    journal: &mut ControllerJournal,
+    create: &AcceptedLifecycleIntent,
+    local: InternalLocalBinding,
+    context: &AuthenticatedCenterContext,
+    must_retain_quota: impl Fn(&mut ControllerJournal),
+) -> LifecycleWindowClose {
+    let close = LifecycleWindowClose {
+        terminal: TerminalLifecycleObservation {
+            request: fixture::destroy(create),
+            status: TerminalStatus::Cleaned,
+        },
+    };
+    journal
+        .record_lifecycle_intent(&close.terminal.request, context, &mut NeverCrash)
+        .unwrap();
+    assert!(matches!(
+        journal.close_lifecycle_window(&close, context, &mut NeverCrash),
+        Err(JournalError::UnresolvedAction)
+    ));
+    must_retain_quota(journal);
+
+    crate::finish_accepted_kill(
+        journal,
+        local.sandbox,
+        sandbox_controller_core::OperationId(2),
+        &mut crate::controller::tests_support::worker,
+    )
+    .unwrap();
+    let position = journal.host_slot_context(local.sandbox).unwrap().unwrap();
+    assert!(
+        journal
+            .release_host_slot(
+                position,
+                |_| Err(crate::WorkerTransportError::ReplyLost),
+                &mut NeverCrash
+            )
+            .is_err()
+    );
+    must_retain_quota(journal);
+    journal
+        .release_host_slot(position, |_| Ok(()), &mut NeverCrash)
+        .unwrap();
+    assert!(matches!(
+        journal.close_lifecycle_window(&close, context, &mut NeverCrash),
+        Err(JournalError::UnresolvedAction)
+    ));
+    must_retain_quota(journal);
+    journal
+        .confirm_lifecycle_terminal(&close.terminal, context, &mut NeverCrash)
+        .unwrap();
+
+    close
 }

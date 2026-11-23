@@ -156,20 +156,28 @@ impl<H: ControllerHost> ControllerApplication<H> {
             }
             Err(error) => return Err(error),
         };
-        if let Some(state) = state
-            && let Some(local) = state.local
+        let local = state.and_then(|state| state.local);
+        if let Some(local) = local
             && (inner.active_sandboxes.contains(&local.sandbox)
                 || !super::execution::local_routes_dropped(&inner, local.sandbox)
                 || !inner
                     .data_drains
                     .get(&local.sandbox.0)
-                    .is_none_or(super::DataLease::drained))
+                    .is_none_or(super::DataLease::drained)
+                || !inner
+                    .branch_data_pins
+                    .get(&local.sandbox.0)
+                    .is_none_or(|pins| pins.values().all(super::branching::BranchPins::drained)))
         {
             return Err(JournalError::UnresolvedAction);
         }
-        inner
+        let closed = inner
             .journal
-            .close_lifecycle_window(request, context, &mut NeverCrash)
+            .close_lifecycle_window(request, context, &mut NeverCrash)?;
+        if let Some(local) = local {
+            inner.branch_data_pins.remove(&local.sandbox.0);
+        }
+        Ok(closed)
     }
 
     /// Apply or replay the exact recorded lifetime update under original SQL

@@ -10,7 +10,9 @@ use sandproof_protocol::{
         valid_ready_targets,
     },
     internal::NodeIdentity,
-    lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity, OperationKey},
+    lifecycle::{
+        AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleAccessIdentity, OperationKey,
+    },
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -470,6 +472,61 @@ fn check_room(
     }
     if targets.len() > remaining {
         return Err(JournalError::MaintenanceCapacity);
+    }
+    Ok(())
+}
+
+// Called only inside the original lifecycle-window close transaction, after
+// exact terminal and physical-release checks and before removing the mapping.
+pub(super) fn retire_closed_parent(
+    tx: &WorldTransaction<'_>,
+    local: InternalLocalBinding,
+    terminal: &AcceptedLifecycleIntent,
+) -> Result<(), JournalError> {
+    let Some(limits) = read_limits(tx)? else {
+        return Ok(());
+    };
+    let mut statement = tx.prepare(
+        "SELECT operation,parent,execution,record,sha256 FROM controller_host_branch_batches LIMIT ?1",
+    )?;
+    let rows = statement.query_map([u32::from(limits.max_batches) + 1], |row| {
+        Ok((
+            row.get(0)?,
+            row.get(1)?,
+            row.get(2)?,
+            row.get(3)?,
+            row.get(4)?,
+        ))
+    })?;
+    let binding = &terminal.request.binding;
+    let mut retired = Vec::new();
+    for (index, row) in rows.enumerate() {
+        if index >= usize::from(limits.max_batches) {
+            return Err(JournalError::CorruptStore);
+        }
+        let record = load(row?, limits)?;
+        if record.parent.sandbox != local.sandbox {
+            continue;
+        }
+        if record.parent.owner != local.owner
+            || record.parent.node != binding.node
+            || record.key.batch.parent != binding.session
+            || record.key.operation.deployment != binding.key.deployment
+            || record.key.operation.owner != binding.key.owner
+        {
+            return Err(JournalError::CorruptStore);
+        }
+        retired.push(digest(&record.key.operation)?);
+    }
+    drop(statement);
+    for key in retired {
+        if tx.execute(
+            "DELETE FROM controller_host_branch_batches WHERE operation=?1",
+            [key.as_slice()],
+        )? != 1
+        {
+            return Err(JournalError::CorruptStore);
+        }
     }
     Ok(())
 }

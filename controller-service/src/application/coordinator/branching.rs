@@ -22,6 +22,10 @@ impl BranchPins {
     pub(super) fn revoke(&self) {
         self.revoked.send_replace(true);
     }
+
+    pub(super) fn drained(&self) -> bool {
+        *self.revoked.borrow() && self.revoked.receiver_count() == 0 && self.drain.drained()
+    }
 }
 
 /// A ready native branch permit retaining the original VM gate and both drain
