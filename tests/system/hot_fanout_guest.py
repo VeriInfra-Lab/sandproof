@@ -41,8 +41,9 @@ def require(expectation, reason):
 
 def make_package(work):
     tree = work / "package"
-    (tree / "DEBIAN").mkdir(parents=True)
-    (tree / "DEBIAN/control").write_text(
+    control = tree / "DEBIAN/control"
+    control.parent.mkdir(parents=True)
+    control.write_text(
         "Package: sandproof-hot-fanout-check\nVersion: 1.0\nArchitecture: all\n"
         "Maintainer: Sandproof <sandproof@example.invalid>\n"
         "Description: Disposable root overlay fixture\n"
@@ -50,6 +51,14 @@ def make_package(work):
     marker = tree / "usr/share/sandproof-hot-fanout-check/marker"
     marker.parent.mkdir(parents=True)
     marker.write_text("package-from-one-branch")
+    # The launcher keeps the enclosing workspace private. The package tree
+    # needs regular installation modes regardless of that launcher's umask.
+    tree.chmod(0o755)
+    for directory, subdirectories, files in os.walk(tree):
+        for name in subdirectories:
+            (Path(directory) / name).chmod(0o755)
+        for name in files:
+            (Path(directory) / name).chmod(0o644)
     artifact = work / "fixture.deb"
     command("/usr/bin/dpkg-deb", "--build", str(tree), str(artifact))
     return artifact.read_bytes()
