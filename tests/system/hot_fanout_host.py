@@ -83,10 +83,11 @@ def run(args):
             destination.truncate(disk.stat().st_size + 512 * 1024 ** 2)
         subprocess.run(["resize2fs", disk], check=True, timeout=60, stdout=subprocess.DEVNULL)
         populate(tmp, disk, args)
+        boot_args = "console=ttyS0 reboot=k panic=1 pci=off init=/sandproof-fanout-init"
+        if kernel_hash == DELTA_BOX_KERNEL_SHA256:
+            boot_args += " acpi=off"
         config = {
-            "boot-source": {"kernel_image_path": str(args.kernel.resolve()),
-                            "boot_args": "console=ttyS0 reboot=k panic=1 pci=off acpi=off "
-                                         "root=/dev/vda rw init=/sandproof-fanout-init"},
+            "boot-source": {"kernel_image_path": str(args.kernel.resolve()), "boot_args": boot_args},
             "drives": [{"drive_id": "root", "path_on_host": str(disk),
                         "is_root_device": True, "is_read_only": False}],
             "machine-config": {"vcpu_count": 4, "mem_size_mib": 2048},
