@@ -2,11 +2,14 @@ import ctypes
 import json
 from pathlib import Path
 import tempfile
+import socket
+import time
+from concurrent.futures import ThreadPoolExecutor
 import unittest
 
 from tools.hot_fanout.control import GuestFanout
 from tools.hot_fanout.linux import CLONE_INTO_CGROUP, CloneArgs
-from tools.hot_fanout.service import _dispatch
+from tools.hot_fanout.service import _dispatch, _firecracker_exchange, _read_frame, _write_frame
 
 
 class FakeGuest:
@@ -53,6 +56,47 @@ class HotFanoutTests(unittest.TestCase):
     def own(self, max_branches=4):
         return GuestFanout(Path(self.tmp.name) / "journal", "outer", self.backend,
                            max_branches=max_branches, max_batches=4, ports=range(31000, 31005))
+
+    def test_control_stream_frames_are_bounded_and_reject_duplicate_fields(self):
+        sender, receiver = socket.socketpair()
+        with sender, receiver:
+            until = time.monotonic() + 1
+            _write_frame(sender, {"operation": "observe", "batch_id": "batchA"})
+            self.assertEqual(_read_frame(receiver, until),
+                             {"operation": "observe", "batch_id": "batchA"})
+            raw = b'{"operation":"observe","operation":"release"}'
+            sender.sendall(len(raw).to_bytes(4, "big") + raw)
+            with self.assertRaises(ValueError):
+                _read_frame(receiver, until)
+            sender.sendall(b"\xff\xff\xff\xff")
+            with self.assertRaises(ValueError):
+                _read_frame(receiver, until)
+
+    def test_firecracker_host_handshake_precedes_the_batch_frame(self):
+        client, server = socket.socketpair()
+        with client, server:
+            client.settimeout(1)
+            server.settimeout(1)
+
+            def fake_firecracker():
+                command = bytearray()
+                while not command.endswith(b"\n"):
+                    byte = server.recv(1)
+                    if not byte or len(command) >= 16:
+                        raise ValueError("invalid Firecracker connect line")
+                    command.extend(byte)
+                self.assertEqual(command, b"CONNECT 770\n")
+                server.sendall(b"OK 1073741824\n")
+                self.assertEqual(_read_frame(server), {"operation": "observe", "batch_id": "batchA"})
+                _write_frame(server, {"batch_id": "batchA", "status": "pending"})
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                peer = executor.submit(fake_firecracker)
+                response = _firecracker_exchange(
+                    client, {"operation": "observe", "batch_id": "batchA"}, time.monotonic() + 1,
+                )
+                peer.result(timeout=2)
+            self.assertEqual(response, {"batch_id": "batchA", "status": "pending"})
 
     def test_linux_clone_layout_matches_version_two_abi(self):
         self.assertEqual(ctypes.sizeof(CloneArgs), 88)

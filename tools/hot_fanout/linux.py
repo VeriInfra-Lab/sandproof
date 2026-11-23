@@ -220,23 +220,34 @@ def _enter_branch(slot, lowers, envd, last_cap, port, branch_id, workload):
     os._exit(max(0, _wait_exit(envd_pid)))
 
 
-def _packet(channel, value):
+def _encode(value):
     data = json.dumps(value, separators=(",", ":")).encode()
-    if len(data) > MAX_MESSAGE or channel.send(data) != len(data):
-        raise OSError("invalid fan-out packet length")
+    if len(data) > MAX_MESSAGE:
+        raise ValueError("invalid fan-out message length")
+    return data
+
+
+def _decode(data):
+    def unique_keys(items):
+        result = dict(items)
+        if len(result) != len(items):
+            raise ValueError("duplicate fan-out message field")
+        return result
+
+    return json.loads(data, object_pairs_hook=unique_keys)
+
+
+def _packet(channel, value):
+    data = _encode(value)
+    if channel.send(data) != len(data):
+        raise OSError("short fan-out packet write")
 
 
 def _receive(channel):
     data, _, flags, _ = channel.recvmsg(MAX_MESSAGE)
     if flags & socket.MSG_TRUNC:
         raise ValueError("truncated fan-out packet")
-    def unique_keys(items):
-        result = dict(items)
-        if len(result) != len(items):
-            raise ValueError("duplicate fan-out packet field")
-        return result
-
-    return json.loads(data, object_pairs_hook=unique_keys) if data else None
+    return _decode(data) if data else None
 
 
 def _reap_children(signum, frame):
