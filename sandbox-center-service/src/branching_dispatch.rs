@@ -22,7 +22,10 @@ impl<T: TemplateProvider> CenterApplication<SharedBusinessAuthority, RegisteredH
         admission: &Arc<RequestAdmission>,
         cursor: &mut usize,
     ) -> Result<(), PortError> {
-        let Some(lease) = admission.try_acquire(RequestClass::Background) else {
+        // This scan includes pending releases, so it can use the control
+        // reserve when ordinary requests are full. The original health and
+        // lifecycle loop keeps its private background permit.
+        let Some(lease) = admission.try_acquire(RequestClass::Control) else {
             return Ok(());
         };
         let app = Arc::clone(self);
