@@ -130,6 +130,41 @@ class CreateDelivery(OriginalReadPlanFixture):
             with self.subTest(defect=defect), self.assertRaises(ValueError):
                 registered._check_fixed_create_flow(result, rows, job)
 
+    def test_current_caller_requires_theorem_witnesses_and_original_inventories(self):
+        contract = registered.CONVERGENCE.caller_evidence(registered.ROOT)
+        data = registered.CONVERGENCE.read(registered.ROOT, 'protocol-record')
+        jobs = registered.formal_plan(Path('/unused'), profile='full')
+        for job in (j for j in jobs if j.get('convergence_package') == 'protocol-record'):
+            case, = job['cases']
+            view = job['views'][case]
+            stem, name, witnesses = contract.CONTRACTS[case]
+            theorem = contract.NAMESPACE + name
+            files = {n: data['same_models'].get(n, 'a'*64) for n in view['files']}
+            audits = list(view['audits'])
+            result = dict(complete=True, kind='protocol-record-formal-development',
+                          variant=case, contract_theorem=theorem, prepared_files=dict(files),
+                          prepared_audits=list(audits), actual=dict(
+                              files=files, audits=audits, service_log_sha256='b'*64))
+            registered._check_actual(result, job)
+            missing_page = copy.deepcopy(result)
+            path = str(contract.PROOFS/(stem+'.lean'))
+            del missing_page['actual']['files'][path], missing_page['prepared_files'][path]
+            with self.subTest(case=case, defect='page'), self.assertRaisesRegex(ValueError, 'physical page inventory'):
+                registered._check_actual(missing_page, job)
+            for absent, message in ((theorem, 'contract theorem'), *(
+                    (contract.NAMESPACE + n, 'refutation witness') for n in witnesses)):
+                bad = copy.deepcopy(result)
+                bad['actual']['audits'].remove(absent)
+                bad['prepared_audits'].remove(absent)
+                with self.subTest(case=case, absent=absent), self.assertRaisesRegex(ValueError, message):
+                    registered._check_actual(bad, job)
+            text = (registered.ROOT/contract.HERE/(stem+'.lean.in')).read_text()
+            declaration = name.rsplit('.', 1)[-1]
+            contract.check_theorem_page(text, text, case, declaration, theorem)
+            without_statement = text.replace('theorem '+declaration+' ', '-- theorem '+declaration+' ', 1)
+            with self.subTest(case=case, defect='statement'), self.assertRaisesRegex(ValueError, 'theorem statement'):
+                contract.check_theorem_page(without_statement, text, case, declaration, theorem)
+
     def test_original_caller_requires_every_same_property_flag_and_physical_audit(self):
         jobs = registered.formal_plan(Path('/unused'), profile='protocol-convergence')
         for job in (j for j in jobs if j.get('convergence_package') == 'protocol-record'):

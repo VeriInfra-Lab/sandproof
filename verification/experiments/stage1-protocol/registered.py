@@ -1561,6 +1561,9 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
         for name, digest in actual['files'].items():
             if evidence.get(str((project/name).resolve())) != digest:
                 raise ValueError('physical proof is absent from the complete evidence inventory')
+    if job.get('convergence_package') == 'protocol-record':
+        evidence.update(CONVERGENCE.caller_evidence(ROOT).check_physical(
+            ROOT, job, result, folder, evidence, _shared(), _original_file))
     if log.is_symlink() or not log.is_file():
         raise ValueError('missing original command log')
     evidence[str(log.resolve())] = _sha(log)

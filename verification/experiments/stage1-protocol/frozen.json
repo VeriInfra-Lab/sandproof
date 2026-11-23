@@ -113,7 +113,7 @@
     "sandbox-protocol/tests/support/lifecycle.rs": "6e2c68c5b798edf40e9f7f1fde41857c1792a17b8f3e8d55d5451ca7ac8c1494",
     "sandbox-protocol/tests/window_contract.rs": "a010a924c4c0733f3e2aca355a0fa523d553d01af27d36a6a0b4f44d284f26be",
     "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
-    "scripts/verify-stage1-protocol.sh": "1d422607fc796e3e6fd41b937144f646cdc748e5566d98afe374e3188c933082",
+    "scripts/verify-stage1-protocol.sh": "b9e9ebaeecca9615195c06566f13dcdcae3cfb2200f0518f46781952df0829ec",
     "tools/acceptance_receipts.py": "cb2c4e312b6bdaba2d857d359ca7bb5a22c2b996d095221436fa7031554d0517",
     "tools/check_foundations_extraction.py": "30e4591ee7d227b0204f37df13e570602b594fa589a578abefab5943c7ab9e1f",
     "tools/ci_retention.py": "1c244849ef0b25756ed5f7aefbb595242488362f23778a3692b08c5170e54afe",

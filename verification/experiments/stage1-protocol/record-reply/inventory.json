@@ -74,7 +74,7 @@
     "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
     "verification/experiments/stage1-protocol/formal.py": "59878b437b00bf4e2e36c32b315482e87147cf4f9255bebffbcf4a726697cc6d",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
-    "verification/experiments/stage1-protocol/registered.py": "4517eb797ec502d09d590f306b29361e48c0c1b7a59ee8a4b1688152e85fbf3a",
+    "verification/experiments/stage1-protocol/registered.py": "a90a1104d05af7c54e2d44f28995b647676dca218b4ede6a2f13d09edbef2cd9",
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c"
   },
