@@ -5,16 +5,20 @@ use super::*;
 use crate::linux::{
     RuntimeConfig, check_trusted_path, snapshot_restore::write_tracked_restore_fixture,
 };
-use rustix::process::{Pid, PidfdFlags, pidfd_open};
+use rustix::{
+    fs::{FallocateFlags, fallocate},
+    process::{Pid, PidfdFlags, pidfd_open},
+};
 use std::{
     fs::{self, OpenOptions},
     io::{Seek, SeekFrom, Write},
-    os::unix::fs::PermissionsExt,
+    os::unix::fs::{OpenOptionsExt, PermissionsExt},
     path::PathBuf,
 };
 
 const RESOURCE: &str = "vm-diff-fault-1";
 const MEMORY_BYTES: usize = 2 * 1024 * 1024;
+const QUOTA_RESERVE_BYTES: u64 = 63 * 1024 * 1024;
 
 struct Fixture {
     _area: tempfile::TempDir,
@@ -310,7 +314,7 @@ fn actual_interrupted_diff_preclone_preserves_backing_and_never_reuses_epoch() {
 }
 
 #[test]
-#[ignore = "requires a separate explicitly prepared sub-MiB quota on the same trusted XFS mount"]
+#[ignore = "requires a separate 64 MiB project quota on the same trusted XFS mount"]
 fn actual_diff_preclone_quota_failure_retains_original_backing_and_reserved_attempt() {
     let root = trusted_xfs_root("SANDPROOF_DIFF_FAULT_ROOT");
     let limited = trusted_xfs_root("SANDPROOF_DIFF_FAULT_QUOTA_TARGET");
@@ -328,20 +332,51 @@ fn actual_diff_preclone_quota_failure_retains_original_backing_and_reserved_atte
         .tempdir_in(limited)
         .unwrap();
     let capture = File::open(limited.path()).unwrap();
+    // Leave about 1 MiB in the 64 MiB project for inode/extent metadata,
+    // while the 2 MiB written parent exceeds the available block quota.
+    let reserve = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(limited.path().join("quota-reserve"))
+        .unwrap();
+    fallocate(&reserve, FallocateFlags::empty(), 0, QUOTA_RESERVE_BYTES).unwrap();
+    reserve.sync_all().unwrap();
+    assert_eq!(
+        reserve.metadata().unwrap().blocks() * 512,
+        QUOTA_RESERVE_BYTES
+    );
+    let backing = File::open(fixture.backing_path()).unwrap();
+    assert!(backing.metadata().unwrap().blocks() * 512 >= MEMORY_BYTES as u64);
+
+    // The exact parent must be clonable on the same mount without the quota.
+    let control = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .mode(0o600)
+        .open(fixture.jail.join("healthy-clone"))
+        .unwrap();
+    clone_whole_file(&backing, &control).unwrap();
+    assert_eq!(control.metadata().unwrap().len(), MEMORY_BYTES as u64);
+
     let key = [63; 32];
-    match fixture
+    let errno = match fixture
         .runtime
         .prepare_capture_memory(&fixture.source, &capture, key)
     {
-        Err(RuntimeError::Io(error))
-            if [
-                rustix::io::Errno::NOSPC.raw_os_error(),
-                rustix::io::Errno::DQUOT.raw_os_error(),
-            ]
-            .contains(&error.raw_os_error().unwrap_or_default()) => {}
-        Err(other) => panic!("expected kernel ENOSPC or EDQUOT, got {other:?}"),
+        Err(RuntimeError::Io(error)) => error.raw_os_error(),
+        Err(other) => panic!("expected kernel ENOSPC at preclone, got {other:?}"),
         Ok(_) => panic!("quota test unexpectedly prepared an image"),
-    }
+    };
+    assert_eq!(errno, Some(rustix::io::Errno::NOSPC.raw_os_error()));
+    let candidate = limited.path().join(CAPTURE_MEMORY).metadata().unwrap();
+    // Its inode proves creation completed; a complete clone would have set
+    // the full file length before fchown or syncing could fail.
+    assert!(candidate.is_file() && candidate.len() < MEMORY_BYTES as u64);
+    eprintln!(
+        "Diff preclone ENOSPC after candidate creation: project_reserve_bytes={QUOTA_RESERVE_BYTES} parent_bytes={MEMORY_BYTES} partial_bytes={}",
+        candidate.len()
+    );
     assert_eq!(
         FileStamp::from_metadata(&fixture.backing_path().metadata().unwrap()),
         saved
@@ -350,7 +385,6 @@ fn actual_diff_preclone_quota_failure_retains_original_backing_and_reserved_atte
         fs::read(fixture.backing_path()).unwrap(),
         vec![79; MEMORY_BYTES]
     );
-    assert!(limited.path().join(CAPTURE_MEMORY).is_file());
     require_capture_request_kind(
         &fixture.claim,
         &fixture.source.identity,
