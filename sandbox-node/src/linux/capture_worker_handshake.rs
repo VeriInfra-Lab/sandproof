@@ -244,9 +244,10 @@ mod tests {
         assert!(check_ready(&ready[..ready.len() - 1], expected, &worker).is_err());
         let reply = serde_json::to_vec(&CaptureWorkerReply {
             job_digest: expected,
-            outcome: CaptureWorkerOutcome::Captured {
+            outcome: CaptureWorkerOutcome::Captured(super::super::CaptureWorkerSuccess {
                 manifest_digest: expected,
-            },
+                handoff: None,
+            }),
         })
         .unwrap();
         assert!(ready.len() + reply.len() < CAPTURE_WORKER_OUTPUT_BYTES);
