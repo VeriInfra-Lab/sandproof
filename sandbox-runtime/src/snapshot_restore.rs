@@ -247,7 +247,7 @@ impl Runtime {
         )?;
         let backing = self.stage_restore_backing(&root, layout, bundle)?;
         let diff_parent = if track_dirty_pages {
-            Some(self.restored_memory_backing(&backing)?.1)
+            Some(self.restored_memory_backing(&backing)?)
         } else {
             None
         };
@@ -274,10 +274,11 @@ impl Runtime {
         if observed.state != LoadedSnapshotState::Paused {
             return Err(invalid("load did not leave exact candidate paused"));
         }
-        if let Some(stamp) = &diff_parent {
+        if let Some((memory, stamp)) = &diff_parent {
             use crate::snapshot_store::matches_entry;
             matches_entry(&root, std::ffi::OsStr::new("restore"), &backing)?;
-            if &self.restored_memory_backing(&backing)?.1 != stamp {
+            matches_entry(&backing, std::ffi::OsStr::new("restore-memory.bin"), memory)?;
+            if FileStamp::from_metadata(&memory.metadata()?) != *stamp {
                 return Err(invalid(
                     "dirty restore backing changed during snapshot load",
                 ));
@@ -286,7 +287,7 @@ impl Runtime {
         let loaded = LoadedRecord {
             intent_sha256: intent.digest()?,
             process: observed.process.clone(),
-            diff_parent,
+            diff_parent: diff_parent.map(|(_, stamp)| stamp),
         };
         self.write_new_record(&claim.join("restore-loaded.json"), &loaded)?;
         Ok(observed)

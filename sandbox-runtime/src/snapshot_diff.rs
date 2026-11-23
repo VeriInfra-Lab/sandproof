@@ -2,7 +2,7 @@
 //! The lifecycle worker holds its existing exclusive helper/slot gate. These
 //! records establish memory lineage only, never capture or resume authority.
 
-use super::{OriginalVmSource, error, open_directory_at};
+use super::{OriginalVmSource, error, open_directory_at, request_end::CaptureKind};
 use crate::{
     RuntimeError,
     linux::{Runtime, RuntimeProcessIdentity, path_present, read_trusted_record},
@@ -24,12 +24,18 @@ pub(crate) const USED_RECORD: &str = "restore-diff-used.json";
 pub(super) struct DiffAttempt {
     pub(super) source: RuntimeProcessIdentity,
     pub(super) directory_key: [u8; 32],
+    #[serde(default)]
+    pub(super) kind: Option<CaptureKind>,
+}
+
+struct DiffParent {
+    directory: File,
+    backing: File,
+    stamp: FileStamp,
 }
 
 pub(super) struct DiffTarget {
-    backing_directory: File,
-    backing: File,
-    parent_stamp: FileStamp,
+    parent: DiffParent,
     output: File,
 }
 
@@ -92,39 +98,34 @@ impl Runtime {
             return Ok(None);
         }
 
-        // Full also clears the dirty logs. A later attempt on this same
-        // incarnation must use Full even if the original outcome was unknown.
+        let parent = if intent.config == self.config {
+            Self::tracked_restore_parent(&claim, &intent, &original.identity)?
+                .map(|stamp| self.open_diff_parent(original, &stamp))
+                .transpose()?
+                .flatten()
+        } else {
+            None
+        };
+        let kind = if parent.is_some() {
+            CaptureKind::Diff
+        } else {
+            CaptureKind::Full
+        };
+        // The read-only parent decision is fixed before committing the mode.
+        // Either request may consume or clear dirty logs. Never clone or send
+        // for this attempt until its one-shot choice is durable.
         self.write_new_record(
             &claim.join(USED_RECORD),
             &DiffAttempt {
                 source: original.identity.clone(),
                 directory_key,
+                kind: Some(kind),
             },
         )?;
-        if intent.config != self.config {
-            return Ok(None);
-        }
-        let Some(parent_stamp) = Self::tracked_restore_parent(&claim, &intent, &original.identity)?
-        else {
+        let Some(parent) = parent else {
             return Ok(None);
         };
-        let parent = open_directory_at(&original.root, "restore").and_then(|directory| {
-            let (backing, stamp) = self.restored_memory_backing(&directory)?;
-            Ok((directory, backing, stamp))
-        });
-        let (backing_directory, backing, actual_stamp) = match parent {
-            Ok(parent) => parent,
-            Err(RuntimeError::Io(error)) if error.kind() == io::ErrorKind::NotFound => {
-                return Ok(None);
-            }
-            Err(error) => return Err(error),
-        };
-        if actual_stamp != parent_stamp {
-            // Nothing has been sent; Full reads live guest memory without
-            // depending on the current directory entry for the old backing.
-            return Ok(None);
-        }
-        require_same_xfs_mount(&backing, directory)?;
+        require_same_xfs_mount(&parent.backing, directory)?;
         let output = File::from(
             fs::openat(
                 directory,
@@ -137,7 +138,7 @@ impl Runtime {
         // Firecracker 1.16.1 overlays its dirty pages directly into this
         // pre-sized file. The restore backing mapped by the VM stays private
         // and unchanged, including after errors or missing responses.
-        clone_whole_file(&backing, &output)?;
+        clone_whole_file(&parent.backing, &output)?;
         fs::fchown(
             &output,
             Some(Uid::from_raw(self.config.vm_uid)),
@@ -145,14 +146,32 @@ impl Runtime {
         )
         .map_err(io::Error::from)?;
         output.sync_all()?;
-        let target = DiffTarget {
-            backing_directory,
-            backing,
-            parent_stamp,
-            output,
-        };
+        let target = DiffTarget { parent, output };
         target.require_unchanged_lineage(&original.root, directory)?;
         Ok(Some(target))
+    }
+
+    fn open_diff_parent(
+        &self,
+        original: &OriginalVmSource,
+        expected: &FileStamp,
+    ) -> Result<Option<DiffParent>, RuntimeError> {
+        let parent = open_directory_at(&original.root, "restore").and_then(|directory| {
+            let (backing, stamp) = self.restored_memory_backing(&directory)?;
+            Ok(DiffParent {
+                directory,
+                backing,
+                stamp,
+            })
+        });
+        match parent {
+            Ok(parent) if parent.stamp == *expected => Ok(Some(parent)),
+            // Full reads live memory without depending on the old backing's
+            // current directory entry. Nothing has been sent at this point.
+            Ok(_) => Ok(None),
+            Err(RuntimeError::Io(error)) if error.kind() == io::ErrorKind::NotFound => Ok(None),
+            Err(error) => Err(error),
+        }
     }
 }
 
@@ -162,35 +181,54 @@ impl DiffTarget {
         original_root: &File,
         capture: &File,
     ) -> Result<(), RuntimeError> {
+        matches_entry(original_root, OsStr::new("restore"), &self.parent.directory)?;
         matches_entry(
-            original_root,
-            OsStr::new("restore"),
-            &self.backing_directory,
-        )?;
-        matches_entry(
-            &self.backing_directory,
+            &self.parent.directory,
             OsStr::new(BACKING_MEMORY),
-            &self.backing,
+            &self.parent.backing,
         )?;
-        if FileStamp::from_metadata(&self.backing.metadata()?) != self.parent_stamp {
+        if FileStamp::from_metadata(&self.parent.backing.metadata()?) != self.parent.stamp {
             return Err(error("dirty capture parent changed"));
         }
         matches_entry(capture, OsStr::new(CAPTURE_MEMORY), &self.output)
     }
 }
 
-pub(super) fn require_diff_attempt(
+fn check_request_kind(
+    attempt: Option<&DiffAttempt>,
+    source: &RuntimeProcessIdentity,
+    directory_key: [u8; 32],
+    returned: Option<CaptureKind>,
+) -> Result<(), RuntimeError> {
+    if let Some(attempt) = attempt.filter(|attempt| attempt.directory_key == directory_key) {
+        return if attempt.source == *source && attempt.kind.is_some() && returned == attempt.kind {
+            Ok(())
+        } else {
+            Err(error(
+                "capture request end differs from its original memory mode",
+            ))
+        };
+    }
+    if returned == Some(CaptureKind::Diff) {
+        return Err(error("Diff request end lacks its original dirty attempt"));
+    }
+    // A cold Full, a later Full after the dirty epoch was consumed, and an
+    // original worker that declined release have no marker for their key.
+    Ok(())
+}
+
+pub(super) fn require_capture_request_kind(
     claim: &Path,
     source: &RuntimeProcessIdentity,
     directory_key: [u8; 32],
+    returned: Option<CaptureKind>,
 ) -> Result<(), RuntimeError> {
-    let attempt: DiffAttempt = read_trusted_record(&claim.join(USED_RECORD))?;
-    if attempt.source != *source || attempt.directory_key != directory_key {
-        return Err(error(
-            "Diff request end differs from the original dirty attempt",
-        ));
-    }
-    Ok(())
+    let attempt = match read_trusted_record::<DiffAttempt>(&claim.join(USED_RECORD)) {
+        Ok(attempt) => Some(attempt),
+        Err(RuntimeError::Io(error)) if error.kind() == io::ErrorKind::NotFound => None,
+        Err(error) => return Err(error),
+    };
+    check_request_kind(attempt.as_ref(), source, directory_key, returned)
 }
 
 #[cfg(test)]
@@ -207,6 +245,81 @@ mod tests {
         assert!(spent(claim.path()).unwrap());
         std::fs::rename(staged, claim.path().join(USED_RECORD)).unwrap();
         assert!(spent(claim.path()).unwrap());
+    }
+
+    #[test]
+    fn original_dirty_attempt_cannot_be_reinterpreted_as_a_full_or_unsent_request() {
+        let original = RuntimeProcessIdentity {
+            pid: 17,
+            start_time_ticks: 43,
+            boot_id: "00000000-0000-0000-0000-000000000001".into(),
+        };
+        let diff_attempt = DiffAttempt {
+            source: original.clone(),
+            directory_key: [8; 32],
+            kind: Some(CaptureKind::Diff),
+        };
+        let full_attempt = DiffAttempt {
+            kind: Some(CaptureKind::Full),
+            source: original.clone(),
+            directory_key: [8; 32],
+        };
+        for attempt in [&diff_attempt, &full_attempt] {
+            assert!(check_request_kind(Some(attempt), &original, [8; 32], attempt.kind).is_ok());
+            let other = if attempt.kind == Some(CaptureKind::Diff) {
+                CaptureKind::Full
+            } else {
+                CaptureKind::Diff
+            };
+            assert!(check_request_kind(Some(attempt), &original, [8; 32], Some(other)).is_err());
+            assert!(check_request_kind(Some(attempt), &original, [8; 32], None).is_err());
+        }
+        let mut replacement = original.clone();
+        replacement.start_time_ticks += 1;
+        assert!(
+            check_request_kind(
+                Some(&diff_attempt),
+                &replacement,
+                [8; 32],
+                Some(CaptureKind::Diff)
+            )
+            .is_err()
+        );
+        assert!(
+            check_request_kind(
+                Some(&diff_attempt),
+                &original,
+                [9; 32],
+                Some(CaptureKind::Full)
+            )
+            .is_ok()
+        );
+        assert!(check_request_kind(Some(&diff_attempt), &original, [9; 32], None).is_ok());
+        assert!(check_request_kind(None, &original, [8; 32], Some(CaptureKind::Full)).is_ok());
+        assert!(check_request_kind(None, &original, [8; 32], Some(CaptureKind::Diff)).is_err());
+    }
+
+    #[test]
+    fn legacy_consumption_marker_cannot_authorize_a_reply_for_its_old_attempt() {
+        let original = RuntimeProcessIdentity {
+            pid: 17,
+            start_time_ticks: 43,
+            boot_id: "00000000-0000-0000-0000-000000000001".into(),
+        };
+        let key = [8; 32];
+        let marker: DiffAttempt = serde_json::from_value(serde_json::json!({
+            "source": original, "directory_key": key,
+        }))
+        .unwrap();
+        assert!(
+            check_request_kind(Some(&marker), &original, key, Some(CaptureKind::Full)).is_err()
+        );
+        assert!(
+            check_request_kind(Some(&marker), &original, [8; 32], Some(CaptureKind::Diff)).is_err()
+        );
+        assert!(
+            check_request_kind(Some(&marker), &original, [9; 32], Some(CaptureKind::Full)).is_ok()
+        );
     }
 
     #[test]

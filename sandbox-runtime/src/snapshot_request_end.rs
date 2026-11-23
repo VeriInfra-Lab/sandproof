@@ -39,7 +39,8 @@ pub enum FullCaptureRequestOutcome {
 fn invalid(message: &'static str) -> RuntimeError {
     RuntimeError::IdentityMismatch(message)
 }
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub(super) enum CaptureKind {
     Full,
     Diff,
@@ -220,6 +221,7 @@ impl SnapshotLayout {
         value: &FullCaptureRequestEnd,
         source: &RuntimeProcessIdentity,
     ) -> Result<(), RuntimeError> {
+        self.require_recorded_capture_kind(value, value.directory_key)?;
         self.store_for_runtime(&self.runtime_root())?
             .publish_retained_request_end(value.directory_key, &serde_json::to_vec(value)?, || {
                 source.is_alive()
@@ -236,15 +238,34 @@ impl SnapshotLayout {
             .store_for_runtime(&self.runtime_root())?
             .read_request_end(key)?;
         let record: FullCaptureRequestEnd = serde_json::from_slice(&bytes)?;
-        if record.returned_diff(key)? {
-            super::super::validate_id(&record.resource_id)?;
-            let claim = self
-                .runtime_root()
-                .join(".claims")
-                .join(&record.resource_id);
-            super::diff::require_diff_attempt(&claim, &record.source, key)?;
-        }
+        self.require_recorded_capture_kind(&record, key)?;
         Ok(record)
+    }
+
+    fn require_recorded_capture_kind(
+        &self,
+        record: &FullCaptureRequestEnd,
+        key: [u8; 32],
+    ) -> Result<(), RuntimeError> {
+        super::super::validate_id(&record.resource_id)?;
+        let claim = self
+            .runtime_root()
+            .join(".claims")
+            .join(&record.resource_id);
+        if record.directory_key != key {
+            return Err(invalid("capture request end differs from its slot"));
+        }
+        let returned = if record.returned_diff(key)? {
+            Some(CaptureKind::Diff)
+        } else if record.request_sha256 == Runtime::full_capture_request_sha256(key)? {
+            match record.outcome {
+                FullCaptureRequestOutcome::NoRequest => None,
+                FullCaptureRequestOutcome::Returned { .. } => Some(CaptureKind::Full),
+            }
+        } else {
+            return Err(invalid("unrecognized original capture request hash"));
+        };
+        super::diff::require_capture_request_kind(&claim, &record.source, key, returned)
     }
 }
 
