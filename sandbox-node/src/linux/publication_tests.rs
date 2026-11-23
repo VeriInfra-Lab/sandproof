@@ -23,6 +23,7 @@ fn worker(path: &Path) -> LinuxWorker {
         vcpu_count: 1,
         memory_mib: 128,
         host_resources: None,
+        enable_memory_diff: false,
         file_policy_digest: core::PolicyDigest(1),
         bounded_host: BoundedHostConfig {
             physical_storage: Some(super::test_support::physical_profile(

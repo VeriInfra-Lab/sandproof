@@ -216,8 +216,9 @@ impl Runtime {
         if configuration.is_empty() || configuration.len() > limits.configuration_bytes {
             return Err(error("source configuration response budget"));
         }
+        let tracked_restore = self.tracked_restore(id)?.is_some();
         super::super::boot_plan::BootPlan::for_runtime(&self.config)
-            .check_full_configuration(&configuration)?;
+            .check_full_configuration(&configuration, tracked_restore)?;
         let mut actual_executable = executable(expected.pid)?;
         let (executable_sha256, executable_stamp) =
             measure(&mut actual_executable, limits.executable_bytes)?;

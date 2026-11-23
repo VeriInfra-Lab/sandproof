@@ -16,6 +16,7 @@ pub const CLAIM_RECORD_NAMES: &[&str] = &[
     "record.json",
     "restore-intent.json",
     "restore-loaded.json",
+    super::snapshot::diff::USED_RECORD,
     "jail.json",
     "aborted.json",
     "failed-prepare.json",

@@ -101,6 +101,7 @@ pub(super) fn root_layout_fixture() -> (tempfile::TempDir, super::NodeConfig) {
         vcpu_count: 1,
         memory_mib: 128,
         host_resources: None,
+        enable_memory_diff: false,
         file_policy_digest: core::PolicyDigest(1),
     };
     (dir, config)

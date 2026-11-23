@@ -414,7 +414,10 @@ impl LinuxWorker {
                 &context.profile.layout,
                 context.manifest,
                 *context.work_digest.as_bytes(),
-                context.profile.api_timeout,
+                sandbox_runtime::SnapshotRestoreOptions {
+                    timeout: context.profile.api_timeout,
+                    track_dirty_pages: self.config.enable_memory_diff,
+                },
             )?
         };
         let observed = require_loaded_candidate(observed, observe_only)?;

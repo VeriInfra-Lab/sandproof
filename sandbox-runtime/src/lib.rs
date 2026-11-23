@@ -29,7 +29,8 @@ pub use linux::{
     RetirementManifest, Runtime, RuntimeConfig, RuntimeError, RuntimeHelperGate,
     RuntimeHelperGuard, RuntimeHostSlot, RuntimeObservationConfig, RuntimePhysicalObserver,
     RuntimeProcessIdentity, RuntimeRouteSnapshot, RuntimeRouteState, SnapshotLayout,
-    SourceConfigurationLimits, VmState, check_trusted_path, check_trusted_path_for_owner,
+    SnapshotRestoreOptions, SourceConfigurationLimits, VmState, check_trusted_path,
+    check_trusted_path_for_owner,
 };
 
 #[cfg(target_os = "linux")]
