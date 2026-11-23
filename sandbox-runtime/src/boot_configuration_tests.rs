@@ -111,6 +111,24 @@ fn changed_machine_boot_drive_network_and_mmds_fields_are_refused() {
 }
 
 #[test]
+fn restored_profile_only_accepts_tracking_when_its_intent_requested_it() {
+    let config = config(true);
+    let plan = BootPlan::for_runtime(&config);
+    let mut restored = wire(true);
+    restored["machine-config"]["track_dirty_pages"] = json!(true);
+    let restored_bytes = serde_json::to_vec(&restored).unwrap();
+    assert!(plan.check_full_configuration(&restored_bytes, true).is_ok());
+    assert!(
+        plan.check_full_configuration(&restored_bytes, false)
+            .is_err()
+    );
+    assert!(
+        plan.check_full_configuration(&serde_json::to_vec(&wire(true)).unwrap(), true)
+            .is_err()
+    );
+}
+
+#[test]
 fn unsupported_extra_devices_unknown_fields_and_duplicate_keys_are_refused() {
     let config = config(true);
     for field in [
