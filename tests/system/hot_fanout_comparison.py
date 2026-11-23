@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Compare one production hot fan-out batch with independent production VMs.
 
-Run both --mode values on the same host with the same candidate, receipt, N
-and write size. Use a fresh --output directory for each run. The cold clock
+Run both --mode values on the same host with the same candidate, receipt, N,
+pool limits and write size. Use a fresh --output directory for each run. The cold clock
 starts after service readiness. The prepared clock starts at parent readiness
 for hot fan-out and after N independent workloads have been prepared via SDK
 commands for the baseline. SDK ready measures the same file and command
@@ -306,7 +306,7 @@ def measure_workload(args, receipt, services, native, ready, vm_group, data, cli
         report.update(cold_to_all_sdk_seconds=sdk_complete - started,
                       prepared_to_all_sdk_seconds=sdk_complete - preparation_end)
         claims.extend(source_claims(native, slots))
-        native_ids.extend(capture_live_native_ids(native, claims, original_json))
+        native_ids.extend(capture_live_native_ids(native, claims, original_json, allow_free=True))
         report["sdk_ready_resources"] = resource_observation(
             args, services, claims, vm_group, data, before_volume)
         # Per-process RSS counts common forked pages in each branch. Use the
@@ -387,9 +387,13 @@ def run(args, receipt, report):
     report["storage"] = str(storage)
     write_once(args.output / "location.json", {"storage": str(storage)})
     slots = 1 if args.mode == "hot" else args.n
+    shape = receipt["binding"]["resources"]
+    report["host_pool_budget"] = dict(slots=args.n, vcpus=args.n * shape["cpu_count"],
+                                      host_memory_bytes=args.n * shape["host_memory_bytes"],
+                                      sandbox_disk_bytes=args.n * shape["disk_bytes"])
     with product.phase(report, "provision"):
         services, root, record, groups, installation = product.build_deployment(
-            args, receipt, storage, paths, report, slots=slots, hot_fanout=args.mode == "hot")
+            args, receipt, storage, paths, report, slots=args.n, hot_fanout=args.mode == "hot")
     native = services.native_pools[0]
     clients = []
     claims = []
@@ -407,6 +411,18 @@ def run(args, receipt, report):
                              data, clients, claims, native_ids, report)
     finally:
         with product.phase(report, "cleanup"):
+            # If a workload or SDK call failed before the observations, read
+            # the exact acknowledged cohort while its native bindings still exist.
+            acknowledged = sum(client.session is not None for client in clients)
+            unresolved_create = any(client.create_request is not None and client.session is None
+                                    for client in clients)
+            if not native_ids and acknowledged and not unresolved_create:
+                try:
+                    if not claims:
+                        claims.extend(source_claims(native, acknowledged))
+                    native_ids.extend(capture_live_native_ids(native, claims, original_json, allow_free=True))
+                except (AssertionError, KeyError, OSError, ValueError) as error:
+                    report["cleanup_identity_error"] = type(error).__name__
             # Allocate sequences disjoint from every keyed Create. Hot setup
             # also uses sequence 2 for the batch.
             known = clean_clients(clients, report, max(slots, 2))

@@ -52,6 +52,19 @@ class HotFanoutLiveEvidenceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "original VM claim"):
             capture_live_native_ids(self.native, wrong_pool, self.read_slot)
 
+    def test_comparison_observes_one_live_vm_with_an_unused_pool_slot(self):
+        unused = self.rows[Path("/protected/native/host-slots/1.json")]["value"]
+        unused["phase"] = "Free"
+        live = [self.claims[1]]
+        self.assertEqual(capture_live_native_ids(self.native, live, self.read_slot, allow_free=True),
+                         ("sb-example-4",))
+        with self.assertRaisesRegex(ValueError, "no occupied slot"):
+            capture_live_native_ids(self.native, self.claims, self.read_slot, allow_free=True)
+        for phase in ("Occupied", "Reserved"):
+            unused["phase"] = phase
+            with self.subTest(phase=phase), self.assertRaises(ValueError):
+                capture_live_native_ids(self.native, live, self.read_slot, allow_free=True)
+
 
 class HotFanoutAutomaticExpiryTests(unittest.TestCase):
     def setUp(self):

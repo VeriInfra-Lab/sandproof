@@ -11,18 +11,23 @@ _require_assertions()
 from pathlib import Path
 
 
-def capture_live_native_ids(native, claims, read_slot):
+def capture_live_native_ids(native, claims, read_slot, *, allow_free=False):
     namespace = native["namespace"]
     count = native["bounded_host"]["maintenance"]["max_host_slots"]
     resources = {claim["resource_id"] for claim in claims}
-    if type(count) is not int or count <= 0 or len(claims) != count or len(resources) != count:
+    if (type(count) is not int or not 0 < len(claims) <= count or len(resources) != len(claims)
+            or (not allow_free and len(claims) != count)):
         raise ValueError("complete distinct original VM claims required")
     directory = Path(native["node_state_dir"]) / "host-slots"
     sandbox_ids = set()
     for position in range(count):
         row = read_slot(directory / f"{position}.json", 65536)
         value = row["value"]
-        if row["position"] != position or value["phase"] != "Occupied":
+        if row["position"] != position:
+            raise ValueError("native slot position differs")
+        if allow_free and value["phase"] == "Free":
+            continue
+        if value["phase"] != "Occupied":
             raise ValueError("native sandbox identity must be observed in its occupied slot")
         context = value["context"]
         binding = context["binding"]
@@ -35,6 +40,8 @@ def capture_live_native_ids(native, claims, read_slot):
             raise ValueError("occupied slot does not match an original VM claim")
         resources.remove(resource)
         sandbox_ids.add(sandbox)
+    if resources:
+        raise ValueError("original VM claim has no occupied slot")
     return tuple(f"sb-{namespace}-{sandbox}" for sandbox in sorted(sandbox_ids))
 
 
