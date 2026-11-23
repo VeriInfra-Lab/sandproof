@@ -32,6 +32,7 @@ vsock。启动、观察和释放的成功都绑定原计划，未收到可信响
 公开创建用 `POST /sandproof/lifecycle/sessions/{parent}/branch-batches`，读取用
 `GET /sandproof/lifecycle/sessions/{parent}/branch-batches/{window}/{sequence}`。已启用模板的分支使用
 原 SDK 的连接和数据接口。独立关闭先提交访问撤销，再经后台清理。分支自身的 VM 级暂停/恢复不属于该接口。
+热分支模板的父 VM 使用独立的来宾检查点设备，部署首版在接受前以 `409` 拒绝其整机持久卸载。
 创建返回 `202`，状态为 `pending`、`cleaning_up`、`ready`、`failed` 或 `retired`。
 `ready` 返回原计划顺序中的 ID。个别 ID 被关闭后仍可出现在原批次结果中，但已经没有独立连接权限。
 参数无效返回 `400`，其他租户或未知身份返回 `404`，同键不同参数返回 `409`，预算不足返回 `429`。

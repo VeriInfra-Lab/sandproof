@@ -401,7 +401,7 @@ impl SharedBusinessAuthority {
         {
             return Err(PortError::NotFound);
         }
-        current
+        let replay = current
             .center
             .replay_lifecycle(
                 owner,
@@ -411,7 +411,11 @@ impl SharedBusinessAuthority {
                     expected_version: request.expected_version,
                 },
             )
-            .map_err(|error| authority_error(error.into()))
+            .map_err(|error| authority_error(error.into()))?;
+        if replay.is_none() && blocks_public_unload(&current, owner, session) {
+            return Err(PortError::Conflict);
+        }
+        Ok(replay)
     }
 
     /// # Errors
@@ -448,12 +452,7 @@ impl SharedBusinessAuthority {
                 if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
                     return Ok((current.clone(), intent));
                 }
-                if current
-                    .metadata
-                    .branch_batches
-                    .as_ref()
-                    .is_some_and(|batches| batches.blocks_parent_unload(session))
-                {
+                if blocks_public_unload(current, owner, session) {
                     return Err(DecisionError::Conflict.into());
                 }
                 let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
@@ -551,12 +550,7 @@ impl SharedBusinessAuthority {
                 if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
                     return Ok((current.clone(), intent));
                 }
-                if current
-                    .metadata
-                    .branch_batches
-                    .as_ref()
-                    .is_some_and(|batches| batches.blocks_parent_unload(session))
-                {
+                if blocks_public_unload(current, owner, session) {
                     return Err(DecisionError::Conflict.into());
                 }
                 let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } =
@@ -589,6 +583,25 @@ impl SharedBusinessAuthority {
         let record = self.public_lifecycle_record(owner, session)?;
         public_view(&record)
     }
+}
+
+fn blocks_public_unload(current: &Envelope, owner: &TenantId, session: &SessionId) -> bool {
+    let Some(batches) = &current.metadata.branch_batches else {
+        return false;
+    };
+    let Some(original) = current
+        .center
+        .lifecycle_session(owner, session)
+        .and_then(|record| record.operations().first())
+    else {
+        return false;
+    };
+    let LifecycleOperation::Create { create, .. } = &original.intent().request.operation else {
+        return false;
+    };
+    // Native training parents have a private checkpoint device that the
+    // ordinary whole-VM restore path does not reconstruct.
+    batches.templates().contains(&create.template_revision) || batches.blocks_parent_unload(session)
 }
 
 fn public_record<'a>(
