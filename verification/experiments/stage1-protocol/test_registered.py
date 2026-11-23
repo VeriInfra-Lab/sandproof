@@ -1074,6 +1074,28 @@ class Registration(OriginalReadPlanFixture):
                 with self.assertRaisesRegex(ValueError, 'lacks exact correct-view coverage'):
                     registered.compute_retained_coverage(root, record)
 
+    def test_retained_reads_the_exact_nested_service_log_of_original_producers(self):
+        layouts = {'restore-work': 'correct', 'restore-lifetime': 'correct', 'native-readiness': ''}
+        for producer, case in layouts.items():
+            with self.subTest(producer=producer), tempfile.TemporaryDirectory() as temporary:
+                root, job, record, path, old_log = self.retained_fixture(temporary)
+                job['convergence_package'] = producer
+                result = json.loads(path.read_text())
+                if case:
+                    result['cases'] = {case: result.pop('actual')}
+                    path.write_text(json.dumps(result))
+                    record['results'][0]['result_sha256'] = registered._sha(path)
+                expected = path.parent/case/'actual-files/physical-files/service.log'
+                expected.parent.mkdir(parents=True)
+                expected.write_bytes(old_log.read_bytes())
+                with patch.object(registered, 'formal_plan', return_value=[job]), \
+                        patch.object(registered, '_check_actual'):
+                    coverage = registered.compute_retained_coverage(root, record)
+                    self.assertEqual({row['service_log_path'] for row in coverage.values()}, {str(expected)})
+                    expected.unlink()
+                    with self.assertRaisesRegex(ValueError, 'retained physical service log changed or missing'):
+                        registered.compute_retained_coverage(root, record)
+
     def retained_audit_fixture(self, temporary):
         _, _, record, _, _ = self.retained_fixture(temporary)
         path = Path(record['retained_result']['path'])

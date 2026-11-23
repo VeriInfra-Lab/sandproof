@@ -1218,6 +1218,10 @@ def compute_retained_coverage(root, record):
             folder = result_path.parent
         else:
             continue
+        # These producers pass the original client a nested actual-files output.
+        # Honor their exact layout without scanning for a replacement log.
+        if job.get('convergence_package') in ('restore-work', 'restore-lifetime', 'native-readiness'):
+            folder /= 'actual-files'
         include(actual, folder, job['name'], result_path, row['result_sha256'], job['name'])
     if set(coverage) != set(sources):
         raise ValueError('retained Protocol lacks exact correct-view coverage: ' + repr(sorted(set(sources)-set(coverage))))
@@ -1564,6 +1568,9 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
     if job.get('convergence_package') == 'protocol-record':
         evidence.update(CONVERGENCE.caller_evidence(ROOT).check_physical(
             ROOT, job, result, folder, evidence, _shared(), _original_file))
+    if job.get('convergence_package') == 'standard-save-digest' and 'blob_update' in result:
+        CONVERGENCE.component(ROOT, 'standard-save-digest').check_blob_evidence(
+            result, ROOT, folder, evidence)
     if log.is_symlink() or not log.is_file():
         raise ValueError('missing original command log')
     evidence[str(log.resolve())] = _sha(log)

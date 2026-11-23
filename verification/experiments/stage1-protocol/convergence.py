@@ -313,7 +313,10 @@ def actuals(result):
         'current-standard-blob-and-original-load-domain-development',
         'current-standard-digest-and-original-load-development',
         'current-standard-save-digest-and-original-save-development'}:
-        return [row['actual'] for row in result.get('views', {}).values()]
+        views = [row['actual'] for row in result.get('views', {}).values()]
+        if 'blob_update' in result:
+            views.append(result['blob_update']['actual'])
+        return views
     return None
 
 
@@ -321,7 +324,10 @@ def check_actual(result, job, root):
     name = job['convergence_package']
     if result.get('complete') is not True or result.get('prepare_only'):
         raise ValueError('incomplete or preparation-only convergence result: '+name)
-    if name in ('standard-blob', 'standard-digest', 'standard-save-digest'):
+    if name == 'standard-save-digest':
+        component(root, name).check(result, root, require_blob_update=job['profile'] == 'full')
+        return
+    if name in ('standard-blob', 'standard-digest'):
         component(root, name).check(result, root)
         return
     data = read(root, name)
