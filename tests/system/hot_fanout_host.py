@@ -28,15 +28,15 @@ DELTA_BOX_KERNEL_SHA256 = "0ba5e9ee744bcb2bac3391e967cf36cfeb10fd3add067055321cb
 INIT = """#!/bin/sh
 set -eu
 export PATH=/usr/sbin:/usr/bin:/sbin:/bin
+trap 'sync; sleep 2; reboot -f' EXIT
 mount -t proc proc /proc
 mount -t sysfs sys /sys
-mount -t devtmpfs devtmpfs /dev
+mountpoint -q /dev || mount -t devtmpfs devtmpfs /dev
 mount -t cgroup2 cgroup2 /sys/fs/cgroup
 mount -t tmpfs -o mode=0755 tmpfs /run
 mount -t tmpfs -o mode=1777 tmpfs /tmp
 ip link set lo up
 mount -o remount,rw /
-trap 'sync; sleep 2; reboot -f' EXIT
 mkdir /opt/sandproof-fanout-test
 tar xf /sandproof-fanout.tar -C /opt/sandproof-fanout-test
 cd /opt/sandproof-fanout-test
