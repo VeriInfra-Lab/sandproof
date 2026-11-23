@@ -149,6 +149,10 @@ impl InternalClient {
         );
         request.headers_mut().remove(BRANCH_DATA_SELECTOR_HEADER);
         if let Some(branch) = branch {
+            // The authenticated branch selector already fixes the sandbox and
+            // port. Public SDK routing hints are irrelevant to this hop.
+            request.headers_mut().remove("e2b-sandbox-id");
+            request.headers_mut().remove("e2b-sandbox-port");
             let encoded = serde_json::to_vec(branch).map_err(|_| TransportError::Rejected)?;
             if encoded.len() > DATA_IDENTITY_BYTES {
                 return Err(TransportError::Rejected);

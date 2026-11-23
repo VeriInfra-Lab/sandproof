@@ -125,6 +125,18 @@ impl DataReceiver for Streams {
         ] {
             assert!(!request.headers().contains_key(name));
         }
+        if request.headers().contains_key("connect-protocol-version") {
+            for name in ["e2b-sandbox-id", "e2b-sandbox-port"] {
+                assert!(!request.headers().contains_key(name));
+            }
+            for (name, value) in SDK_START_RPC_HEADERS {
+                assert_eq!(request.headers()[name], value);
+            }
+            assert_eq!(
+                request.into_body().collect().await.unwrap().to_bytes(),
+                sdk_start_frame()
+            );
+        }
         Response::new(Body::from("exact branch route"))
     }
 }
@@ -282,6 +294,82 @@ async fn branch_stream_only_forwards_protected_typed_selector() {
         Bytes::from_static(b"exact branch route")
     );
     assert!(f.senders.lock().unwrap().is_empty());
+    idle_client(&f.client).await;
+    f.stop().await;
+}
+
+const SDK_START_RPC_HEADERS: [(&str, &str); 7] = [
+    ("authorization", "Basic cm9vdDo="),
+    ("connect-accept-encoding", ""),
+    ("connect-content-encoding", "identity"),
+    ("connect-protocol-version", "1"),
+    ("connect-timeout-ms", "15000"),
+    ("content-type", "application/connect+json"),
+    ("keepalive-ping-interval", "30"),
+];
+
+fn sdk_start_frame() -> Bytes {
+    let json = br#"{"process":{"cmd":"/bin/bash","args":["-l","-c","printf fixture"]}}"#;
+    let mut frame = vec![0];
+    frame.extend_from_slice(&u32::try_from(json.len()).unwrap().to_be_bytes());
+    frame.extend_from_slice(json);
+    Bytes::from(frame)
+}
+
+fn sdk_start_request() -> Request<Body> {
+    // The pinned SDK has 15 HTTP fields on the wire. The internal hop strips
+    // its public bearer, then adds both identities and Connection: close.
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri("/process.Process/Start?fixture=1")
+        .header("accept", "*/*")
+        .header("accept-encoding", "gzip, br")
+        .header("e2b-sandbox-id", "branch")
+        .header("e2b-sandbox-port", "49983")
+        .header("host", "center.test")
+        .header("transfer-encoding", "chunked")
+        .header("user-agent", "e2b-python")
+        .header("x-access-token", "public-branch-token");
+    for (name, value) in SDK_START_RPC_HEADERS {
+        builder = builder.header(name, value);
+    }
+    builder.body(Body::from(sdk_start_frame())).unwrap()
+}
+
+#[tokio::test]
+async fn branch_start_preserves_original_sdk_rpc_under_the_internal_header_bound() {
+    let f = Fixture::new().await;
+    let response = f
+        .client
+        .stream_branch_data(
+            &branch_identity(),
+            sdk_start_request(),
+            Arc::new(()),
+            max_deadline(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.into_body().collect().await.unwrap().to_bytes(),
+        Bytes::from_static(b"exact branch route")
+    );
+    idle_client(&f.client).await;
+
+    let mut excess = sdk_start_request();
+    for name in ["x-extra-one", "x-extra-two", "x-extra-three"] {
+        excess.headers_mut().insert(name, "extra".parse().unwrap());
+    }
+    let response = f
+        .client
+        .stream_branch_data(&branch_identity(), excess, Arc::new(()), max_deadline())
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE
+    );
+    response.into_body().collect().await.unwrap();
     idle_client(&f.client).await;
     f.stop().await;
 }
