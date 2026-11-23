@@ -11,7 +11,7 @@ _require_assertions()
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 import importlib.metadata
 import json
 import os
@@ -266,6 +266,38 @@ def wait_batch_ready(client, request, accepted, start, report):
             return path, key, branches
         assert result in ({"state": "pending"}, {"state": "cleaning_up"}), "batch did not become ready"
         time.sleep(min(.1, client.remaining()))
+
+
+def race_batch_and_parent_unload(client, running, request, report):
+    unload = dict(window=request["window"], sequence=request["sequence"] + 1,
+                  expected_version=request["expected_version"])
+    client.sequence = unload["sequence"]
+    began = time.monotonic()
+
+    def send(path, body):
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+        rendezvous.wait()
+        sent = time.monotonic()
+        status, encoded = fetch(opener, client.base_url, "POST", path, client.owner_key, body,
+                                timeout=min(15, client.remaining()))
+        return status, encoded, sent, time.monotonic()
+
+    with limit_public_deadline(client, 30), ThreadPoolExecutor(max_workers=2) as executor:
+        rendezvous = threading.Barrier(2, timeout=min(5, client.remaining()))
+        batch = executor.submit(send, client.path() + "/branch-batches", request)
+        pause = executor.submit(send, client.path() + "/unload", unload)
+        started, paused = (future.result(timeout=client.remaining()) for future in (batch, pause))
+        overlap = min(started[3], paused[3]) - max(started[2], paused[2])
+        assert overlap > 0, "public StartBatch and Unload request intervals did not overlap"
+        for actual, expected in ((started[0], 202), (paused[0], 409)):
+            if actual != expected:
+                raise PublicStatusMismatch(actual, expected)
+        assert client.query() == running
+    report["batch_post_seconds"] = started[3] - began
+    report["unload_race"] = dict(batch_sequence=request["sequence"], unload_sequence=unload["sequence"],
+                                 batch_status=202, unload_status=409, request_overlap_seconds=overlap)
+    accepted = json.loads(started[1], object_pairs_hook=unique_keys)
+    return wait_batch_ready(client, request, accepted, began, report)
 
 
 def race_last_branch_slot(client, running, checkpoint, report):
@@ -576,7 +608,10 @@ def run(args, receipt, report):
             }
         with phase(report, "branch_batch", client):
             request = batch_request(client, running, checkpoint, args.n)
-            path, batch_key, branches = start_batch(client, running, checkpoint, args.n, report)
+            if args.fault_case == "unload-race":
+                path, batch_key, branches = race_batch_and_parent_unload(client, running, request, report)
+            else:
+                path, batch_key, branches = start_batch(client, running, checkpoint, args.n, report)
         with phase(report, "public_active_boundaries", client):
             report["public_rejections"]["same_key_different_count"] = check_batch_replay(
                 client, path, batch_key, request, branches)
@@ -603,39 +638,54 @@ def run(args, receipt, report):
             parent.commands.run("test ! -e " + shlex.quote(MARKER), user="root", timeout=10)
             assert slot_and_claim(native)[1:] == (context, claim)
             report["single_original_vm"] = True
-        with phase(report, "individual_sdk_kill", client):
-            killed = sandboxes[0].kill()
-            assert killed is True
-            check_sdk_not_found(branches[0], owner)
-            report["public_rejections"]["old_branch_data_token"] = check_stale_data_route(client, sandboxes[0])
-            for index, sibling in enumerate(sandboxes[1:], start=1):
-                assert sibling.files.read(MARKER, user="root") == "branch-" + str(index)
-            assert parent.commands.run("printf parent-alive", timeout=10).stdout == "parent-alive"
-            report["remaining_siblings_after_kill"] = len(sandboxes) - 1
-        active_batches = [(path, batch_key, branches)]
-        active_branches = list(zip(branches[1:], sandboxes[1:]))
-        witnesses = [(branch, MARKER, "branch-" + str(index))
-                     for index, branch in enumerate(sandboxes[1:], start=1)]
-        if args.n == branch_limit and receipt["native_hot_fanout"]["max_batches"] >= 2:
-            with phase(report, "reclaimed_port_reuse", client):
-                reused = report["port_reuse"] = {}
-                if receipt["native_hot_fanout"]["max_batches"] >= 3:
-                    new_path, new_key, replacement = race_last_branch_slot(client, running, checkpoint, reused)
-                else:
-                    new_path, new_key, replacement = start_batch(
-                        client, running, checkpoint, 1, reused, await_reclaimed_port=True)
-                [new_branch] = replacement
-                # Before the close the original batch owned the full port range.
-                # With no other release, only branch zero's port can be reused.
-                assert new_branch not in branches
-                replacement_sdk = Sandbox.connect(new_branch, **owner)
-                assert replacement_sdk.files.read("/run/inherited", user="root") == receipt["expected_inherited_mark"]
-                fresh = replacement_sdk.commands.run("test ! -e " + shlex.quote(MARKER), user="root", timeout=10)
-                assert fresh.exit_code == 0
-                reused["old_branch_data_token"] = check_stale_data_route(client, sandboxes[0])
-                active_batches.append((new_path, new_key, replacement))
-                active_branches.append((new_branch, replacement_sdk))
-                witnesses.append((replacement_sdk, "/run/inherited", receipt["expected_inherited_mark"]))
+        with ExitStack() as held:
+            streams = None
+            if args.fault_case == "inflight-close":
+                from _hot_fanout_inflight import observe_inflight_branch
+
+                with phase(report, "hold_original_sdk_streams", client):
+                    held.enter_context(limit_public_deadline(client, 40))
+                    first_port = services.center_config["branching"]["limits"]["first_port"]
+                    report["inflight_close"] = {}
+                    streams = held.enter_context(observe_inflight_branch(
+                        client, sandboxes[0], native, context, first_port, report["inflight_close"]))
+            with phase(report, "individual_sdk_kill", client):
+                killed = sandboxes[0].kill()
+                assert killed is True
+                check_sdk_not_found(branches[0], owner)
+                report["public_rejections"]["old_branch_data_token"] = check_stale_data_route(client, sandboxes[0])
+                for index, sibling in enumerate(sandboxes[1:], start=1):
+                    assert sibling.files.read(MARKER, user="root") == "branch-" + str(index)
+                assert parent.commands.run("printf parent-alive", timeout=10).stdout == "parent-alive"
+                report["remaining_siblings_after_kill"] = len(sandboxes) - 1
+                if streams is not None:
+                    streams.wait_drained()
+            active_batches = [(path, batch_key, branches)]
+            active_branches = list(zip(branches[1:], sandboxes[1:]))
+            witnesses = [(branch, MARKER, "branch-" + str(index))
+                         for index, branch in enumerate(sandboxes[1:], start=1)]
+            if args.n == branch_limit and receipt["native_hot_fanout"]["max_batches"] >= 2:
+                with phase(report, "reclaimed_port_reuse", client):
+                    reused = report["port_reuse"] = {}
+                    if receipt["native_hot_fanout"]["max_batches"] >= 3:
+                        new_path, new_key, replacement = race_last_branch_slot(client, running, checkpoint, reused)
+                    else:
+                        new_path, new_key, replacement = start_batch(
+                            client, running, checkpoint, 1, reused, await_reclaimed_port=True)
+                    [new_branch] = replacement
+                    # Before the close the original batch owned the full port range.
+                    # With no other release, only branch zero's port can be reused.
+                    assert new_branch not in branches
+                    replacement_sdk = Sandbox.connect(new_branch, **owner)
+                    assert replacement_sdk.files.read("/run/inherited", user="root") == receipt["expected_inherited_mark"]
+                    fresh = replacement_sdk.commands.run("test ! -e " + shlex.quote(MARKER), user="root", timeout=10)
+                    assert fresh.exit_code == 0
+                    reused["old_branch_data_token"] = check_stale_data_route(client, sandboxes[0])
+                    if streams is not None:
+                        streams.finish_after_reuse(replacement_sdk)
+                    active_batches.append((new_path, new_key, replacement))
+                    active_branches.append((new_branch, replacement_sdk))
+                    witnesses.append((replacement_sdk, "/run/inherited", receipt["expected_inherited_mark"]))
         with phase(report, "mark_original_parent", client):
             parent_marker = secrets.token_hex(16)
             parent.files.write(PARENT_MARKER, parent_marker, user="root",
@@ -752,17 +802,26 @@ def checked_args(parser=None):
 
 
 def main():
-    args = checked_args()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--fault-case", choices=("inflight-close", "unload-race"),
+                        help="run one explicit independent branch acceptance case")
+    args = checked_args(parser)
     package = importlib.metadata.distribution("e2b")
     provenance = json.loads(package.read_text("direct_url.json"))
     assert package.version == "2.51.0" and provenance["vcs_info"]["commit_id"] == SDK_COMMIT
     os.umask(0o077)
     receipt = json_file(private_path(args.receipt), limit=65536)
-    assert args.n <= receipt["native_hot_fanout"]["template"]["max_branches"]
+    limits = receipt["native_hot_fanout"]
+    assert args.n <= limits["template"]["max_branches"]
+    if args.fault_case == "inflight-close" and not (
+            args.n == limits["template"]["max_branches"] and limits["max_batches"] >= 2):
+        parser.error("inflight-close requires the full branch capacity and one replacement batch")
     args.output.mkdir(mode=0o700)
     report = dict(candidate=args.candidate, fixture_sha256=digest(args.receipt),
                   binaries={role: digest(getattr(args, role)) for role in ("center", "host")},
                   sdk_commit=SDK_COMMIT, requested_branches=args.n, phase_seconds={}, passed=False)
+    if args.fault_case is not None:
+        report["fault_case"] = args.fault_case
     try:
         run(args, receipt, report)
         report["passed"] = True
