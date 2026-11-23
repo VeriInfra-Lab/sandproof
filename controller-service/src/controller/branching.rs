@@ -20,7 +20,6 @@ use std::{fmt::Write as _, num::NonZeroU16};
 
 const RECORD_LIMIT: usize = 65_536;
 const MAX_BATCH_RECORDS: u16 = 1024;
-const MAX_BRANCH_PORTS: u16 = BranchRelayPort::LAST - BranchRelayPort::FIRST + 1;
 const CONFIG_SQL: &str = "CREATE TABLE controller_host_branch_config (id INTEGER PRIMARY KEY CHECK(id=1),max_batches INTEGER NOT NULL,max_branches_per_vm INTEGER NOT NULL)";
 const RECORD_SQL: &str = "CREATE TABLE controller_host_branch_batches (operation BLOB PRIMARY KEY NOT NULL CHECK(length(operation)=32),parent BLOB NOT NULL CHECK(length(parent)=32),execution BLOB NOT NULL CHECK(length(execution)=32),record BLOB NOT NULL CHECK(length(record)<=65536),sha256 BLOB NOT NULL CHECK(length(sha256)=32))";
 const PARENT_INDEX_SQL: &str =
@@ -38,7 +37,8 @@ impl HostBranchLimits {
     #[must_use]
     pub fn is_valid(self) -> bool {
         (1..=MAX_BATCH_RECORDS).contains(&self.max_batches)
-            && (1..=MAX_BRANCH_PORTS).contains(&self.max_branches_per_vm)
+            && (1..=sandproof_protocol::branching::MAX_HOT_FANOUT_BRANCHES)
+                .contains(&self.max_branches_per_vm)
     }
 }
 

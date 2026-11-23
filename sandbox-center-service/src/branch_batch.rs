@@ -5,8 +5,8 @@ use sandproof_protocol::{
     ResourceId, SandboxId,
     branching::{
         BranchAccessSelector, BranchBatchIdentity, BranchControlAction, BranchRelayPort,
-        BranchStartFailure, BranchTarget, PublicBranchBatch, PublicBranchBatchRequest,
-        PublicBranchBatchResult, valid_ready_targets,
+        BranchStartFailure, BranchTarget, MAX_HOT_FANOUT_BRANCHES, PublicBranchBatch,
+        PublicBranchBatchRequest, PublicBranchBatchResult, valid_ready_targets,
     },
     lifecycle::{OperationKey, SessionId},
 };
@@ -307,7 +307,7 @@ impl BranchBatchLimits {
 
     fn is_valid(self) -> bool {
         self.max_batches > 0
-            && self.max_branches_per_vm > 0
+            && (1..=MAX_HOT_FANOUT_BRANCHES).contains(&self.max_branches_per_vm)
             && self.first_port > 0
             && self
                 .first_port
@@ -533,6 +533,18 @@ fn conflicts(a: &BranchBatchRecord, b: &BranchBatchRecord) -> bool {
 mod tests {
     use super::*;
     use std::num::NonZeroU16;
+
+    #[test]
+    fn deployment_capacity_fits_the_native_guest_limit() {
+        let mut limits = BranchBatchLimits {
+            max_batches: 16,
+            max_branches_per_vm: MAX_HOT_FANOUT_BRANCHES,
+            first_port: BranchRelayPort::FIRST,
+        };
+        assert!(limits.is_valid());
+        limits.max_branches_per_vm += 1;
+        assert!(!limits.is_valid());
+    }
 
     fn batch() -> BranchBatchRecord {
         let request: PublicBranchBatchRequest = serde_json::from_value(serde_json::json!({

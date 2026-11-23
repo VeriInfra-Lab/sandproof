@@ -156,6 +156,8 @@ pub fn valid_ready_targets(
 
 pub const BRANCH_CONTROL_PATH: &str = "/internal/v2/branch-control";
 pub const BRANCH_CONTROL_BODY_BYTES: usize = 24 * 1024;
+/// Maximum covered by the guest control protocol and native template policy.
+pub const MAX_HOT_FANOUT_BRANCHES: u16 = 64;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -202,6 +204,7 @@ impl BranchControlRequest {
     pub fn matches_node(&self, node: &crate::internal::NodeIdentity) -> bool {
         let count = u16::try_from(self.targets.len())
             .ok()
+            .filter(|count| *count <= MAX_HOT_FANOUT_BRANCHES)
             .and_then(NonZeroU16::new);
         self.parent.node == *node
             && self.parent.protocol_version == crate::lifecycle::PROTOCOL_VERSION
@@ -213,7 +216,6 @@ impl BranchControlRequest {
             && self.batch.incarnation == self.parent.incarnation
             && self.operation.owner == self.parent.operation.owner
             && self.operation != self.parent.operation
-            && self.targets.len() <= usize::from(BranchRelayPort::LAST - BranchRelayPort::FIRST + 1)
             && count.is_some_and(|count| valid_ready_targets(&self.targets, &self.targets, count))
             && self
                 .targets
