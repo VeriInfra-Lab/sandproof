@@ -19,6 +19,7 @@ from pathlib import Path
 import re
 import secrets
 import shlex
+import signal
 import shutil
 import subprocess
 import sys
@@ -607,6 +608,65 @@ def verify_expiring_branches(client, running, parent, owner, checkpoint, count, 
     return path, key, sandboxes
 
 
+def verify_public_branch_rejection_after_parent_exit(
+        client, running, parent, owner, checkpoint, count, inherited, native, original_slot, report):
+    from lifecycle_unload_runtime import (
+        exit_original_candidate, open_original_candidate_pidfd, pidfd_exited,
+    )
+
+    initial = parent.get_info()
+    assert initial.sandbox_id == client.session
+    assert initial.state == "running"
+    end_at_ms = round(initial.end_at.timestamp() * 1000)
+
+    def before_ttl():
+        observed = time.time_ns() // 1_000_000
+        assert observed < end_at_ms, "original parent lease expired before branch-loss evidence"
+        assert client.destroy_request is None, "public Destroy preceded branch-loss evidence"
+        return observed
+
+    path, key, branches = start_batch(client, running, checkpoint, count, report)
+    sandboxes = concurrent_sdk(branches, owner, inherited, report)
+    assert client.query() == running
+    assert parent.get_info().end_at == initial.end_at
+    ready_at_ms = before_ttl()
+    evidence = report["parent_vmm_loss"] = dict(
+        end_at_ms=end_at_ms, sdk_usable_at_ms=ready_at_ms, usable_branches=len(sandboxes))
+    minimum_remaining_ms = 60_000
+    assert end_at_ms - ready_at_ms >= minimum_remaining_ms, "need an original live lease beyond loss observation"
+    _, _, claim = original_slot
+    with limit_public_deadline(client, 45):
+        assert slot_and_claim(native) == original_slot
+        descriptor = open_original_candidate_pidfd(claim)
+        try:
+            assert slot_and_claim(native) == original_slot
+            before_ttl()
+            exit_original_candidate(descriptor, claim, client.deadline)
+            assert pidfd_exited(descriptor)
+            evidence.update(pidfd_exit_observed_at_ms=before_ttl(), original_vm_pid=claim["pid"],
+                            original_vm_start_time_ticks=claim["start_time_ticks"],
+                            original_vm_resource_id=claim["resource_id"])
+
+            expected_ready = {"state": "ready", "branches": branches}
+            while True:
+                before_ttl()
+                result = get_batch(client, path, key)
+                if result == {"state": "cleaning_up"}:
+                    break
+                assert result == expected_ready, "unexpected original branch disposition before confirmed loss"
+                time.sleep(min(.1, client.remaining()))
+            evidence["batch_cleaning_observed_at_ms"] = before_ttl()
+            for sandbox in sandboxes:
+                check_sdk_not_found(sandbox.sandbox_id,
+                                    owner | {"request_timeout": min(10, client.remaining())})
+                check_stale_data_route(client, sandbox)
+            evidence.update(old_branch_connect_not_found=len(sandboxes), old_branch_token_status=401,
+                            denied_before_destroy_at_ms=before_ttl(), explicit_destroy_sent_before_denial=False)
+        finally:
+            os.close(descriptor)
+    return path, key
+
+
 def check_batch_parent_ended(client, path, key):
     while get_batch(client, path, key) != {"state": "failed", "reason": "parent_ended"}:
         time.sleep(min(.1, client.remaining()))
@@ -654,7 +714,10 @@ def run(args, receipt, report):
             [native_id] = capture_live_native_ids(native, [claim], original_json)
             # Parent Connect can renew a short lease. The original read-only
             # projection constructs the same SDK without a management write.
-            parent = client.sdk() if args.fault_case == "natural-expiry" else Sandbox.connect(client.session, **owner)
+            if args.fault_case in ("natural-expiry", "parent-vmm-loss"):
+                parent = client.sdk()
+            else:
+                parent = Sandbox.connect(client.session, **owner)
 
         def confirm_native_release():
             with phase(report, "native_release", client):
@@ -685,6 +748,24 @@ def run(args, receipt, report):
                     check_stale_data_route(client, sandbox)
                 expiry["old_branch_tokens_refused"] = len(sandboxes)
                 expiry["old_parent_token_status"] = check_stale_data_route(client, parent)
+                report["parent_ended_batch"] = True
+            confirm_native_release()
+            return
+
+        if args.fault_case == "parent-vmm-loss":
+            with phase(report, "parent_vmm_loss", client):
+                path, key = verify_public_branch_rejection_after_parent_exit(
+                    client, running, parent, owner, checkpoint, args.n,
+                    receipt["expected_inherited_mark"], native, (slot_path, context, claim), report)
+            with phase(report, "parent_destroy_after_loss", client):
+                # Use the original Create version and public lifecycle path.
+                # Cleanup cannot satisfy the strictly earlier denial check.
+                report["parent_vmm_loss"]["later_destroy_sent_at_ms"] = time.time_ns() // 1_000_000
+                client.destroy(running)
+                client.wait_cleaned()
+                cleaned = True
+                report["parent_vmm_loss"]["later_destroy_acceptance"] = client.current_acceptance
+                check_batch_parent_ended(client, path, key)
                 report["parent_ended_batch"] = True
             confirm_native_release()
             return
@@ -888,9 +969,14 @@ def checked_args(parser=None):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--fault-case", choices=("inflight-close", "unload-race", "natural-expiry"),
+    parser.add_argument("--fault-case", choices=("inflight-close", "unload-race", "natural-expiry", "parent-vmm-loss"),
                         help="run one explicit independent branch acceptance case")
     args = checked_args(parser)
+    if args.fault_case == "parent-vmm-loss" and not (
+            callable(getattr(os, "pidfd_open", None))
+            and callable(getattr(signal, "pidfd_send_signal", None))):
+        parser.error("parent-vmm-loss requires Linux os.pidfd_open and signal.pidfd_send_signal "
+                     f"in the same interpreter as the pinned SDK (current: {sys.executable})")
     package = importlib.metadata.distribution("e2b")
     provenance = json.loads(package.read_text("direct_url.json"))
     assert package.version == "2.51.0" and provenance["vcs_info"]["commit_id"] == SDK_COMMIT
