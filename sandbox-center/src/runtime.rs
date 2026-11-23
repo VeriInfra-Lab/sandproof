@@ -101,14 +101,6 @@ pub async fn serve(inputs: CenterAssemblyInputs) -> Result<(), &'static str> {
             "private center listener failed",
         ));
     }
-    if inputs.branching_enabled {
-        tasks.spawn(coordinate_branches(
-            Arc::clone(&application),
-            Arc::clone(&inputs.admission),
-            inputs.expiry_scan_interval,
-            shutdown.subscribe(),
-        ));
-    }
     spawn_backgrounds(
         &mut tasks,
         BackgroundWork {
@@ -118,6 +110,7 @@ pub async fn serve(inputs: CenterAssemblyInputs) -> Result<(), &'static str> {
             admission: inputs.admission,
             deadline: material_deadline,
             interval: inputs.expiry_scan_interval,
+            branching: inputs.branching_enabled,
         },
         observation,
         &shutdown,
@@ -132,6 +125,7 @@ struct BackgroundWork {
     admission: Arc<RequestAdmission>,
     deadline: Duration,
     interval: Duration,
+    branching: bool,
 }
 
 fn spawn_backgrounds(
@@ -140,6 +134,14 @@ fn spawn_backgrounds(
     observation: ObservationWork,
     shutdown: &watch::Sender<bool>,
 ) {
+    if work.branching {
+        tasks.spawn(coordinate_branches(
+            Arc::clone(&work.application),
+            Arc::clone(&work.admission),
+            work.interval,
+            shutdown.subscribe(),
+        ));
+    }
     let mut background_shutdown = shutdown.subscribe();
     let mut material_shutdown = shutdown.subscribe();
     let material_application = Arc::clone(&work.application);
