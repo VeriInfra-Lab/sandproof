@@ -674,6 +674,19 @@ def _native_batches(drivers, workers):
         yield batch
 
 
+def _run_native_drivers(drivers, workers, slots, run_driver):
+    receipts = {}
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for batch in _native_batches(drivers, workers):
+            if len(batch) == 1:
+                label, receipt = run_driver(batch[0])
+                receipts[label] = receipt
+            else:
+                futures = [pool.submit(run_driver, row, slot) for row, slot in zip(batch, slots, strict=True)]
+                receipts.update(future.result() for future in futures)
+    return receipts
+
+
 def run_native(root, work, *, profile='full', scope=None):
     """Call after the retained stage1 case, inside the original ning suite."""
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'native':
@@ -704,7 +717,6 @@ def run_native(root, work, *, profile='full', scope=None):
             _invoke(root, HERE/'component.py', ['--native-only', '--output', work/'retained']), scope=scope)
         archive = _original_file(retained, 'source.tar')
     target = Path(os.environ['CARGO_TARGET_DIR'])/'stage1-protocol'
-    receipts = {}
     drivers = (CREATE_NATIVE_DRIVERS if profile == 'create-delivery' else
                CONVERGENCE.NATIVE_DRIVERS if profile == CONVERGENCE.PROFILE else NATIVE_DRIVERS)
     def run_driver(row, slot=None):
@@ -762,14 +774,7 @@ def run_native(root, work, *, profile='full', scope=None):
             CONVERGENCE.extra(root, 'sqlite-commit').check_native(_read(original), root, original.parent)
         return label, receipt
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        for batch in _native_batches(drivers, workers):
-            if len(batch) == 1:
-                label, receipt = run_driver(batch[0])
-                receipts[label] = receipt
-            else:
-                futures = [pool.submit(run_driver, row, slot) for row, slot in zip(batch, slots, strict=True)]
-                receipts.update(future.result() for future in futures)
+    receipts = _run_native_drivers(drivers, workers, slots, run_driver)
     for name in CRATE_CASES if profile == 'full' else ():
         label = 'stage1-protocol-'+name
         output = work/label
