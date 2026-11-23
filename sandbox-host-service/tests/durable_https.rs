@@ -1,4 +1,6 @@
 //! Real mTLS and the current original Journal; controlled host effects, not KVM.
+#[path = "durable_https/branch_data.rs"]
+mod branch_data;
 #[path = "durable_https/execution.rs"]
 mod execution;
 #[path = "durable_https/internal_data.rs"]

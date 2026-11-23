@@ -14,6 +14,7 @@ use sandproof_internal::{
 };
 use sandproof_node::NodeHost;
 use sandproof_protocol::{
+    branching::BranchAccessIdentity,
     internal::NodeIdentity,
     lifecycle::{
         AcceptedLifecycleIntent, AuthenticatedCenterContext, CreateObservation,
@@ -96,6 +97,17 @@ impl DataReceiver for RegisteredHost {
         request: Request<Body>,
     ) -> Response<Body> {
         self.facade.receive_data(identity, context, request).await
+    }
+
+    async fn receive_branch_data(
+        &self,
+        identity: BranchAccessIdentity,
+        context: AuthenticatedCenterContext,
+        request: Request<Body>,
+    ) -> Response<Body> {
+        self.facade
+            .receive_branch_data(identity, context, request)
+            .await
     }
 }
 impl ValidationReceiver for RegisteredHost {

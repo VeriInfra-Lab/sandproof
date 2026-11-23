@@ -1,6 +1,8 @@
 //! Only definite helper-gate contention before relay launch permits a retry.
+#[cfg(test)]
+use super::DataAccessPort;
 use super::{
-    DataAccessPort, DataAuthorization, DataKind, PortError, RequestLease, drain, until_revoked,
+    DataAuthorization, DataKind, PortError, RequestLease, TrackedRelayChild, drain, until_revoked,
 };
 use axum::http::StatusCode;
 use std::{sync::Arc, time::Duration};
@@ -79,23 +81,24 @@ where
     }
 }
 
-pub(super) async fn launch_authorized<P, F>(
-    port: &Arc<P>,
-    mut permit: P::Permit,
+pub(super) async fn launch_authorized<P, F, L>(
+    launch: &Arc<L>,
+    mut permit: P,
     (kind, control, guest_credential): (DataKind, bool, Option<&str>),
     lease: &Arc<RequestLease>,
     authorize: &Arc<F>,
     mut wait: GateWait,
-) -> Result<(P::Permit, drain::RelayProcess), StatusCode>
+) -> Result<(P, drain::RelayProcess), StatusCode>
 where
-    P: DataAccessPort,
-    F: Fn(DataKind) -> Result<Grant<P::Permit>, PortError> + Send + Sync + 'static,
+    P: DataAuthorization,
+    F: Fn(DataKind) -> Result<Grant<P>, PortError> + Send + Sync + 'static,
+    L: Fn(&P, bool) -> Result<TrackedRelayChild, PortError> + Send + Sync + 'static,
 {
     let destination = permit.target();
     let mut original_revocation = permit.revocation().clone();
     loop {
         match try_launch(
-            Arc::clone(port),
+            Arc::clone(launch),
             permit,
             control,
             Arc::clone(lease),
@@ -134,20 +137,20 @@ enum LaunchFailure {
     Status(StatusCode),
 }
 
-async fn try_launch<P: DataAccessPort>(
-    port: Arc<P>,
-    permit: P::Permit,
+async fn try_launch<P: DataAuthorization>(
+    launch: Arc<impl Fn(&P, bool) -> Result<TrackedRelayChild, PortError> + Send + Sync + 'static>,
+    permit: P,
     control: bool,
     request_lease: Arc<RequestLease>,
     deadline: Option<Instant>,
-) -> Result<(P::Permit, drain::RelayProcess), LaunchFailure> {
+) -> Result<(P, drain::RelayProcess), LaunchFailure> {
     use LaunchFailure::Status;
     let (permit, launched) = tokio::task::spawn_blocking(move || {
         let _lease = request_lease;
         if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
             return Err(Status(StatusCode::SERVICE_UNAVAILABLE));
         }
-        let result = port.spawn_data_relay(&permit, control);
+        let result = launch(&permit, control);
         Ok((permit, result))
     })
     .await
@@ -171,12 +174,18 @@ pub(super) async fn launch_data_route<P: DataAccessPort>(
     control: bool,
     lease: Arc<RequestLease>,
 ) -> Result<(P::Permit, drain::RelayProcess), StatusCode> {
-    try_launch(port, permit, control, lease, None)
-        .await
-        .map_err(|error| match error {
-            LaunchFailure::GateBusy => StatusCode::SERVICE_UNAVAILABLE,
-            LaunchFailure::Status(status) => status,
-        })
+    try_launch(
+        Arc::new(move |permit: &P::Permit, control| port.spawn_data_relay(permit, control)),
+        permit,
+        control,
+        lease,
+        None,
+    )
+    .await
+    .map_err(|error| match error {
+        LaunchFailure::GateBusy => StatusCode::SERVICE_UNAVAILABLE,
+        LaunchFailure::Status(status) => status,
+    })
 }
 
 fn log(stage: super::FaultStage, error: PortError) {

@@ -19,8 +19,9 @@ use sandproof_api::admission::{RequestAdmission, RequestClass, RequestLease};
 use sandproof_controller_service::application::fault::{FaultContext, FaultRecord, FaultStage};
 use sandproof_controller_service::application::{
     ApplicationError as PortError, ControllerApplication, ControllerHost, DataAccessPort,
-    DataAuthorization, DataKind, DataPermit,
+    DataAuthorization, DataKind, DataPermit, HostBranchPermit, TrackedRelayChild,
 };
+use sandproof_protocol::branching::BranchAccessIdentity;
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
 use tokio::{
     io::{AsyncRead, AsyncWrite, ReadBuf},
@@ -108,11 +109,17 @@ pub async fn handle<P: DataAccessPort>(
         Err(status) => return response(status),
     };
     let authorization_port = Arc::clone(&port);
-    handle_prepared(port, gateway, request, (kind, file_request), move |kind| {
-        authorization_port
-            .data_permit(&token, kind)
-            .map(|permit| (permit, None))
-    })
+    handle_prepared(
+        move |permit, control| port.spawn_data_relay(permit, control),
+        gateway,
+        request,
+        (kind, file_request),
+        move |kind| {
+            authorization_port
+                .data_permit(&token, kind)
+                .map(|permit| (permit, None))
+        },
+    )
     .await
 }
 
@@ -150,7 +157,7 @@ pub async fn handle_internal<H: ControllerHost + Send + 'static>(
         context,
     };
     handle_prepared(
-        application,
+        move |permit, control| application.spawn_data_relay(permit, control),
         Some(gateway),
         request,
         selection,
@@ -159,15 +166,42 @@ pub async fn handle_internal<H: ControllerHost + Send + 'static>(
     .await
 }
 
-async fn handle_prepared<P: DataAccessPort>(
-    port: Arc<P>,
+/// Native branch requests have their own closed authorization path. Both
+/// kinds of data still share the same host transfer and relay ownership.
+pub(crate) async fn handle_internal_branch<H: ControllerHost + Send + 'static>(
+    application: Arc<ControllerApplication<H>>,
+    gateway: Arc<Gateway>,
+    identity: BranchAccessIdentity,
+    context: AuthenticatedCenterContext,
+    request: Request<Body>,
+) -> Response<Body> {
+    let selection = match request_kind(&request) {
+        Ok(kind) => kind,
+        Err(status) => return response(status),
+    };
+    let authorization = Arc::clone(&application);
+    handle_prepared(
+        move |permit: &HostBranchPermit, control| {
+            application.spawn_host_branch_data_relay(permit, control)
+        },
+        Some(gateway),
+        request,
+        selection,
+        move |kind| {
+            authorization
+                .lifecycle_branch_data_authorization(&identity, &context, kind)
+                .map(|(permit, token)| (permit, Some(token)))
+        },
+    )
+    .await
+}
+
+async fn handle_prepared<P: DataAuthorization>(
+    launch: impl Fn(&P, bool) -> Result<TrackedRelayChild, PortError> + Send + Sync + 'static,
     gateway: Option<Arc<Gateway>>,
     mut request: Request<Body>,
     (kind, file_request): (DataKind, bool),
-    authorize: impl Fn(DataKind) -> Result<(P::Permit, Option<String>), PortError>
-    + Send
-    + Sync
-    + 'static,
+    authorize: impl Fn(DataKind) -> Result<(P, Option<String>), PortError> + Send + Sync + 'static,
 ) -> Response<Body> {
     let control = control_request(&request);
     let request_lease = match admit_request(gateway.as_deref(), control) {
@@ -216,7 +250,7 @@ async fn handle_prepared<P: DataAccessPort>(
         None => return response(StatusCode::UNAUTHORIZED),
     };
     let (permit, child) = match launch_authorized(
-        &port,
+        &Arc::new(launch),
         permit,
         (kind, control, guest_credential.as_deref()),
         &request_lease,

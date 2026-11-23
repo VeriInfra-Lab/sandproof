@@ -21,6 +21,7 @@ fn running(
     ControllerApplication<fixture::TestHost>,
     LifecycleAccessIdentity,
     AcceptedLifecycleIntent,
+    Arc<Mutex<State>>,
 ) {
     let state = Arc::new(Mutex::new(State {
         epoch: TestEpoch::Matching,
@@ -31,8 +32,8 @@ fn running(
         }),
         ..State::default()
     }));
-    let app =
-        application(path, state, true).with_clock(Arc::new(fixture::TestClock(AtomicI64::new(10))));
+    let app = application(path, Arc::clone(&state), true)
+        .with_clock(Arc::new(fixture::TestClock(AtomicI64::new(10))));
     let create = request();
     let context = context();
     app.record_lifecycle_intent(&create, &context).unwrap();
@@ -55,7 +56,7 @@ fn running(
         accepted_version: create.accepted_version,
         incarnation: target_incarnation,
     };
-    (app, parent, destroy)
+    (app, parent, destroy, state)
 }
 
 fn planned_branches() -> [BranchTarget; 2] {
@@ -74,7 +75,7 @@ fn planned_branches() -> [BranchTarget; 2] {
 #[test]
 fn native_branch_dispatch_requires_live_observation_and_rechecks_revocation() {
     let directory = tempfile::tempdir().unwrap();
-    let (app, parent, mut destroy) = running(&directory.path().join("db"));
+    let (app, parent, mut destroy, host_state) = running(&directory.path().join("db"));
     let context = context();
     let mut operation = parent.operation.clone();
     operation.sequence = 9.try_into().unwrap();
@@ -155,6 +156,17 @@ fn native_branch_dispatch_requires_live_observation_and_rechecks_revocation() {
         Err(ApplicationError::Busy)
     );
     drop(first);
+    host_state.lock().unwrap().live_branch_relay = Some(31_000);
+    assert_eq!(
+        app.change_host_branch_close(
+            &parent,
+            &context,
+            &key,
+            HostBranchClose::ConfirmGone(close_scope)
+        ),
+        Err(ApplicationError::Busy)
+    );
+    host_state.lock().unwrap().live_branch_relay = None;
     app.change_host_branch_close(
         &parent,
         &context,

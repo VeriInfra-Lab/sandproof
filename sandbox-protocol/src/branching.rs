@@ -98,7 +98,7 @@ impl BranchAccessSelector {
 /// Valid local guest ports reserved exclusively for training envd listeners.
 /// Runtime dispatch must take a port from the original verified branch plan.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct BranchRelayPort(u16);
+pub struct BranchRelayPort(NonZeroU16);
 
 impl BranchRelayPort {
     pub const FIRST: u16 = 31_000;
@@ -109,11 +109,19 @@ impl BranchRelayPort {
         if port < Self::FIRST || port > Self::LAST {
             return None;
         }
-        Some(Self(port))
+        match NonZeroU16::new(port) {
+            Some(port) => Some(Self(port)),
+            None => None,
+        }
     }
 
     #[must_use]
     pub const fn get(self) -> u16 {
+        self.0.get()
+    }
+
+    #[must_use]
+    pub const fn nonzero(self) -> NonZeroU16 {
         self.0
     }
 }

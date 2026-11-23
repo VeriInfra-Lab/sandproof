@@ -355,6 +355,33 @@ pub trait DataRelay {
         Err(ApplicationError::Busy)
     }
 
+    /// Start the tracked relay for a separately authorized planned branch.
+    /// # Errors
+    /// Unknown or unsupported targets refuse without launching parent envd.
+    fn spawn_branch_data_relay(
+        &self,
+        _sandbox: core::SandboxId,
+        _vm: core::VmId,
+        _generation: core::Generation,
+        _port: sandproof_protocol::branching::BranchRelayPort,
+        _control: bool,
+    ) -> Result<std::process::Child, ApplicationError> {
+        Err(ApplicationError::Busy)
+    }
+
+    /// Observe exact durable branch relay absence after application revocation.
+    /// # Errors
+    /// Unknown or unsupported observations cannot release the planned port.
+    fn branch_data_gate_drained(
+        &self,
+        _sandbox: core::SandboxId,
+        _vm: core::VmId,
+        _generation: core::Generation,
+        _port: sandproof_protocol::branching::BranchRelayPort,
+    ) -> Result<bool, ApplicationError> {
+        Ok(false)
+    }
+
     /// Resolve an earlier unknown relay exit after every local pin has dropped.
     /// # Errors
     /// Refuses changed identity; false leaves the position unavailable.

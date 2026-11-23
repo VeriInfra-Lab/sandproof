@@ -741,6 +741,52 @@ impl ControllerJournal {
         self.change_host_branch_batch(identity, context, key, now_ms, |record| record.close(close))
     }
 
+    pub(crate) fn host_branch_closing_ports(
+        &self,
+        identity: &LifecycleAccessIdentity,
+        context: &AuthenticatedCenterContext,
+        key: &HostBranchBatchKey,
+        scope: Option<&SandboxId>,
+        now_ms: i64,
+    ) -> Result<(HostBranchParent, Vec<BranchRelayPort>), JournalError> {
+        if !key.matches_parent(identity) {
+            return Err(JournalError::Conflict);
+        }
+        let parent = self.current_branch_parent(identity, context, now_ms)?;
+        let connection = &self.journal.connection;
+        let limits = read_limits(connection)?.ok_or(JournalError::UnsupportedStore)?;
+        let record =
+            read_record(connection, &key.operation, limits)?.ok_or(JournalError::Conflict)?;
+        self.committed_world.check_identity(connection)?;
+        record.require_key(key, &parent)?;
+        if scope.is_none()
+            && !matches!(
+                record.phase,
+                HostBranchBatchPhase::Closing | HostBranchBatchPhase::Released
+            )
+        {
+            return Err(JournalError::Conflict);
+        }
+        let selected = scope.map(|id| record.branch_index(id)).transpose()?;
+        let mut ports = Vec::new();
+        for (index, entry) in record.credentials.iter().enumerate() {
+            if selected.is_some_and(|selected| selected != index) {
+                continue;
+            }
+            match entry.phase {
+                BranchPhase::Released => {}
+                BranchPhase::Active => return Err(JournalError::Conflict),
+                BranchPhase::Closing => {
+                    ports.push(
+                        BranchRelayPort::new(record.targets[index].port.get())
+                            .ok_or(JournalError::CorruptStore)?,
+                    );
+                }
+            }
+        }
+        Ok((parent, ports))
+    }
+
     fn change_host_branch_batch(
         &mut self,
         identity: &LifecycleAccessIdentity,

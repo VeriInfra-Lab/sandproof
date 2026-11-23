@@ -1,7 +1,7 @@
 //! Branch permits share the native management lock and parent route drain.
 use super::{
     ApplicationError, ControllerApplication, ControllerHost, DataAuthorization, DataKind,
-    DataLease, DataTarget, map_journal, same_secret, watch,
+    DataLease, DataTarget, RelayReaper, TrackedRelayChild, map_journal, same_secret, watch,
 };
 use crate::{
     HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits, HostBranchParent,
@@ -290,8 +290,30 @@ impl<H: ControllerHost> ControllerApplication<H> {
         launch(&inner.host, &current)
     }
 
+    /// Start a tracked relay for the original already verified branch.
+    /// # Errors
+    /// Unknown authority, launch or capacity refuses without a fallback.
+    pub fn spawn_host_branch_data_relay(
+        &self,
+        permit: &HostBranchPermit,
+        control: bool,
+    ) -> Result<TrackedRelayChild, ApplicationError> {
+        self.with_host_branch_dispatch(permit, |host, route| {
+            let reaper = RelayReaper::new()?;
+            let parent = route.parent();
+            host.spawn_branch_data_relay(
+                parent.sandbox(),
+                parent.vm(),
+                parent.generation(),
+                route.port(),
+                control,
+            )
+            .map(|child| reaper.attach(child))
+        })
+    }
+
     /// Persist branch revocation before physical cleanup. A release confirmation
-    /// also requires the caller's trusted durable relay and guest observations.
+    /// also requires the original durable relay census and trusted guest exit.
     /// # Errors
     /// Scope mismatches, live pins or uncertain outcomes block port reuse.
     pub fn change_host_branch_close(
@@ -327,13 +349,26 @@ impl<H: ControllerHost> ControllerApplication<H> {
         {
             return Err(ApplicationError::Busy);
         }
-        let result = inner.journal.change_host_branch_close(
-            parent,
-            context,
-            key,
-            self.clock.now_ms()?,
-            close,
-        );
+        let now_ms = self.clock.now_ms()?;
+        if confirm {
+            let (native, ports) = inner
+                .journal
+                .host_branch_closing_ports(parent, context, key, scope, now_ms)
+                .map_err(route_error)?;
+            for port in ports {
+                if !inner.host.branch_data_gate_drained(
+                    native.sandbox(),
+                    native.vm(),
+                    native.generation(),
+                    port,
+                )? {
+                    return Err(ApplicationError::Busy);
+                }
+            }
+        }
+        let result = inner
+            .journal
+            .change_host_branch_close(parent, context, key, now_ms, close);
         if matches!(result, Err(JournalError::CommitUncertain(_))) {
             inner.revoke_branch_data(local.sandbox);
         } else if result.is_ok()

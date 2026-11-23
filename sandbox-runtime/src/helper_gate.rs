@@ -11,6 +11,7 @@ use std::{
     cell::RefCell,
     fs::{self, File},
     io::{self, Read, Write},
+    num::NonZeroU16,
     os::{
         fd::AsRawFd,
         unix::fs::{MetadataExt, OpenOptionsExt},
@@ -49,6 +50,8 @@ pub enum RuntimeRouteState {
 pub struct RuntimeRouteSnapshot {
     pub index: u64,
     pub control: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub branch_port: Option<NonZeroU16>,
     pub state: RuntimeRouteState,
 }
 
@@ -136,6 +139,15 @@ struct InflightRecord {
     command_digest: [u8; 32],
     route_index: Option<u64>,
     control: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    branch_port: Option<NonZeroU16>,
+}
+
+#[derive(Clone, Copy)]
+struct RouteScope {
+    index: u64,
+    control: bool,
+    branch_port: Option<NonZeroU16>,
 }
 
 #[derive(Clone)]
@@ -194,6 +206,7 @@ impl RuntimeHostSlot {
             command_digest: [u8::MAX; 32],
             route_index: Some(u64::MAX),
             control: Some(false),
+            branch_port: NonZeroU16::new(u16::MAX),
         };
         if serde_json::to_vec(&record)?.len() as u64 > MAX_HELPER_MARKER_BYTES {
             return Err(RuntimeError::InvalidConfiguration(
@@ -266,6 +279,22 @@ impl RuntimeHelperGate {
         self.snapshot_for_owner(expected, 0)
     }
 
+    /// Observe exact branch-route exit in one original VM generation. A
+    /// staged cell without known scope retains the branch's responsibility.
+    /// Call after revoking that branch while holding native admission.
+    /// # Errors
+    /// Unverifiable gate/context or marker cannot establish release.
+    pub fn branch_route_drained(
+        &self,
+        expected: &RuntimeHostSlot,
+        port: NonZeroU16,
+    ) -> Result<bool, RuntimeError> {
+        Ok(branch_routes_drained(
+            &self.route_snapshot(Some(expected))?,
+            port,
+        ))
+    }
+
     fn snapshot_for_owner(
         &self,
         expected: Option<&RuntimeHostSlot>,
@@ -295,21 +324,22 @@ impl RuntimeHelperGate {
                     "route census staging byte bound",
                 ));
             }
-            let (control, observed) = if staged.is_some() {
-                (None, RuntimeRouteState::Unknown)
+            let (control, branch_port, observed) = if staged.is_some() {
+                (None, None, RuntimeRouteState::Unknown)
             } else if let Some(marker) = marker {
                 let observed = match marker.record.process.is_alive() {
                     Ok(true) => RuntimeRouteState::Live,
                     Ok(false) => RuntimeRouteState::Idle,
                     Err(_) => RuntimeRouteState::Unknown,
                 };
-                (marker.record.control, observed)
+                (marker.record.control, marker.record.branch_port, observed)
             } else {
-                (None, RuntimeRouteState::Idle)
+                (None, None, RuntimeRouteState::Idle)
             };
             result.push(RuntimeRouteSnapshot {
                 index,
                 control,
+                branch_port,
                 state: observed,
             });
         }
@@ -398,6 +428,13 @@ impl RuntimeHelperGate {
         guard.recover_previous(shared)?;
         Ok(guard)
     }
+}
+
+fn branch_routes_drained(routes: &[RuntimeRouteSnapshot], port: NonZeroU16) -> bool {
+    routes.iter().all(|route| {
+        route.state == RuntimeRouteState::Idle
+            || (route.control.is_some() && route.branch_port != Some(port))
+    })
 }
 
 fn lock(file: &File, shared: bool) -> Result<(), RuntimeError> {
@@ -531,7 +568,6 @@ impl RuntimeHelperGuard {
         self.prepare_reserved(
             context,
             None,
-            None,
             &path,
             &stage,
             staged,
@@ -617,6 +653,32 @@ impl RuntimeHelperGuard {
         program: &str,
         args: &[&str],
     ) -> Result<Child, RuntimeError> {
+        self.spawn_route_with_scope(context, control, None, program, args)
+    }
+
+    /// Track one branch's reserved port on the durable marker before launch,
+    /// independent of the trusted relay executable path used by this manager.
+    /// # Errors
+    /// Has the same identity and capacity requirements as ordinary routes.
+    pub fn spawn_branch_route(
+        &self,
+        context: &RuntimeHostSlot,
+        control: bool,
+        branch_port: NonZeroU16,
+        program: &str,
+        args: &[&str],
+    ) -> Result<Child, RuntimeError> {
+        self.spawn_route_with_scope(context, control, Some(branch_port), program, args)
+    }
+
+    fn spawn_route_with_scope(
+        &self,
+        context: &RuntimeHostSlot,
+        control: bool,
+        branch_port: Option<NonZeroU16>,
+        program: &str,
+        args: &[&str],
+    ) -> Result<Child, RuntimeError> {
         self.validate_context(context)?;
         let (singleton, singleton_stage) = self.gate.inflight_paths()?;
         if self.read_cell(&singleton, None)?.is_some() || super::path_present(&singleton_stage)? {
@@ -650,8 +712,11 @@ impl RuntimeHelperGuard {
             return self
                 .spawn_reserved(
                     context,
-                    Some(index),
-                    Some(control),
+                    Some(RouteScope {
+                        index,
+                        control,
+                        branch_port,
+                    }),
                     &path,
                     &stage,
                     staged,
@@ -700,25 +765,15 @@ impl RuntimeHelperGuard {
     fn spawn_reserved(
         &self,
         context: &RuntimeHostSlot,
-        route_index: Option<u64>,
-        control: Option<bool>,
+        route: Option<RouteScope>,
         path: &Path,
         stage: &Path,
         staged: File,
         program: &str,
         args: &[&str],
     ) -> Result<OwnedChild, RuntimeError> {
-        let prepared = self.prepare_reserved(
-            context,
-            route_index,
-            control,
-            path,
-            stage,
-            staged,
-            program,
-            args,
-            false,
-        )?;
+        let prepared =
+            self.prepare_reserved(context, route, path, stage, staged, program, args, false)?;
         self.release_tracked(prepared)
     }
 
@@ -729,8 +784,7 @@ impl RuntimeHelperGuard {
     fn prepare_reserved(
         &self,
         context: &RuntimeHostSlot,
-        route_index: Option<u64>,
-        control: Option<bool>,
+        route: Option<RouteScope>,
         path: &Path,
         stage: &Path,
         mut staged: File,
@@ -756,8 +810,7 @@ impl RuntimeHelperGuard {
         };
         let witness = self.publish_prepared(
             context,
-            route_index,
-            control,
+            route,
             path,
             stage,
             &mut staged,
@@ -793,8 +846,7 @@ impl RuntimeHelperGuard {
     fn publish_prepared(
         &self,
         context: &RuntimeHostSlot,
-        route_index: Option<u64>,
-        control: Option<bool>,
+        route: Option<RouteScope>,
         path: &Path,
         stage: &Path,
         staged: &mut File,
@@ -807,8 +859,9 @@ impl RuntimeHelperGuard {
             context: context.clone(),
             process: RuntimeProcessIdentity::capture(child.id())?,
             command_digest: Sha256::digest(serde_json::to_vec(&(program, args))?).into(),
-            route_index,
-            control,
+            route_index: route.map(|scope| scope.index),
+            control: route.map(|scope| scope.control),
+            branch_port: route.and_then(|scope| scope.branch_port),
         };
         let bytes = serde_json::to_vec(&record)?;
         if bytes.len() as u64 > MAX_HELPER_MARKER_BYTES {
@@ -833,7 +886,7 @@ impl RuntimeHelperGuard {
             device: metadata.dev(),
             inode: metadata.ino(),
         };
-        if route_index.is_none() {
+        if route.is_none() {
             *self.active.borrow_mut() = Some(witness.clone());
         }
         Ok(witness)
@@ -1004,6 +1057,7 @@ fn read_marker(
         || record.context.helper_gate != *gate
         || record.route_index != route_index
         || record.control.is_some() != route_index.is_some()
+        || (record.branch_port.is_some() && record.route_index.is_none())
     {
         return Err(RuntimeError::IdentityMismatch("helper marker gate binding"));
     }
@@ -1214,6 +1268,63 @@ mod tests {
         drop(exclusive);
         let shared = acquire(&context, true).unwrap();
         assert!(shared.require_exclusive_context(&context).is_err());
+    }
+
+    #[test]
+    fn branch_route_census_survives_guard_drop_and_unrelated_live_relays() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (_root, context) = fixture(3);
+        let guard = acquire(&context, false).unwrap();
+        let first = NonZeroU16::new(31_000).unwrap();
+        let second = NonZeroU16::new(31_001).unwrap();
+        let start = |port| {
+            let mut child = guard
+                .spawn_branch_route(
+                    &context,
+                    false,
+                    port,
+                    "/bin/sh",
+                    &[
+                        "-c",
+                        "printf 'ready\n'; IFS= read -r finish; [ \"$finish\" = finish ]",
+                    ],
+                )
+                .unwrap();
+            let mut line = String::new();
+            BufReader::new(child.stdout.take().unwrap())
+                .read_line(&mut line)
+                .unwrap();
+            assert_eq!(line, "ready\n");
+            child
+        };
+        let a = start(first);
+        let b = start(second);
+        drop(guard);
+        let observe = |port| {
+            let routes = context
+                .helper_gate
+                .snapshot_for_owner(Some(&context), rustix::process::geteuid().as_raw())
+                .unwrap();
+            branch_routes_drained(&routes, port)
+        };
+        assert!(!observe(first));
+        assert!(!observe(second));
+        finish(a);
+        assert!(observe(first));
+        assert!(!observe(second));
+
+        let (_, staged) = context.helper_gate.route_paths(2).unwrap();
+        File::options()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&staged)
+            .unwrap();
+        assert!(!observe(first));
+        finish(b);
+        assert!(!observe(second));
+        fs::remove_file(staged).unwrap();
+        assert!(observe(first) && observe(second));
     }
 
     fn stopped_cleanup_fixture(root: &Path, context: &RuntimeHostSlot) -> (Runtime, String) {
@@ -1454,6 +1565,7 @@ mod tests {
                 command_digest: [0; 32],
                 route_index: None,
                 control: None,
+                branch_port: None,
             };
             let (path, stage) = context.helper_gate.inflight_paths().unwrap();
             let bytes = serde_json::to_vec(&record).unwrap();
@@ -1754,7 +1866,6 @@ mod tests {
                 .publish_prepared(
                     &context,
                     None,
-                    None,
                     &path,
                     &stage,
                     &mut staged,
@@ -1950,6 +2061,7 @@ mod tests {
             command_digest: [0; 32],
             route_index: Some(0),
             control: Some(false),
+            branch_port: None,
         };
         let bytes = serde_json::to_vec(&record).unwrap();
         File::options()
