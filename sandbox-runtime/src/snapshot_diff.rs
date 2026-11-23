@@ -338,3 +338,7 @@ mod tests {
         assert!(backing_memory(&dir, metadata.uid(), metadata.gid(), 64).is_err());
     }
 }
+
+#[cfg(test)]
+#[path = "snapshot_diff_fault_tests.rs"]
+mod fault_tests;

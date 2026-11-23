@@ -423,6 +423,39 @@ impl Runtime {
 }
 
 #[cfg(test)]
+pub(super) fn write_tracked_restore_fixture(
+    runtime: &Runtime,
+    resource_id: &str,
+    recorded: RuntimeProcessIdentity,
+    stamp: FileStamp,
+) {
+    let claim = runtime.config.chroot_base.join(".claims").join(resource_id);
+    std::fs::create_dir_all(&claim).unwrap();
+    let intent = RestoreIntent {
+        version: 1,
+        resource_id: resource_id.into(),
+        config: runtime.config.clone(),
+        directory_key: [42; 32],
+        manifest_sha256: [43; 32],
+        work_sha256: [44; 32],
+        track_dirty_pages: true,
+    };
+    runtime
+        .write_new_record(&claim.join("restore-intent.json"), &intent)
+        .unwrap();
+    runtime
+        .write_new_record(
+            &claim.join("restore-loaded.json"),
+            &LoadedRecord {
+                intent_sha256: intent.digest().unwrap(),
+                process: recorded,
+                diff_parent: Some(stamp),
+            },
+        )
+        .unwrap();
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::cell::Cell;
