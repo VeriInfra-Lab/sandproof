@@ -279,10 +279,12 @@ def _status(port, method, path, timeout, *, token=None, body=None):
         connection.close()
 
 
-def _owns_tcp_listener(cgroup, port):
+def _owns_tcp_listener(cgroup, port, *, observe=False):
     # Ports alone are not readiness or ownership evidence. Check that a
     # listening socket is held by a process in the still-reserved ordinal.
     pids = (cgroup / "cgroup.procs").read_text().splitlines()
+    if not pids:
+        return False
     wanted = f"{port:04X}"
     listening = set()
     for table in ("/proc/net/tcp", "/proc/net/tcp6"):
@@ -308,6 +310,8 @@ def _owns_tcp_listener(cgroup, port):
                     origins.add(origin)
         except FileNotFoundError:
             continue
+    if observe and listening and listening != origins:
+        raise OSError("original fan-out listener ownership is uncertain")
     return bool(listening) and listening == origins
 
 
@@ -449,7 +453,7 @@ class LinuxGuest:
         if self.channel is None:
             raise RuntimeError("fan-out checkpoint donor unavailable")
         deadline = time.monotonic() + self.startup_timeout
-        for ordinal, branch in enumerate(plan.branches):
+        for ordinal in range(len(plan.branches)):
             slot, cgroup = self._paths(plan.batch_id, ordinal)
             slot.mkdir(mode=0o700)
             (slot / "upper").mkdir(mode=0o755)
@@ -458,7 +462,6 @@ class LinuxGuest:
             cgroup.mkdir()
             if not (cgroup / "cgroup.kill").is_file():
                 raise ValueError("fan-out requires cgroup.kill")
-            (slot / "port").write_text(str(branch.port))
         try:
             _packet(self.channel, {
                 "batch_id": plan.batch_id,
@@ -504,11 +507,13 @@ class LinuxGuest:
         if remaining:
             raise TimeoutError("batch envd readiness deadline exceeded")
 
-    def present(self, batch_id, ordinal):
-        slot, cgroup = self._paths(batch_id, ordinal)
+    def present(self, batch_id, ordinal, port):
+        _, cgroup = self._paths(batch_id, ordinal)
         try:
-            return _owns_tcp_listener(cgroup, int((slot / "port").read_text()))
+            return _owns_tcp_listener(cgroup, port, observe=True)
         except FileNotFoundError:
+            if cgroup.exists():
+                raise
             return False
 
     def has_batch(self, batch_id):

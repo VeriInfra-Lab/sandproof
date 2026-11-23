@@ -166,7 +166,7 @@ class GuestFanout:
             raise ValueError("checkpoint identity is not active in this runtime")
         branch_ids, ports, count = self._occupied()
         if count >= self.max_batches:
-            raise ValueError("fan-out journal capacity exhausted")
+            return self._absent_with_full_history(plan.batch_id, count, unknown="pending")
         requested = {branch.branch_id for branch in plan.branches}
         if (len(branch_ids) + len(requested) > self.max_branches or branch_ids & requested
                 or ports & {branch.port for branch in plan.branches}):
@@ -199,13 +199,16 @@ class GuestFanout:
     def observe(self, batch_id):
         row = self._load(batch_id)
         if row is None:
-            return {"batch_id": batch_id, "status": "lost"}
+            _, _, count = self._occupied()
+            return self._absent_with_full_history(batch_id, count, unknown="lost")
         return self._observe(row)
 
     def _observe(self, row):
         phase = row["phase"]
         if phase == "starting":
             return self._retire(row, range(len(row["branches"])), "failed_clean")
+        if phase == "failing":
+            return self._retire(row, row["retiring"], "failed_clean")
         if phase != "ready":
             return self._public(row, phase)
         if row["retiring"]:
@@ -214,12 +217,17 @@ class GuestFanout:
             return self._retire(row, indexes, phase)
         active = [(i, branch) for i, branch in enumerate(row["branches"])
                   if branch["branch_id"] not in row["released"]]
-        try:
-            present = all(self.backend.present(row["batch_id"], index) for index, _ in active)
-        except OSError:
+        uncertain = False
+        for index, branch in active:
+            try:
+                present = self.backend.present(row["batch_id"], index, branch["port"])
+            except OSError:
+                uncertain = True
+                continue
+            if not present:
+                return self._retire(row, (ordinal for ordinal, _ in active), "failed_clean")
+        if uncertain:
             return self._public(row, "pending")
-        if not present:
-            return self._public(row, "lost")
         return self._public(row, "ready", [branch for _, branch in active])
 
     def release(self, batch_id, branch_id=None):
@@ -230,9 +238,7 @@ class GuestFanout:
             return self._record_closed_before_start(batch_id)
         if branch_id is not None and identifier(branch_id) not in {b["branch_id"] for b in row["branches"]}:
             raise ValueError("branch identity does not belong to this batch")
-        if row["phase"] in ("failed_clean", "released"):
-            return self._observe(row)
-        if row["phase"] == "starting":
+        if row["phase"] != "ready":
             return self._observe(row)
         remaining = [i for i, item in enumerate(row["branches"]) if item["branch_id"] not in row["released"]]
         indexes = set(row["retiring"])
@@ -241,17 +247,27 @@ class GuestFanout:
             return self._observe(row)
         return self._retire(row, sorted(indexes), "released" if len(indexes) == len(remaining) else "ready")
 
+    def _scope_absent(self, batch_id):
+        try:
+            return not self.backend.has_batch(batch_id)
+        except OSError:
+            return False
+
+    def _absent_with_full_history(self, batch_id, count, *, unknown):
+        # A successful Start needs a new durable row before any effect. Once
+        # this lifetime budget fills, no future request can add the absent row.
+        status = "never_started" if count == self.max_batches and self._scope_absent(batch_id) else unknown
+        return {"batch_id": batch_id, "status": status}
+
     def _record_closed_before_start(self, batch_id):
         # Dispatch occurs only after committing the original plan, and both
         # requests run under this same live journal owner. Fence a later Start
         # before reporting absence as cleanup.
         _, _, count = self._occupied()
-        try:
-            absent = count < self.max_batches and not self.backend.has_batch(batch_id)
-        except OSError:
-            absent = False
-        if not absent:
+        if count > self.max_batches or not self._scope_absent(batch_id):
             return {"batch_id": batch_id, "status": "pending"}
+        if count == self.max_batches:
+            return {"batch_id": batch_id, "status": "released"}
         row = {"batch_id": batch_id, "identity": None, "phase": "released",
                "branches": [], "released": [], "retiring": []}
         self._save(row)
@@ -259,11 +275,17 @@ class GuestFanout:
 
     def _retire(self, row, indexes, terminal):
         row["retiring"] = list(indexes)
+        if terminal == "failed_clean":
+            # Recovery must distinguish a failed batch from ordinary release,
+            # including when some members were individually released earlier.
+            row["phase"] = "failing"
         self._save(row)
         try:
             for ordinal in row["retiring"]:
                 self.backend.release(row["batch_id"], ordinal)
         except (OSError, RuntimeError):
+            return self._public(row, "pending")
+        if terminal == "failed_clean" and not self._scope_absent(row["batch_id"]):
             return self._public(row, "pending")
         row["released"].extend(row["branches"][i]["branch_id"] for i in row["retiring"]
                                if row["branches"][i]["branch_id"] not in row["released"])

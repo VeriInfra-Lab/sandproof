@@ -1,14 +1,16 @@
 import ctypes
 import json
+import os
 from pathlib import Path
 import tempfile
 import socket
 import time
 from concurrent.futures import ThreadPoolExecutor
 import unittest
+from unittest.mock import patch
 
 from tools.hot_fanout.control import GuestFanout
-from tools.hot_fanout.linux import CLONE_INTO_CGROUP, CloneArgs
+from tools.hot_fanout.linux import CLONE_INTO_CGROUP, CloneArgs, _owns_tcp_listener
 from tools.hot_fanout.prepared import validate_frozen_mounts
 from tools.hot_fanout.service import _dispatch, _firecracker_exchange, _read_frame, _write_frame
 
@@ -21,6 +23,7 @@ class FakeGuest:
         self.cleanup_failure = None
         self.starts = 0
         self.fail_presence = False
+        self.fail_scope = False
         self.has_checkpoint = True
 
     def checkpoint_available(self):
@@ -34,6 +37,8 @@ class FakeGuest:
             self.active.add((plan.batch_id, ordinal))
 
     def has_batch(self, batch_id):
+        if self.fail_scope:
+            raise OSError("presence unavailable")
         return any(existing == batch_id for existing, _ in self.active)
 
     def release(self, batch_id, ordinal):
@@ -42,7 +47,7 @@ class FakeGuest:
         self.active.discard((batch_id, ordinal))
         self.cleaned.append((batch_id, ordinal))
 
-    def present(self, batch_id, ordinal):
+    def present(self, batch_id, ordinal, port):
         if self.fail_presence:
             raise OSError("observation unavailable")
         return (batch_id, ordinal) in self.active
@@ -219,24 +224,99 @@ class HotFanoutTests(unittest.TestCase):
             self.assertEqual(self.backend.starts, 1)
             self.assertEqual(self.backend.active, {("peer", 0)})
 
-    def test_absent_full_release_leaves_residue_unknown_and_respects_journal_budget(self):
-        self.backend.active.add(("untracked", 0))
+    def test_full_monotonic_history_proves_exact_absence_after_reopen(self):
+        ready = plan("peer", (31003,), "peer")
         with self.own() as owner:
-            self.assertEqual(owner.release("untracked")["status"], "pending")
-            self.assertEqual(owner.observe("untracked")["status"], "lost")
+            owner.start(ready)
+            self.assertEqual(owner.observe("batchA")["status"], "lost")
+            for index in range(3):
+                self.assertEqual(owner.release(f"closed{index}")["status"], "released")
+            self.assertEqual(owner.start(ready)["status"], "ready")
+        with self.own() as owner:
+            result = {"batch_id": "batchA", "status": "never_started"}
+            self.assertEqual(_dispatch(owner, {"operation": "start", "plan": plan()}), result)
+            self.assertEqual(_dispatch(owner, {"operation": "observe", "batch_id": "batchA"}), result)
+            self.assertEqual(owner.release("batchA"), {"batch_id": "batchA", "status": "released"})
+            self.assertEqual(owner.release("batchA", "branch0")["status"], "lost")
+            self.assertFalse((owner.state / "batchA.json").exists())
+            self.assertEqual(self.backend.active, {("peer", 0)})
+            self.assertEqual(self.backend.starts, 1)
+
+    def test_full_history_with_residue_or_unknown_inspection_never_proves_absence(self):
+        self.backend.active.add(("batchA", 0))
+        with self.own() as owner:
+            self.assertEqual(owner.release("batchA")["status"], "pending")
             for index in range(4):
                 self.assertEqual(owner.release(f"closed{index}")["status"], "released")
-            self.assertEqual(owner.release("overflow")["status"], "pending")
-            self.assertIn(("untracked", 0), self.backend.active)
+            for fail_scope in (False, True):
+                self.backend.fail_scope = fail_scope
+                self.assertEqual(owner.start(plan())["status"], "pending")
+                self.assertEqual(owner.observe("batchA")["status"], "lost")
+                self.assertEqual(owner.release("batchA")["status"], "pending")
+            self.assertEqual(self.backend.active, {("batchA", 0)})
+            self.assertEqual(self.backend.starts, 0)
 
-    def test_lost_and_unknown_ready_checks_expose_no_endpoint(self):
+    def test_definite_lost_member_reclaims_only_its_original_batch(self):
         with self.own() as owner:
             owner.start(plan())
+            owner.start(plan("peer", (31003,), "peer"))
             self.backend.fail_presence = True
             self.assertEqual(owner.observe("batchA"), {"batch_id": "batchA", "status": "pending"})
+            self.assertFalse(self.backend.cleaned)
             self.backend.fail_presence = False
             self.backend.active.discard(("batchA", 1))
-            self.assertEqual(owner.observe("batchA"), {"batch_id": "batchA", "status": "lost"})
+            result = {"batch_id": "batchA", "status": "failed_clean"}
+            self.assertEqual(owner.observe("batchA"), result)
+            self.assertEqual(owner.start(plan()), result)
+            self.assertEqual(self.backend.active, {("peer", 0)})
+            self.assertEqual(self.backend.cleaned, [("batchA", 0), ("batchA", 1)])
+
+    def test_liveness_cleanup_keeps_failure_reason_across_restart_and_release_replay(self):
+        with self.own() as owner:
+            owner.start(plan())
+            owner.release("batchA", "branch0")
+            self.backend.active.discard(("batchA", 1))
+            self.backend.cleanup_failure = 1
+            self.assertEqual(owner.observe("batchA"), {"batch_id": "batchA", "status": "pending"})
+            self.assertEqual(self.backend.cleaned, [("batchA", 0)])
+            with self.assertRaises(ValueError):
+                owner.start(plan("collision", (31001,), "other"))
+        with self.own() as owner:
+            self.backend.cleanup_failure = None
+            result = {"batch_id": "batchA", "status": "failed_clean"}
+            self.assertEqual(owner.start(plan()), result)
+            self.assertEqual(owner.release("batchA"), result)
+            self.assertEqual(owner.observe("batchA"), result)
+            self.assertEqual(self.backend.cleaned, [("batchA", 0), ("batchA", 1)])
+            self.assertEqual(owner.start(plan("replacement", (31001,), "other"))["status"], "ready")
+
+    def test_failure_retirement_waits_until_exact_scope_is_absent(self):
+        with self.own() as owner:
+            owner.start(plan())
+            self.backend.active.discard(("batchA", 1))
+            self.backend.active.add(("batchA", 2))
+            self.assertEqual(owner.observe("batchA")["status"], "pending")
+            self.assertEqual(self.backend.active, {("batchA", 2)})
+            self.backend.active.discard(("batchA", 2))
+            self.assertEqual(owner.observe("batchA")["status"], "failed_clean")
+
+    def test_unattributed_listener_is_unknown_in_established_batch(self):
+        root = Path(self.tmp.name)
+        (root / "cgroup.procs").write_text("201\n")
+        proc = root / "proc"
+        (proc / "201/fd").mkdir(parents=True)
+        (proc / "net").mkdir()
+        tcp = proc / "net/tcp"
+        with patch("tools.hot_fanout.linux.Path",
+                   side_effect=lambda path: proc / Path(path).relative_to("/proc")):
+            tcp.write_text("header\n")
+            self.assertFalse(_owns_tcp_listener(root, 31000, observe=True))
+            tcp.write_text("header\n0: 00000000:7918 x 0A x x x x x 42\n")
+            self.assertFalse(_owns_tcp_listener(root, 31000))
+            with self.assertRaises(OSError):
+                _owns_tcp_listener(root, 31000, observe=True)
+            os.symlink("socket:[42]", proc / "201/fd/9")
+            self.assertTrue(_owns_tcp_listener(root, 31000, observe=True))
 
     def test_invalid_plan_limits_and_single_owner(self):
         bad_count = plan(ports=())
