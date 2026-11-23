@@ -1194,7 +1194,7 @@ def proof_record_reply_roots.recorded_matches
     recorded original
 
 /-- [sandproof_internal::server::lifecycle::record_reply]:
-    Source: 'sandbox-internal/src/server/lifecycle.rs', lines 137:0-147:1 -/
+    Source: 'sandbox-internal/src/server/lifecycle.rs', lines 137:0-149:1 -/
 def server.lifecycle.record_reply
   (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
   (received : core.result.Result

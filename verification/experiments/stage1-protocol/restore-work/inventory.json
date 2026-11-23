@@ -64,13 +64,13 @@
   "cases": {
     "correct": {
       "generated": {
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "Funs.lean": "21c7e933ba309aed610a32d18ce120bb400e31b7227711493387be54e77633c1"
       },
       "emitted": {
         "Funs.lean": "21c7e933ba309aed610a32d18ce120bb400e31b7227711493387be54e77633c1",
         "FunsExternal_Template.lean": "a211d3cef6b42316cf7bad1716e711c6facdd2db6b6f99761527cddeb89cdbd7",
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "TypesExternal_Template.lean": "93e1f4b52434f5c1cc9c83c0abcdc4440f102bc3f76c0978634259ba7cbb137c"
       },
       "normal_witness": "SandboxModel.Stage1Protocol.RestoreWork.Witnesses.normal_actual",
@@ -174,13 +174,13 @@
     },
     "drop-material-use": {
       "generated": {
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "Funs.lean": "039159a28c70167bb0b858d5b2be21e29206a3ed06e6d6ab7b265b20ea4e7826"
       },
       "emitted": {
         "Funs.lean": "039159a28c70167bb0b858d5b2be21e29206a3ed06e6d6ab7b265b20ea4e7826",
         "FunsExternal_Template.lean": "a211d3cef6b42316cf7bad1716e711c6facdd2db6b6f99761527cddeb89cdbd7",
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "TypesExternal_Template.lean": "93e1f4b52434f5c1cc9c83c0abcdc4440f102bc3f76c0978634259ba7cbb137c"
       },
       "normal_witness": "SandboxModel.Stage1Protocol.RestoreWork.Witnesses.normal_actual",
@@ -279,13 +279,13 @@
     },
     "mask-generation": {
       "generated": {
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "Funs.lean": "3858be6f4fab91d17e2ad1552177f0393e6bba80661d918dcd7044919b6a9a61"
       },
       "emitted": {
         "Funs.lean": "3858be6f4fab91d17e2ad1552177f0393e6bba80661d918dcd7044919b6a9a61",
         "FunsExternal_Template.lean": "a211d3cef6b42316cf7bad1716e711c6facdd2db6b6f99761527cddeb89cdbd7",
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "TypesExternal_Template.lean": "93e1f4b52434f5c1cc9c83c0abcdc4440f102bc3f76c0978634259ba7cbb137c"
       },
       "normal_witness": "SandboxModel.Stage1Protocol.RestoreWork.Witnesses.normal_actual",
