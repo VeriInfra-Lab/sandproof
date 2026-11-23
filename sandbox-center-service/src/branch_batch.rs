@@ -4,9 +4,9 @@
 use sandproof_protocol::{
     ResourceId, SandboxId,
     branching::{
-        BranchAccessSelector, BranchBatchIdentity, BranchRelayPort, BranchStartFailure,
-        BranchTarget, PublicBranchBatch, PublicBranchBatchRequest, PublicBranchBatchResult,
-        valid_ready_targets,
+        BranchAccessSelector, BranchBatchIdentity, BranchControlAction, BranchRelayPort,
+        BranchStartFailure, BranchTarget, PublicBranchBatch, PublicBranchBatchRequest,
+        PublicBranchBatchResult, valid_ready_targets,
     },
     lifecycle::{OperationKey, SessionId},
 };
@@ -200,6 +200,36 @@ impl BranchBatchRecord {
             parent: self.identity.parent.clone(),
             result,
         }
+    }
+
+    pub(crate) fn next_action(&self) -> Option<BranchControlAction> {
+        match &self.state {
+            State::Pending {} => Some(BranchControlAction::Start {}),
+            State::CleaningUp { .. } => Some(BranchControlAction::Release { branch: None }),
+            State::Ready { branches } => {
+                if let Some(index) = branches
+                    .iter()
+                    .position(|phase| *phase == BranchPhase::Revoking)
+                {
+                    return Some(BranchControlAction::Release {
+                        branch: Some(self.plan.get(index)?.sandbox.clone()),
+                    });
+                }
+                branches
+                    .iter()
+                    .any(|phase| *phase == BranchPhase::Active)
+                    .then_some(BranchControlAction::Observe {})
+            }
+            State::Failed { .. } => None,
+        }
+    }
+
+    pub(crate) fn recorded_plan(&self) -> (&OperationKey, &BranchBatchIdentity, &[BranchTarget]) {
+        (&self.operation, &self.identity, &self.plan)
+    }
+
+    pub(crate) fn names_branch(&self, id: &SandboxId) -> bool {
+        self.plan.iter().any(|target| &target.sandbox == id)
     }
 
     fn holds(&self, target: &BranchTarget) -> bool {
@@ -409,6 +439,34 @@ impl BranchBatchLedger {
         self.batches
             .iter()
             .any(|batch| &batch.identity.parent == parent && batch.reserved() != 0)
+    }
+
+    pub(crate) fn batches(&self) -> &[BranchBatchRecord] {
+        &self.batches
+    }
+
+    pub(crate) fn find_branch_mut(
+        &mut self,
+        owner: &sandproof_protocol::TenantId,
+        id: &SandboxId,
+    ) -> Option<&mut BranchBatchRecord> {
+        self.batches
+            .iter_mut()
+            .find(|batch| &batch.operation.owner == owner && batch.names_branch(id))
+    }
+
+    pub(crate) fn retire_cleaned_parents(&mut self, center: &sandproof_center_core::CenterState) {
+        for batch in &mut self.batches {
+            if batch.reserved() != 0
+                && center
+                    .lifecycle_session(&batch.operation.owner, &batch.identity.parent)
+                    .is_some_and(sandproof_center_core::Sandbox::released)
+            {
+                batch.state = State::Failed {
+                    reason: BranchStartFailure::ParentEnded,
+                };
+            }
+        }
     }
 
     pub(crate) fn active_routes(&self) -> Vec<BranchAccessSelector> {

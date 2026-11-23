@@ -5,6 +5,7 @@
 
 mod application;
 mod branch_batch;
+mod branching_dispatch;
 pub use branch_batch::BranchBatchLimits;
 pub mod business;
 mod contracts;

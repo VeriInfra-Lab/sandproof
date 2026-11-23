@@ -5,7 +5,8 @@ use sandproof_center_core::DecisionError;
 use sandproof_protocol::{
     ResourceId, SandboxId, TenantId,
     branching::{
-        BranchBatchIdentity, BranchStartFailure, BranchTarget, PublicBranchBatch,
+        BranchBatchIdentity, BranchControlAction, BranchControlReply, BranchControlRequest,
+        BranchControlStatus, BranchStartFailure, BranchTarget, PublicBranchBatch,
         PublicBranchBatchRequest,
     },
     lifecycle::{
@@ -211,6 +212,102 @@ impl SharedBusinessAuthority {
                 .confirm_release(identity, sandbox)
                 .map_err(port_error)
         })
+    }
+
+    /// Persist branch revocation before emitting a physical release request.
+    /// # Errors
+    /// Missing, foreign or not-yet-published branches cannot be revoked here.
+    pub fn revoke_branch(&self, owner: &TenantId, sandbox: &SandboxId) -> Result<(), PortError> {
+        let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        authority.snapshot_envelope().map_err(authority_error)?;
+        authority
+            .decide(|current| {
+                let mut next = current.clone();
+                let record = next
+                    .metadata
+                    .branch_batches
+                    .as_mut()
+                    .and_then(|ledger| ledger.find_branch_mut(owner, sandbox))
+                    .ok_or(DecisionError::NotFound)?;
+                record.begin_release(sandbox).map_err(map_error)?;
+                Ok((next, ()))
+            })
+            .map_err(authority_error)
+    }
+
+    /// Take a finite work projection from the same confirmed lifecycle envelope.
+    /// # Errors
+    /// Unknown authority cannot supply a work list.
+    pub fn pending_branch_work(&self, now_ms: u64) -> Result<Vec<BranchControlRequest>, PortError> {
+        let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        let current = authority.snapshot_envelope().map_err(authority_error)?;
+        let Some(ledger) = &current.metadata.branch_batches else {
+            return Ok(Vec::new());
+        };
+        Ok(ledger
+            .batches()
+            .iter()
+            .filter_map(|record| {
+                let action = record.next_action()?;
+                let (operation, batch, targets) = record.recorded_plan();
+                let parent = current
+                    .center
+                    .lifecycle_session(&operation.owner, &batch.parent)?;
+                let route =
+                    crate::projection::route_for_record(&current.center, parent, now_ms).ok()?;
+                (route.identity.incarnation == batch.incarnation
+                    && current
+                        .center
+                        .node_is_reachable(&route.identity.node, now_ms))
+                .then(|| BranchControlRequest {
+                    parent: route.identity,
+                    operation: operation.clone(),
+                    batch: batch.clone(),
+                    targets: targets.to_vec(),
+                    action,
+                })
+            })
+            .collect())
+    }
+
+    /// Accept a matching authenticated host result against the latest envelope.
+    /// # Errors
+    /// Unknown transactions or a changed original plan never acknowledge an effect.
+    pub fn observe_branch_work(
+        &self,
+        request: &BranchControlRequest,
+        reply: &BranchControlReply,
+        now_ms: u64,
+    ) -> Result<(), PortError> {
+        if !reply.matches(request) {
+            return Err(PortError::Conflict);
+        }
+        match (&request.action, reply.status) {
+            (_, BranchControlStatus::Pending {} | BranchControlStatus::CleaningUp {}) => Ok(()),
+            (BranchControlAction::Start {}, BranchControlStatus::Ready {}) => self
+                .publish_branch_batch(&request.operation, &request.batch, &request.targets, now_ms),
+            (BranchControlAction::Start {}, BranchControlStatus::Failed { reason }) => self
+                .change_branch_batch(&request.operation, |_, record| {
+                    record
+                        .require_identity(&request.batch)
+                        .map_err(port_error)?;
+                    if record.next_action() != Some(BranchControlAction::Start {}) {
+                        return Err(PortError::Conflict);
+                    }
+                    record.begin_cleanup(reason);
+                    record.confirm_cleanup(&request.batch).map_err(port_error)
+                }),
+            (
+                BranchControlAction::Release {
+                    branch: Some(branch),
+                },
+                BranchControlStatus::Released {},
+            ) => self.confirm_branch_release(&request.operation, &request.batch, branch),
+            (BranchControlAction::Release { branch: None }, BranchControlStatus::Released {}) => {
+                self.confirm_branch_batch_cleanup(&request.operation, &request.batch)
+            }
+            _ => Err(PortError::Conflict),
+        }
     }
 
     /// # Errors

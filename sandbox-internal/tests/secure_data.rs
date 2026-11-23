@@ -11,7 +11,8 @@ use sandproof_internal::{
     TransportError,
 };
 use sandproof_protocol::branching::{
-    BranchAccessIdentity, BranchAccessSelector, BranchBatchIdentity,
+    BranchAccessIdentity, BranchAccessSelector, BranchBatchIdentity, BranchControlAction,
+    BranchControlReply, BranchControlRequest, BranchControlStatus, BranchTarget,
 };
 use sandproof_protocol::internal::{
     BRANCH_DATA_SELECTOR_HEADER, DATA_PATH_PREFIX, NodeIdentity, ProbeRequest,
@@ -63,6 +64,19 @@ impl sandproof_internal::ValidationReceiver for Streams {
     }
 }
 impl LifecycleReceiver for Streams {
+    async fn branch_control(
+        &self,
+        request: BranchControlRequest,
+        context: AuthenticatedCenterContext,
+    ) -> Result<BranchControlReply, ReceiveError> {
+        assert!(request.valid_for(&context));
+        assert_eq!(request.parent, identity());
+        Ok(BranchControlReply {
+            original: request,
+            status: BranchControlStatus::Ready {},
+        })
+    }
+
     async fn observe_resume(
         &self,
         _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
@@ -626,4 +640,37 @@ async fn silent_return_black_hole_fails_at_original_maximum_lifetime_without_eof
     idle_client(&f.client).await;
     assert_eq!(Arc::strong_count(&lease), 1);
     f.stop().await;
+}
+
+#[tokio::test]
+async fn branch_control_authenticates_the_exact_plan_and_checks_its_status() {
+    let fixture = Fixture::new().await;
+    let access = branch_identity();
+    let request = BranchControlRequest {
+        parent: access.parent,
+        operation: access.selector.operation,
+        batch: access.selector.batch,
+        targets: vec![BranchTarget {
+            sandbox: access.selector.branch,
+            port: 31_000_u16.try_into().unwrap(),
+        }],
+        action: BranchControlAction::Start {},
+    };
+    let reply = fixture.client.branch_control(&request).await.unwrap();
+    assert_eq!(reply.status, BranchControlStatus::Ready {});
+    assert!(reply.matches(&request));
+
+    let mut invalid = request.clone();
+    invalid.batch.incarnation = 99_u64.try_into().unwrap();
+    assert_eq!(
+        fixture.client.branch_control(&invalid).await,
+        Err(TransportError::Rejected)
+    );
+
+    let mut release = request;
+    release.action = BranchControlAction::Release { branch: None };
+    // The controlled receiver deliberately returns Ready for the release. A
+    // signed peer's wrong result is not a cleanup receipt.
+    assert!(fixture.client.branch_control(&release).await.is_err());
+    fixture.stop().await;
 }

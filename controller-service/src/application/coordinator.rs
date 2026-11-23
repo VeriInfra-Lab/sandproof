@@ -47,7 +47,7 @@ use super::{ApplicationError, Clock, SystemClock};
 use recovery::{recover_locked, release_reclaimed_slots};
 
 mod branching;
-pub use branching::HostBranchPermit;
+pub use branching::{HostBranchControl, HostBranchPermit};
 mod data_access;
 mod data_credentials;
 mod execution;

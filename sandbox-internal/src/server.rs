@@ -17,7 +17,10 @@ use hyper::{
     Method, Request, Response, StatusCode,
     body::{Bytes, Incoming},
 };
-use sandproof_protocol::branching::{BranchAccessIdentity, BranchAccessSelector};
+use sandproof_protocol::branching::{
+    BRANCH_CONTROL_PATH, BranchAccessIdentity, BranchAccessSelector, BranchControlReply,
+    BranchControlRequest,
+};
 use sandproof_protocol::internal::{
     BRANCH_DATA_PATH_PREFIX, BRANCH_DATA_SELECTOR_HEADER, DATA_IDENTITY_BYTES,
     DATA_IDENTITY_HEADER, DATA_PATH_PREFIX, NodeIdentity, PROBE_BODY_BYTES, PROBE_PATH,
@@ -32,6 +35,15 @@ mod lifecycle;
 /// Cancellation can leave durable effects: implementations must keep their
 /// work budget until the actual worker exits, not just until this future drops.
 pub trait LifecycleReceiver: Send + Sync + 'static {
+    /// Branches are optional; an unconfigured host never adopts a plan.
+    fn branch_control(
+        &self,
+        _request: BranchControlRequest,
+        _context: AuthenticatedCenterContext,
+    ) -> impl std::future::Future<Output = Result<BranchControlReply, ReceiveError>> + Send {
+        std::future::ready(Err(ReceiveError::Unavailable))
+    }
+
     /// Current original Resume only; absence is neither Ready nor `StateLost`.
     /// Every receiver must explicitly forward or reject this operation.
     fn observe_resume(
@@ -309,6 +321,7 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
             || request.uri().path() == sandproof_protocol::lifecycle::RENEWAL_CONFIRMATION_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::WINDOW_CLOSE_PATH
             || request.uri().path() == VALIDATION_PATH
+            || request.uri().path() == BRANCH_CONTROL_PATH
         {
             let call = if request.uri().path()
                 == sandproof_protocol::lifecycle::UNLOAD_OBSERVATION_PATH
@@ -334,6 +347,8 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
                 == sandproof_protocol::lifecycle::RENEWAL_CONFIRMATION_PATH
             {
                 lifecycle::Call::RenewalConfirm
+            } else if request.uri().path() == BRANCH_CONTROL_PATH {
+                lifecycle::Call::BranchControl
             } else if request.uri().path() == VALIDATION_PATH {
                 lifecycle::Call::Validation
             } else {

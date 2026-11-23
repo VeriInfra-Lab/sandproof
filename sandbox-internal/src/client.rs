@@ -21,6 +21,7 @@ use std::{net::SocketAddr, sync::Arc};
 use tokio::{net::TcpStream, sync::Semaphore, time::timeout};
 use tokio_rustls::TlsConnector;
 
+mod branching;
 mod cache;
 mod data;
 mod lifecycle;

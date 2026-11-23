@@ -4,8 +4,8 @@ use super::{
     DataLease, DataTarget, map_journal, same_secret, watch,
 };
 use crate::{
-    HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits, HostBranchRoute,
-    HostGuestBranch, JournalError,
+    HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits, HostBranchParent,
+    HostBranchRoute, HostGuestBranch, JournalError,
 };
 use sandproof_protocol::{
     branching::{BranchAccessIdentity, BranchAccessSelector, BranchTarget},
@@ -61,7 +61,51 @@ fn route_error(error: JournalError) -> ApplicationError {
     }
 }
 
+/// The driver uses the same original VM authority and helper gate as the
+/// original native data plane. Preparing the driver does not issue guest work.
+pub struct HostBranchControl<B> {
+    driver: B,
+    _gate: std::fs::File,
+}
+
+impl<B> HostBranchControl<B> {
+    #[must_use]
+    pub const fn driver(&self) -> &B {
+        &self.driver
+    }
+}
+
 impl<H: ControllerHost> ControllerApplication<H> {
+    /// Keep the exact native VM gate while the trusted driver talks to the guest.
+    /// # Errors
+    /// An unrecorded or changed plan, expired VM or unavailable gate refuses I/O.
+    pub fn prepare_host_branch_control<B>(
+        &self,
+        parent: &LifecycleAccessIdentity,
+        context: &AuthenticatedCenterContext,
+        key: &HostBranchBatchKey,
+        targets: &[BranchTarget],
+        prepare: impl FnOnce(&H, &HostBranchParent) -> Result<B, ApplicationError>,
+    ) -> Result<(HostBranchControl<B>, HostBranchBatchPhase), ApplicationError> {
+        let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        let (parent, phase) = inner
+            .journal
+            .host_branch_control_parent(parent, context, key, targets, self.clock.now_ms()?)
+            .map_err(route_error)?;
+        let gate = inner
+            .host
+            .acquire_data_gate(parent.sandbox(), parent.vm(), parent.generation())?
+            .ok_or(ApplicationError::Busy)?;
+        let driver = prepare(&inner.host, &parent)?;
+        Ok((
+            HostBranchControl {
+                driver,
+                _gate: gate,
+            },
+            phase,
+        ))
+    }
+
     /// Configure the bounded native ledger from trusted startup configuration.
     /// # Errors
     /// Refuses a changed or invalid registered budget.

@@ -367,6 +367,9 @@ impl RegistryMetadata {
 impl BusinessMetadata for RegistryMetadata {
     fn with_center(&self, center: &CenterState) -> Self {
         let mut next = self.clone();
+        if let Some(batches) = &mut next.branch_batches {
+            batches.retire_cleaned_parents(center);
+        }
         next.private_builds = self
             .private_builds
             .as_ref()

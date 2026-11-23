@@ -145,3 +145,91 @@ pub fn valid_ready_targets(
         .iter()
         .all(|target| ids.insert(&target.sandbox) && ports.insert(target.port))
 }
+
+pub const BRANCH_CONTROL_PATH: &str = "/internal/v2/branch-control";
+pub const BRANCH_CONTROL_BODY_BYTES: usize = 24 * 1024;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchControlRequest {
+    pub parent: LifecycleAccessIdentity,
+    pub operation: OperationKey,
+    pub batch: BranchBatchIdentity,
+    pub targets: Vec<BranchTarget>,
+    pub action: BranchControlAction,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum BranchControlAction {
+    Start {},
+    Observe {},
+    Release { branch: Option<SandboxId> },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchControlReply {
+    pub original: BranchControlRequest,
+    pub status: BranchControlStatus,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "state", rename_all = "snake_case", deny_unknown_fields)]
+pub enum BranchControlStatus {
+    Pending {},
+    Ready {},
+    CleaningUp {},
+    Released {},
+    Failed { reason: BranchStartFailure },
+}
+
+impl BranchControlRequest {
+    #[must_use]
+    pub fn valid_for(&self, context: &AuthenticatedCenterContext) -> bool {
+        self.parent.validate(context).is_ok() && self.matches_node(context.expected_node())
+    }
+
+    #[must_use]
+    pub fn matches_node(&self, node: &crate::internal::NodeIdentity) -> bool {
+        let count = u16::try_from(self.targets.len())
+            .ok()
+            .and_then(NonZeroU16::new);
+        self.parent.node == *node
+            && self.parent.protocol_version == crate::lifecycle::PROTOCOL_VERSION
+            && self.parent.accepted_version != 0
+            && node.deployment_id == self.parent.center.deployment
+            && node.deployment_id == self.parent.operation.deployment
+            && node.deployment_id == self.operation.deployment
+            && self.batch.parent == self.parent.session
+            && self.batch.incarnation == self.parent.incarnation
+            && self.operation.owner == self.parent.operation.owner
+            && self.operation != self.parent.operation
+            && self.targets.len() <= usize::from(BranchRelayPort::LAST - BranchRelayPort::FIRST + 1)
+            && count.is_some_and(|count| valid_ready_targets(&self.targets, &self.targets, count))
+            && self
+                .targets
+                .iter()
+                .all(|target| BranchRelayPort::new(target.port.get()).is_some())
+            && match &self.action {
+                BranchControlAction::Release {
+                    branch: Some(branch),
+                } => self.targets.iter().any(|target| &target.sandbox == branch),
+                _ => true,
+            }
+    }
+}
+
+impl BranchControlReply {
+    #[must_use]
+    pub fn matches(&self, request: &BranchControlRequest) -> bool {
+        self.original == *request
+            && !matches!(
+                (&request.action, self.status),
+                (
+                    BranchControlAction::Release { .. },
+                    BranchControlStatus::Ready {} | BranchControlStatus::Failed { .. }
+                )
+            )
+    }
+}

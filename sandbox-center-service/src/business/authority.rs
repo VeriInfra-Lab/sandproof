@@ -529,6 +529,14 @@ pub(super) fn to_authority(error: PortError) -> AuthorityError {
     }
 }
 impl AuthorityPort for SharedBusinessAuthority {
+    fn revoke_training_branch(
+        &mut self,
+        owner: &TenantId,
+        sandbox: &SandboxId,
+    ) -> Result<(), PortError> {
+        self.revoke_branch(owner, sandbox)
+    }
+
     fn accept_lifecycle_resume_observation(
         &mut self,
         observation: &sandproof_protocol::lifecycle::ResumeObservation,

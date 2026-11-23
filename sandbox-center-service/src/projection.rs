@@ -138,7 +138,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         let (_, create) = original_create(record)?;
         let options: CreateOptions =
             serde_json::from_slice(&create.options).map_err(|_| PortError::Busy)?;
-        let route = Self::route_for_record(state, record, self.now()?)?;
+        let route = route_for_record(state, record, self.now()?)?;
         Ok(InstanceDetail {
             info: Self::info(tenant, record, template)?,
             envd_access_token: self.tokens.issue(&route.identity)?,
@@ -187,7 +187,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             if !view.visible(record) || !live(record, now) {
                 continue;
             }
-            let route = Self::route_for_record(&view.state, record, now)?;
+            let route = route_for_record(&view.state, record, now)?;
             if self.tokens.verify(&route.identity, token) {
                 if result.is_some() {
                     return Err(PortError::Busy);
@@ -256,7 +256,7 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
             &selector.operation.owner,
             selector.batch.parent.as_protocol_id(),
         )?;
-        let route = Self::route_for_record(&view.state, parent, now)?;
+        let route = route_for_record(&view.state, parent, now)?;
         if !selector.matches_parent(&route.identity) {
             return Err(PortError::NotFound);
         }
@@ -265,60 +265,61 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         }
         Ok(route)
     }
-    pub(crate) fn route_for_record(
-        state: &CenterState,
-        record: &Sandbox,
-        now: u64,
-    ) -> Result<DataRoute, PortError> {
-        if !live(record, now) {
-            return Err(PortError::NotFound);
-        }
-        let (original, _) = original_create(record)?;
-        let original_binding = &original.request.binding;
-        let same = state
-            .lifecycle_session(&original_binding.key.owner, &original_binding.session)
-            .ok_or(PortError::NotFound)?;
-        if same != record {
-            return Err(PortError::Busy);
-        }
-        let current = record.operations().last().ok_or(PortError::Busy)?.intent();
-        let incarnation = match &current.request.operation {
-            LifecycleOperation::Create {
-                target_incarnation, ..
-            }
-            | LifecycleOperation::Resume {
-                target_incarnation, ..
-            } => *target_incarnation,
-            LifecycleOperation::Renew { incarnation, .. } => *incarnation,
-            LifecycleOperation::Unload {
-                source_incarnation, ..
-            } if record
-                .operations()
-                .last()
-                .and_then(|operation| operation.unloaded())
-                .and_then(|observation| observation.outcome.continued())
-                .is_some() =>
-            {
-                *source_incarnation
-            }
-            _ => return Err(PortError::NotFound),
-        };
-        Ok(DataRoute {
-            branch: None,
-            identity: LifecycleAccessIdentity {
-                protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
-                center: current.center.clone(),
-                node: current.request.binding.node.clone(),
-                session: current.request.binding.session.clone(),
-                operation: current.request.binding.key.clone(),
-                accepted_version: current.accepted_version,
-                incarnation,
-            },
-            authorized_at_ms: now,
-            max_end_at_ms: record
-                .current_running()
-                .ok_or(PortError::Busy)?
-                .max_end_at_ms,
-        })
+}
+
+pub(crate) fn route_for_record(
+    state: &CenterState,
+    record: &Sandbox,
+    now: u64,
+) -> Result<DataRoute, PortError> {
+    if !live(record, now) {
+        return Err(PortError::NotFound);
     }
+    let (original, _) = original_create(record)?;
+    let original_binding = &original.request.binding;
+    let same = state
+        .lifecycle_session(&original_binding.key.owner, &original_binding.session)
+        .ok_or(PortError::NotFound)?;
+    if same != record {
+        return Err(PortError::Busy);
+    }
+    let current = record.operations().last().ok_or(PortError::Busy)?.intent();
+    let incarnation = match &current.request.operation {
+        LifecycleOperation::Create {
+            target_incarnation, ..
+        }
+        | LifecycleOperation::Resume {
+            target_incarnation, ..
+        } => *target_incarnation,
+        LifecycleOperation::Renew { incarnation, .. } => *incarnation,
+        LifecycleOperation::Unload {
+            source_incarnation, ..
+        } if record
+            .operations()
+            .last()
+            .and_then(|operation| operation.unloaded())
+            .and_then(|observation| observation.outcome.continued())
+            .is_some() =>
+        {
+            *source_incarnation
+        }
+        _ => return Err(PortError::NotFound),
+    };
+    Ok(DataRoute {
+        branch: None,
+        identity: LifecycleAccessIdentity {
+            protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
+            center: current.center.clone(),
+            node: current.request.binding.node.clone(),
+            session: current.request.binding.session.clone(),
+            operation: current.request.binding.key.clone(),
+            accepted_version: current.accepted_version,
+            incarnation,
+        },
+        authorized_at_ms: now,
+        max_end_at_ms: record
+            .current_running()
+            .ok_or(PortError::Busy)?
+            .max_end_at_ms,
+    })
 }

@@ -587,6 +587,30 @@ impl ControllerJournal {
         })
     }
 
+    pub(crate) fn host_branch_control_parent(
+        &self,
+        identity: &LifecycleAccessIdentity,
+        context: &AuthenticatedCenterContext,
+        key: &HostBranchBatchKey,
+        targets: &[BranchTarget],
+        now_ms: i64,
+    ) -> Result<(HostBranchParent, HostBranchBatchPhase), JournalError> {
+        if !key.matches_parent(identity) {
+            return Err(JournalError::Conflict);
+        }
+        let parent = self.current_branch_parent(identity, context, now_ms)?;
+        let connection = &self.journal.connection;
+        let limits = read_limits(connection)?.ok_or(JournalError::UnsupportedStore)?;
+        let original =
+            read_record(connection, &key.operation, limits)?.ok_or(JournalError::Conflict)?;
+        self.committed_world.check_identity(connection)?;
+        original.require_key(key, &parent)?;
+        if original.targets != targets {
+            return Err(JournalError::Conflict);
+        }
+        Ok((parent, original.phase))
+    }
+
     /// Reserve the complete original plan and host secrets before guest work.
     /// Replay validates full equality and never mints replacement credentials.
     /// # Errors
