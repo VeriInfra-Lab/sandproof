@@ -92,3 +92,73 @@ fn digit(byte: u8) -> Option<u8> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sandproof_protocol::{
+        branching::BranchBatchIdentity,
+        internal::NodeIdentity,
+        lifecycle::{CenterIdentity, OperationKey, SessionId},
+    };
+
+    #[test]
+    fn a_branch_token_cannot_authorize_its_parent_or_a_different_branch() {
+        let keys = Tokens::new(&[43; 32]).unwrap();
+        let deployment = "deployment".try_into().unwrap();
+        let parent: SessionId = "parent".try_into().unwrap();
+        let operation = OperationKey {
+            deployment,
+            owner: "owner".try_into().unwrap(),
+            window: 1.try_into().unwrap(),
+            sequence: 2.try_into().unwrap(),
+        };
+        let selector = BranchAccessSelector {
+            batch: BranchBatchIdentity {
+                parent: parent.clone(),
+                incarnation: 1.try_into().unwrap(),
+                checkpoint: "checkpoint".try_into().unwrap(),
+                batch: "batch".try_into().unwrap(),
+            },
+            operation: operation.clone(),
+            branch: "branch-a".try_into().unwrap(),
+        };
+        let other_branch = BranchAccessSelector {
+            branch: "branch-b".try_into().unwrap(),
+            ..selector.clone()
+        };
+        let parent_route = LifecycleAccessIdentity {
+            protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
+            center: CenterIdentity {
+                deployment: operation.deployment.clone(),
+                center: "center".try_into().unwrap(),
+            },
+            node: NodeIdentity {
+                deployment_id: operation.deployment.clone(),
+                node_id: "node".try_into().unwrap(),
+                node_generation: 1.try_into().unwrap(),
+            },
+            session: parent,
+            operation: OperationKey {
+                sequence: 1.try_into().unwrap(),
+                ..operation
+            },
+            accepted_version: 1,
+            incarnation: selector.batch.incarnation,
+        };
+        let token = keys.issue_branch(&selector).unwrap();
+        let parent_token = keys.issue(&parent_route).unwrap();
+        assert!(keys.verify_branch(&selector, &token));
+        assert!(!keys.verify(&parent_route, &token));
+        assert!(!keys.verify_branch(&selector, &parent_token));
+        assert!(!keys.verify_branch(&other_branch, &token));
+        let later = BranchAccessSelector {
+            batch: BranchBatchIdentity {
+                incarnation: 2.try_into().unwrap(),
+                ..selector.batch.clone()
+            },
+            ..selector
+        };
+        assert!(!keys.verify_branch(&later, &token));
+    }
+}
