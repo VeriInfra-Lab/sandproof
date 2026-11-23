@@ -10,7 +10,8 @@ use sandproof_protocol::{
     SandboxId,
     internal::NodeIdentity,
     lifecycle::{
-        AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleAccessIdentity, OperationKey,
+        AcceptedLifecycleIntent, AuthenticatedCenterContext, ContentDigest,
+        LifecycleAccessIdentity, OperationKey,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -93,6 +94,7 @@ pub enum HostBranchBatchPhase {
     Pending,
     Ready,
     Closing,
+    ParentExited { source: ContentDigest },
     Released,
 }
 
@@ -185,6 +187,9 @@ impl BatchRecord {
                     .iter()
                     .all(|entry| entry.phase == BranchPhase::Active),
                 HostBranchBatchPhase::Ready => self.holds_any(),
+                HostBranchBatchPhase::ParentExited { source } => {
+                    self.holds_any() && *source.as_bytes() != [0; 32]
+                }
                 HostBranchBatchPhase::Closing => {
                     self.holds_any()
                         && self
@@ -221,6 +226,9 @@ impl BatchRecord {
     }
 
     fn close(&mut self, close: HostBranchClose<'_>) -> Result<(), JournalError> {
+        if matches!(self.phase, HostBranchBatchPhase::ParentExited { .. }) {
+            return Err(JournalError::Conflict);
+        }
         match close {
             HostBranchClose::Begin(None) => {
                 if self.phase != HostBranchBatchPhase::Released {
@@ -451,7 +459,9 @@ fn check_room(
         if original.parent != *parent {
             return Err(JournalError::CorruptStore);
         }
-        if original.key.batch == key.batch {
+        if original.key.batch == key.batch
+            || matches!(original.phase, HostBranchBatchPhase::ParentExited { .. })
+        {
             return Err(JournalError::Conflict);
         }
         for (original, credential) in original.targets.iter().zip(original.credentials.iter()) {
@@ -681,6 +691,56 @@ impl ControllerJournal {
         }
     }
 
+    // The application holds the exact original native gate through this write.
+    // No credential is released or replaced by this observation.
+    pub(crate) fn fence_exited_branch_parent(
+        &mut self,
+        parent: &HostBranchParent,
+        source: ContentDigest,
+    ) -> Result<(), JournalError> {
+        let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
+        let limits = read_limits(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        let mut statement = tx.prepare(
+            "SELECT operation,parent,execution,record,sha256 FROM controller_host_branch_batches WHERE parent=?1 LIMIT ?2",
+        )?;
+        let parent_digest = digest(parent)?;
+        let rows = statement.query_map(
+            params![parent_digest.as_slice(), u32::from(limits.max_batches) + 1],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )?;
+        let mut changed = Vec::new();
+        for (index, row) in rows.enumerate() {
+            let mut record = load(row?, limits)?;
+            if index >= usize::from(limits.max_batches) || &record.parent != parent {
+                return Err(JournalError::CorruptStore);
+            }
+            if let HostBranchBatchPhase::ParentExited { source: original } = record.phase {
+                if original != source {
+                    return Err(JournalError::Conflict);
+                }
+            } else if record.holds_any() {
+                record.phase = HostBranchBatchPhase::ParentExited { source };
+                changed.push(record);
+            }
+        }
+        drop(statement);
+        if changed.is_empty() {
+            return Ok(());
+        }
+        for record in changed {
+            save(&tx, &record, limits, false)?;
+        }
+        tx.commit()
+    }
+
     /// Reserve the complete original plan and host secrets before guest work.
     /// Replay validates full equality and never mints replacement credentials.
     /// # Errors
@@ -829,6 +889,9 @@ impl ControllerJournal {
             read_record(connection, &key.operation, limits)?.ok_or(JournalError::Conflict)?;
         self.committed_world.check_identity(connection)?;
         record.require_key(key, &parent)?;
+        if matches!(record.phase, HostBranchBatchPhase::ParentExited { .. }) {
+            return Err(JournalError::Conflict);
+        }
         if scope.is_none()
             && !matches!(
                 record.phase,

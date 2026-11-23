@@ -2,10 +2,12 @@
 use super::{ApplicationError, ControllerApplication, ControllerHost, HostLifecycle, ReceiveError};
 use sandproof_controller_service::application::branching::{
     BranchAccessIdentity, BranchAccessSelector, BranchControlAction, BranchControlReply,
-    BranchControlRequest, BranchControlStatus, BranchStartFailure, BranchTarget,
+    BranchControlRequest, BranchControlStatus, BranchProviderReply, BranchProviderRequest,
+    BranchStartFailure, BranchTarget,
 };
 use sandproof_controller_service::application::{
-    HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchParent, HostGuestBranch,
+    HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchControl, HostBranchParent,
+    HostGuestBranch,
 };
 use sandproof_protocol::{ResourceId, SandboxId, lifecycle::AuthenticatedCenterContext};
 use serde::{Deserialize, Serialize};
@@ -174,7 +176,12 @@ impl<H: ControllerHost + Send + 'static> HostLifecycle<H> {
         prepare: impl FnOnce(&H, &HostBranchParent) -> Result<Option<B>, ApplicationError>
         + Send
         + 'static,
-        exchange: impl FnOnce(&B, &[u8]) -> Result<Vec<u8>, ApplicationError> + Send + 'static,
+        exchange: impl FnMut(
+            &B,
+            BranchProviderRequest<'_>,
+        ) -> Result<BranchProviderReply, ApplicationError>
+        + Send
+        + 'static,
     ) -> Result<BranchControlReply, ReceiveError> {
         if !request.valid_for(&context)
             || !guest_identifier(request.batch.batch.as_str())
@@ -219,7 +226,10 @@ fn drive<H: ControllerHost, B>(
     request: &BranchControlRequest,
     context: &AuthenticatedCenterContext,
     prepare: impl FnOnce(&H, &HostBranchParent) -> Result<Option<B>, ApplicationError>,
-    exchange: impl FnOnce(&B, &[u8]) -> Result<Vec<u8>, ApplicationError>,
+    mut exchange: impl FnMut(
+        &B,
+        BranchProviderRequest<'_>,
+    ) -> Result<BranchProviderReply, ApplicationError>,
 ) -> Result<BranchControlStatus, ApplicationError> {
     let key = HostBranchBatchKey {
         operation: request.operation.clone(),
@@ -242,6 +252,9 @@ fn drive<H: ControllerHost, B>(
             Err(ApplicationError::OutcomeUnknown)
         };
     };
+    if let HostBranchBatchPhase::ParentExited { source } = phase {
+        return Ok(BranchControlStatus::ParentExited { source });
+    }
     let private_plan;
     let command = match &request.action {
         BranchControlAction::Start {} if phase == HostBranchBatchPhase::Pending => {
@@ -265,27 +278,16 @@ fn drive<H: ControllerHost, B>(
         GUEST_CONTROL_BODY_BYTES,
     )
     .map_err(|_| ApplicationError::Invalid)?;
-    let response = exchange(control.driver(), &encoded);
-    let observation = response
-        .ok()
-        .and_then(|bytes| GuestObservation::from_wire(&bytes, request))
-        .unwrap_or(GuestObservation::Inconclusive);
-    let failure = match (&request.action, &observation) {
-        (
-            BranchControlAction::Start {} | BranchControlAction::Observe {},
-            GuestObservation::FailedClean,
-        ) => Some(BranchStartFailure::GuestSetupFailed),
-        (BranchControlAction::Start {}, GuestObservation::NeverStarted)
-            if matches!(
-                phase,
-                HostBranchBatchPhase::Pending | HostBranchBatchPhase::Released
-            ) =>
-        {
-            Some(BranchStartFailure::GuestCapacity)
+    let observation = match exchange(control.driver(), BranchProviderRequest::Guest(&encoded)) {
+        Ok(BranchProviderReply::Guest(bytes)) => {
+            GuestObservation::from_wire(&bytes, request).unwrap_or(GuestObservation::Inconclusive)
         }
-        _ => None,
+        Err(ApplicationError::OutcomeUnknown) => {
+            return probe_exited_parent(app, &control, request, context, &mut exchange);
+        }
+        _ => return Err(ApplicationError::OutcomeUnknown),
     };
-    if let Some(reason) = failure {
+    if let Some(reason) = failed_setup(&request.action, phase, &observation) {
         app.change_host_branch_close(parent, context, &key, HostBranchClose::Begin(None))?;
         drop(control);
         app.change_host_branch_close(parent, context, &key, HostBranchClose::ConfirmGone(None))?;
@@ -322,6 +324,52 @@ fn drive<H: ControllerHost, B>(
         }
         _ => Ok(BranchControlStatus::Pending {}),
     }
+}
+
+fn failed_setup(
+    action: &BranchControlAction,
+    phase: HostBranchBatchPhase,
+    observation: &GuestObservation,
+) -> Option<BranchStartFailure> {
+    match (action, observation) {
+        (
+            BranchControlAction::Start {} | BranchControlAction::Observe {},
+            GuestObservation::FailedClean,
+        ) => Some(BranchStartFailure::GuestSetupFailed),
+        (BranchControlAction::Start {}, GuestObservation::NeverStarted)
+            if matches!(
+                phase,
+                HostBranchBatchPhase::Pending | HostBranchBatchPhase::Released
+            ) =>
+        {
+            Some(BranchStartFailure::GuestCapacity)
+        }
+        _ => None,
+    }
+}
+
+fn probe_exited_parent<H: ControllerHost, B>(
+    app: &ControllerApplication<H>,
+    control: &HostBranchControl<B>,
+    request: &BranchControlRequest,
+    context: &AuthenticatedCenterContext,
+    exchange: &mut impl FnMut(
+        &B,
+        BranchProviderRequest<'_>,
+    ) -> Result<BranchProviderReply, ApplicationError>,
+) -> Result<BranchControlStatus, ApplicationError> {
+    let expected = app.host_branch_exit_source(control, request, context)?;
+    if !matches!(
+        exchange(
+            control.driver(),
+            BranchProviderRequest::ConfirmParentExit(&expected)
+        ),
+        Ok(BranchProviderReply::ParentExited)
+    ) {
+        return Ok(BranchControlStatus::Pending {});
+    }
+    let source = app.fence_exited_host_branch_parent(control, request, context, &expected)?;
+    Ok(BranchControlStatus::ParentExited { source })
 }
 
 fn arm_observed_routes<H: ControllerHost>(

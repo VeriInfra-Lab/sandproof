@@ -10,8 +10,8 @@ use sandproof_controller_service::application::branching::{
 use sandproof_protocol::{
     ResourceId, SandboxId, TenantId,
     lifecycle::{
-        IncarnationId, LifecycleOperation, OperationKey, RequestSequence, RequestWindowId,
-        SessionId,
+        ContentDigest, IncarnationId, LifecycleOperation, OperationKey, RequestSequence,
+        RequestWindowId, SessionId,
     },
 };
 
@@ -70,6 +70,9 @@ impl SharedBusinessAuthority {
                     .center
                     .lifecycle_session(owner, &parent)
                     .ok_or(DecisionError::NotFound)?;
+                if ledger.parent_exited(owner, &parent, incarnation) {
+                    return Err(DecisionError::Conflict.into());
+                }
                 let original = parent_record
                     .operations()
                     .first()
@@ -286,6 +289,9 @@ impl SharedBusinessAuthority {
             return Err(PortError::Conflict);
         }
         match (&request.action, reply.status) {
+            (_, BranchControlStatus::ParentExited { source }) => {
+                self.fence_exited_branch_parent(request, source)
+            }
             (_, BranchControlStatus::Pending {} | BranchControlStatus::CleaningUp {}) => Ok(()),
             (BranchControlAction::Start {}, BranchControlStatus::Ready {}) => self
                 .publish_branch_batch(&request.operation, &request.batch, &request.targets, now_ms),
@@ -318,6 +324,47 @@ impl SharedBusinessAuthority {
             }
             _ => Err(PortError::Conflict),
         }
+    }
+
+    fn fence_exited_branch_parent(
+        &self,
+        request: &BranchControlRequest,
+        source: ContentDigest,
+    ) -> Result<(), PortError> {
+        let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        authority.snapshot_envelope().map_err(authority_error)?;
+        authority
+            .decide(|current| {
+                let parent = current
+                    .center
+                    .lifecycle_session(&request.operation.owner, &request.batch.parent)
+                    .ok_or(DecisionError::NotFound)?;
+                require_exit_execution(parent, request)?;
+                let original = parent.operations().first().ok_or(DecisionError::NotFound)?;
+                let LifecycleOperation::Create { create, .. } =
+                    &original.intent().request.operation
+                else {
+                    return Err(DecisionError::NotFound.into());
+                };
+                current
+                    .metadata
+                    .artifact_binding(&create.template_revision, &create.template_digest)
+                    .map_err(to_authority)?;
+                let mut next = current.clone();
+                let ledger = next
+                    .metadata
+                    .branch_batches
+                    .as_mut()
+                    .ok_or(DecisionError::NotFound)?;
+                if !ledger.templates().contains(&create.template_revision) {
+                    return Err(DecisionError::Conflict.into());
+                }
+                ledger
+                    .fence_parent_exit(&request.operation, &request.batch, &request.targets, source)
+                    .map_err(map_error)?;
+                Ok((next, ()))
+            })
+            .map_err(authority_error)
     }
 
     /// # Errors
@@ -365,6 +412,74 @@ impl SharedBusinessAuthority {
                 Ok((next, ()))
             })
             .map_err(authority_error)
+    }
+}
+
+fn require_exit_execution(
+    parent: &sandproof_center_core::Sandbox,
+    request: &BranchControlRequest,
+) -> Result<(), DecisionError> {
+    let origin = parent
+        .current_execution_origin()
+        .ok_or(DecisionError::Conflict)?;
+    let (LifecycleOperation::Create {
+        target_incarnation: incarnation,
+        ..
+    }
+    | LifecycleOperation::Resume {
+        target_incarnation: incarnation,
+        ..
+    }) = origin.request.operation
+    else {
+        return Err(DecisionError::Conflict);
+    };
+    let route = &request.parent;
+    let binding = &origin.request.binding;
+    if parent.released()
+        || !request.matches_node(&binding.node)
+        || route.incarnation != incarnation
+        || route.center != origin.center
+        || route.session != binding.session
+        || route.operation.owner != binding.key.owner
+        || route.accepted_version < origin.accepted_version
+    {
+        return Err(DecisionError::Conflict);
+    }
+    // Renew can advance the route without replacing the execution. Match the
+    // exact in-flight route against its persisted operation, then fence only
+    // the original execution, even if a newer lease now describes it.
+    if parent.operations().iter().any(|operation| {
+        let accepted = operation.intent();
+        let original = &accepted.request.binding;
+        let accepted_incarnation = match accepted.request.operation {
+            LifecycleOperation::Create {
+                target_incarnation, ..
+            }
+            | LifecycleOperation::Resume {
+                target_incarnation, ..
+            } => target_incarnation,
+            LifecycleOperation::Renew { incarnation, .. } => incarnation,
+            LifecycleOperation::Unload {
+                source_incarnation, ..
+            } if operation
+                .unloaded()
+                .and_then(|observation| observation.outcome.continued())
+                .is_some() =>
+            {
+                source_incarnation
+            }
+            _ => return false,
+        };
+        accepted.accepted_version == route.accepted_version
+            && accepted.center == route.center
+            && original.node == route.node
+            && original.session == route.session
+            && original.key == route.operation
+            && accepted_incarnation == route.incarnation
+    }) {
+        Ok(())
+    } else {
+        Err(DecisionError::Conflict)
     }
 }
 

@@ -7,8 +7,8 @@ use sandproof_controller_service::application::branching::{
     PublicBranchBatchRequest, PublicBranchBatchResult, valid_ready_targets,
 };
 use sandproof_protocol::{
-    ResourceId, SandboxId,
-    lifecycle::{OperationKey, SessionId},
+    ResourceId, SandboxId, TenantId,
+    lifecycle::{ContentDigest, IncarnationId, OperationKey, SessionId},
 };
 use serde::{Deserialize, Serialize};
 
@@ -46,6 +46,8 @@ pub(crate) struct BranchBatchRecord {
     identity: BranchBatchIdentity,
     plan: Vec<BranchTarget>,
     state: State,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    parent_exit: Option<ContentDigest>,
 }
 
 impl BranchBatchRecord {
@@ -78,6 +80,7 @@ impl BranchBatchRecord {
             identity,
             plan,
             state: State::Pending {},
+            parent_exit: None,
         })
     }
 
@@ -103,7 +106,7 @@ impl BranchBatchRecord {
         observed: &[BranchTarget],
     ) -> Result<(), BatchError> {
         self.require_identity(identity)?;
-        if !matches!(self.state, State::Pending {}) {
+        if self.parent_exit.is_some() || !matches!(self.state, State::Pending {}) {
             return Err(BatchError::WrongPhase);
         }
         if !valid_ready_targets(&self.plan, observed, self.request.count) {
@@ -116,7 +119,9 @@ impl BranchBatchRecord {
     }
 
     pub(crate) fn begin_cleanup(&mut self, reason: BranchStartFailure) {
-        if matches!(self.state, State::Pending {} | State::Ready { .. }) {
+        if self.parent_exit.is_none()
+            && matches!(self.state, State::Pending {} | State::Ready { .. })
+        {
             self.state = State::CleaningUp { reason };
         }
     }
@@ -128,6 +133,9 @@ impl BranchBatchRecord {
         identity: &BranchBatchIdentity,
     ) -> Result<(), BatchError> {
         self.require_identity(identity)?;
+        if self.parent_exit.is_some() {
+            return Err(BatchError::WrongPhase);
+        }
         let (State::CleaningUp { reason } | State::Failed { reason }) = self.state else {
             return Err(BatchError::WrongPhase);
         };
@@ -160,6 +168,9 @@ impl BranchBatchRecord {
     /// Final authorization also rechecks owning tenant, parent incarnation and
     /// lifetime in the same authoritative view.
     pub(crate) fn target(&self, sandbox: &SandboxId) -> Option<&BranchTarget> {
+        if self.parent_exit.is_some() {
+            return None;
+        }
         let State::Ready { branches } = &self.state else {
             return None;
         };
@@ -183,6 +194,9 @@ impl BranchBatchRecord {
 
     pub(crate) fn public_result(&self) -> PublicBranchBatch {
         let result = match self.state {
+            _ if self.parent_exit.is_some() && self.reserved() != 0 => {
+                PublicBranchBatchResult::CleaningUp {}
+            }
             State::Pending {} => PublicBranchBatchResult::Pending {},
             State::CleaningUp { .. } => PublicBranchBatchResult::CleaningUp {},
             State::Ready { .. } if self.reserved() == 0 => PublicBranchBatchResult::Retired {},
@@ -203,6 +217,9 @@ impl BranchBatchRecord {
     }
 
     pub(crate) fn next_action(&self) -> Option<BranchControlAction> {
+        if self.parent_exit.is_some() {
+            return None;
+        }
         match &self.state {
             State::Pending {} => Some(BranchControlAction::Start {}),
             State::CleaningUp { .. } => Some(BranchControlAction::Release { branch: None }),
@@ -251,11 +268,25 @@ impl BranchBatchRecord {
             && self.operation.window == self.request.window
             && self.operation.sequence == self.request.sequence
             && self.identity.checkpoint == self.request.checkpoint
+            && self
+                .parent_exit
+                .is_none_or(|source| *source.as_bytes() != [0; 32])
             && valid_ready_targets(&self.plan, &self.plan, self.request.count)
             && match &self.state {
                 State::Ready { branches } => branches.len() == self.plan.len(),
                 _ => true,
             }
+    }
+
+    fn same_execution(
+        &self,
+        owner: &TenantId,
+        parent: &SessionId,
+        incarnation: IncarnationId,
+    ) -> bool {
+        &self.operation.owner == owner
+            && &self.identity.parent == parent
+            && self.identity.incarnation == incarnation
     }
 
     pub(crate) fn require_identity(
@@ -269,6 +300,9 @@ impl BranchBatchRecord {
     }
 
     fn branch_mut(&mut self, sandbox: &SandboxId) -> Result<&mut BranchPhase, BatchError> {
+        if self.parent_exit.is_some() {
+            return Err(BatchError::WrongPhase);
+        }
         let State::Ready { branches } = &mut self.state else {
             return Err(BatchError::WrongPhase);
         };
@@ -386,6 +420,9 @@ impl BranchBatchLedger {
                 .replay(&operation, &identity.parent, &request)?
                 .ok_or(BatchError::Conflict);
         }
+        if self.parent_exited(&operation.owner, &identity.parent, identity.incarnation) {
+            return Err(BatchError::Conflict);
+        }
         if self.batches.len() >= usize::from(self.limits.max_batches) {
             return Err(BatchError::Capacity);
         }
@@ -430,8 +467,55 @@ impl BranchBatchLedger {
     /// Retired public windows are permanent rejection frontiers. Keep any
     /// unresolved work and current-window result independent of record age.
     pub(crate) fn retire_closed(&mut self, is_closed: impl Fn(&OperationKey) -> bool) {
-        self.batches
-            .retain(|batch| batch.reserved() != 0 || !is_closed(&batch.operation));
+        self.batches.retain(|batch| {
+            batch.parent_exit.is_some() || batch.reserved() != 0 || !is_closed(&batch.operation)
+        });
+    }
+
+    pub(crate) fn parent_exited(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+        incarnation: IncarnationId,
+    ) -> bool {
+        self.batches.iter().any(|batch| {
+            batch.parent_exit.is_some() && batch.same_execution(owner, session, incarnation)
+        })
+    }
+
+    /// Record the exit once for every batch in the exact parent execution.
+    /// Keep each batch's existing per-port holds all the way to parent release.
+    pub(crate) fn fence_parent_exit(
+        &mut self,
+        operation: &OperationKey,
+        identity: &BranchBatchIdentity,
+        targets: &[BranchTarget],
+        source: ContentDigest,
+    ) -> Result<(), BatchError> {
+        let original = self.find(operation).ok_or(BatchError::Identity)?;
+        original.require_identity(identity)?;
+        if original.plan != targets || *source.as_bytes() == [0; 32] {
+            return Err(BatchError::Conflict);
+        }
+        let same_execution = |batch: &BranchBatchRecord| {
+            batch.same_execution(&operation.owner, &identity.parent, identity.incarnation)
+        };
+        if self
+            .batches
+            .iter()
+            .filter(|batch| same_execution(batch))
+            .any(|batch| batch.parent_exit.is_some_and(|original| original != source))
+        {
+            return Err(BatchError::Conflict);
+        }
+        for batch in self
+            .batches
+            .iter_mut()
+            .filter(|batch| same_execution(batch))
+        {
+            batch.parent_exit = Some(source);
+        }
+        Ok(())
     }
 
     pub(crate) fn blocks_parent_unload(&self, parent: &SessionId) -> bool {
@@ -456,14 +540,17 @@ impl BranchBatchLedger {
 
     pub(crate) fn retire_cleaned_parents(&mut self, center: &sandproof_center_core::CenterState) {
         for batch in &mut self.batches {
-            if batch.reserved() != 0
+            if (batch.reserved() != 0 || batch.parent_exit.is_some())
                 && center
                     .lifecycle_session(&batch.operation.owner, &batch.identity.parent)
                     .is_some_and(sandproof_center_core::Sandbox::released)
             {
-                batch.state = State::Failed {
-                    reason: BranchStartFailure::ParentEnded,
-                };
+                batch.parent_exit = None;
+                if batch.reserved() != 0 {
+                    batch.state = State::Failed {
+                        reason: BranchStartFailure::ParentEnded,
+                    };
+                }
             }
         }
     }
@@ -471,6 +558,9 @@ impl BranchBatchLedger {
     pub(crate) fn active_routes(&self) -> Vec<BranchAccessSelector> {
         let mut routes = Vec::new();
         for batch in &self.batches {
+            if batch.parent_exit.is_some() {
+                continue;
+            }
             let State::Ready { branches } = &batch.state else {
                 continue;
             };
@@ -500,9 +590,14 @@ impl BranchBatchLedger {
                         .plan
                         .iter()
                         .all(|target| self.limits.contains(target.port.get()))
-                    && self.batches[..index]
-                        .iter()
-                        .all(|original| !conflicts(original, batch))
+                    && self.batches[..index].iter().all(|original| {
+                        !conflicts(original, batch)
+                            && (!batch.same_execution(
+                                &original.operation.owner,
+                                &original.identity.parent,
+                                original.identity.incarnation,
+                            ) || batch.parent_exit == original.parent_exit)
+                    })
             })
     }
 }
@@ -579,6 +674,87 @@ mod tests {
             2,
         )
         .unwrap()
+    }
+
+    #[test]
+    fn parent_exit_fences_every_sibling_without_reclaiming_their_actual_ports() {
+        let mut ledger = BranchBatchLedger::new(
+            BranchBatchLimits {
+                max_batches: 4,
+                max_branches_per_vm: 3,
+                first_port: 31_000,
+            },
+            vec!["template-a".try_into().unwrap()],
+        )
+        .unwrap();
+        let first = batch();
+        let op = first.operation.clone();
+        let id = first.identity.clone();
+        let plan = first.plan.clone();
+        ledger
+            .start(op.clone(), id.clone(), first.request.clone(), plan.clone())
+            .unwrap();
+        let ready = ledger.find_mut(&op).unwrap();
+        ready.publish(&id, &plan).unwrap();
+        ready.begin_release(&plan[0].sandbox).unwrap();
+        ready.confirm_release(&id, &plan[0].sandbox).unwrap();
+        let next_op = OperationKey {
+            sequence: 3.try_into().unwrap(),
+            ..op.clone()
+        };
+        let next_id = BranchBatchIdentity {
+            batch: "batch-b".try_into().unwrap(),
+            ..id.clone()
+        };
+        let next_request = PublicBranchBatchRequest {
+            sequence: next_op.sequence,
+            count: NonZeroU16::new(1).unwrap(),
+            ..first.request
+        };
+        let replacement = BranchTarget {
+            sandbox: "branch-replacement".try_into().unwrap(),
+            port: plan[0].port,
+        };
+        ledger
+            .start(
+                next_op.clone(),
+                next_id.clone(),
+                next_request,
+                vec![replacement.clone()],
+            )
+            .unwrap();
+        assert_eq!(ledger.available_ports(&id.parent, 1), Ok(vec![31_002]));
+        let source = ContentDigest::from_sha256([4; 32]);
+        assert_eq!(
+            ledger.fence_parent_exit(&op, &id, &plan[..1], source),
+            Err(BatchError::Conflict)
+        );
+        assert_eq!(ledger.active_routes().len(), 1);
+        ledger.fence_parent_exit(&op, &id, &plan, source).unwrap();
+        assert!(ledger.is_valid());
+        assert!(ledger.active_routes().is_empty());
+        assert!(ledger.parent_exited(&op.owner, &id.parent, id.incarnation));
+        assert_eq!(ledger.available_ports(&id.parent, 1), Ok(vec![31_002]));
+        assert!(ledger.blocks_parent_unload(&id.parent));
+        for key in [&op, &next_op] {
+            let original = ledger.find(key).unwrap();
+            assert_eq!(original.reserved(), 1);
+            assert_eq!(
+                original.public_result().result,
+                PublicBranchBatchResult::CleaningUp {}
+            );
+            assert!(original.next_action().is_none());
+        }
+        assert_eq!(
+            ledger
+                .find_mut(&next_op)
+                .unwrap()
+                .publish(&next_id, &[replacement]),
+            Err(BatchError::WrongPhase)
+        );
+        let saved: BranchBatchLedger =
+            serde_json::from_slice(&serde_json::to_vec(&ledger).unwrap()).unwrap();
+        assert_eq!(saved, ledger);
     }
 
     #[test]

@@ -3,13 +3,18 @@ use super::{
     ApplicationError, ControllerApplication, ControllerHost, DataAuthorization, DataKind,
     DataLease, DataTarget, RelayReaper, TrackedRelayChild, map_journal, same_secret, watch,
 };
-use crate::JournalError;
-use crate::application::branching::{BranchAccessIdentity, BranchAccessSelector, BranchTarget};
+use crate::application::branching::{
+    BranchAccessIdentity, BranchAccessSelector, BranchControlRequest, BranchTarget,
+};
 use crate::application::{
     HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits, HostBranchParent,
     HostBranchRoute, HostGuestBranch,
 };
-use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
+use crate::{JournalError, capture::SourceProcessIdentity};
+use sandproof_protocol::lifecycle::{
+    AuthenticatedCenterContext, ContentDigest, LifecycleAccessIdentity,
+};
+use sha2::{Digest, Sha256};
 
 pub(super) struct BranchPins {
     selector: BranchAccessSelector,
@@ -68,6 +73,7 @@ fn route_error(error: JournalError) -> ApplicationError {
 /// original native data plane. Preparing the driver does not issue guest work.
 pub struct HostBranchControl<B> {
     driver: B,
+    parent: HostBranchParent,
     _gate: std::fs::File,
 }
 
@@ -124,10 +130,82 @@ impl<H: ControllerHost> ControllerApplication<H> {
         Ok(Some((
             HostBranchControl {
                 driver,
+                parent: native,
                 _gate: gate,
             },
             phase,
         )))
+    }
+
+    /// Read the independent original Prepare/Activate receipts after the
+    /// provider could not establish the current guest control result.
+    /// # Errors
+    /// Missing or changed parent, plan or receipts remain unknown.
+    pub fn host_branch_exit_source<B>(
+        &self,
+        control: &HostBranchControl<B>,
+        request: &BranchControlRequest,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<SourceProcessIdentity, ApplicationError> {
+        let inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        self.branch_exit_source_locked(&inner, control, request, context)
+    }
+
+    fn branch_exit_source_locked<B>(
+        &self,
+        inner: &super::Inner<H>,
+        control: &HostBranchControl<B>,
+        request: &BranchControlRequest,
+        context: &AuthenticatedCenterContext,
+    ) -> Result<SourceProcessIdentity, ApplicationError> {
+        let key = HostBranchBatchKey {
+            operation: request.operation.clone(),
+            batch: request.batch.clone(),
+        };
+        let (current, _) = inner
+            .journal
+            .host_branch_control_parent(
+                &request.parent,
+                context,
+                &key,
+                &request.targets,
+                self.clock.now_ms()?,
+            )
+            .map_err(route_error)?;
+        if current != control.parent {
+            return Err(ApplicationError::OutcomeUnknown);
+        }
+        inner
+            .journal
+            .source_for_capture::<H::Evidence>(current.sandbox())
+            .map_err(route_error)
+    }
+
+    /// Fence all native branches after the trusted provider confirmed the
+    /// exact original process exited. Keep its slot, ports and cleanup debt.
+    /// # Errors
+    /// A stale observation and an uncertain commit do not warrant a reply.
+    pub fn fence_exited_host_branch_parent<B>(
+        &self,
+        control: &HostBranchControl<B>,
+        request: &BranchControlRequest,
+        context: &AuthenticatedCenterContext,
+        source: &SourceProcessIdentity,
+    ) -> Result<ContentDigest, ApplicationError> {
+        let mut inner = self.inner.lock().map_err(|_| ApplicationError::Busy)?;
+        if self.branch_exit_source_locked(&inner, control, request, context)? != *source {
+            return Err(ApplicationError::OutcomeUnknown);
+        }
+        let bytes = serde_json::to_vec(&(&control.parent, source))
+            .map_err(|_| ApplicationError::OutcomeUnknown)?;
+        let source = ContentDigest::from_sha256(Sha256::digest(bytes).into());
+        // Revoke while still serialized, including an uncertain committed fence.
+        inner.revoke_branch_data(control.parent.sandbox());
+        inner
+            .journal
+            .fence_exited_branch_parent(&control.parent, source)
+            .map_err(route_error)?;
+        Ok(source)
     }
 
     /// Configure the bounded native ledger from trusted startup configuration.

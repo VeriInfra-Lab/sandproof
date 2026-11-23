@@ -3,8 +3,8 @@ use sandproof_protocol::{
     ResourceId, SandboxId,
     internal::NodeIdentity,
     lifecycle::{
-        AuthenticatedCenterContext, IncarnationId, LifecycleAccessIdentity, OperationKey,
-        PROTOCOL_VERSION, RequestSequence, RequestWindowId, SessionId,
+        AuthenticatedCenterContext, ContentDigest, IncarnationId, LifecycleAccessIdentity,
+        OperationKey, PROTOCOL_VERSION, RequestSequence, RequestWindowId, SessionId,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -197,7 +197,26 @@ pub enum BranchControlStatus {
     Ready {},
     CleaningUp {},
     Released {},
-    Failed { reason: BranchStartFailure },
+    /// The exact native launch exited. Its allocations are still owned.
+    ParentExited {
+        source: ContentDigest,
+    },
+    Failed {
+        reason: BranchStartFailure,
+    },
+}
+
+/// Local provider calls require the already held original execution gate.
+/// An unsuccessful guest call is never evidence of parent exit.
+#[derive(Clone, Copy)]
+pub enum BranchProviderRequest<'a> {
+    Guest(&'a [u8]),
+    ConfirmParentExit(&'a crate::capture::SourceProcessIdentity),
+}
+
+pub enum BranchProviderReply {
+    Guest(Vec<u8>),
+    ParentExited,
 }
 
 impl BranchControlRequest {

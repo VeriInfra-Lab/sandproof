@@ -1,7 +1,7 @@
 use super::*;
 use sandproof_controller_service::application::branching::{
     BranchAccessIdentity, BranchAccessSelector, BranchControlAction, BranchControlRequest,
-    BranchControlStatus, BranchStartFailure,
+    BranchControlStatus, BranchProviderReply, BranchProviderRequest, BranchStartFailure,
 };
 use sandproof_controller_service::application::{
     ApplicationError, ControllerApplication, DataKind,
@@ -119,14 +119,21 @@ impl Fixture {
         &self,
         reply: impl FnOnce(Value) -> Result<Value, ApplicationError> + Send + 'static,
     ) -> Result<BranchControlStatus, sandproof_internal::ReceiveError> {
+        let mut reply = Some(reply);
         self.lifecycle
             .drive_branch_control(
                 self.request.clone(),
                 self.context.clone(),
                 |_, _| Ok(Some(())),
-                |(), bytes| {
-                    reply(serde_json::from_slice(bytes).unwrap())
-                        .map(|value| serde_json::to_vec(&value).unwrap())
+                move |(), request| match request {
+                    BranchProviderRequest::Guest(bytes) => {
+                        reply.take().unwrap()(serde_json::from_slice(bytes).unwrap()).map(|value| {
+                            BranchProviderReply::Guest(serde_json::to_vec(&value).unwrap())
+                        })
+                    }
+                    BranchProviderRequest::ConfirmParentExit(_) => {
+                        Err(ApplicationError::OutcomeUnknown)
+                    }
                 },
             )
             .await
@@ -421,5 +428,91 @@ async fn native_branch_control_fails_only_after_original_cleanup_or_exact_pin_re
             })
             .await,
         Ok(BranchControlStatus::Pending {}),
+    );
+}
+
+#[tokio::test]
+async fn exact_parent_exit_fences_original_native_routes_without_releasing_capacity() {
+    let mut fixture = Fixture::new().await;
+    assert_eq!(
+        fixture.exchange(|_| Ok(complete_ready())).await,
+        Ok(BranchControlStatus::Ready {})
+    );
+    fixture.request.action = BranchControlAction::Observe {};
+    assert_eq!(
+        fixture
+            .exchange(|_| Err(ApplicationError::OutcomeUnknown))
+            .await,
+        Ok(BranchControlStatus::Pending {}),
+    );
+    assert!(fixture.route_open(0) && fixture.route_open(1));
+
+    let exact = fixture
+        .lifecycle
+        .drive_branch_control(
+            fixture.request.clone(),
+            fixture.context.clone(),
+            |_, _| Ok(Some(())),
+            |(), request| match request {
+                BranchProviderRequest::Guest(_) => Err(ApplicationError::OutcomeUnknown),
+                BranchProviderRequest::ConfirmParentExit(source) => {
+                    assert!(
+                        source.pid != 0
+                            && source.start_time_ticks != 0
+                            && !source.boot_id.is_empty()
+                    );
+                    Ok(BranchProviderReply::ParentExited)
+                }
+            },
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        exact.status,
+        BranchControlStatus::ParentExited { .. }
+    ));
+    assert!(!fixture.route_open(0) && !fixture.route_open(1));
+
+    let durable = fixture.restarted();
+    let reply = durable
+        .lifecycle
+        .drive_branch_control(
+            durable.request.clone(),
+            durable.context.clone(),
+            |_, _| Ok(Some(())),
+            |(), _| panic!("persisted exit evidence must replay without invoking the provider"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(reply, exact);
+    let key = HostBranchBatchKey {
+        operation: durable.request.operation.clone(),
+        batch: durable.request.batch.clone(),
+    };
+    assert!(
+        durable
+            .app
+            .change_host_branch_close(
+                &durable.request.parent,
+                &durable.context,
+                &key,
+                sandproof_controller_service::application::HostBranchClose::ConfirmGone(None),
+            )
+            .is_err()
+    );
+    let mut successor = key;
+    successor.operation.sequence = 11.try_into().unwrap();
+    successor.batch.batch = "new-batch".try_into().unwrap();
+    let mut target = durable.request.targets[0].clone();
+    target.sandbox = "new-branch".try_into().unwrap();
+    target.port = 31_002.try_into().unwrap();
+    assert_eq!(
+        durable.app.reserve_host_branch_batch(
+            &durable.request.parent,
+            &durable.context,
+            &successor,
+            &[target],
+        ),
+        Err(ApplicationError::NotFound)
     );
 }
