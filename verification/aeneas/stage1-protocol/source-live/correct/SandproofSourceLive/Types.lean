@@ -376,7 +376,7 @@ structure controller.lifecycle_inbox.readiness.NativeCreateSnapshot where
   uncertain_actions : alloc.vec.Vec sandbox_controller_core.model.EffectId
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::live_native::{closure}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 55:25-55:95 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 58:25-58:95 -/
 def controller.lifecycle_inbox.source_work.snapshot.live_native.closure :=
   Std.I64 × Std.I64
 

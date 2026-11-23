@@ -1,0 +1,13 @@
+import SandproofUnloadFinish.Types
+import SandproofParentCommit.ActualCalls
+
+namespace SandproofUnloadFinish
+
+abbrev controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref :=
+  SandproofParentCommitRust.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref
+abbrev rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref :=
+  SandproofParentCommitRust.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref
+noncomputable abbrev controller.transaction.WorldTransaction.commit :=
+  SandproofParentCommitRust.controller.transaction.WorldTransaction.commit
+
+end SandproofUnloadFinish

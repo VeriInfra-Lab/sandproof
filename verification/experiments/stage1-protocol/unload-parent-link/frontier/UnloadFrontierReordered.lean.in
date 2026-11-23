@@ -1,0 +1,39 @@
+import UnloadFrontierInputs
+
+open Aeneas Aeneas.Std SandproofUnloadFrontier
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.UnloadFrontier
+
+local notation "openInputs" => controller.lifecycle_inbox.source_work.open_source_work_inputs
+
+/-- The same authentication rejection would have won in the original prefix.
+    The reordered Rust body instead reaches the already failing source read. -/
+theorem reordered_source_error_beats_authentication {Rows : Type}
+    (read : OriginalConnection → Result (core.result.Result (Option Rows) OriginalError))
+    (connection : Conn) (memo : Memo) (intent : Intent) (context : Context)
+    (start : Started connection memo) (inbox : Inbox) (sql : rusqlite.error.Error)
+    (found : connection.readInbox start.tx.base.conn = .ok (.Ok (some inbox)))
+    (_denied : authenticate inbox intent context = .ok (.Err .Conflict))
+    (source : read start.tx.base.conn = .ok (.Err (.Sqlite sql))) :
+    openInputs (sourceReader read) connection memo intent context =
+      .ok (.Err (.Sqlite sql), ⟨start.after, connection.readInbox⟩) ∧
+    openInputs (sourceReader read) connection memo intent context ≠
+      .ok (.Err .Conflict, ⟨start.after, connection.readInbox⟩) := by
+  have returned : openInputs (sourceReader read) connection memo intent context =
+      .ok (.Err (.Sqlite sql), ⟨start.after, connection.readInbox⟩) := by
+    unfold controller.lifecycle_inbox.source_work.open_source_work_inputs
+    simp [controller.transaction.WorldTransaction.begin, start.began,
+      controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+      fromOriginalOwner, start.transaction, controller.lifecycle_inbox.codec.load, found,
+      rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+      SandproofUnloadWorldBegin.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+      sourceReader, source, fromOriginalReply, fromOriginalError,
+      core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  refine ⟨returned, ?_⟩
+  simp [returned, Result.ok.injEq]
+
+end SandboxModel.Stage1Protocol.UnloadFrontier
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFrontier.reordered_source_error_beats_authentication

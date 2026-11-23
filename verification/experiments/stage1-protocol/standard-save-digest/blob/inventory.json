@@ -33,5 +33,35 @@
     "verification/aeneas/stage1-protocol/standard-save-digest/blob/SandproofInboxSaveBlob/Types.lean": "d1c112f49a00f3f3837dd337c5cd4175a71eb3827a637260d8c650e3c2e21522",
     "verification/aeneas/stage1-protocol/standard-save-digest/blob/SandproofInboxSaveBlob/Funs.lean": "4eda1da85a1d836745d62f85980a8b34c098aa3012317e3dc8002c2141c85b10",
     "verification/aeneas/stage1-protocol/standard-save-digest/blob/translation.json": "d59b31c9f4db3d420f1e9a393c6351e019e699fde8ada278446a878362c2bebd"
+  },
+  "current_view": {
+    "full_ir_value_sha256": "79d713d20bed5f729fd90a5c32bdc09b8e14030d39bfdfd27f3c02b12f450793",
+    "raw_generated": {
+      "SandproofInboxSaveBlob/Funs.lean": "4eda1da85a1d836745d62f85980a8b34c098aa3012317e3dc8002c2141c85b10",
+      "SandproofInboxSaveBlob/FunsExternal_Template.lean": "67da8eeb1a718de29a0249b2eaa218e3b2df47ef5166dddb7305b9452a700477",
+      "SandproofInboxSaveBlob/Types.lean": "d1c112f49a00f3f3837dd337c5cd4175a71eb3827a637260d8c650e3c2e21522",
+      "SandproofInboxSaveBlob/TypesExternal_Template.lean": "0202c640f62e0e961bd8211cd4020e8530a9364308a417bc08675e17d45a356a",
+      "translation.json": "d59b31c9f4db3d420f1e9a393c6351e019e699fde8ada278446a878362c2bebd"
+    },
+    "files": {
+      "SandboxModel/Lifecycle/Protocol/InboxSaveBlob.lean": "5622a05aef44c550dbaaf7ea493ba640f4af6709be93bbc3dd4b75475b835ca8",
+      "verification/aeneas/stage1-protocol/standard-save-digest/blob/SandproofInboxSaveBlob/Funs.lean": "4eda1da85a1d836745d62f85980a8b34c098aa3012317e3dc8002c2141c85b10",
+      "verification/aeneas/stage1-protocol/standard-save-digest/blob/SandproofInboxSaveBlob/FunsExternal.lean": "bd3cb58a15dbe66870ae227f8ae921f2a7522a52d48935fa5a63fb9b51f088f7",
+      "verification/aeneas/stage1-protocol/standard-save-digest/blob/SandproofInboxSaveBlob/SqliteCommonBinding.lean": "4990e049822f4501dd940474085c5d7a97f4f327cd66808924195d860f30b3ef",
+      "verification/aeneas/stage1-protocol/standard-save-digest/blob/SandproofInboxSaveBlob/Types.lean": "d1c112f49a00f3f3837dd337c5cd4175a71eb3827a637260d8c650e3c2e21522",
+      "verification/aeneas/stage1-protocol/standard-save-digest/blob/SandproofInboxSaveBlob/TypesExternal.lean": "b9b7e089d8c4b4904337384968e9a5b3089ba41f2fbac47d1b23abb95eed9faa"
+    },
+    "audits": [
+      "SandboxModel.Stage1Protocol.InboxSaveBlob.actual_complete",
+      "SandboxModel.Stage1Protocol.InboxSaveBlob.array_complete_inputs",
+      "SandboxModel.Stage1Protocol.InboxSaveBlob.call_complete_inputs",
+      "SandboxModel.Stage1Protocol.InboxSaveBlob.thin_root"
+    ],
+    "previous_ir_value_sha256": "485d66f03a2c984d4f4395ee8f031080f50dede400090ec51c5545688efb8323",
+    "embedded_parent_source": {
+      "path": "controller-service/src/controller/lifecycle_inbox.rs",
+      "historical_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+      "current_sha256": "4d87f72906bb2ba5ec541b8969ecd90cf7caf74280dd42e5e6e6bbd0488888a8"
+    }
   }
 }

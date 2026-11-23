@@ -3,7 +3,7 @@
   "scope": "Actual adopted pure Create deadline helper and original Std operation; no whole-parent/native/shared/V3 claim.",
   "production_adopted": true,
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29"
+    "controller-service/src/controller/lifecycle_inbox.rs": "4d87f72906bb2ba5ec541b8969ecd90cf7caf74280dd42e5e6e6bbd0488888a8"
   },
   "providers": {
     "verification/aeneas/stage1-protocol/request/SandproofStage1Request/FunsExternal.lean": "c5cc9a4118060035ed1a1a4dacb1ab65ed0fecd88877e54b6556eb4ba0c9dadb",
@@ -1113,25 +1113,25 @@
           "code": "clippy::cast_possible_wrap",
           "message": "casting `u64` to `i64` may wrap around the value",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 532
+          "line": 503
         },
         {
           "code": "clippy::cast_possible_wrap",
           "message": "casting `u64` to `i64` may wrap around the value",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 532
+          "line": 503
         },
         {
           "code": "clippy::unnecessary_wraps",
           "message": "this function's return value is unnecessarily wrapped by `Result`",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 531
+          "line": 502
         },
         {
           "code": "clippy::unnecessary_wraps",
           "message": "this function's return value is unnecessarily wrapped by `Result`",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 531
+          "line": 502
         }
       ]
     },
@@ -1205,6 +1205,27 @@
         "basis": "Selected Create method/delegate body and complete values remain unchanged; other portions of the full source file contain separately adopted source changes. This is a current input declaration, not a new execution or a whole-file equivalence proof."
       }
     ],
-    "manifest_is_proof_evidence": false
+    "manifest_is_proof_evidence": false,
+    "subsequent_source_comparison": {
+      "previous_input_revision": "d3004a46",
+      "rust_baseline": "eef8abc3beb962000a837f88f2237eecfc803b14",
+      "source": "controller-service/src/controller/lifecycle_inbox.rs",
+      "previous_sha256": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+      "current_sha256": "4d87f72906bb2ba5ec541b8969ecd90cf7caf74280dd42e5e6e6bbd0488888a8",
+      "unchanged_helper_sha256": "08418955c6c1c52f3ed437fba829a567a8131f67bb5fd71e1e531da18be12a6a",
+      "unchecked_cast_diagnostic_lines": {
+        "original_revision": "9c50da7c",
+        "previous": [
+          531,
+          532
+        ],
+        "current": [
+          502,
+          503
+        ],
+        "duplicate_each_for_lib_and_lib_test": true
+      },
+      "manifest_is_proof_evidence": false
+    }
   }
 }

@@ -92,6 +92,14 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
 原生入口另运行本组件 `test_replay_formal.py`，检查私有抽取目录准备及准确审计清单，
 并确认漏项、额外或重复审计会被原检查器拒绝。这些驱动回归不运行 Lean，不提供业务证明。
 
+保留的 Request、Manifest 和 Carriers 现覆盖 `d087923fbfdbe7db50e0cb6097308296ab28b2ea`
+的抽取输入。Manifest 和 Carriers 在 ning 的 `data2` 重抽，Request 复用该机已有的
+捕获并逐项核对全部 46 个输入。三份正规化 LLBC 和 11 个生成文件均匹配原冻结，
+原定理和生成文件继续复用。抽取确认的收据为
+`retained-current.d087923f/comparison.json`，SHA256
+`79111836d2c04a9e053ee3331eb573ae30b26eae2bbe23be80f299dc565cc57e`。
+新版传输测试、原反例、原版恢复及 Lean 核查仍由同一最终候选的正式入口执行。
+
 `registered.py` 统一登记结果/观察/确认、完整清单、字段与字节、Writer、固定派生来源和
 同步收件切片的原入口。普通检查仍调用各包原命令和同性质错误版；证明入口消费对应的
 完整范围回执。裸开发 `result.json` 不能充当范围回执，未运行的源码/LLBC 来源检查也不能
@@ -99,7 +107,9 @@ bash scripts/python-entry.sh tools/proof_native_suite.py run \
 
 完整 V3 另登记 `stage1-unload-audits`。它覆盖首次卸载的启动回执、原执行记录、继续卸载的回执扫描和原 Create 选项编码。普通机按原夹具验证四个断言、两个已编译的错误版本及恢复后的同一断言；首次卸载的两个证明包共用同一个原生夹具。形式端分别重建各包的原 Lean 工程，并检查全部 44 份带审计命令的文件和 103 条审计声明。
 
-运行完整入口前，`SANDPROOF_UNLOAD_CAPTURE_EVIDENCE` 指向原 LLBC 目录。目录按四个包名分组，文件名是各包 `capture_hashes` 中的键加 `.llbc`。原摘要来自各包已有的 `evidence.json` 或 `capture-profile.json`，输入和原输出都按现有冻结清单核对。公共结果绑定与当前输入匹配的原生回执、Lean 文件、内核日志和服务诊断。单独的证明包仍可按各自说明复现。
+`stage1-unload-parent-transaction` 检查首次卸载的事务开始、认证与解码顺序、保存和提交顺序。当前 Rust 的 base 读取由同一事务和原本地身份提供 revision，成功路径同时保留原记录、原账本及已有启动计划的证明。原生入口保留正确版、调序错误版和恢复原版，形式入口核对实际抽取、物化文件及原始诊断。同一条定理在分项页和总页中的审计分别检查。具体输入和边界见[首次卸载父调用](unload-parent-link/README.md)。
+
+完整入口从同一候选的原生源码归档重抽七个卸载读取、编码和选取视图，保留各自的原始 LLBC、生成物和命令日志。七个视图除生成注释中的源码位置外，逐份核对已复核的定义；父路径和 base 读取另按当前 revision 的原始抽取与配对入口检查。四包原 44 份实际证明页和 103 条审计在这个组合上逐包核对。历史原始证据保留各自版本。单独的证明包仍可按各自说明复现。
 
 仅在 `inbox-record-total` 对同一变体实际完成父 `inbox-append` 的全部文件、审计及额外
 准入后，登记这一次包含关系，省去该父入口的重复执行；原 append 原生错误版照常保留。

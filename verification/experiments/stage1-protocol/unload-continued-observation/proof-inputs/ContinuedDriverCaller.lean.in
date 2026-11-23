@@ -87,7 +87,8 @@ theorem actual_v6_caller_uses_original_driver_on_issued_cursor {E : Type}
       .ok (.Ok reads.statement) at prepared
   have src : controller.lifecycle_inbox.source_work.codec.Sources.mk reads.sources.config
       reads.sources.node reads.sources.max_sessions reads.sources.records = reads.sources := by
-    cases reads.sources <;> rfl
+    cases reads.sources
+    rfl
   cases reply <;> cases found <;>
     simp [ready_records, reads.historical, reads.loaded, reads.selected, reads.recordRead,
       core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or,

@@ -73,6 +73,16 @@ flock /path/to/shared-heavy.lock .tools/lean-mcp/bin/python \
 原字典/类型/LLBC/生成体，使用原严格 `actual_files` 检查实际闭包与依赖审计，拒绝
 stale/partial、漏文件和未登记依赖。原 BoundedWriter 的全部登记审计继续参加。
 
+在 ning 的 `data2` 对 `ce2136b917b3a1a38c747a5ff6b0ed9617f68dda` 重新抽取了上述
+11 个实际视图。八份正规化 LLBC 一致。原调用、正确 Writer 和原吞错 Writer 的三份 LLBC
+各有 36 个来源行号变动，均来自 `controller-core/src/worker.rs` 中 `WorkerReject` 下移
+一行。调用结构、类型定义、函数体和其余字段一致。两版新生成的 `Types.lean` 只改一行
+注释，`translation.json` 只改该类型的起止行号。当前入口按新生成字节登记，历史
+`production-json` 继续逐字核对原视图。这次抽取收据
+`envelope-current.ce2136b9/comparison.json` 的 SHA256 为
+`7d65b6b9997b96d1502b358d26d5ed7c10204b8d3f5eef53290d662317251e97`。普通及 Lean
+正反验收仍按正式入口确认。
+
 ning 的原生组件入口：
 
 ```sh

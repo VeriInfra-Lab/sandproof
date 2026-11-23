@@ -403,7 +403,7 @@ inductive JournalError where
 | ObsoleteReceipt : JournalError
 
 /-- [sandproof_controller_service::host_contract::AdmissionError]
-    Source: 'controller-service/src/host_contract.rs', lines 110:0-127:1
+    Source: 'controller-service/src/host_contract.rs', lines 126:0-143:1
     Visibility: public -/
 @[discriminant isize]
 inductive host_contract.AdmissionError where

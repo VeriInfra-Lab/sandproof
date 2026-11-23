@@ -53,6 +53,9 @@ def run(output, lock, lock_fd, scope=SCOPE):
     artifacts = project/'artifacts'
     data = json.loads((HERE/'materialization.json').read_text())
     binding = json.loads((HERE/'rust-source-binding.json').read_text())
+    overrides = binding['current_file_overrides']
+    require(overrides.keys() <= binding['files'].keys(), 'current binding must retain the original inputs')
+    bound_files = binding['files'] | overrides
     profile = json.loads((HERE/'caller-profile.json').read_text())
     archive = load('transaction_formal_archive', STAGE1/'archive.py')
     registry = load('transaction_formal_registered', STAGE1/'registered.py')
@@ -89,8 +92,8 @@ def run(output, lock, lock_fd, scope=SCOPE):
             source = archive.build(ROOT, output/'source.tar', output/'source-manifest.json')
             require(archive.verify(output/'source.tar', output/'source-manifest.json') == source,
                     'formal source archive identity differs')
-            for name, digest in binding['files'].items():
-                require(source['files'][name]['sha256'] == digest, 'original Rust source link differs: '+name)
+            for name, digest in bound_files.items():
+                require(source['files'][name]['sha256'] == digest, 'current Rust source link differs: '+name)
             require(all(sha(path) == digest for path, digest in tools.items()), 'original extraction tools differ')
             with tarfile.open(output/'source.tar') as tar:
                 tar.extractall(project, filter='data')

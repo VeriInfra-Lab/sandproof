@@ -5,12 +5,12 @@
   "production_adopted": true,
   "base_sources": {
     "sandbox-internal/src/lifecycle.rs": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7",
-    "sandbox-internal/src/server/lifecycle.rs": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0"
+    "sandbox-internal/src/server/lifecycle.rs": "6fc17f26567697c601f3430891ed61436f64b426790977222e0212a33811c669"
   },
   "candidate_patch_sha256": "14806193f0f1f37af670243b1ca7d82f394f4e674b66839d3a1cc38a3e0b9824",
   "candidate_sources": {
     "sandbox-internal/src/lifecycle.rs": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7",
-    "sandbox-internal/src/server/lifecycle.rs": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0"
+    "sandbox-internal/src/server/lifecycle.rs": "6fc17f26567697c601f3430891ed61436f64b426790977222e0212a33811c669"
   },
   "proof_templates": [
     "AcceptedWireModel",
@@ -48,5 +48,37 @@
     "byte budget and actual bounded Writer/client response connection",
     "original context from V7; no authority inferred from field equality",
     "ning native mutation/restoration evidence and coordinator full acceptance"
-  ]
+  ],
+  "current_accepted_root_recapture": {
+    "candidate": "59ebda369ba75d346ba8c55bc57afaae38bf240f",
+    "integration": "faa5b502a8d1aec682afd86208f41f94dffa340b",
+    "source_route_diff_sha256": "e2bf0f2d2931143e669664c05bdc704afa8a9069a34edc6e97ae40ebf7f3052f",
+    "actual_capture_index_sha256": "68614814bb8abc2aeb46be45e4a9a6883ccd2781d5d551ee5de24591361556e1",
+    "views": {
+      "correct": {
+        "source_sha256": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7",
+        "llbc_sha256": "dfc3d99bc411b79d47e0961cf1aaf9384a6386c0645794cfc12d2c7c407ba18c",
+        "generated_sha256": {
+          "SandproofStage1Request/Funs.lean": "4763261d187e59718c6204331d27fa38acbe311d717466bc09b4c0d9e2569118",
+          "SandproofStage1Request/FunsExternal_Template.lean": "0ae3471bc63767e1f3fefe8f7a8ec7d86facf6fc0404e5edff9076686176bf94",
+          "SandproofStage1Request/Types.lean": "35e474c3aed22ef2cf0fa6b0de0d9443fb7aabc22e1270555380fa8fe56ada69",
+          "translation.json": "929fd002e15ea9e1b5bae1f2b21344e021ccfbb5f5de7567741c126e098f6143"
+        },
+        "receipt_sha256": "ed2d3c13484dbef6ed3c5e72c5f5661993d0f4d0cf25cc0338eaae7c515d256a"
+      },
+      "skip-envelope-guard": {
+        "source_sha256": "af4eb2a13e148f02305629b90a32c5622e2e45013667fce9995e4773a813d486",
+        "llbc_sha256": "7ae51e89f8706da8f76f5a04a02ed3be368164d1eab1e8ea5840d8ec6b465c4a",
+        "generated_sha256": {
+          "SandproofStage1Request/Funs.lean": "f2f07266d10c1435759665851d864cf5896ebf2e9de0b110684903e53bc416ab",
+          "SandproofStage1Request/FunsExternal_Template.lean": "0ae3471bc63767e1f3fefe8f7a8ec7d86facf6fc0404e5edff9076686176bf94",
+          "SandproofStage1Request/Types.lean": "557e7021a5c6bbfba3948669d1dd39c9547a9ac3de33e9519abdf5333c309df3",
+          "translation.json": "eb63da1d970890f5dcc4a11a3cf6f1fe600cf1a924b206d133a1d68f8408b458"
+        },
+        "receipt_sha256": "edea53d3abb4b009d1c010be1ede91d2769aeefe052102b2032929bb894498b2"
+      }
+    },
+    "acceptance_pending": true,
+    "covered_endpoint": "The actual synchronous decode_accepted_with guard; respond delegates with the same JSON versus intent errors."
+  }
 }

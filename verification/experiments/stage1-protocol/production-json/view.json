@@ -346,8 +346,10 @@
     },
     "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/Types.lean": {
       "source": "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/Types.lean",
-      "sha256": "c58fbdbf453c9dbaaa1967d9ad49d6ba4aa23268ce71f9731a3b1bd1594d22a4",
-      "mode": "100644"
+      "sha256": "36eabd6d91be00a6c5ff7322ae3e9e24691127e46a9810023b5113fbac14b75e",
+      "mode": "100644",
+      "transform": "writer-worker-reject-original-location",
+      "installed_sha256": "c58fbdbf453c9dbaaa1967d9ad49d6ba4aa23268ce71f9731a3b1bd1594d22a4"
     },
     "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/TypesExternal.lean": {
       "source": "verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/TypesExternal.lean",

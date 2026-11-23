@@ -10,7 +10,7 @@
         "after": "    if inbox.sessions[session].entries[origin_entry].local_operation != Some(anchor.local.operation)\n"
       }
     ],
-    "sha256": "8fc54fc7598fdfa6b08a203e84761e7681b6e5224ee029b453ffc6435aa91b88"
+    "sha256": "cfba3f941a71dbf284a4a6c95b251fefbeaeb7939433b6a5bfdd724579ff86fb"
   },
   "skip-generation": {
     "edits": [
@@ -19,7 +19,7 @@
         "after": ""
       }
     ],
-    "sha256": "fc4cfd0f99debc9fcd68fd22ff49d9855150adb3d39ab09092d001f70a4f951b"
+    "sha256": "6a1e7429ddb4cd03c2d523331183771efe4a6bf4c716e7c6ed28bcc2c89158f3"
   },
   "skip-vm": {
     "edits": [
@@ -28,6 +28,6 @@
         "after": ""
       }
     ],
-    "sha256": "34979afeb7c28674e2bd44f5bb5b4ff128b06ba7c805b2cc855d8303de511919"
+    "sha256": "a09eaf1450de2926354a0919a56d4d67100bb41edcff4e1ac850b0e406d98d93"
   }
 }

@@ -144,7 +144,9 @@ def run(output, variant, data, inputs, modes):
         rec['capture_complete'] = True
         installed, rec['deduplicated_providers'] = support.install(project, variant, data)
         expected.update(installed)
-        seeds = [n for n in installed if n.endswith('.lean')]
+        # Providers are installed for reuse by other Create proofs. Audit the
+        # registered build roots and every import in this variant's closure.
+        seeds = [str(support.PROOFS / (name + '.lean')) for name in recipe['seeds']]
         files = sorted(resolver.closure(project, seeds, active_view='lakefile.toml'))
         audits = [a for name in files for a in re.findall(r'^#audit_controller_proof (\S+)$', (project/name).read_text(), re.M)]
         if files != recipe['expected_files'] or audits != recipe['expected_audits'] or len(audits) != len(set(audits)):
@@ -152,7 +154,8 @@ def run(output, variant, data, inputs, modes):
         if variant != 'actual' and any(Path(n).stem in support.FORBIDDEN_WRONG for n in files):
             raise ValueError('wrong view imports a correct full-validator/load correspondence')
         rec.update(files={n: sha(project/n) for n in files}, audits=audits)
-        command(project, output, 'build', ['lake', 'build', *['SandboxModel.Lifecycle.Protocol.'+n for n in recipe['seeds']]])
+        modules = ['.'.join(Path(name).with_suffix('').parts) for name in seeds]
+        command(project, output, 'build', ['lake', 'build', *modules])
         physical = output/'actual-files'
         physical.mkdir()
         rec['actual'] = checker.actual_files(project, files, physical, env, command)

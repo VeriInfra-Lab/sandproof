@@ -1,0 +1,39 @@
+import ContinuedParentLink
+import FirstParentReadback
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink
+
+/-- Installing the actual #773 reader preserves the same parent dictionary
+that carries #770 source rows and #774 options. All are the original generated
+carriers; the complete World and connection are shared without conversion. -/
+theorem continued_and_source_options_use_one_parent
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (continued : SandproofUnloadContinuedReady.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (continuedParentBase base options startup continued) options
+    letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+    ∀ (parent : SandproofUnloadFirstObservation.ParentCalls)
+      (encode : SandproofCreateOptionsEncoded.Operations)
+      (read : @SandproofUnloadOptionsRead.Operations (optionsRepresentations options))
+      (sourceHost : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E → SandproofOriginalSourceRowsRust.host_contract.HostEvidence E)
+      (sourceCodec : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → SandproofOriginalSourceRowsRust.controller.capture.OriginalRowCodec Unit E)
+      (ops : SandproofUnloadContinuedReady.Operations)
+      (hostView : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E → SandproofUnloadContinuedReady.host_contract.HostEvidence E)
+      (serdeView : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → SandproofUnloadContinuedReady.serde_core.de.DeserializeOwned E),
+      bindContinued base options startup continued
+        (sourceAndOptionsCalls encoding (continuedParentBase base options startup continued) options parent encode read sourceHost sourceCodec) ops hostView serdeView =
+      sourceAndOptionsCalls encoding (continuedParentBase base options startup continued) options
+        (bindContinued base options startup continued parent ops hostView serdeView) encode read sourceHost sourceCodec := by
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (continuedParentBase base options startup continued) options
+  letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+  intros
+  rfl
+
+end SandboxModel.Stage1Protocol.UnloadParentLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.continued_and_source_options_use_one_parent

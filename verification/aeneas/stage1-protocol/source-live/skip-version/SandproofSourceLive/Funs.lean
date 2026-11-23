@@ -120,7 +120,7 @@ def sandbox_controller_core.source_observation.SourceObservationGuard.allows
     else ok false
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::live_native::{impl core::ops::function::FnOnce<(i64,), bool> for sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::live_native::{closure}<'_0, '_1>}::call_once]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 55:25-55:95 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 58:25-58:95 -/
 def
   controller.lifecycle_inbox.source_work.snapshot.live_native.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once
   (c : controller.lifecycle_inbox.source_work.snapshot.live_native.closure)
@@ -133,7 +133,7 @@ def
   else ok false
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::live_native::{impl core::ops::function::FnOnce<(i64,), bool> for sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::live_native::{closure}<'_0, '_1>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 55:25-55:95 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 58:25-58:95 -/
 @[reducible]
 def
   controller.lifecycle_inbox.source_work.snapshot.live_native.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool
@@ -145,7 +145,7 @@ def
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::live_native]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 23:0-56:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 26:0-59:1 -/
 def controller.lifecycle_inbox.source_work.snapshot.live_native
   (native : controller.lifecycle_inbox.readiness.NativeCreateSnapshot)
   («local» : controller.internal_inbox.model.InternalLocalBinding)

@@ -1149,7 +1149,7 @@ structure capture.source.RawSourceObservation where
   disk_bytes : Std.U64
 
 /-- [sandproof_controller_service::host_contract::HostSlotContext]
-    Source: 'controller-service/src/host_contract.rs', lines 243:0-247:1
+    Source: 'controller-service/src/host_contract.rs', lines 259:0-263:1
     Visibility: public -/
 structure host_contract.HostSlotContext where
   position : sandbox_controller_core.maintenance.slots.HostSlotId
