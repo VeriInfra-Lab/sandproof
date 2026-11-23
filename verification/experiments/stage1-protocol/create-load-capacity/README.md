@@ -31,4 +31,6 @@ python3 verification/experiments/stage1-protocol/create-load-capacity/native.py 
 
 形式入口重新捕获原始枚举、bound Request 和 Graphic 三个独立视图，逐份构建并通过原 `actual_files` 检查器核验全部真实物理文件、完整非 stale/partial 服务结果与依赖。原生入口只复用既有 fixture 的准备/效果代码，核对实际与错误版的完整校验、真实 codec load 以及合法 load→选择→完整写入断言；普通测试仍由 ning 执行，未运行不能声称通过。
 
+每个视图按清单中的同一组入口模块执行 Lake 构建和物理审计，逐项核对完整传递导入。通用读入合同、版本及表存在性检查、容量判断和选中条目的写入关系都在此导入链中。针对固定版本 23、24 和合成样例的 `InboxLoadHostFormatValues` 八条定理由原 Inbox Load 入口负责。复用 Inbox Load 提供者时会安装该页。若容量的入口后来实际导入它，其文件和审计也会进入容量的冻结核对。
+
 持久收件事务、同一快照、实际 JSON 字节到值、实际哈希计算、独立认证上下文的来源、SQL 参数/更新行数、save/提交未知/重启和资源事实仍是具名后续义务。既有 Manifest 与 FullFlow 继续保持各自原适用范围；本切片不重新声称它们已覆盖完整系统。
