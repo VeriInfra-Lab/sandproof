@@ -94,6 +94,11 @@ def probe_sdk(branches, expected):
             if not inherited:
                 time.sleep(0.01)
         require(inherited, "branch did not inherit the prepared bytes")
+        sandbox.commands.run(
+            'test "$(cat /proc/$$/oom_score_adj)" = 100 '
+            "&& test ! -e /proc/sys && test ! -e /proc/sysrq-trigger",
+            user="root", timeout=5,
+        )
         barrier.wait()
         value = branch["branch_id"]
         sandbox.files.write("/etc/fanout-sdk-marker", value, user="root")
@@ -188,6 +193,7 @@ def run(envd, count):
                     return {"branches": count, "envd_ready_ms": (ready - started) * 1000,
                             "sdk_ready_ms": (sdk_ready - started) * 1000,
                             "full_root_package_isolated": True, "partial_fork_cleanup": True,
+                            "envd_oom_adjustment_in_task_only_procfs": True,
                             "reused_port_rejects_old_token": True}
                 finally:
                     try:

@@ -30,7 +30,6 @@ CLONE_NEWNS = 0x00020000
 CLONE_NEWPID = 0x20000000
 CLONE_INTO_CGROUP = 0x200000000
 SYS_CLONE3 = 435  # Linux x86_64 and aarch64.
-MS_RDONLY = 1
 MS_NOSUID = 2
 MS_NODEV = 4
 MS_NOEXEC = 8
@@ -107,7 +106,13 @@ def _root(libc, slot, lowers, last_cap):
         if not stat.S_ISDIR(os.lstat(target).st_mode):
             raise ValueError("fan-out root mountpoint must be a directory")
     restricted = MS_NODEV | MS_NOSUID | MS_NOEXEC
-    _mount(libc, "proc", "/proc", "proc", flags=restricted | MS_RDONLY)
+    # Stock envd raises each command's own oom_score_adj before exec.
+    # This procfs belongs to the branch PID namespace and exposes task
+    # entries only, so VM-global controls never become writable here.
+    _mount(libc, "proc", "/proc", "proc", flags=restricted, options="subset=pid")
+    if (not os.path.isfile("/proc/self/oom_score_adj")
+            or os.path.lexists("/proc/sys") or os.path.lexists("/proc/sysrq-trigger")):
+        raise ValueError("fan-out procfs did not apply its task-only scope")
     _mount(libc, "tmpfs", "/dev", "tmpfs", flags=MS_NOSUID | MS_NOEXEC, options="mode=0755")
     nodes = (("null", 1, 3), ("zero", 1, 5), ("full", 1, 7),
              ("random", 1, 8), ("urandom", 1, 9), ("tty", 5, 0))
