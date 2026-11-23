@@ -25,9 +25,9 @@ def capture_live_native_ids(native, claims, read_slot, *, allow_free=False):
         value = row["value"]
         if row["position"] != position:
             raise ValueError("native slot position differs")
-        if allow_free and value["phase"] == "Free":
+        if allow_free and (value is None or value["phase"] == "Free"):
             continue
-        if value["phase"] != "Occupied":
+        if value is None or value["phase"] != "Occupied":
             raise ValueError("native sandbox identity must be observed in its occupied slot")
         context = value["context"]
         binding = context["binding"]

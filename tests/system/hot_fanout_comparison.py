@@ -433,7 +433,7 @@ def run(args, receipt, report):
                     if not claims:
                         claims.extend(source_claims(native, acknowledged))
                     native_ids.extend(capture_live_native_ids(native, claims, original_json, allow_free=True))
-                except (AssertionError, KeyError, OSError, ValueError) as error:
+                except (AssertionError, KeyError, OSError, TypeError, ValueError) as error:
                     report["cleanup_identity_error"] = type(error).__name__
             # Allocate sequences disjoint from every keyed Create. Hot setup
             # also uses sequence 2 for the batch.
