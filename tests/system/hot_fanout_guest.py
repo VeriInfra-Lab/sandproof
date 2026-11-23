@@ -62,7 +62,7 @@ def branch_plan(batch, first_port, count):
     ]}
 
 
-def sdk_for(branch):
+def sdk_for(branch, guest_host="127.0.0.1"):
     from e2b import Sandbox
     from e2b.connection_config import ConnectionConfig
     from packaging.version import Version
@@ -70,18 +70,18 @@ def sdk_for(branch):
     token = branch["access_token"]
     config = ConnectionConfig(
         api_key="guest-fixture", api_url="http://127.0.0.1:1", domain="example.invalid",
-        sandbox_url=f"http://127.0.0.1:{branch['port']}", retries=0, request_timeout=10,
+        sandbox_url=f"http://{guest_host}:{branch['port']}", retries=0, request_timeout=10,
         extra_sandbox_headers={"X-Access-Token": token},
     )
     return Sandbox(sandbox_id=branch["branch_id"], sandbox_domain="example.invalid",
                    envd_version=Version("0.9.0"), envd_access_token=token, connection_config=config)
 
 
-def probe_sdk(branches, expected):
+def probe_sdk(branches, expected, guest_host="127.0.0.1"):
     barrier = Barrier(len(branches), timeout=10)
 
     def verify(branch):
-        sandbox = sdk_for(branch)
+        sandbox = sdk_for(branch, guest_host)
         deadline = time.monotonic() + 5
         inherited = False
         while not inherited and time.monotonic() < deadline:
