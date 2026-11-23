@@ -1,0 +1,133 @@
+import SaveOrderInputs
+
+open Aeneas Aeneas.Std SandproofSourceSaveOrder
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceSaveOrder
+
+variable {C N R Db Keys Rows : Type}
+variable (configuration : core.cmp.PartialEq C C) (node : core.cmp.PartialEq N N)
+variable (effects : Effects C N R Db Keys Rows) (db : Db)
+variable (sources current : Sources C N R) (sessions : U16)
+
+local macro "source_save_simp" : tactic => `(tactic|
+  simp [run, controller.lifecycle_inbox.source_work.codec.save_using,
+    core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    rowCount, lift, *])
+
+theorem read_error (error : JournalError) (read : effects.read db = .ok (.Err error)) :
+    run configuration node effects db sources sessions = .ok (.Err error) := by
+  source_save_simp
+
+theorem absent_sources (read : effects.read db = .ok (.Ok none)) :
+    run configuration node effects db sources sessions = .ok (.Err .CorruptStore) := by
+  source_save_simp
+
+theorem configuration_mismatch (read : effects.read db = .ok (.Ok (some current)))
+    (wrong : configuration.ne sources.config current.config = .ok true) :
+    run configuration node effects db sources sessions = .ok (.Err .CorruptStore) := by
+  source_save_simp
+
+theorem node_mismatch (read : effects.read db = .ok (.Ok (some current)))
+    (configOk : configuration.ne sources.config current.config = .ok false)
+    (wrong : node.ne sources.node current.node = .ok true) :
+    run configuration node effects db sources sessions = .ok (.Err .CorruptStore) := by
+  source_save_simp
+
+theorem stored_sessions_mismatch (read : effects.read db = .ok (.Ok (some current)))
+    (configOk : configuration.ne sources.config current.config = .ok false)
+    (nodeOk : node.ne sources.node current.node = .ok false)
+    (wrong : (sources.max_sessions != current.max_sessions) = true) :
+    run configuration node effects db sources sessions = .ok (.Err .CorruptStore) := by
+  simp at wrong
+  source_save_simp
+
+theorem requested_sessions_mismatch (read : effects.read db = .ok (.Ok (some current)))
+    (configOk : configuration.ne sources.config current.config = .ok false)
+    (nodeOk : node.ne sources.node current.node = .ok false)
+    (stored : (sources.max_sessions != current.max_sessions) = false)
+    (wrong : (sessions != sources.max_sessions) = true) :
+    run configuration node effects db sources sessions = .ok (.Err .CorruptStore) := by
+  simp at stored wrong
+  rw [stored] at wrong
+  source_save_simp
+
+theorem limit_error (header : HeaderAccepted configuration node effects db sources current sessions)
+    (error : JournalError) (limit : effects.limit db sessions = .ok (.Err error)) :
+    run configuration node effects db sources sessions = .ok (.Err error) := by
+  rcases header with ⟨read, sameConfig, sameNode, stored, requested⟩
+  simp at stored requested
+  simp only [requested, stored] at limit
+  source_save_simp
+
+theorem insufficient_rows (header : HeaderAccepted configuration node effects db sources current sessions)
+    (reserved : U64) (limit : effects.limit db sessions = .ok (.Ok reserved))
+    (tooMany : rowCount sources > reserved) :
+    run configuration node effects db sources sessions = .ok (.Err .MaintenanceCapacity) := by
+  rcases header with ⟨read, sameConfig, sameNode, stored, requested⟩
+  simp at stored requested
+  simp only [requested, stored] at limit
+  simp [rowCount] at tooMany
+  source_save_simp
+
+theorem encode_error (header : HeaderAccepted configuration node effects db sources current sessions)
+    (reserved : U64) (capacity : CapacityAccepted effects db sources sessions reserved)
+    (error : JournalError) (encoded : effects.encode sources = .ok (.Err error)) :
+    run configuration node effects db sources sessions = .ok (.Err error) := by
+  rcases header with ⟨read, sameConfig, sameNode, stored, requested⟩
+  rcases capacity with ⟨limit, fits⟩
+  simp at stored requested
+  simp only [requested, stored] at limit
+  simp [rowCount] at fits
+  have enough : ¬ reserved.val < sources.records.val.length := Nat.not_lt.mpr fits
+  source_save_simp
+
+theorem retention_conflict (header : HeaderAccepted configuration node effects db sources current sessions)
+    (reserved : U64) (capacity : CapacityAccepted effects db sources sessions reserved)
+    (keys : Keys) (encodedRows : Rows) (encoded : effects.encode sources = .ok (.Ok (keys, encodedRows)))
+    (rejected : effects.retains current sources keys = .ok false) :
+    run configuration node effects db sources sessions = .ok (.Err .Conflict) := by
+  rcases header with ⟨read, sameConfig, sameNode, stored, requested⟩
+  rcases capacity with ⟨limit, fits⟩
+  simp at stored requested
+  simp only [requested, stored] at limit
+  simp [rowCount] at fits
+  have enough : ¬ reserved.val < sources.records.val.length := Nat.not_lt.mpr fits
+  source_save_simp
+
+theorem original_write_reply (header : HeaderAccepted configuration node effects db sources current sessions)
+    (reserved : U64) (capacity : CapacityAccepted effects db sources sessions reserved)
+    (keys : Keys) (encodedRows : Rows) (encoded : effects.encode sources = .ok (.Ok (keys, encodedRows)))
+    (allowed : effects.retains current sources keys = .ok true) :
+    run configuration node effects db sources sessions = effects.write db encodedRows := by
+  rcases header with ⟨read, sameConfig, sameNode, stored, requested⟩
+  rcases capacity with ⟨limit, fits⟩
+  simp at stored requested
+  simp only [requested, stored] at limit
+  simp [rowCount] at fits
+  have enough : ¬ reserved.val < sources.records.val.length := Nat.not_lt.mpr fits
+  source_save_simp
+
+
+theorem normal_save_witness :
+    run witnessEquality witnessEquality (witnessEffects true (.ok (.Ok ()))) 7 witnessSources 1#u16 =
+      .ok (.Ok ()) := by
+  simp [run, controller.lifecycle_inbox.source_work.codec.save_using, witnessEquality,
+    witnessEffects, witnessSources, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch, lift]
+
+
+end SandboxModel.Stage1Protocol.SourceSaveOrder
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.read_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.absent_sources
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.configuration_mismatch
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.node_mismatch
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.stored_sessions_mismatch
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.requested_sessions_mismatch
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.limit_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.insufficient_rows
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.encode_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.retention_conflict
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.original_write_reply
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.normal_save_witness

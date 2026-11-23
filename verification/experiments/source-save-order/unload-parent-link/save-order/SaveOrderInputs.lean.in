@@ -1,0 +1,119 @@
+import SandproofSourceSaveOrder.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofSourceSaveOrder
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceSaveOrder
+
+abbrev Sources := controller.lifecycle_inbox.source_work.codec.Sources
+abbrev Effects (C N R Db Keys Rows : Type) :=
+  controller.lifecycle_inbox.source_work.codec.SourceSaveEffects Unit C N R Db Keys Rows
+abbrev Reply := Result (core.result.Result Unit JournalError)
+abbrev run {C N R Db Keys Rows : Type} :=
+  @controller.lifecycle_inbox.source_work.codec.save_using C N R Db Keys Rows Unit
+
+def rowCount {C N R : Type} (sources : Sources C N R) : U64 :=
+  UScalar.cast .U64 (alloc.vec.Vec.len sources.records)
+
+structure HeaderAccepted {C N R Db Keys Rows : Type}
+    (configuration : core.cmp.PartialEq C C) (node : core.cmp.PartialEq N N)
+    (effects : Effects C N R Db Keys Rows) (db : Db) (sources current : Sources C N R)
+    (sessions : U16) : Prop where
+  read : effects.read db = .ok (.Ok (some current))
+  config : configuration.ne sources.config current.config = .ok false
+  node : node.ne sources.node current.node = .ok false
+  storedSessions : (sources.max_sessions != current.max_sessions) = false
+  requestedSessions : (sessions != sources.max_sessions) = false
+
+structure CapacityAccepted {C N R Db Keys Rows : Type}
+    (effects : Effects C N R Db Keys Rows) (db : Db) (sources : Sources C N R)
+    (sessions : U16) (reserved : U64) : Prop where
+  limit : effects.limit db sessions = .ok (.Ok reserved)
+  fits : ¬ rowCount sources > reserved
+
+-- The source-save view and the existing commit view share this original carrier.
+abbrev RequestError := SandproofStage1RequestRust.sandproof_controller_service.JournalError
+
+/-- Every original constructor and its complete payload are retained. -/
+def fromRequest (error : RequestError) : JournalError :=
+  match error with
+  | .Io payload => .Io payload
+  | .Sqlite payload => .Sqlite payload
+  | .CommitUncertain payload => .CommitUncertain payload
+  | .Json payload => .Json payload
+  | .Contract payload => .Contract payload
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .InjectedCrash payload => .InjectedCrash payload
+  | .ControllerRejected payload => .ControllerRejected payload
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+def toRequest (error : JournalError) : RequestError :=
+  match error with
+  | .Io payload => .Io payload
+  | .Sqlite payload => .Sqlite payload
+  | .CommitUncertain payload => .CommitUncertain payload
+  | .Json payload => .Json payload
+  | .Contract payload => .Contract payload
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .InjectedCrash payload => .InjectedCrash payload
+  | .ControllerRejected payload => .ControllerRejected payload
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+theorem error_transport_round_trip (localError : JournalError) (requestError : RequestError) :
+    fromRequest (toRequest localError) = localError ∧ toRequest (fromRequest requestError) = requestError := by
+  constructor
+  · cases localError <;> rfl
+  · cases requestError <;> rfl
+
+-- A legal empty source inventory with remaining capacity. The original native
+-- fixture independently exercises a nonempty real SQLite record.
+def witnessSources : Sources Unit Unit Unit where
+  config := ()
+  node := ()
+  max_sessions := 1#u16
+  records := alloc.vec.Vec.new Unit
+
+def witnessEquality : core.cmp.PartialEq Unit Unit where
+  eq _ _ := .ok true
+  ne _ _ := .ok false
+
+def witnessEffects (allowed : Bool) (reply : Reply) : Effects Unit Unit Unit Nat Nat Nat where
+  read db := if db = 7 then .ok (.Ok (some witnessSources)) else .ok (.Err .UnsupportedStore)
+  limit db sessions := if db = 7 ∧ sessions = 1#u16 then .ok (.Ok 1#u64)
+    else .ok (.Err .MaintenanceCapacity)
+  encode _ := .ok (.Ok (8, 9))
+  retains _ _ key := .ok (allowed && key == 8)
+  write db rows := if db = 7 ∧ rows = 9 then reply else .ok (.Err .CorruptStore)
+
+end SandboxModel.Stage1Protocol.SourceSaveOrder
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.error_transport_round_trip

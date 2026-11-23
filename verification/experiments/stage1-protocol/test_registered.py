@@ -328,11 +328,19 @@ class CreateDelivery(OriginalReadPlanFixture):
         self.assertEqual(registered._execution_options()['workers'], 1)
         for count in (8, 12):
             self.assertEqual(registered._execution_options(count, profile='create-delivery')['workers'], count)
+        with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS='8'):
+            self.assertEqual(registered._execution_options()['workers'], 8)
+        self.assertEqual(registered._execution_options(8)['workers'], 8)
+        with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS='12'):
             with self.assertRaises(ValueError):
-                registered._execution_options(count)
-            with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS=str(count)):
-                with self.assertRaises(ValueError):
-                    registered._execution_options()
+                registered._execution_options()
+        with self.assertRaises(ValueError):
+            registered._execution_options(12)
+        slots = registered._cpu_slots('full', 8, range(4, 36))
+        self.assertEqual(len(slots), 8)
+        self.assertEqual({cpu for slot in slots for cpu in slot}, set(range(4, 36)))
+        with self.assertRaisesRegex(ValueError, '32 admitted CPUs'):
+            registered._cpu_slots('full', 8, range(31))
         for jobs in (1, 2, 4, 8, 12):
             slots = registered._cpu_slots('create-delivery', jobs, range(8, 8+4*jobs))
             self.assertEqual(len(slots), jobs)
@@ -729,7 +737,7 @@ class Registration(OriginalReadPlanFixture):
             self.assertEqual(options['sources']['workers'],'SANDPROOF_STAGE1_JOBS')
             self.assertEqual(registered._execution_options(4,Path('/explicit.json'))['workers'],4)
         with patch.dict(os.environ,SANDPROOF_STAGE1_JOBS='3'):
-            with self.assertRaisesRegex(ValueError,'must be 1, 2 or 4'):
+            with self.assertRaisesRegex(ValueError,'must be 1, 2, 4 or 8'):
                 registered._execution_options()
             self.assertEqual(registered._execution_options(1)['workers'],1)
         with patch.dict(os.environ,SANDPROOF_STAGE1_RESUME_FROM='relative.json'):

@@ -1,0 +1,50 @@
+#[test]
+fn proof_source_save_validation_precedes_any_row_update() {
+    use rusqlite::{Error, ErrorCode};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("source-save-order.db");
+    let (mut journal, _) = ready(&path);
+    let record = prepare(&mut journal);
+    let conn = &journal.journal.connection;
+    let original = codec::load(conn).unwrap().unwrap();
+    assert_eq!(original.records.as_slice(), std::slice::from_ref(&record));
+    conn.execute_batch(
+        "CREATE TEMP TRIGGER reject_source_save_update
+         BEFORE UPDATE OF work_key ON main.controller_source_work_records
+         BEGIN SELECT RAISE(ABORT, 'reached source row update'); END;",
+    )
+    .unwrap();
+
+    // The key and serialized anchor are still original, but the complete
+    // SourceWork differs. This must reach the retention guard before SQL.
+    let mut changed = original.clone();
+    changed.records[0]
+        .work
+        .requirement
+        .limits
+        .max_configuration_bytes += 1;
+    let rejected = codec::save(conn, &changed, changed.max_sessions);
+    assert!(
+        matches!(rejected, Err(JournalError::Conflict)),
+        "the saved-work conflict must precede the source row update: {rejected:?}"
+    );
+
+    // The duplicate is on the last encoded record. Even with a simultaneous
+    // complete work mismatch, the encode phase must reject it first.
+    changed.records.push(record);
+    assert!(matches!(
+        codec::save(conn, &changed, changed.max_sessions),
+        Err(JournalError::CorruptStore)
+    ));
+    assert!(matches!(
+        codec::save(conn, &original, original.max_sessions),
+        Err(JournalError::Sqlite(Error::SqliteFailure(error, Some(message))))
+            if error.code == ErrorCode::ConstraintViolation && message == "reached source row update"
+    ));
+    assert_eq!(codec::load(conn).unwrap(), Some(original.clone()));
+    conn.execute_batch("DROP TRIGGER temp.reject_source_save_update")
+        .unwrap();
+    codec::save(conn, &original, original.max_sessions).unwrap();
+    assert_eq!(codec::load(conn).unwrap(), Some(original));
+}
