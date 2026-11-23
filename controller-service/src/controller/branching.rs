@@ -33,7 +33,8 @@ pub struct HostBranchLimits {
 }
 
 impl HostBranchLimits {
-    fn valid(self) -> bool {
+    #[must_use]
+    pub fn is_valid(self) -> bool {
         (1..=MAX_BATCH_RECORDS).contains(&self.max_batches)
             && (1..=MAX_BRANCH_PORTS).contains(&self.max_branches_per_vm)
     }
@@ -335,7 +336,7 @@ fn read_limits(connection: &Connection) -> Result<Option<HostBranchLimits>, Jour
             })
         },
     )?;
-    if !limits.valid() {
+    if !limits.is_valid() {
         return Err(JournalError::CorruptStore);
     }
     Ok(Some(limits))
@@ -528,6 +529,13 @@ pub(super) fn blocks_parent_unload(
 }
 
 impl ControllerJournal {
+    /// Read the previously registered protected host budget without installing it.
+    /// # Errors
+    /// Rejects a partial or changed database schema.
+    pub fn registered_host_branching(&self) -> Result<Option<HostBranchLimits>, JournalError> {
+        read_limits(&self.journal.connection)
+    }
+
     /// Install the bounded, host-only ledger once from trusted configuration.
     /// # Errors
     /// Changed limits or invalid existing SQL identity fail closed.
@@ -535,7 +543,7 @@ impl ControllerJournal {
         &mut self,
         limits: HostBranchLimits,
     ) -> Result<(), JournalError> {
-        if !limits.valid() {
+        if !limits.is_valid() {
             return Err(JournalError::MaintenanceCapacity);
         }
         let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
