@@ -4,8 +4,8 @@
 //! SDK parsing and pagination are reused rather than copied into this crate.
 
 mod application;
-#[cfg(test)]
 mod branch_batch;
+pub use branch_batch::BranchBatchLimits;
 pub mod business;
 mod contracts;
 mod create_binding;

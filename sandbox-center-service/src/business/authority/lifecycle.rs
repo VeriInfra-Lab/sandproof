@@ -439,6 +439,14 @@ impl SharedBusinessAuthority {
                 if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
                     return Ok((current.clone(), intent));
                 }
+                if current
+                    .metadata
+                    .branch_batches
+                    .as_ref()
+                    .is_some_and(|batches| batches.blocks_parent_unload(session))
+                {
+                    return Err(DecisionError::Conflict.into());
+                }
                 let CurrentCreateReadiness::Observed { facts } = &observation.readiness else {
                     return Err(DecisionError::Unavailable.into());
                 };
@@ -527,6 +535,14 @@ impl SharedBusinessAuthority {
                 };
                 if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
                     return Ok((current.clone(), intent));
+                }
+                if current
+                    .metadata
+                    .branch_batches
+                    .as_ref()
+                    .is_some_and(|batches| batches.blocks_parent_unload(session))
+                {
+                    return Err(DecisionError::Conflict.into());
                 }
                 let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } =
                     &observation.readiness

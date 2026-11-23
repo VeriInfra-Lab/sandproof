@@ -22,6 +22,7 @@ use sandproof_protocol::lifecycle::{
 };
 use sandproof_protocol::{ResourceId, SandboxId, TenantId, internal::NodeIdentity};
 use std::sync::{Arc, Mutex};
+mod branching;
 mod lifecycle;
 
 type Envelope = BusinessEnvelope<RegistryMetadata>;

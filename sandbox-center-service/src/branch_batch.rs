@@ -221,7 +221,10 @@ impl BranchBatchRecord {
             }
     }
 
-    fn require_identity(&self, identity: &BranchBatchIdentity) -> Result<(), BatchError> {
+    pub(crate) fn require_identity(
+        &self,
+        identity: &BranchBatchIdentity,
+    ) -> Result<(), BatchError> {
         if &self.identity != identity {
             return Err(BatchError::Identity);
         }
@@ -252,7 +255,7 @@ pub(crate) struct BranchBatchLedger {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct BranchBatchLimits {
+pub struct BranchBatchLimits {
     pub max_batches: u16,
     pub max_branches_per_vm: u16,
     pub first_port: u16,
@@ -277,6 +280,15 @@ impl BranchBatchLimits {
 }
 
 impl BranchBatchLedger {
+    pub(crate) fn limits(&self) -> BranchBatchLimits {
+        self.limits
+    }
+
+    pub(crate) fn required_bytes(&self) -> usize {
+        usize::from(self.limits.max_batches)
+            .saturating_mul(usize::from(self.limits.max_branches_per_vm) * 384 + 2048)
+    }
+
     pub(crate) fn new(limits: BranchBatchLimits) -> Result<Self, BatchError> {
         if !limits.is_valid() {
             return Err(BatchError::Capacity);
@@ -338,6 +350,13 @@ impl BranchBatchLedger {
         self.batches
             .iter_mut()
             .find(|batch| &batch.operation == operation)
+    }
+
+    /// Retired public windows are permanent rejection frontiers. Keep any
+    /// unresolved work and current-window result independent of record age.
+    pub(crate) fn retire_closed(&mut self, is_closed: impl Fn(&OperationKey) -> bool) {
+        self.batches
+            .retain(|batch| batch.reserved() != 0 || !is_closed(&batch.operation));
     }
 
     pub(crate) fn blocks_parent_unload(&self, parent: &SessionId) -> bool {
