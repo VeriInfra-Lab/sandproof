@@ -6,7 +6,11 @@ use super::{
 };
 use axum::body::Body;
 use sandproof_data_transport::WriteIdle;
-use sandproof_protocol::internal::{DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX};
+use sandproof_protocol::branching::{BranchAccessIdentity, BranchAccessSelector};
+use sandproof_protocol::internal::{
+    BRANCH_DATA_PATH_PREFIX, BRANCH_DATA_SELECTOR_HEADER, DATA_IDENTITY_BYTES,
+    DATA_IDENTITY_HEADER, DATA_PATH_PREFIX,
+};
 use sandproof_protocol::lifecycle::LifecycleAccessIdentity;
 use std::{
     future::Future,
@@ -71,6 +75,42 @@ impl InternalClient {
     pub async fn stream_data(
         &self,
         identity: &LifecycleAccessIdentity,
+        request: Request<Body>,
+        route_lease: Arc<dyn Send + Sync>,
+        max_deadline: Instant,
+    ) -> Result<hyper::Response<Body>, TransportError> {
+        self.stream_data_using(identity, None, request, route_lease, max_deadline)
+            .await
+    }
+
+    /// Forward an already center-authorized branch stream over the same pinned
+    /// host transport. The receiver must resolve the original local branch.
+    /// # Errors
+    /// Mismatched bindings, invalid request framing and transport failure refuse.
+    pub async fn stream_branch_data(
+        &self,
+        identity: &BranchAccessIdentity,
+        request: Request<Body>,
+        route_lease: Arc<dyn Send + Sync>,
+        max_deadline: Instant,
+    ) -> Result<hyper::Response<Body>, TransportError> {
+        if !identity.selector.matches_parent(&identity.parent) {
+            return Err(TransportError::Rejected);
+        }
+        self.stream_data_using(
+            &identity.parent,
+            Some(&identity.selector),
+            request,
+            route_lease,
+            max_deadline,
+        )
+        .await
+    }
+
+    async fn stream_data_using(
+        &self,
+        identity: &LifecycleAccessIdentity,
+        branch: Option<&BranchAccessSelector>,
         mut request: Request<Body>,
         route_lease: Arc<dyn Send + Sync>,
         max_deadline: Instant,
@@ -95,14 +135,29 @@ impl InternalClient {
         if !path.starts_with('/') || path.len() > 4096 {
             return Err(TransportError::Rejected);
         }
-        *request.uri_mut() = format!("{DATA_PATH_PREFIX}{path}")
+        let prefix = if branch.is_some() {
+            BRANCH_DATA_PATH_PREFIX
+        } else {
+            DATA_PATH_PREFIX
+        };
+        *request.uri_mut() = format!("{prefix}{path}")
             .parse()
             .map_err(|_| TransportError::Rejected)?;
-        request.headers_mut().remove(DATA_IDENTITY_HEADER);
         request.headers_mut().insert(
             DATA_IDENTITY_HEADER,
             identity.try_into().map_err(|_| TransportError::Rejected)?,
         );
+        request.headers_mut().remove(BRANCH_DATA_SELECTOR_HEADER);
+        if let Some(branch) = branch {
+            let encoded = serde_json::to_vec(branch).map_err(|_| TransportError::Rejected)?;
+            if encoded.len() > DATA_IDENTITY_BYTES {
+                return Err(TransportError::Rejected);
+            }
+            request.headers_mut().insert(
+                BRANCH_DATA_SELECTOR_HEADER,
+                encoded.try_into().map_err(|_| TransportError::Rejected)?,
+            );
+        }
         request.headers_mut().remove("x-api-key");
         request.headers_mut().remove("x-access-token");
         request.headers_mut().insert(

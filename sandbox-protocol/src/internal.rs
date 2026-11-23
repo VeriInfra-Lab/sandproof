@@ -36,6 +36,9 @@ pub const PROBE_BODY_BYTES: usize = 4096;
 pub const DATA_PATH_PREFIX: &str = "/internal/data";
 pub const DATA_IDENTITY_HEADER: &str = "x-sandproof-control-identity";
 pub const DATA_IDENTITY_BYTES: usize = 2048;
+/// Distinct prefix so an older host cannot treat a branch stream as parent data.
+pub const BRANCH_DATA_PATH_PREFIX: &str = "/internal/branch-data";
+pub const BRANCH_DATA_SELECTOR_HEADER: &str = "x-sandproof-branch-selector";
 
 pub mod lifecycle;
 pub mod window;

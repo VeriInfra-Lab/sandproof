@@ -1,7 +1,10 @@
 //! Wire types for same-VM training fan-out.
 use crate::{
     ResourceId, SandboxId,
-    lifecycle::{IncarnationId, OperationKey, RequestSequence, RequestWindowId, SessionId},
+    lifecycle::{
+        AuthenticatedCenterContext, IncarnationId, LifecycleAccessIdentity, OperationKey,
+        RequestSequence, RequestWindowId, SessionId,
+    },
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::HashSet, num::NonZeroU16};
@@ -52,6 +55,67 @@ pub enum BranchStartFailure {
     CheckpointUnavailable,
     GuestSetupFailed,
     ParentEnded,
+}
+
+/// Internal branch selector. The host independently resolves this identity
+/// against its own ready record. An address, port or credential is not a selector.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BranchAccessSelector {
+    pub batch: BranchBatchIdentity,
+    pub operation: OperationKey,
+    pub branch: SandboxId,
+}
+
+/// Effective wire identity consists of the existing parent header and the
+/// separately bounded branch selector header. Neither one grants authorization.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BranchAccessIdentity {
+    pub parent: LifecycleAccessIdentity,
+    pub selector: BranchAccessSelector,
+}
+
+impl BranchAccessIdentity {
+    /// Check the negotiated parent identity and selector consistency. Only
+    /// the receiver's exact, current, durable route can authorize a relay.
+    #[must_use]
+    pub fn valid_for(&self, context: &AuthenticatedCenterContext) -> bool {
+        self.parent.validate(context).is_ok() && self.selector.matches_parent(&self.parent)
+    }
+}
+
+impl BranchAccessSelector {
+    #[must_use]
+    pub fn matches_parent(&self, parent: &LifecycleAccessIdentity) -> bool {
+        self.batch.parent == parent.session
+            && self.batch.incarnation == parent.incarnation
+            && self.operation.deployment == parent.operation.deployment
+            && self.operation.owner == parent.operation.owner
+            && self.operation != parent.operation
+    }
+}
+
+/// Valid local guest ports reserved exclusively for training envd listeners.
+/// Runtime dispatch must take a port from the original verified branch plan.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BranchRelayPort(u16);
+
+impl BranchRelayPort {
+    pub const FIRST: u16 = 31_000;
+    pub const LAST: u16 = 31_099;
+
+    #[must_use]
+    pub const fn new(port: u16) -> Option<Self> {
+        if port < Self::FIRST || port > Self::LAST {
+            return None;
+        }
+        Some(Self(port))
+    }
+
+    #[must_use]
+    pub const fn get(self) -> u16 {
+        self.0
+    }
 }
 
 /// The host plans these endpoints before startup. A guest cannot supply a different

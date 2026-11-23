@@ -7,6 +7,7 @@ use crate::{
 };
 use axum::body::Body;
 use hyper::{Request, Response};
+use sandproof_protocol::branching::BranchAccessIdentity;
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
 
 /// Select this wrapper only for a component test with no artifact capability.
@@ -87,6 +88,15 @@ impl<H: DataReceiver> DataReceiver for RejectTemplateCache<H> {
         request: Request<Body>,
     ) -> Response<Body> {
         self.0.receive_data(identity, context, request).await
+    }
+
+    async fn receive_branch_data(
+        &self,
+        identity: BranchAccessIdentity,
+        context: AuthenticatedCenterContext,
+        request: Request<Body>,
+    ) -> Response<Body> {
+        self.0.receive_branch_data(identity, context, request).await
     }
 }
 impl<H: ValidationReceiver> ValidationReceiver for RejectTemplateCache<H> {

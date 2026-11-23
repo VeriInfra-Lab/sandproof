@@ -17,9 +17,11 @@ use hyper::{
     Method, Request, Response, StatusCode,
     body::{Bytes, Incoming},
 };
+use sandproof_protocol::branching::{BranchAccessIdentity, BranchAccessSelector};
 use sandproof_protocol::internal::{
-    DATA_IDENTITY_BYTES, DATA_IDENTITY_HEADER, DATA_PATH_PREFIX, NodeIdentity, PROBE_BODY_BYTES,
-    PROBE_PATH, ProbeRequest, ProbeResponse,
+    BRANCH_DATA_PATH_PREFIX, BRANCH_DATA_SELECTOR_HEADER, DATA_IDENTITY_BYTES,
+    DATA_IDENTITY_HEADER, DATA_PATH_PREFIX, NodeIdentity, PROBE_BODY_BYTES, PROBE_PATH,
+    ProbeRequest, ProbeResponse,
 };
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
 use std::{convert::Infallible, sync::Arc};
@@ -122,6 +124,17 @@ pub trait DataReceiver: Send + Sync + 'static {
         context: AuthenticatedCenterContext,
         request: Request<Body>,
     ) -> impl std::future::Future<Output = Response<Body>> + Send;
+
+    /// A parent permit cannot authorize a branch by itself. Hosts without a
+    /// durable branch resolver must refuse instead of forwarding to parent envd.
+    fn receive_branch_data(
+        &self,
+        _identity: BranchAccessIdentity,
+        _context: AuthenticatedCenterContext,
+        _request: Request<Body>,
+    ) -> impl std::future::Future<Output = Response<Body>> + Send {
+        std::future::ready(sandproof_data_transport::response(StatusCode::UNAUTHORIZED))
+    }
 }
 
 /// HTTP errors carry no proof that local effects were absent.
@@ -273,7 +286,10 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
         request: Request<Incoming>,
         streaming: watch::Sender<bool>,
     ) -> Result<Response<Body>, Infallible> {
-        if request.uri().path().starts_with(DATA_PATH_PREFIX) {
+        let data_prefix = [DATA_PATH_PREFIX, BRANCH_DATA_PATH_PREFIX]
+            .into_iter()
+            .find(|prefix| request.uri().path().starts_with(prefix));
+        if let Some(prefix) = data_prefix {
             let Some(registration) = self.lifecycle.as_ref() else {
                 return Ok(sandproof_data_transport::response(
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -282,7 +298,7 @@ impl<H: LifecycleReceiver + DataReceiver + ValidationReceiver + CacheReceiver + 
             let Ok(context) = registration.context_for_verified_peer(peer) else {
                 return Ok(sandproof_data_transport::response(StatusCode::UNAUTHORIZED));
             };
-            return Ok(receive_data(request, context, &*self.handler, streaming).await);
+            return Ok(receive_data(request, context, prefix, &*self.handler, streaming).await);
         }
         if request.uri().path() == sandproof_protocol::lifecycle::LIFECYCLE_PATH
             || request.uri().path() == sandproof_protocol::lifecycle::UNLOAD_OBSERVATION_PATH
@@ -358,6 +374,7 @@ async fn route<
 async fn receive_data<H: DataReceiver>(
     mut request: Request<Incoming>,
     context: AuthenticatedCenterContext,
+    prefix: &'static str,
     handler: &H,
     streaming: watch::Sender<bool>,
 ) -> Response<Body> {
@@ -378,12 +395,18 @@ async fn receive_data<H: DataReceiver>(
     if identity.validate(&context).is_err() {
         return sandproof_data_transport::response(StatusCode::CONFLICT);
     }
+    let branch = match branch_selector(request.headers(), prefix == BRANCH_DATA_PATH_PREFIX) {
+        Ok(Some(selector)) if selector.matches_parent(&identity) => Some(selector),
+        Ok(Some(_)) => return sandproof_data_transport::response(StatusCode::CONFLICT),
+        Ok(None) => None,
+        Err(status) => return sandproof_data_transport::response(status),
+    };
     let path = request
         .uri()
         .path_and_query()
         .map_or("", |path| path.as_str());
     let Some(path) = path
-        .strip_prefix(DATA_PATH_PREFIX)
+        .strip_prefix(prefix)
         .filter(|path| path.starts_with('/'))
     else {
         return sandproof_data_transport::response(StatusCode::NOT_FOUND);
@@ -393,12 +416,46 @@ async fn receive_data<H: DataReceiver>(
     };
     *request.uri_mut() = uri;
     request.headers_mut().remove(DATA_IDENTITY_HEADER);
+    request.headers_mut().remove(BRANCH_DATA_SELECTOR_HEADER);
     request.headers_mut().remove("x-api-key");
     request.headers_mut().remove("x-access-token");
     let _ = streaming.send(true);
-    handler
-        .receive_data(identity, context, request.map(Body::new))
-        .await
+    let request = request.map(Body::new);
+    match branch {
+        Some(selector) => {
+            handler
+                .receive_branch_data(
+                    BranchAccessIdentity {
+                        parent: identity,
+                        selector,
+                    },
+                    context,
+                    request,
+                )
+                .await
+        }
+        None => handler.receive_data(identity, context, request).await,
+    }
+}
+
+fn branch_selector(
+    headers: &hyper::HeaderMap,
+    branch_stream: bool,
+) -> Result<Option<BranchAccessSelector>, StatusCode> {
+    let mut values = headers.get_all(BRANCH_DATA_SELECTOR_HEADER).iter();
+    let Some(first) = values.next() else {
+        return if branch_stream {
+            Err(StatusCode::UNAUTHORIZED)
+        } else {
+            Ok(None)
+        };
+    };
+    if !branch_stream || values.next().is_some() || first.as_bytes().len() > DATA_IDENTITY_BYTES {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+    serde_json::from_slice(first.as_bytes())
+        .map(Some)
+        .map_err(|_| StatusCode::BAD_REQUEST)
 }
 
 async fn management_route<
@@ -582,4 +639,64 @@ fn response(status: StatusCode, body: Bytes) -> Response<Full<Bytes>> {
         hyper::header::HeaderValue::from_static("close"),
     );
     response
+}
+
+#[cfg(test)]
+mod branch_selector_tests {
+    use super::*;
+    use hyper::header::HeaderValue;
+
+    #[test]
+    fn branch_selector_rejects_duplicate_oversize_and_network_targets() {
+        let exact = serde_json::json!({
+            "batch": {
+                "parent": "parent",
+                "incarnation": 2,
+                "checkpoint": "checkpoint",
+                "batch": "batch"
+            },
+            "operation": {
+                "deployment": "deployment",
+                "owner": "owner",
+                "window": 1,
+                "sequence": 9
+            },
+            "branch": "branch"
+        });
+        let encode = |value: &serde_json::Value| HeaderValue::from_str(&value.to_string()).unwrap();
+        let mut headers = hyper::HeaderMap::new();
+        assert!(branch_selector(&headers, false).unwrap().is_none());
+        assert_eq!(
+            branch_selector(&headers, true),
+            Err(StatusCode::UNAUTHORIZED)
+        );
+        headers.insert(BRANCH_DATA_SELECTOR_HEADER, encode(&exact));
+        assert!(branch_selector(&headers, true).unwrap().is_some());
+        assert_eq!(
+            branch_selector(&headers, false),
+            Err(StatusCode::BAD_REQUEST)
+        );
+        headers.append(BRANCH_DATA_SELECTOR_HEADER, encode(&exact));
+        assert_eq!(
+            branch_selector(&headers, true),
+            Err(StatusCode::BAD_REQUEST)
+        );
+        headers.insert(
+            BRANCH_DATA_SELECTOR_HEADER,
+            HeaderValue::from_bytes(&vec![b'x'; DATA_IDENTITY_BYTES + 1]).unwrap(),
+        );
+        assert_eq!(
+            branch_selector(&headers, true),
+            Err(StatusCode::BAD_REQUEST)
+        );
+        for name in ["port", "host", "access_token"] {
+            let mut forged = exact.clone();
+            forged[name] = "untrusted".into();
+            headers.insert(BRANCH_DATA_SELECTOR_HEADER, encode(&forged));
+            assert_eq!(
+                branch_selector(&headers, true),
+                Err(StatusCode::BAD_REQUEST)
+            );
+        }
+    }
 }

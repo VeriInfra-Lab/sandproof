@@ -46,9 +46,19 @@ use sandproof_data_transport::{
 use sandproof_data_transport::{FILE_REQUEST_LIMIT, RESPONSE_LIMIT};
 pub use sandproof_data_transport::{GatewayListener, TransferLimits};
 #[cfg(target_os = "linux")]
-use {sandproof_data_transport::tunnel, std::error::Error};
+use {
+    sandproof_data_transport::tunnel,
+    sandproof_protocol::branching::BranchRelayPort,
+    std::{
+        error::Error,
+        net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    },
+};
 
-const ENVD_ADDRESS: &str = "172.16.0.2:49983";
+#[cfg(target_os = "linux")]
+const ENVD_ADDRESS: SocketAddrV4 = SocketAddrV4::new(GUEST_ADDRESS, 49_983);
+#[cfg(target_os = "linux")]
+const GUEST_ADDRESS: Ipv4Addr = Ipv4Addr::new(172, 16, 0, 2);
 
 struct StdioTunnel {
     read: ChildStdout,
@@ -315,6 +325,21 @@ fn admit_request(
 /// Fails when envd is unreachable or the caller disconnects.
 #[cfg(target_os = "linux")]
 pub async fn relay() -> Result<(), Box<dyn Error>> {
+    relay_to(ENVD_ADDRESS).await
+}
+
+/// The trusted relay worker connects only to a reserved branch listener in
+/// the already chosen VM namespace. Native admission must independently
+/// select that namespace and bind this port to the ready branch.
+/// # Errors
+/// Fails when the planned listener or client is unavailable.
+#[cfg(target_os = "linux")]
+pub async fn relay_branch(port: BranchRelayPort) -> Result<(), Box<dyn Error>> {
+    relay_to(SocketAddrV4::new(GUEST_ADDRESS, port.get())).await
+}
+
+#[cfg(target_os = "linux")]
+async fn relay_to(address: SocketAddrV4) -> Result<(), Box<dyn Error>> {
     use std::os::fd::AsFd;
     // Tokio's generic stdin starts a non-cancelable blocking read. Dropping
     // that future after guest EOF would still block runtime shutdown and keep
@@ -324,7 +349,7 @@ pub async fn relay() -> Result<(), Box<dyn Error>> {
         std::io::stdin().as_fd().try_clone_to_owned()?,
         std::io::stdout().as_fd().try_clone_to_owned()?,
     )?;
-    let stream = tokio::net::TcpStream::connect(ENVD_ADDRESS).await?;
+    let stream = tokio::net::TcpStream::connect(SocketAddr::from(address)).await?;
     let (reader, writer) = stream.into_split();
     tunnel::relay(input, output, reader, writer).await?;
     Ok(())
