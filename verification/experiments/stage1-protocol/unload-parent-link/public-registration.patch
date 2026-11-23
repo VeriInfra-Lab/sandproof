@@ -1,0 +1,28 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2520,3 +2520,25 @@
+ 历史、重启、物理资源及 V4/V5/V6/V7 条件没有因此证明；JSON/SHA/SQLite 的既有依赖
+ 合同不升级为第三方内部证明。公共登记、独立实现对应和本有限封口不表示整个 V3、
+ 旧 `full`/全项目或部署系统已完成。
++
++## V3 Unload 同父调用连接候选
++
++`unload-parent-link` 固定 integration `c265145f5614535c068c464bc37b6162edcdc45c`，
++复用 #768、#770–#774 的实际生成体和原完整规格；生产未变。原 source reader、
++Create options reader/encoder、startup/base/Inbox、live guard 和 continued reader
++可安装到同一父调用。共享 transaction/完整 World 直接同型，连接使用原 `.conn`；
++错误类型转换保留完整嵌套 payload，动作/native 转换给出完整往返性质。
++首次/继续正常父路径保留完整 question、原动作/回执前缀及追加值；首拒绝定理只要求
++该位置之前的实际读取成功。选项 JSON 失败跳过最终 question，anchor JSON 失败
++跳过 question 内的最终 digest；不据此声称前序读取或 options digest 未发生。
++
++独立组合根有 86 项依赖审计，实际源闭包为 279 份 Lean 文件，含上游支持引理；
++计数不等于 86 项新业务保证。当前 raw source/parent 重新捕获及完整原 source 审查
++已经开发核对；正式结果仍须绑定确定提交、全部原始内核/真实文件服务及依赖日志。
++上游页的警告原样保留，不能将开发入口成功当作公共零警告验收。普通/原生及公共
++登记交 ning/主控；#776 的旧冻结与原 LLBC 准入问题另列，未将新捕获改签为旧记录。
++
++范围和逐项前提见[本包说明](../verification/experiments/stage1-protocol/unload-parent-link/README.md)。
++未消解的 credential/base/ledger 具名读取条件、A4 物理快照/事务、HostEvidence、
++具体 JSON/字典与哈希接线仍保留。原 options 首次 INSERT/commit、#637 持久化历史、
++独立认证、物理资源、完整 JSON/TLS 与整个 V3 未据此完成。

@@ -1,0 +1,107 @@
+import InboxErrorTransport
+import SharedParentCarriers
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink
+
+@[reducible] def inboxParentBase (base : SandproofUnloadFirstObservation.Representations) :
+    SandproofUnloadFirstObservation.Representations :=
+  { base with
+    sandproof_protocol_lifecycle_identity_OperationBinding := SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.OperationBinding
+    sandproof_protocol_lifecycle_authority_CenterIdentity := SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.CenterIdentity
+    sandproof_protocol_lifecycle_identity_RetentionBinding := SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.RetentionBinding
+    controller_lifecycle_inbox_unload_resolution_UnloadResolution := SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.unload_resolution.UnloadResolution
+    sandproof_protocol_lifecycle_identity_SessionId := SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.SessionId
+    sandproof_protocol_lifecycle_observation_CreateRefusalReason := SandproofStage1RequestRust.sandproof_protocol.lifecycle.observation.CreateRefusalReason
+    sandproof_protocol_lifecycle_identity_IncarnationId := SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId
+    sandproof_protocol_lifecycle_identity_CaptureId := SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.CaptureId
+    sandproof_protocol_lifecycle_terminal_TerminalLifecycleObservation := SandproofStage1RequestRust.sandproof_protocol.lifecycle.terminal.TerminalLifecycleObservation
+    sandproof_protocol_lifecycle_renewal_RenewalConfirmation := SandproofStage1RequestRust.sandproof_protocol.lifecycle.renewal.RenewalConfirmation
+    controller_lifecycle_inbox_native_retirement_NativeRetirementReceipt := SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.native_retirement.NativeRetirementReceipt
+    sandproof_protocol_internal_NodeIdentity := SandproofStage1RequestRust.sandproof_protocol.internal.NodeIdentity
+    sandproof_protocol_internal_lifecycle_CreateBinding := SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding
+    controller_lifecycle_inbox_model_Owner := SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Owner
+    controller_lifecycle_inbox_model_LifecycleRetentionLane := SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleRetentionLane }
+
+/-- All shared value leaves are definitionally the same carriers. The three
+distinct generated error sums use the complete constructor transports above. -/
+def sharedInboxCarriers (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations :=
+      parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+    SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge.Carriers :=
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations :=
+    parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+  { sandbox := rfl, owner := rfl, operation := rfl, operationBinding := rfl
+    center := rfl, retention := rfl, unloadResolution := rfl, sessionId := rfl
+    tenant := rfl, refusal := rfl, incarnation := rfl, capture := rfl
+    terminal := rfl, renewal := rfl, retirement := rfl, digest := rfl
+    node := rfl, create := rfl, inboxOwner := rfl, lane := rfl
+    io := rfl, sqlite := rfl, json := rfl
+    contract := ErrorTransport.toParentContract
+    crash := ErrorTransport.toParentCrash
+    reject := ErrorTransport.toSourceControllerReject }
+
+theorem inbox_contract_version_payload_is_preserved (version : U16) :
+    ErrorTransport.toParentContract (.UnsupportedVersion version) = .UnsupportedVersion version := rfl
+
+def inboxErrorBack (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations) :
+    @SandproofUnloadFirstObservation.JournalError
+      (@parentRepresentations (encodingRepresentations encoding) (startupParentBase (inboxParentBase base) startup) options) →
+    SandproofStage1RequestRust.sandproof_controller_service.JournalError :=
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+  fun
+  | .Io error => .Io error
+  | .Sqlite error => .Sqlite error
+  | .CommitUncertain error => .CommitUncertain error
+  | .Json error => .Json error
+  | .Contract error => .Contract (ErrorTransport.toInboxContract error)
+  | .InjectedCrash error => .InjectedCrash (ErrorTransport.toInboxCrash error)
+  | .ControllerRejected error => .ControllerRejected (ErrorTransport.toInboxControllerReject error)
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+theorem inbox_error_transport_preserves_complete_error
+    (encoding : SandproofCreateOptionsEncoded.Representations)
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations) :
+    letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+    ∀ error : SandproofStage1RequestRust.sandproof_controller_service.JournalError,
+      inboxErrorBack encoding base options startup
+        (SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge.fromError
+          (sharedInboxCarriers encoding base options startup) error) = error := by
+  letI : SandproofCreateOptionsEncoded.Representations := encodingRepresentations encoding
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (startupParentBase (inboxParentBase base) startup) options
+  intro error
+  cases error <;> simp [inboxErrorBack, sharedInboxCarriers,
+    SandboxModel.Stage1Protocol.InboxOriginBinding.ParentBridge.fromError]
+
+end SandboxModel.Stage1Protocol.UnloadParentLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.inbox_contract_version_payload_is_preserved
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.inbox_error_transport_preserves_complete_error
