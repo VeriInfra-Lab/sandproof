@@ -32,7 +32,7 @@ from _runtime_services import RuntimeServices
 from hot_fanout_guest import make_package
 from hot_fanout_host import SDK_COMMIT
 from lifecycle_unload_runtime import original_json
-from lifecycle_unload_scenario import PublicUnloadScenario, failure_details
+from lifecycle_unload_scenario import PublicStatusMismatch, PublicUnloadScenario, failure_details
 from sdk_c02_acceptance import processes_in_uid_range
 from server_process_crash import free_loopback_port, process_start_ticks
 from server_vm_id_capacity import check_no_resources
@@ -192,15 +192,52 @@ def get_batch(client, path, key):
     return result["result"]
 
 
-def start_batch(client, running, checkpoint, count, report):
-    sequence = client.sequence + 1
+def batch_request(client, running, checkpoint, count):
+    return dict(window=client.window, sequence=client.sequence + 1,
+                expected_version=running["current_version"], checkpoint=checkpoint, count=count)
+
+
+def check_batch_rejection(client, running, checkpoint, count, expected):
     path = client.path() + "/branch-batches"
-    request = dict(window=client.window, sequence=sequence, expected_version=running["current_version"],
-                   checkpoint=checkpoint, count=count)
+    request = batch_request(client, running, checkpoint, count)
+    status, _ = client.call("POST", path, key=client.owner_key, body=request)
+    if status != expected:
+        raise PublicStatusMismatch(status, expected)
+    query = f'{path}/{request["window"]}/{request["sequence"]}'
+    status, _ = client.call("GET", query, key=client.owner_key)
+    if status != 404:
+        raise PublicStatusMismatch(status, 404)
+    return expected
+
+
+def check_hot_unload_rejection(client, running):
+    request = dict(window=client.window, sequence=client.sequence + 1,
+                   expected_version=running["current_version"])
+    status, _ = client.call("POST", client.path() + "/unload", key=client.owner_key, body=request)
+    if status != 409:
+        raise PublicStatusMismatch(status, 409)
+    assert client.query() == running
+    return status
+
+
+def start_batch(client, running, checkpoint, count, report, *, await_reclaimed_port=False):
+    path = client.path() + "/branch-batches"
+    request = batch_request(client, running, checkpoint, count)
+    sequence = request["sequence"]
     start = time.monotonic()
-    # This key remains consumed even when acceptance could not be read.
+    reclaim_deadline = start + 30
+    # This key remains reserved even when acceptance could not be read.
     client.sequence = sequence
-    accepted = client.read_json("POST", path, key=client.owner_key, body=request, status=202)
+    while True:
+        try:
+            accepted = client.read_json("POST", path, key=client.owner_key, body=request, status=202)
+            break
+        except PublicStatusMismatch as error:
+            # Revocation is public before physical retirement. Retry only the
+            # exact already-chosen request after an explicit capacity response.
+            if not await_reclaimed_port or error.actual != 429 or time.monotonic() >= reclaim_deadline:
+                raise
+            time.sleep(min(.1, client.remaining()))
     report["batch_post_seconds"] = time.monotonic() - start
     key = client.key(sequence)
     assert accepted["operation"] == key and accepted["parent"] == client.session
@@ -258,6 +295,33 @@ def concurrent_sdk(branch_ids, options, inherited, report):
     return [sandbox for sandbox, _ in connected]
 
 
+def check_batch_replay(client, path, key, request, branches):
+    post = client.path() + "/branch-batches"
+    expected = {"state": "ready", "branches": branches}
+    replay = client.read_json("POST", post, key=client.owner_key, body=request, status=202)
+    assert replay == {"operation": key, "parent": client.session, "result": expected}
+    changed = dict(request, count=request["count"] - 1)
+    status, _ = client.call("POST", post, key=client.owner_key, body=changed)
+    if status != 409:
+        raise PublicStatusMismatch(status, 409)
+    assert get_batch(client, path, key) == expected
+    return status
+
+
+def check_stale_data_route(client, sandbox):
+    import httpx
+
+    # Use the token issued to the original stock SDK instance. Connect's 404
+    # alone wouldn't detect a data endpoint accepting an old token.
+    with httpx.Client(base_url=client.base_url, trust_env=False,
+                      timeout=min(10, client.remaining())) as http:
+        response = http.get("/files", params={"path": MARKER},
+                            headers={"X-Access-Token": sandbox._envd_access_token})
+    if response.status_code != 401:
+        raise PublicStatusMismatch(response.status_code, 401)
+    return response.status_code
+
+
 def check_sdk_not_found(branch_id, options):
     from e2b import Sandbox
     from e2b.exceptions import SandboxNotFoundException
@@ -313,9 +377,24 @@ def run(args, receipt, report):
             owner = sdk_options(services.key, services.sdk_url, services.sdk_url)
             parent = Sandbox.connect(client.session, **owner)
             slot_path, context, claim = slot_and_claim(native)
+        pin = receipt["native_hot_fanout"]["template"]
+        checkpoint, branch_limit = pin["checkpoint_id"], pin["max_branches"]
+        with phase(report, "public_idle_boundaries", client):
+            report["public_rejections"] = {
+                "empty_batch": check_batch_rejection(client, running, checkpoint, 0, 400),
+                "over_template_branch_limit": check_batch_rejection(
+                    client, running, checkpoint, branch_limit + 1, 429),
+                "hot_parent_idle_unload": check_hot_unload_rejection(client, running),
+            }
         with phase(report, "branch_batch", client):
-            checkpoint = receipt["native_hot_fanout"]["template"]["checkpoint_id"]
+            request = batch_request(client, running, checkpoint, args.n)
             path, batch_key, branches = start_batch(client, running, checkpoint, args.n, report)
+        with phase(report, "public_active_boundaries", client):
+            report["public_rejections"]["same_key_different_count"] = check_batch_replay(
+                client, path, batch_key, request, branches)
+            report["public_rejections"]["over_remaining_branch_limit"] = check_batch_rejection(
+                client, running, checkpoint, branch_limit - args.n + 1, 429)
+            report["public_rejections"]["hot_parent_active_unload"] = check_hot_unload_rejection(client, running)
         with phase(report, "stock_sdk_concurrent", client):
             sandboxes = concurrent_sdk(branches, owner, receipt["expected_inherited_mark"], report)
         with phase(report, "package_isolation", client):
@@ -333,18 +412,39 @@ def run(args, receipt, report):
             killed = sandboxes[0].kill()
             assert killed is True
             check_sdk_not_found(branches[0], owner)
+            report["public_rejections"]["old_branch_data_token"] = check_stale_data_route(client, sandboxes[0])
             for index, sibling in enumerate(sandboxes[1:], start=1):
                 assert sibling.files.read(MARKER, user="root") == "branch-" + str(index)
             assert parent.commands.run("printf parent-alive", timeout=10).stdout == "parent-alive"
             report["remaining_siblings_after_kill"] = len(sandboxes) - 1
+        active_batches = [(path, batch_key)]
+        active_branches = list(zip(branches[1:], sandboxes[1:]))
+        if args.n == branch_limit and receipt["native_hot_fanout"]["max_batches"] >= 2:
+            with phase(report, "reclaimed_port_reuse", client):
+                reused = report["port_reuse"] = {}
+                new_path, new_key, replacement = start_batch(
+                    client, running, checkpoint, 1, reused, await_reclaimed_port=True)
+                [new_branch] = replacement
+                # Before the close the original batch owned the full port range.
+                # With no other release, only branch zero's port can be reused.
+                assert new_branch not in branches
+                replacement_sdk = Sandbox.connect(new_branch, **owner)
+                assert replacement_sdk.files.read("/run/inherited", user="root") == receipt["expected_inherited_mark"]
+                fresh = replacement_sdk.commands.run("test ! -e " + shlex.quote(MARKER), user="root", timeout=10)
+                assert fresh.exit_code == 0
+                reused["old_branch_data_token"] = check_stale_data_route(client, sandboxes[0])
+                active_batches.append((new_path, new_key))
+                active_branches.append((new_branch, replacement_sdk))
         with phase(report, "parent_destroy", client):
             client.destroy(running)
             client.wait_cleaned()
             cleaned = True
-            while get_batch(client, path, batch_key) != {"state": "failed", "reason": "parent_ended"}:
-                time.sleep(min(.1, client.remaining()))
-            for branch in branches[1:]:
+            for batch_path, key in active_batches:
+                while get_batch(client, batch_path, key) != {"state": "failed", "reason": "parent_ended"}:
+                    time.sleep(min(.1, client.remaining()))
+            for branch, sandbox in active_branches:
                 check_sdk_not_found(branch, owner)
+                check_stale_data_route(client, sandbox)
             report["parent_ended_batch"] = True
         with phase(report, "native_release", client):
             slot = original_json(slot_path, 65536)
