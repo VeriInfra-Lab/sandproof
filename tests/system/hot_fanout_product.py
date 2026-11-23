@@ -87,6 +87,7 @@ def build_deployment(args, receipt, storage, services_paths, report, *, slots=1,
     artifact = receipt["binding"]
     shape = artifact["resources"]
     disk = shape["disk_bytes"]
+    retained_sessions = max(slots, 1 + len(extra_credentials or []))
     kernel, rootfs = (Path(artifact[key]["path"]) for key in ("kernel", "rootfs"))
     for path, metadata in ((kernel, artifact["kernel"]), (rootfs, artifact["rootfs"])):
         assert path.resolve(strict=True) == path and path.parent == args.receipt.parent
@@ -110,7 +111,8 @@ def build_deployment(args, receipt, storage, services_paths, report, *, slots=1,
         file_policy_digest=1, vcpu_count=shape["cpu_count"], memory_mib=shape["memory_mib"],
         host_resources=dict(cgroup_parent=str(vm_parent), memory_max_bytes=shape["host_memory_bytes"]),
         max_timeout_secs=600, max_lifetime_secs=600, startup_timeout_secs=90,
-        expiry_scan_seconds=1, public_ipv4_enabled=False, templates=catalog), slots=slots, inbox_sessions=slots)
+        expiry_scan_seconds=1, public_ipv4_enabled=False, templates=catalog),
+        slots=slots, inbox_sessions=retained_sessions)
     native["bounded_host"]["physical_storage"]["filesystem_overhead_bytes"] = 64*MIB
     transfers = native["data_transfer"]
     transfers["max_transfers"] = max(transfers["max_transfers"], args.n + 6)
@@ -168,7 +170,7 @@ def build_deployment(args, receipt, storage, services_paths, report, *, slots=1,
         redis_operation_timeout_ms=20000)
     key = secrets.token_hex(32)
     services = RuntimeServices.prepare(params, root, [native], [catalog], key,
-        "127.0.0.1:" + str(free_loopback_port()), record, slots, registry_config=registry,
+        "127.0.0.1:" + str(free_loopback_port()), record, retained_sessions, registry_config=registry,
         extra_credentials=extra_credentials, hot_fanout=receipt if hot_fanout else None)
     return services, root, record, (vm_parent, service_parent), installation
 
