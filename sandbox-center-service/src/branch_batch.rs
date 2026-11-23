@@ -216,8 +216,7 @@ impl BranchBatchRecord {
                     });
                 }
                 branches
-                    .iter()
-                    .any(|phase| *phase == BranchPhase::Active)
+                    .contains(&BranchPhase::Active)
                     .then_some(BranchControlAction::Observe {})
             }
             State::Failed { .. } => None,

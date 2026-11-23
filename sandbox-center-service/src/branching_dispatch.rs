@@ -9,7 +9,7 @@ use sandproof_api::{
 use std::sync::Arc;
 use tokio::task::{JoinSet, spawn_blocking};
 
-pub const MAX_BRANCH_DISPATCHES_PER_ROUND: usize = 4;
+const MAX_BRANCH_DISPATCHES_PER_ROUND: usize = 4;
 
 impl<T: TemplateProvider> CenterApplication<SharedBusinessAuthority, RegisteredHosts, T> {
     /// Project current bounded work from the original center ledger. Each

@@ -39,6 +39,9 @@ impl SharedBusinessAuthority {
                     window: request.window,
                     sequence: request.sequence,
                 };
+                if current.center.has_lifecycle_key(&operation) {
+                    return Err(DecisionError::Conflict.into());
+                }
                 let mut next = current.clone();
                 let ledger = next
                     .metadata

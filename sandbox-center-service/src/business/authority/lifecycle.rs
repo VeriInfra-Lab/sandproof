@@ -235,6 +235,9 @@ impl SharedBusinessAuthority {
                     session,
                     expected_version: request.expected_version,
                 };
+                if current.metadata.has_branch_key(submission.key()) {
+                    return Err(DecisionError::Conflict.into());
+                }
                 let (next, intent) = current.center.accept_lifecycle(owner, &submission, 0)?;
                 Ok((current.with_center(next), intent))
             })
@@ -304,6 +307,9 @@ impl SharedBusinessAuthority {
                     },
                     parameters: parameters.clone(),
                 };
+                if current.metadata.has_branch_key(submission.key()) {
+                    return Err(DecisionError::Conflict.into());
+                }
                 if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
                     return Ok((current.clone(), intent));
                 }
@@ -436,6 +442,9 @@ impl SharedBusinessAuthority {
                     session: session.clone(),
                     expected_version: request.expected_version,
                 };
+                if current.metadata.has_branch_key(submission.key()) {
+                    return Err(DecisionError::Conflict.into());
+                }
                 if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
                     return Ok((current.clone(), intent));
                 }
@@ -492,6 +501,9 @@ impl SharedBusinessAuthority {
                     session: session.clone(),
                     expected_version: request.expected_version,
                 };
+                if current.metadata.has_branch_key(submission.key()) {
+                    return Err(DecisionError::Conflict.into());
+                }
                 if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
                     return Ok((current.clone(), intent));
                 }
@@ -533,6 +545,9 @@ impl SharedBusinessAuthority {
                     session: session.clone(),
                     expected_version: request.expected_version,
                 };
+                if current.metadata.has_branch_key(submission.key()) {
+                    return Err(DecisionError::Conflict.into());
+                }
                 if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
                     return Ok((current.clone(), intent));
                 }

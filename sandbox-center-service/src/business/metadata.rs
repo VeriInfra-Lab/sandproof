@@ -137,6 +137,13 @@ impl RegistryMetadata {
         }
         Ok(value)
     }
+    pub(super) fn has_branch_key(&self, key: &sandproof_protocol::lifecycle::OperationKey) -> bool {
+        self.branch_batches
+            .as_ref()
+            .and_then(|ledger| ledger.find(key))
+            .is_some()
+    }
+
     /// Explicitly provision bounded training metadata with the original center state.
     /// # Errors
     /// Rejects impossible capacity or port ranges.
