@@ -505,7 +505,7 @@ def checked_args(parser=None):
         parser.error("requires usable /dev/kvm")
     if re.fullmatch(r"[a-f0-9]{40}", args.candidate) is None:
         parser.error("exact candidate commit required")
-    git = ("git", "-c", f"safe.directory={ROOT}", "-C", ROOT)
+    git = ("git", "--no-optional-locks", "-c", f"safe.directory={ROOT}", "-C", ROOT)
     if command(*git, "rev-parse", "HEAD") != args.candidate or command(
             *git, "status", "--porcelain", "--untracked-files=no"):
         parser.error("exact clean build source required")
