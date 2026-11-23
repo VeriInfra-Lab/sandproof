@@ -156,24 +156,7 @@ fn native_branch_dispatch_requires_live_observation_and_rechecks_revocation() {
         Err(ApplicationError::Busy)
     );
     drop(first);
-    host_state.lock().unwrap().live_branch_relay = Some(31_000);
-    assert_eq!(
-        app.change_host_branch_close(
-            &parent,
-            &context,
-            &key,
-            HostBranchClose::ConfirmGone(close_scope)
-        ),
-        Err(ApplicationError::Busy)
-    );
-    host_state.lock().unwrap().live_branch_relay = None;
-    app.change_host_branch_close(
-        &parent,
-        &context,
-        &key,
-        HostBranchClose::ConfirmGone(close_scope),
-    )
-    .unwrap();
+    confirm_requires_empty_durable_scope(&app, &parent, &context, &key, close_scope, &host_state);
 
     destroy.accepted_version = 2;
     destroy.request.binding.expected = ExpectedSession::Version(1);
@@ -185,4 +168,32 @@ fn native_branch_dispatch_requires_live_observation_and_rechecks_revocation() {
         app.with_host_branch_dispatch::<()>(&sibling, |_, _| panic!("ended parent dispatched")),
         Err(ApplicationError::NotFound)
     );
+}
+
+fn confirm_requires_empty_durable_scope(
+    app: &ControllerApplication<fixture::TestHost>,
+    parent: &LifecycleAccessIdentity,
+    context: &sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    key: &HostBranchBatchKey,
+    close_scope: Option<&sandproof_protocol::SandboxId>,
+    host_state: &Mutex<State>,
+) {
+    host_state.lock().unwrap().live_branch_relay = Some(31_000);
+    assert_eq!(
+        app.change_host_branch_close(
+            parent,
+            context,
+            key,
+            HostBranchClose::ConfirmGone(close_scope)
+        ),
+        Err(ApplicationError::Busy)
+    );
+    host_state.lock().unwrap().live_branch_relay = None;
+    app.change_host_branch_close(
+        parent,
+        context,
+        key,
+        HostBranchClose::ConfirmGone(close_scope),
+    )
+    .unwrap();
 }

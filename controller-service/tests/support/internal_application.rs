@@ -401,6 +401,8 @@ impl DataRelay for TestHost {
         port: sandproof_protocol::branching::BranchRelayPort,
         _: bool,
     ) -> Result<std::process::Child, ApplicationError> {
+        use std::process::{Command, Stdio};
+
         let token = self
             .0
             .lock()
@@ -422,7 +424,6 @@ impl DataRelay for TestHost {
                 printf 'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
             fi
         "#;
-        use std::process::{Command, Stdio};
         Command::new("/bin/sh")
             .args([
                 "-c",

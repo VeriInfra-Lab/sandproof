@@ -36,6 +36,33 @@ async fn branch_get(
     (status, String::from_utf8(bytes.to_vec()).unwrap())
 }
 
+fn branch_plan(
+    parent: &sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+) -> (HostBranchBatchKey, [BranchTarget; 2]) {
+    let mut operation = parent.operation.clone();
+    operation.sequence = 9.try_into().unwrap();
+    let key = HostBranchBatchKey {
+        operation,
+        batch: BranchBatchIdentity {
+            parent: parent.session.clone(),
+            incarnation: parent.incarnation,
+            checkpoint: "checkpoint".try_into().unwrap(),
+            batch: "batch".try_into().unwrap(),
+        },
+    };
+    let planned = [
+        BranchTarget {
+            sandbox: "first".try_into().unwrap(),
+            port: 31_000.try_into().unwrap(),
+        },
+        BranchTarget {
+            sandbox: "sibling".try_into().unwrap(),
+            port: 31_001.try_into().unwrap(),
+        },
+    ];
+    (key, planned)
+}
+
 #[tokio::test]
 async fn native_branch_data_selects_only_its_planned_credential_and_relay() {
     let dir = tempfile::tempdir().unwrap();
@@ -60,27 +87,7 @@ async fn native_branch_data_selects_only_its_planned_credential_and_relay() {
         .unwrap();
     let parent = local::access(&create);
     let context = local::context();
-    let mut operation = parent.operation.clone();
-    operation.sequence = 9.try_into().unwrap();
-    let key = HostBranchBatchKey {
-        operation,
-        batch: BranchBatchIdentity {
-            parent: parent.session.clone(),
-            incarnation: parent.incarnation,
-            checkpoint: "checkpoint".try_into().unwrap(),
-            batch: "batch".try_into().unwrap(),
-        },
-    };
-    let planned = [
-        BranchTarget {
-            sandbox: "first".try_into().unwrap(),
-            port: 31_000.try_into().unwrap(),
-        },
-        BranchTarget {
-            sandbox: "sibling".try_into().unwrap(),
-            port: 31_001.try_into().unwrap(),
-        },
-    ];
+    let (key, planned) = branch_plan(&parent);
     let identity = |target: &BranchTarget| BranchAccessIdentity {
         parent: parent.clone(),
         selector: BranchAccessSelector {
