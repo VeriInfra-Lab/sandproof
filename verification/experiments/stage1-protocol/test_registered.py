@@ -328,11 +328,19 @@ class CreateDelivery(OriginalReadPlanFixture):
         self.assertEqual(registered._execution_options()['workers'], 1)
         for count in (8, 12):
             self.assertEqual(registered._execution_options(count, profile='create-delivery')['workers'], count)
+        with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS='8'):
+            self.assertEqual(registered._execution_options()['workers'], 8)
+        self.assertEqual(registered._execution_options(8)['workers'], 8)
+        with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS='12'):
             with self.assertRaises(ValueError):
-                registered._execution_options(count)
-            with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS=str(count)):
-                with self.assertRaises(ValueError):
-                    registered._execution_options()
+                registered._execution_options()
+        with self.assertRaises(ValueError):
+            registered._execution_options(12)
+        slots = registered._cpu_slots('full', 8, range(4, 36))
+        self.assertEqual(len(slots), 8)
+        self.assertEqual({cpu for slot in slots for cpu in slot}, set(range(4, 36)))
+        with self.assertRaisesRegex(ValueError, '32 admitted CPUs'):
+            registered._cpu_slots('full', 8, range(31))
         for jobs in (1, 2, 4, 8, 12):
             slots = registered._cpu_slots('create-delivery', jobs, range(8, 8+4*jobs))
             self.assertEqual(len(slots), jobs)
@@ -729,7 +737,7 @@ class Registration(OriginalReadPlanFixture):
             self.assertEqual(options['sources']['workers'],'SANDPROOF_STAGE1_JOBS')
             self.assertEqual(registered._execution_options(4,Path('/explicit.json'))['workers'],4)
         with patch.dict(os.environ,SANDPROOF_STAGE1_JOBS='3'):
-            with self.assertRaisesRegex(ValueError,'must be 1, 2 or 4'):
+            with self.assertRaisesRegex(ValueError,'must be 1, 2, 4 or 8'):
                 registered._execution_options()
             self.assertEqual(registered._execution_options(1)['workers'],1)
         with patch.dict(os.environ,SANDPROOF_STAGE1_RESUME_FROM='relative.json'):
@@ -1015,6 +1023,29 @@ class Registration(OriginalReadPlanFixture):
                 target.write_bytes(original)
                 parent.symlink_to(target)
                 with self.assertRaisesRegex(ValueError, 'registered source digest differs'):
+                    registered.validate_metadata_inputs(root)
+
+    def test_standard_blob_provider_is_checked_during_registration(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = registered.HERE/'standard-blob'
+            name = str(package/'inventory.json')
+            metadata = root/name
+            metadata.parent.mkdir(parents=True)
+            provider_name = str(registered.HERE/'registered.py')
+            provider = root/provider_name
+            provider.write_text('FULL_WORKERS = (1, 2, 4, 8)\n')
+            metadata.write_text(json.dumps({'providers': {provider_name: registered._sha(provider)}}))
+            with patch.object(registered, 'audit_template_paths', return_value=(str(
+                    package/'StandardBlobCore.lean.in'),)), \
+                    patch.object(registered, 'formal_plan', return_value=[]), \
+                    patch.object(registered.subprocess, 'check_output', return_value=(name+'\0').encode()):
+                self.assertEqual(registered.validate_metadata_inputs(root), {name+':providers': 1})
+                provider.write_text('FULL_WORKERS = (1, 2, 4)\n')
+                with self.assertRaisesRegex(ValueError, 'registered source digest differs: .*:providers:'):
+                    registered.validate_metadata_inputs(root)
+                metadata.write_text('{}')
+                with self.assertRaisesRegex(ValueError, 'missing reviewed providers'):
                     registered.validate_metadata_inputs(root)
 
     def retained_fixture(self, temporary, *, wrong=False):

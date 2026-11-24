@@ -40,9 +40,12 @@ CPU_PINNED_UNLOAD_JOBS = (UNLOAD.LABEL, UNLOAD.PARENT_LABEL)
 PROFILES = ('full', 'create-delivery', CONVERGENCE.PROFILE)
 CREATE_SCOPE = 'stage1-create-delivery'
 CREATE_SOURCE_ENV = 'SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE'
-FULL_WORKERS = (1, 2, 4)
+FULL_WORKERS = (1, 2, 4, 8)
 CREATE_WORKERS = (1, 2, 4, 8, 12)
 CREATE_CPUS_PER_JOB = 4
+ROOT_PROVIDER_PACKAGES = (
+    'digest-uses', 'record-reply', 'standard-blob', 'standard-digest', 'standard-save-digest',
+)
 
 
 def _original_reader(root=ROOT):
@@ -593,6 +596,10 @@ def validate_metadata_inputs(root=ROOT, *, profile='full'):
         fields = ('inputs', 'base_sources', 'production_inputs')
         if path.parent in {HERE/name for name in (*CREATE_CASES, *CONVERGENCE.CASES)}:
             fields += ('source_inputs',)
+        if path.name == 'inventory.json' and path.parent.parent == HERE and path.parent.name in ROOT_PROVIDER_PACKAGES:
+            if 'providers' not in data:
+                raise ValueError('missing reviewed providers in registered inventory: ' + name)
+            fields += ('providers',)
         if path.name == 'frozen.json':
             fields += ('extraction_inputs', 'native_rust_inputs')
         for field in fields:
@@ -1598,13 +1605,14 @@ def _check_cpu_admission(path, expected=None):
 
 
 def _cpu_slots(profile, jobs, allowed=None):
-    """Exclusive slots for explicit Create; full keeps its original workers."""
+    """Allocate disjoint slots for finite profiles and eight-worker full runs."""
     allowed = list(os.sched_getaffinity(0) if allowed is None else allowed)
     if not allowed or any(type(n) is not int or n < 0 for n in allowed) or len(set(allowed)) != len(allowed):
         raise ValueError('invalid actual parent CPU affinity')
     allowed.sort()
-    if profile in ('create-delivery', CONVERGENCE.PROFILE) and len(allowed) < jobs*CREATE_CPUS_PER_JOB:
-        raise ValueError(f'Create requires {jobs*CREATE_CPUS_PER_JOB} admitted CPUs for {jobs} workers')
+    exclusive = profile in ('create-delivery', CONVERGENCE.PROFILE) or jobs == 8
+    if exclusive and len(allowed) < jobs * CREATE_CPUS_PER_JOB:
+        raise ValueError(f'{profile} requires {jobs * CREATE_CPUS_PER_JOB} admitted CPUs for {jobs} workers')
     if len(allowed) < CREATE_CPUS_PER_JOB:
         raise ValueError('Create jobs require four admitted CPUs')
     groups = [tuple(allowed[i:i+CREATE_CPUS_PER_JOB])
@@ -1820,7 +1828,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
 
 def _execution_options(jobs=None, resume_from=None, recompute=False, *, profile='full'):
     allowed = CREATE_WORKERS if check_profile(profile) in ('create-delivery', CONVERGENCE.PROFILE) else FULL_WORKERS
-    choices = '1, 2, 4, 8 or 12' if profile in ('create-delivery', CONVERGENCE.PROFILE) else '1, 2 or 4'
+    choices = '1, 2, 4, 8 or 12' if profile in ('create-delivery', CONVERGENCE.PROFILE) else '1, 2, 4 or 8'
     sources = dict(workers='argument' if jobs is not None else 'default',
                    resume_from='argument' if resume_from is not None else 'default')
     if jobs is None:

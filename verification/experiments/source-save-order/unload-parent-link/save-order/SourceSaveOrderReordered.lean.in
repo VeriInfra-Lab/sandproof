@@ -1,0 +1,43 @@
+import SaveOrderInputs
+
+open Aeneas Aeneas.Std SandproofSourceSaveOrder
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SourceSaveOrder
+
+variable {C N R Db Keys Rows : Type}
+
+theorem reordered_hides_retention_error
+    (configuration : core.cmp.PartialEq C C) (node : core.cmp.PartialEq N N)
+    (effects : Effects C N R Db Keys Rows) (db : Db) (sources current : Sources C N R)
+    (sessions : U16) (header : HeaderAccepted configuration node effects db sources current sessions)
+    (reserved : U64) (capacity : CapacityAccepted effects db sources sessions reserved)
+    (keys : Keys) (encodedRows : Rows) (encoded : effects.encode sources = .ok (.Ok (keys, encodedRows)))
+    (_rejected : effects.retains current sources keys = .ok false)
+    (error : rusqlite.error.Error) (failure : effects.write db encodedRows = .ok (.Err (.Sqlite error))) :
+    run configuration node effects db sources sessions = .ok (.Err (.Sqlite error)) ∧
+      run configuration node effects db sources sessions ≠ .ok (.Err .Conflict) := by
+  rcases header with ⟨read, sameConfig, sameNode, stored, requested⟩
+  rcases capacity with ⟨limit, fits⟩
+  simp at stored requested
+  simp only [requested, stored] at limit
+  simp [rowCount] at fits
+  have enough : ¬ reserved.val < sources.records.val.length := Nat.not_lt.mpr fits
+  simp [run, controller.lifecycle_inbox.source_work.codec.save_using,
+    core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    lift, read, sameConfig, sameNode, stored, requested, limit, enough, encoded, failure]
+
+
+theorem reordered_save_witness :
+    run witnessEquality witnessEquality (witnessEffects false (.ok (.Err (.Sqlite ⟨9⟩)))) 7 witnessSources 1#u16 =
+      .ok (.Err (.Sqlite ⟨9⟩)) := by
+  simp [run, controller.lifecycle_inbox.source_work.codec.save_using, witnessEquality,
+    witnessEffects, witnessSources, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, lift]
+
+
+end SandboxModel.Stage1Protocol.SourceSaveOrder
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.reordered_hides_retention_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceSaveOrder.reordered_save_witness
