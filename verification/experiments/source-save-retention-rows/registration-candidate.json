@@ -1,0 +1,22 @@
+{
+  "issue": 635,
+  "id": "source-save-retention-rows",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "retention_parent": "621cef429a959410cfdba7d5bb8b1ce6f1868aa0",
+  "row_provider": "8f94cb4dc947c09c46981931f5e7d98b144de66d",
+  "formal_entry": "verification/experiments/source-save-retention-rows/joint_check.py",
+  "native_entry": "verification/experiments/source-save-retention-rows/joint_native.py",
+  "positive_root": "JointComposition",
+  "negative_root": "JointBindingOnly",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveRetentionRows.original_save_retains_then_writes",
+  "first_error_theorem": "SandboxModel.Stage1Protocol.SaveRetentionRows.first_row_error_after_complete_retention",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveRetentionRows.binding_only_refutes_complete_save",
+  "scope": "complete old-work retention, first full match, actual ordered row writes on the same connection, original first row failure",
+  "remaining": [
+    "Ning exact candidate native and ordinary acceptance",
+    "public Stage1 wiring, registration and coverage adoption",
+    "actual read, capacity, encoding, complete key set construction and key lookup",
+    "V5 physical row state, rollback and durability, V6 material state"
+  ],
+  "public_acceptance": false
+}
