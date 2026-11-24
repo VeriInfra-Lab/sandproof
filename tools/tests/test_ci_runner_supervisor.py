@@ -181,7 +181,7 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(len(self.api.posts), 10)
         self.assertEqual(len(set(self.runtime.starts)), 10)
         self.assertEqual([lease['role'] for lease in self.state.leases.values()],
-                         list(ci.JOBS.values()) * 2)
+                         ['title', 'policy', 'rust', 'sdk', 'harbor'] * 2)
         self.assertEqual(ci.State(self.root).leases, self.state.leases)
         # A restart observes all ten existing units, not just the legacy five.
         ci.Supervisor(self.api, ci.State(self.root), self.runtime, 20).tick()
@@ -221,7 +221,7 @@ class SupervisorTests(unittest.TestCase):
         self.service.tick()
         self.service.tick()
         self.assertEqual(len(self.api.posts), 6)
-        self.assertEqual(list(self.state.leases)[-1], 'rust-2')
+        self.assertEqual(list(self.state.leases)[-1], 'title-2')
 
     def test_legacy_state_without_slot_survives_upgrade(self):
         self.service.tick()
@@ -269,7 +269,7 @@ class SupervisorTests(unittest.TestCase):
         with self.assertRaises(auth.APIError):
             self.service.tick()
         self.assertEqual(len(self.api.runners), 1)
-        self.assertEqual(self.state.leases['rust']['phase'], 'registering')
+        self.assertEqual(self.state.leases['title']['phase'], 'registering')
         self.api.jobs = []
         self.service.tick()
         self.assertFalse(self.state.leases)
