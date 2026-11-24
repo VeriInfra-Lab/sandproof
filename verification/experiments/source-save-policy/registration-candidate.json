@@ -1,0 +1,21 @@
+{
+  "issue": 635,
+  "id": "source-save-policy",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "capacity_parent": "66d34790c7f653759bd99820330f7952da58a95b",
+  "policy_provider": "9a88b02b4e1937e1a5e469f7a40a5be84d39a877",
+  "capture_entry": "verification/experiments/source-save-policy/policy_capture.py",
+  "formal_entry": "verification/experiments/source-save-policy/policy_check.py",
+  "native_entry": "verification/experiments/source-save-policy/policy_native.py",
+  "root": "PolicyJoint",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SavePolicy.save_uses_validated_policy_capacity",
+  "first_error_theorem": "SandboxModel.Stage1Protocol.SavePolicy.save_rejects_invalid_maintenance_before_encoding",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SavePolicy.Witness.mutant_refutes_same_save_contract",
+  "remaining": [
+    "Ning exact candidate native and ordinary acceptance",
+    "public Stage1 wiring, registration and coverage adoption",
+    "real JSON byte providers and source-record loading before the original save header",
+    "V5 physical transactions and durability and V6 actual material state"
+  ],
+  "public_acceptance": false
+}

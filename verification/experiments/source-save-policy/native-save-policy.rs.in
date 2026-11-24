@@ -1,0 +1,36 @@
+#[test]
+fn proof_source_save_rejects_invalid_maintenance_before_capacity() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let record = prepare(&mut journal);
+    let connection = &journal.journal.connection;
+    let mut policy = crate::controller::checkpoint::config(connection)
+        .unwrap()
+        .unwrap();
+    policy.validate().unwrap();
+    let mut sources = codec::load(connection).unwrap().unwrap();
+    let sessions = sources.max_sessions;
+    let limit = u64::from(sessions) * (policy.max_operations_per_sandbox - 2);
+    sources
+        .records
+        .resize(usize::try_from(limit + 1).unwrap(), record);
+    policy.retention_ms = 0;
+
+    let transaction = connection.unchecked_transaction().unwrap();
+    assert_eq!(
+        transaction
+            .execute(
+                "UPDATE controller_maintenance_config SET config_json=?1 WHERE id=1",
+                [serde_json::to_vec(&policy).unwrap()],
+            )
+            .unwrap(),
+        1
+    );
+    let result = codec::save(&transaction, &sources, sessions);
+    transaction.rollback().unwrap();
+
+    assert!(
+        matches!(&result, Err(JournalError::UnsupportedStore)),
+        "source save must reject zero maintenance retention before capacity: {result:?}"
+    );
+}
