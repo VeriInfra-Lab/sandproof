@@ -1,0 +1,100 @@
+import SaveRows
+import SourceSaveOrder
+import RetentionProviderCases
+
+open Aeneas Aeneas.Std SandproofSaveRetentionRows alloc.vec
+open controller.lifecycle_inbox.source_work controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SaveRetentionRows
+
+abbrev Inventory (C N : Type) := Sources C N SourceWorkRecord
+abbrev Rows := Vec SaveRows.Encoded
+abbrev IO (C N Keys Save : Type) := SourceSaveEffects Save C N SourceWorkRecord SaveRows.Db Keys Rows
+
+def packed {C N Keys Save Check : Type} (io : IO C N Keys Save) (check : SavedKeyCheck Check Keys) :
+    SourceSaveOrder.Effects C N SourceWorkRecord SaveRows.Db Keys Rows where
+  read := io.read
+  limit := io.limit
+  encode := io.encode
+  retains old next keys := retains_with_saved_keys check old.records next.records keys
+  write := write_candidate_records
+
+noncomputable def retained {C N Keys : Type}
+    (known : Keys → SourceRetentionProviders.Cases.Binding → Bool)
+    (current sources : Inventory C N) (keys : Keys) : Bool :=
+  current.records.val.all (SourceFirstMatch.retained
+    (fun ks old => known ks old.work.requirement.work_binding)
+    (SourceFirstMatch.completeMatch SourceWorkRecord.work) SourcePreservation.Expected
+    keys sources.records.val)
+
+noncomputable def expected {C N Keys : Type}
+    (known : Keys → SourceRetentionProviders.Cases.Binding → Bool) (db : SaveRows.Db)
+    (current sources : Inventory C N) (keys : Keys) (rows : Rows) : SaveRows.Reply :=
+  if retained known current sources keys then SaveRows.writeList db rows.val else .ok (.Err .Conflict)
+
+theorem actual_call {C N Keys Save Check : Type}
+    (config : core.cmp.PartialEq C C) (node : core.cmp.PartialEq N N)
+    (io : IO C N Keys Save) (check : SavedKeyCheck Check Keys)
+    (db : SaveRows.Db) (sources : Inventory C N) (sessions : U16) :
+    save_sql_retaining_using config node io check db sources sessions =
+      SourceSaveOrder.run config node (packed io check) db sources sessions := by
+  rfl
+
+namespace Witness
+open SourceRetentionProviders.Cases
+
+def current : Inventory Unit Unit := ⟨(), (), 1#u16, inventory old⟩
+def candidate (next : SourceWorkRecord) : Inventory Unit Unit := { current with records := inventory next }
+def row : SaveRows.Encoded := (old.work.requirement.work_binding, .from [42#u8] (by scalar_tac))
+def rows : Rows := .from [row] (by scalar_tac)
+
+def io : IO Unit Unit Unit Unit where
+  read _ := .ok (.Ok (some current))
+  limit _ _ := .ok (.Ok 1#u64)
+  encode _ := .ok (.Ok ((), rows))
+  retains _ _ _ := .fail .panic
+  write _ _ := .fail .panic
+
+def connection (reply : core.result.Result Usize SqliteError) : SaveRows.Db :=
+  let base := SourceRowSqlSelect.sampleConnection
+  { base with canonical := { base.canonical with
+      prepare := fun sql => .ok (.Ok (if sql = SourceRowSqlComposition.updateSql then 4 else 1)),
+      run := fun _ _ => .ok reply } }
+
+theorem header (db : SaveRows.Db) (next : SourceWorkRecord) :
+    SourceSaveOrder.HeaderAccepted SourceSaveOrder.witnessEquality SourceSaveOrder.witnessEquality
+      (packed io keyPort) db (candidate next) current 1#u16 := by
+  constructor <;> rfl
+
+theorem capacity (db : SaveRows.Db) (next : SourceWorkRecord) :
+    SourceSaveOrder.CapacityAccepted (packed io keyPort) db (candidate next) 1#u16 1#u64 := by
+  constructor
+  · rfl
+  · simp [SourceSaveOrder.rowCount, candidate, current, inventory, alloc.vec.Vec.len]
+
+theorem changed_contract (db : SaveRows.Db) :
+    expected known db current (candidate changed) () rows = .ok (.Err .Conflict) := by
+  have denied : retained known current (candidate changed) () = false := changed_expected
+  simp [expected, denied]
+
+theorem writer_success : SaveRows.writeList (connection (.Ok 1#usize)) rows.val = .ok (.Ok ()) := by
+  simp [SaveRows.writeList, rows, row, SourceRowSqlComposition.actualSpecAt,
+    SourceRowSqlSelect.existingSpec, connection, SourceRowSqlSelect.sampleConnection,
+    issued, withArguments, SourceRowSqlSelect.wrap, SourceRowSqlSelect.columnZero,
+    controller.lifecycle_inbox.sha256.digest, SandproofStandardDigestRust.controller.lifecycle_inbox.sha256.digest,
+    SourceRowSqlComposition.writeInOrder, SourceRowSqlComposition.chooseSlot,
+    SourceRowSqlComposition.updateSpec, SourceRowSqlComposition.requireOne, Slice.val]
+  split
+  · simp only [Aeneas.Std.bind_tc_ok]
+  · rename_i tooLong
+    exact False.elim (tooLong (by change 1 < 2305843009213693952; decide))
+
+end Witness
+end SandboxModel.Stage1Protocol.SaveRetentionRows
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionRows.actual_call
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionRows.Witness.header
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionRows.Witness.capacity
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionRows.Witness.changed_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionRows.Witness.writer_success

@@ -1,0 +1,79 @@
+import JointSpec
+import RetentionProviders
+
+open Aeneas Aeneas.Std SandproofSaveRetentionRows alloc.vec
+open controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SaveRetentionRows
+
+variable {C N Keys Save Check : Type}
+variable (config : core.cmp.PartialEq C C) (node : core.cmp.PartialEq N N)
+variable (io : IO C N Keys Save) (check : SavedKeyCheck Check Keys)
+variable (known : Keys → SourceRetentionProviders.Cases.Binding → Bool)
+variable (keyResult : ∀ keys binding, check.contains keys binding = .ok (known keys binding))
+variable (db : SaveRows.Db) (sources current : Inventory C N) (sessions : U16)
+variable (header : SourceSaveOrder.HeaderAccepted config node (packed io check) db sources current sessions)
+variable (reserved : U64) (capacity : SourceSaveOrder.CapacityAccepted (packed io check) db sources sessions reserved)
+variable (keys : Keys) (rows : Rows) (encoded : io.encode sources = .ok (.Ok (keys, rows)))
+include keyResult header capacity encoded
+
+theorem original_save_retains_then_writes :
+    save_sql_retaining_using config node io check db sources sessions = expected known db current sources keys rows := by
+  rw [actual_call]
+  have retention : (packed io check).retains current sources keys = .ok (retained known current sources keys) :=
+    SourceRetentionProviders.original_providers_refine_retention check known keyResult
+      current.records sources.records keys
+  cases selected : retained known current sources keys with
+  | false =>
+    have denied : (packed io check).retains current sources keys = .ok false := by simpa only [selected] using retention
+    simpa only [expected, selected, Bool.false_eq_true, ↓reduceIte] using
+      SourceSaveOrder.retention_conflict config node (packed io check) db sources current sessions
+        header reserved capacity keys rows encoded denied
+  | true =>
+    have allowed : (packed io check).retains current sources keys = .ok true := by simpa only [selected] using retention
+    have reply := SourceSaveOrder.original_write_reply config node (packed io check) db sources current sessions
+        header reserved capacity keys rows encoded allowed
+    change _ = SaveRows.runRows db rows at reply
+    rw [reply, SaveRows.rows_use_same_connection]
+    simp only [expected, selected, ↓reduceIte]
+
+theorem first_row_error_after_complete_retention
+    (allowed : retained known current sources keys = true) (completed later : List SaveRows.Encoded)
+    (key : SaveRows.Key) (bytes : Vec U8) (error : SaveRows.Error)
+    (order : rows.val = completed ++ (key, bytes) :: later)
+    (written : ∀ row ∈ completed,
+      SourceRowSqlComposition.actualSpecAt db row.1 row.2 SourceRowSqlSelect.vacantSql = .ok (.Ok ()))
+    (rejected : SourceRowSqlComposition.actualSpecAt db key bytes SourceRowSqlSelect.vacantSql = .ok (.Err error)) :
+    save_sql_retaining_using config node io check db sources sessions = .ok (.Err error) := by
+  rw [original_save_retains_then_writes config node io check known keyResult db sources current sessions
+    header reserved capacity keys rows encoded]
+  simp only [expected, allowed, ↓reduceIte, ← SaveRows.rows_use_same_connection]
+  exact SaveRows.codec_rows_return_first_error db rows completed key bytes later error order written rejected
+
+omit keyResult header capacity encoded in
+open SourceRetentionProviders.Cases in
+theorem changed_work_before_any_row_reply (db : SaveRows.Db) :
+    save_sql_retaining_using SourceSaveOrder.witnessEquality SourceSaveOrder.witnessEquality
+      Witness.io keyPort db (Witness.candidate changed) 1#u16 = .ok (.Err .Conflict) := by
+  rw [original_save_retains_then_writes _ _ _ _ known (fun _ _ => rfl) db _ Witness.current 1#u16
+    (Witness.header db changed) 1#u64 (Witness.capacity db changed) () Witness.rows (by rfl)]
+  exact Witness.changed_contract db
+
+omit keyResult header capacity encoded in
+open SourceRetentionProviders.Cases in
+theorem unchanged_work_writes_one_row :
+    save_sql_retaining_using SourceSaveOrder.witnessEquality SourceSaveOrder.witnessEquality
+      Witness.io keyPort (Witness.connection (.Ok 1#usize)) (Witness.candidate old) 1#u16 = .ok (.Ok ()) := by
+  let db := Witness.connection (.Ok 1#usize)
+  rw [original_save_retains_then_writes _ _ _ _ known (fun _ _ => rfl) db _ Witness.current 1#u16
+    (Witness.header db old) 1#u64 (Witness.capacity db old) () Witness.rows (by rfl)]
+  have keep : retained known Witness.current (Witness.candidate old) () = true := unchanged_expected
+  simpa only [expected, keep, ↓reduceIte] using Witness.writer_success
+
+end SandboxModel.Stage1Protocol.SaveRetentionRows
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionRows.original_save_retains_then_writes
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionRows.first_row_error_after_complete_retention
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionRows.changed_work_before_any_row_reply
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionRows.unchanged_work_writes_one_row

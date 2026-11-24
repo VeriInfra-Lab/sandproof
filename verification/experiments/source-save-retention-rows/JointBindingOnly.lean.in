@@ -1,0 +1,34 @@
+import JointSpec
+import RetentionProvidersBindingOnly
+
+open Aeneas Aeneas.Std SandproofSaveRetentionRows
+open controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SaveRetentionRows
+open SourceRetentionProviders.Cases
+
+theorem binding_only_writes_the_changed_row :
+    save_sql_retaining_using SourceSaveOrder.witnessEquality SourceSaveOrder.witnessEquality
+      Witness.io keyPort (Witness.connection (.Ok 1#usize)) (Witness.candidate changed) 1#u16 = .ok (.Ok ()) := by
+  let db := Witness.connection (.Ok 1#usize)
+  have allowed : (packed Witness.io keyPort).retains Witness.current (Witness.candidate changed) () = .ok true :=
+    SourceRetentionProviders.binding_only_accepts_changed_work
+  rw [actual_call]
+  have reply := SourceSaveOrder.original_write_reply _ _ _ db _ Witness.current 1#u16
+    (Witness.header db changed) 1#u64 (Witness.capacity db changed) () Witness.rows (by rfl) allowed
+  change _ = SaveRows.runRows db Witness.rows at reply
+  rw [reply, SaveRows.rows_use_same_connection]
+  exact Witness.writer_success
+
+theorem binding_only_refutes_complete_save :
+    save_sql_retaining_using SourceSaveOrder.witnessEquality SourceSaveOrder.witnessEquality
+      Witness.io keyPort (Witness.connection (.Ok 1#usize)) (Witness.candidate changed) 1#u16 ≠
+      expected known (Witness.connection (.Ok 1#usize)) Witness.current (Witness.candidate changed) () Witness.rows := by
+  rw [binding_only_writes_the_changed_row, Witness.changed_contract]
+  simp
+
+end SandboxModel.Stage1Protocol.SaveRetentionRows
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionRows.binding_only_writes_the_changed_row
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionRows.binding_only_refutes_complete_save
