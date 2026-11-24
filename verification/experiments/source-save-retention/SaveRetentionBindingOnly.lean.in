@@ -1,0 +1,32 @@
+import SaveRetentionSpec
+import RetentionProvidersBindingOnly
+
+open Aeneas Aeneas.Std SandproofSaveRetention
+open controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SaveRetentionComposition
+open SourceRetentionProviders.Cases
+
+theorem binding_only_writes_changed_work (reply : SourceSaveOrder.Reply) :
+    save_retaining_using SourceSaveOrder.witnessEquality SourceSaveOrder.witnessEquality
+      (Witness.io reply) keyPort 7 (Witness.candidate changed) 1#u16 = reply := by
+  rw [original_call_decomposes]
+  have allowed : (packed (Witness.io reply) keyPort).retains Witness.current
+      (Witness.candidate changed) () = .ok true :=
+    SourceRetentionProviders.binding_only_accepts_changed_work
+  rw [SourceSaveOrder.original_write_reply _ _ _ 7 _ Witness.current 1#u16
+    (Witness.header reply changed) 1#u64 (Witness.capacity reply changed) () 9 (by rfl) allowed]
+  simp [packed, Witness.io]
+
+theorem binding_only_refutes_same_complete_contract :
+    save_retaining_using SourceSaveOrder.witnessEquality SourceSaveOrder.witnessEquality
+      (Witness.io (.ok (.Ok ()))) keyPort 7 (Witness.candidate changed) 1#u16 ≠
+    expected (Witness.io (.ok (.Ok ()))) known 7 Witness.current (Witness.candidate changed) () 9 := by
+  rw [binding_only_writes_changed_work, Witness.changed_contract]
+  simp
+
+end SandboxModel.Stage1Protocol.SaveRetentionComposition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionComposition.binding_only_writes_changed_work
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionComposition.binding_only_refutes_same_complete_contract
