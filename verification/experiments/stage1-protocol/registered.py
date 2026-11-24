@@ -43,6 +43,9 @@ CREATE_SOURCE_ENV = 'SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE'
 FULL_WORKERS = (1, 2, 4, 8)
 CREATE_WORKERS = (1, 2, 4, 8, 12)
 CREATE_CPUS_PER_JOB = 4
+ROOT_PROVIDER_PACKAGES = (
+    'digest-uses', 'record-reply', 'standard-blob', 'standard-digest', 'standard-save-digest',
+)
 
 
 def _original_reader(root=ROOT):
@@ -593,6 +596,10 @@ def validate_metadata_inputs(root=ROOT, *, profile='full'):
         fields = ('inputs', 'base_sources', 'production_inputs')
         if path.parent in {HERE/name for name in (*CREATE_CASES, *CONVERGENCE.CASES)}:
             fields += ('source_inputs',)
+        if path.name == 'inventory.json' and path.parent.parent == HERE and path.parent.name in ROOT_PROVIDER_PACKAGES:
+            if 'providers' not in data:
+                raise ValueError('missing reviewed providers in registered inventory: ' + name)
+            fields += ('providers',)
         if path.name == 'frozen.json':
             fields += ('extraction_inputs', 'native_rust_inputs')
         for field in fields:

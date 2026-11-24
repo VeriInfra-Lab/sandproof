@@ -1025,6 +1025,29 @@ class Registration(OriginalReadPlanFixture):
                 with self.assertRaisesRegex(ValueError, 'registered source digest differs'):
                     registered.validate_metadata_inputs(root)
 
+    def test_standard_blob_provider_is_checked_during_registration(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            package = registered.HERE/'standard-blob'
+            name = str(package/'inventory.json')
+            metadata = root/name
+            metadata.parent.mkdir(parents=True)
+            provider_name = str(registered.HERE/'registered.py')
+            provider = root/provider_name
+            provider.write_text('FULL_WORKERS = (1, 2, 4, 8)\n')
+            metadata.write_text(json.dumps({'providers': {provider_name: registered._sha(provider)}}))
+            with patch.object(registered, 'audit_template_paths', return_value=(str(
+                    package/'StandardBlobCore.lean.in'),)), \
+                    patch.object(registered, 'formal_plan', return_value=[]), \
+                    patch.object(registered.subprocess, 'check_output', return_value=(name+'\0').encode()):
+                self.assertEqual(registered.validate_metadata_inputs(root), {name+':providers': 1})
+                provider.write_text('FULL_WORKERS = (1, 2, 4)\n')
+                with self.assertRaisesRegex(ValueError, 'registered source digest differs: .*:providers:'):
+                    registered.validate_metadata_inputs(root)
+                metadata.write_text('{}')
+                with self.assertRaisesRegex(ValueError, 'missing reviewed providers'):
+                    registered.validate_metadata_inputs(root)
+
     def retained_fixture(self, temporary, *, wrong=False):
         root = Path(temporary)/'root'
         inventory = root/registered.HERE/'retained-protocol.json'
