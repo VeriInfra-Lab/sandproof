@@ -14,6 +14,8 @@ import tempfile
 ROOT = Path(__file__).resolve().parents[4]
 HERE = Path('verification/experiments/stage1-protocol/production-json')
 ENCODING = 'SandboxModel/Boundaries/JsonRequest/Encoding.lean'
+WRITER_TYPES = 'verification/aeneas/stage1-protocol/envelope-writer/SandproofBoundedWriter/Types.lean'
+WRITER_LOCATION = 'writer-worker-reject-original-location'
 
 
 def digest(value):
@@ -43,6 +45,18 @@ def checked(name, expected, expected_mode=None):
     return value
 
 
+def restore_writer_location(value, installed_sha256):
+    current = (b"    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/"
+               b"controller-core/src/worker.rs', lines 68:0-68:21\n")
+    original = current.replace(b'68:0-68:21', b'67:0-67:21')
+    if value.count(current) != 1:
+        raise ValueError('expected exactly one current WorkerReject source location')
+    restored = value.replace(current, original)
+    if digest(restored) != installed_sha256:
+        raise ValueError('original Writer Types file differs after restoring its source location')
+    return restored
+
+
 def install(project):
     project = Path(project).resolve()
     if project == ROOT or ROOT.is_relative_to(project):
@@ -62,8 +76,10 @@ def install(project):
         if row['mode'] not in ('100644', '100755'):
             raise ValueError('unreviewed file mode: ' + name)
         values[name] = checked(row['source'], row['sha256'], row['mode'])
-        if 'transform' in row and (name != ENCODING or
-                row['transform'] != 'local_view.install:envelope-writer'):
+        transform = row.get('transform')
+        if transform == WRITER_LOCATION and name == WRITER_TYPES and row['source'] == WRITER_TYPES:
+            values[name] = restore_writer_location(values[name], row['installed_sha256'])
+        elif transform is not None and (name, transform) != (ENCODING, 'local_view.install:envelope-writer'):
             raise ValueError('unregistered private view transform: ' + name)
     transform_inputs = {name: checked(name, sha)
                         for name, sha in data['encoding_transform_inputs'].items()}

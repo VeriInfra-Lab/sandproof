@@ -380,7 +380,7 @@
     "skip-match": {
       "generated_sha256": {
         "Types.lean": "f9e25d52f7266917552ef2f815ed22e01a4aed4919008eb0dc643ea895a5b6eb",
-        "Funs.lean": "4117280a015a88a8043780dacdf220301d90c731100bbf599a4ba4aa117dd941"
+        "Funs.lean": "75da96c149af2bbce35c81e325e90b4e83f9101e89c749fbe09522a9185867ad"
       },
       "functions": [
         {

@@ -60,8 +60,8 @@ class CreateDelivery(OriginalReadPlanFixture):
         with patch.dict(os.environ, SANDPROOF_STAGE1_PROFILE='create-delivery',
                         SANDPROOF_STAGE1_ONLY='create-selection'):
             full = registered.formal_plan(Path('/unused'))
-            self.assertEqual(len(full), 167)
-            self.assertEqual(len(registered.native_labels()), 78)
+            self.assertEqual(len(full), 168)
+            self.assertEqual(len(registered.native_labels()), 79)
         jobs = self.plan()
         definition = registered.create_profile()
         self.assertEqual([j['name'] for j in jobs], list(registered.CREATE_CASES))
@@ -129,6 +129,41 @@ class CreateDelivery(OriginalReadPlanFixture):
                 rows[2]['complete'] = False
             with self.subTest(defect=defect), self.assertRaises(ValueError):
                 registered._check_fixed_create_flow(result, rows, job)
+
+    def test_current_caller_requires_theorem_witnesses_and_original_inventories(self):
+        contract = registered.CONVERGENCE.caller_evidence(registered.ROOT)
+        data = registered.CONVERGENCE.read(registered.ROOT, 'protocol-record')
+        jobs = registered.formal_plan(Path('/unused'), profile='full')
+        for job in (j for j in jobs if j.get('convergence_package') == 'protocol-record'):
+            case, = job['cases']
+            view = job['views'][case]
+            stem, name, witnesses = contract.CONTRACTS[case]
+            theorem = contract.NAMESPACE + name
+            files = {n: data['same_models'].get(n, 'a'*64) for n in view['files']}
+            audits = list(view['audits'])
+            result = dict(complete=True, kind='protocol-record-formal-development',
+                          variant=case, contract_theorem=theorem, prepared_files=dict(files),
+                          prepared_audits=list(audits), actual=dict(
+                              files=files, audits=audits, service_log_sha256='b'*64))
+            registered._check_actual(result, job)
+            missing_page = copy.deepcopy(result)
+            path = str(contract.PROOFS/(stem+'.lean'))
+            del missing_page['actual']['files'][path], missing_page['prepared_files'][path]
+            with self.subTest(case=case, defect='page'), self.assertRaisesRegex(ValueError, 'physical page inventory'):
+                registered._check_actual(missing_page, job)
+            for absent, message in ((theorem, 'contract theorem'), *(
+                    (contract.NAMESPACE + n, 'refutation witness') for n in witnesses)):
+                bad = copy.deepcopy(result)
+                bad['actual']['audits'].remove(absent)
+                bad['prepared_audits'].remove(absent)
+                with self.subTest(case=case, absent=absent), self.assertRaisesRegex(ValueError, message):
+                    registered._check_actual(bad, job)
+            text = (registered.ROOT/contract.HERE/(stem+'.lean.in')).read_text()
+            declaration = name.rsplit('.', 1)[-1]
+            contract.check_theorem_page(text, text, case, declaration, theorem)
+            without_statement = text.replace('theorem '+declaration+' ', '-- theorem '+declaration+' ', 1)
+            with self.subTest(case=case, defect='statement'), self.assertRaisesRegex(ValueError, 'theorem statement'):
+                contract.check_theorem_page(without_statement, text, case, declaration, theorem)
 
     def test_original_caller_requires_every_same_property_flag_and_physical_audit(self):
         jobs = registered.formal_plan(Path('/unused'), profile='protocol-convergence')
@@ -520,8 +555,8 @@ class Registration(OriginalReadPlanFixture):
                 registered._cpu_slots('protocol-convergence', workers, range(4*workers-1))
 
     def test_native_keys_are_the_original_formal_prerequisites(self):
-        self.assertEqual(len(registered.NATIVE_CASES), 78)
-        self.assertEqual(len(set(registered.NATIVE_CASES)), 78)
+        self.assertEqual(len(registered.NATIVE_CASES), 79)
+        self.assertEqual(len(set(registered.NATIVE_CASES)), 79)
         self.assertEqual(registered.native_labels(), registered.NATIVE_CASES)
         for path in HERE.glob('inbox-*/formal.py'):
             calls = [node for node in ast.walk(ast.parse(path.read_text()))
@@ -553,7 +588,7 @@ class Registration(OriginalReadPlanFixture):
     def test_full_independent_positive_and_negative_schedule(self):
         jobs = registered.formal_plan(Path('/unused'))
         names = {job['name'] for job in jobs}
-        self.assertEqual(len(jobs), 167)
+        self.assertEqual(len(jobs), 168)
         self.assertEqual(len(jobs), len(names))
         self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
             'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
@@ -567,6 +602,51 @@ class Registration(OriginalReadPlanFixture):
         manifest = next(j for j in jobs if j['name'] == 'manifest-validation')
         self.assertEqual(len(manifest['cases']), 6)
         self.assertIn('skip-capture-binding', manifest['cases'])
+        parent = next(j for j in jobs if j['name'] == 'stage1-unload-parent-transaction')
+        self.assertEqual(parent['native'], ['stage1-unload-parent-transaction'])
+        self.assertEqual(parent['cases'], [
+            'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision', 'parent-link'])
+
+    def test_full_dispatch_assigns_convergence_children_disjoint_four_cpu_slots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            names = {'standard-blob', 'standard-record-read'}
+            plan = [job for job in registered.formal_plan(output) if job['name'] in names]
+            self.assertEqual({job['name'] for job in plan}, names)
+            launched = threading.Barrier(2)
+
+            def stop_before_driver(*args, **options):
+                launched.wait(timeout=10)
+                raise ValueError('controlled dispatch diagnostic')
+
+            with patch.object(registered.os, 'sched_getaffinity', return_value=set(range(8)), create=True), \
+                    patch.object(registered, '_launch_job', side_effect=stop_before_driver) as launch:
+                rows, failures = registered.execute_formal_jobs(
+                    registered.ROOT, output, plan, {}, {}, jobs=2, profile='full')
+            self.assertEqual(rows, [])
+            self.assertEqual(set(failures), names)
+            self.assertTrue(all(row['error'] == "ValueError('controlled dispatch diagnostic')"
+                                for row in failures.values()))
+            self.assertCountEqual([call.kwargs for call in launch.call_args_list], [
+                {'cpu_affinity': (0, 1, 2, 3)}, {'cpu_affinity': (4, 5, 6, 7)}])
+
+    def test_unload_parent_requires_each_actual_page_for_repeated_audits(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package = registered.HERE / 'unload-parent-link'
+            (root / package).mkdir(parents=True)
+            theorem = 'UnloadParent.example'
+            leaf, total = (str(package / (name + '.lean.in')) for name in ('Leaf', 'Total'))
+            for name in (leaf, total):
+                (root / name).write_text(f'#audit_controller_proof {theorem}\n')
+            templates = {leaf: [theorem], total: [theorem]}
+            files = {'Leaf.lean': registered._sha(root / leaf)}
+            actual = {'files': files, 'audits': [theorem]}
+            coverage = registered.UNLOAD.parent_audit_pages
+            self.assertEqual(coverage(root, templates, [actual], {}),
+                             {'pages': 2, 'declarations': 2, 'missing': [total]})
+            files['Total.lean'] = registered._sha(root / total)
+            self.assertEqual(coverage(root, templates, [actual], {})['missing'], [])
 
     def test_total_only_subsumes_same_variant_append_formal(self):
         jobs = registered.formal_plan(Path('/unused'))
@@ -718,6 +798,39 @@ class Registration(OriginalReadPlanFixture):
             with self.assertRaisesRegex(ValueError, 'crate test inventory'):
                 registered._crate_native(registered.ROOT, Path(temporary)/'output', 'envelope-schema')
 
+    def test_full_native_accepted_parser_inherits_lock_and_four_cpus(self):
+        label = 'stage1-accepted-json-parser'
+        driver, = [row for row in registered.NATIVE_DRIVERS if row[0] == label]
+
+        def native_case(name, source, output, action, *, scope):
+            self.assertEqual(scope, 'stage1-protocol')
+            if name == label:
+                action()
+            return {}
+
+        with tempfile.TemporaryDirectory() as temporary, \
+                patch.object(registered, 'validate_registration'), \
+                patch.object(registered, 'check_create_sources'), \
+                patch.object(registered, 'NATIVE_DRIVERS', (driver,)), \
+                patch.object(registered, 'CRATE_CASES', ()), \
+                patch.object(registered, '_shared', return_value=SimpleNamespace(native_case=native_case)), \
+                patch.object(registered, '_original_file', return_value=Path('/unused/source.tar')), \
+                patch.object(registered, '_read', return_value=dict(development_complete=True)), \
+                patch.object(registered, '_invoke') as invoke, \
+                patch.object(registered.os, 'sched_getaffinity', return_value={4, 5, 6, 7, 8, 9}, create=True):
+            root = Path(temporary)
+            lock = root/'existing.lock'
+            with lock.open('w+') as inherited, patch.dict(os.environ, {
+                    'SANDPROOF_ACCEPTANCE_ROLE': 'native', 'CARGO_TARGET_DIR': temporary,
+                    'SANDPROOF_PROOF_HEAVY_LOCK': str(lock),
+                    'SANDPROOF_PROOF_HEAVY_LOCK_FD': str(inherited.fileno())}):
+                registered.run_native(registered.ROOT, root)
+                output = root/'stage1-registered'/label
+                invoke.assert_called_once_with(registered.ROOT, Path(driver[1]),
+                    ['--output', output, '--lock', str(lock), '--lock-fd', str(inherited.fileno())],
+                    pass_fds=(inherited.fileno(),), cpu_affinity=[4, 5, 6, 7],
+                    cpu_admission=output.with_name(label+'-cpu-admission.json'))
+
     def prepared_fixture(self, temporary):
         root = Path(temporary)/'root'
         root.mkdir()
@@ -835,7 +948,7 @@ class Registration(OriginalReadPlanFixture):
         with patch.object(unload, 'frozen_inputs', return_value={}):
             with self.assertRaisesRegex(ValueError, 'original unload package'):
                 registered._check_actual(dict(complete=True, kind=unload.KIND, cases={},
-                    frozen_inputs={}, native_result_sha256='a'*64), job)
+                    frozen_inputs={}, native_result_sha256='a'*64, source_sha256='b'*64), job)
 
     def test_full_unload_dispatch_uses_its_driver_and_passes_the_existing_lock(self):
         unload = registered.UNLOAD
@@ -960,6 +1073,28 @@ class Registration(OriginalReadPlanFixture):
                 record['results'][0]['result_sha256'] = registered._sha(result_path)
                 with self.assertRaisesRegex(ValueError, 'lacks exact correct-view coverage'):
                     registered.compute_retained_coverage(root, record)
+
+    def test_retained_reads_the_exact_nested_service_log_of_original_producers(self):
+        layouts = {'restore-work': 'correct', 'restore-lifetime': 'correct', 'native-readiness': ''}
+        for producer, case in layouts.items():
+            with self.subTest(producer=producer), tempfile.TemporaryDirectory() as temporary:
+                root, job, record, path, old_log = self.retained_fixture(temporary)
+                job['convergence_package'] = producer
+                result = json.loads(path.read_text())
+                if case:
+                    result['cases'] = {case: result.pop('actual')}
+                    path.write_text(json.dumps(result))
+                    record['results'][0]['result_sha256'] = registered._sha(path)
+                expected = path.parent/case/'actual-files/physical-files/service.log'
+                expected.parent.mkdir(parents=True)
+                expected.write_bytes(old_log.read_bytes())
+                with patch.object(registered, 'formal_plan', return_value=[job]), \
+                        patch.object(registered, '_check_actual'):
+                    coverage = registered.compute_retained_coverage(root, record)
+                    self.assertEqual({row['service_log_path'] for row in coverage.values()}, {str(expected)})
+                    expected.unlink()
+                    with self.assertRaisesRegex(ValueError, 'retained physical service log changed or missing'):
+                        registered.compute_retained_coverage(root, record)
 
     def retained_audit_fixture(self, temporary):
         _, _, record, _, _ = self.retained_fixture(temporary)
@@ -1505,9 +1640,14 @@ class CheckpointExecution(unittest.TestCase):
         sqlite_adapter = registered.CONVERGENCE.extra(registered.ROOT, 'sqlite-commit')
         sqlite_result = self.directory/'sqlite-fixture/result.json'
         sqlite_result.parent.mkdir()
+        current_sqlite = sqlite_adapter.using_current(sqlite_adapter.inventory(registered.ROOT))
+        sqlite_commit = sqlite_adapter.head(registered.ROOT) if current_sqlite else sqlite_adapter.SOURCE_COMMIT
+        sqlite_packet = dict.fromkeys(sqlite_adapter.PACKET, '0' * 64) if current_sqlite else sqlite_adapter.PACKET
         sqlite_result.write_text(json.dumps(dict(convergence_entry='sqlite-commit', mode='native',
-            complete=True, actuals=[], source_commit=sqlite_adapter.SOURCE_COMMIT,
-            native_executed_here=False, packet=sqlite_adapter.PACKET)))
+            complete=True, actuals=[], source_commit=sqlite_commit,
+            native_executed_here=current_sqlite, packet=sqlite_packet)))
+        sqlite_readback_inputs = (sqlite_result.parent, registered.ROOT, sqlite_packet,
+                                  sqlite_commit, current_sqlite)
         def original_file(receipt, name):
             self.assertEqual(name, 'result.json')
             return sqlite_result if receipt['key']['label'] == 'stage1-sqlite-commit' else retained
@@ -1562,7 +1702,7 @@ class CheckpointExecution(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'controlled SQLite packet rejection'):
                         registered.main()
                     execute.assert_not_called()
-                    sqlite_readback.assert_called_once_with(sqlite_result.parent, registered.ROOT)
+                    sqlite_readback.assert_called_once_with(*sqlite_readback_inputs)
                     self.assertFalse(output.exists())
                     return
                 error = OSError if interrupt_final else ValueError
@@ -1573,7 +1713,7 @@ class CheckpointExecution(unittest.TestCase):
                     registered.main()
                 self.assertEqual(execute.call_args.kwargs['jobs'],2)
                 self.assertEqual(execute.call_args.kwargs['resume'],'/original/registered-result.json')
-                sqlite_readback.assert_called_once_with(sqlite_result.parent, registered.ROOT)
+                sqlite_readback.assert_called_once_with(*sqlite_readback_inputs)
         finally:
             os.umask(before_umask)
         saved = registered._read(output/'registered-result.json')

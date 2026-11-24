@@ -1,0 +1,222 @@
+import ParentCompleteDraft
+import ContinuedParentLink
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink.Continuation
+open SandproofUnloadFirstObservation
+open SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+variable [Representations] [ParentCalls]
+
+structure ContinuedRead {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction)
+    (namespaceId : Str) (intent : Intent) (now : I64) (input : SourceSnapshot) where
+  sessionIndex : Usize
+  entryIndex : Usize
+  session : Session
+  entry : Entry
+  state : WorkState
+  localValue : Local
+  originEntry : Entry
+  sourceIncarnation : sandproof_protocol.lifecycle.identity.IncarnationId
+  captureId : sandproof_protocol.lifecycle.identity.CaptureId
+  boot : HostEpoch
+  context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
+  base : Ready
+  native : Native
+  source : Process
+  originalActions : Actions
+  originalReceipts : Receipts
+  connection : SandproofUnloadFirstObservation.rusqlite.Connection
+  options : host_contract.CreateOptions
+  optionBytes : alloc.vec.Vec U8
+  optionsDigest : Binding
+  credential : Credential
+  actionIdentities : alloc.vec.Vec Action
+  receiptDigests : alloc.vec.Vec Binding
+  continuedWork : capture.continuation.OriginalContinueWorkRequest
+  continuedAction : sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+  continuedReceipt : alloc.vec.Vec U8
+  continuedIdentity : sandbox_controller_core.capture.continuation.OriginalContinueIdentity
+  continuedRequirement : capture.source.SourceObservationRequirement
+  expandedActions : Actions
+  expandedReceipts : Receipts
+  find : ParentCalls.inboxFindCompleteRequest input.inbox intent =
+    .ok (.Ok (some (sessionIndex, entryIndex)))
+  getSession : input.inbox.sessions.val[sessionIndex.val]? = some session
+  getEntry : session.entries.val[entryIndex.val]? = some entry
+  stateRead : ParentCalls.inboxState input.inbox sessionIndex entryIndex = .ok state
+  isCurrent : state.current = true
+  nonterminal : state.terminal = false
+  noResolution : entry.unload_resolution = none
+  unload : intent.request.operation = .Unload sourceIncarnation captureId
+  bootObservation : input.inbox.host_epoch_observation = some boot
+  activeObservation : input.active = some boot
+  bootMatch : ParentCalls.equalHostObservation boot boot = .ok true
+  localBinding : state.«local» = some localValue
+  originRead : ParentCalls.sessionExecutionOrigin session = .ok (some originEntry)
+  cloneOrigin : ParentCalls.cloneCompleteIntent originEntry.intent = .ok originEntry.intent
+  cloneUnload : ParentCalls.cloneCompleteIntent intent = .ok intent
+  contextRead : ParentCalls.inboxContext input.inbox.config = .ok context
+  baseRead : ParentCalls.readBaseSnapshot tx namespaceId input.world originEntry.intent context =
+    .ok (.Ok base)
+  nativePresent : base.view.native = some native
+  completedOriginal : ParentCalls.hasCompletedOriginalExecution native localValue = .ok false
+  historicalRunning : base.view.historical_result =
+    some (.Running native.generation)
+  historicalMatch : ParentCalls.equalOperationResult
+    (.Running native.generation) (.Running native.generation) = .ok true
+  live : ParentCalls.checkLiveNative native localValue intent.accepted_version session.current_version
+    now = .ok true
+  continuedRead : ParentCalls.readContinuedRecords host serde connection input.world namespaceId localValue native =
+    .ok (.Ok (some (continuedWork, continuedAction, continuedReceipt)))
+  requirementRead : ParentCalls.continuedSource continuedWork = .ok continuedRequirement
+  sourceProjection : ParentCalls.cloneProcessIdentity continuedRequirement.source = .ok source
+  sourceSame : source = continuedRequirement.source
+  appendActions : alloc.vec.Vec.push originalActions continuedAction = .ok expandedActions
+  appendReceipts : alloc.vec.Vec.push originalReceipts continuedReceipt = .ok expandedReceipts
+  identityRead : ParentCalls.continuedIdentity continuedWork = .ok continuedIdentity
+  sameBoot : source.boot_id = boot.registration.boot_id
+  sameBootText : ParentCalls.equalBootText source.boot_id boot.registration.boot_id = .ok true
+  nonzeroPid : source.pid ≠ 0#u32
+  nonzeroTicks : source.start_time_ticks ≠ 0#u64
+  startupRead : ParentCalls.readOriginalStartupRecords host serde tx namespaceId input.world localValue =
+    .ok (.Ok (originalActions, originalReceipts))
+  sameTransaction : ParentCalls.transactionConnection tx = .ok connection
+  optionsRead : ParentCalls.readCreateOptions connection namespaceId localValue.sandbox =
+    .ok (.Ok options)
+  credentialRead : ParentCalls.readCredential connection input.world namespaceId localValue.sandbox true =
+    .ok (.Ok (some credential))
+  sameGeneration : credential.1 = native.generation
+  cloneNode : ParentCalls.cloneNode input.inbox.config.node = .ok input.inbox.config.node
+  cloneRegistration : ParentCalls.cloneHostRegistration boot.registration = .ok boot.registration
+  cloneSource : ParentCalls.cloneProcessIdentity source = .ok source
+  encodeOptions : ParentCalls.encodeCreateOptions options = .ok (.Ok optionBytes)
+  digestOptions : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref optionBytes) =
+    .ok optionsDigest
+  collectActions : ParentCalls.originalActionIdentities (alloc.vec.Vec.deref expandedActions) =
+    .ok actionIdentities
+  collectReceipts : ParentCalls.originalReceiptDigests (alloc.vec.Vec.deref expandedReceipts) =
+    .ok receiptDigests
+  actionsFull : actionIdentities.val = expandedActions.val.map (·.identity)
+
+def ContinuedRead.expected {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : ContinuedRead host serde tx ns intent now input) : Anchor :=
+  { anchorFor intent reads.originEntry.intent reads.localValue reads.native input.inbox reads.boot
+      reads.source reads.optionsDigest reads.credential reads.actionIdentities reads.receiptDigests with
+    continued_from := some reads.continuedIdentity }
+
+theorem actual_continued_reaches_exact_question {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : ContinuedRead host serde tx ns intent now input) :
+    controller.lifecycle_inbox.source_work.snapshot.current host serde tx ns intent now input =
+      question reads.expected input.limits := by
+  simp [controller.lifecycle_inbox.source_work.snapshot.current,
+    ContinuedRead.expected,
+    anchorFor,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.map_err,
+    core.option.Option.ok_or,
+    core.option.Option.as_ref,
+    core.option.Option.is_some,
+    core.cmp.PartialEq.ne.trait_default,
+    core.cmp.PartialEq.ne.default,
+    core.cmp.impls.PartialEqShared.eq,
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+    alloc.vec.Vec.index_slice_index,
+    alloc.vec.Vec.index_usize,
+    reads.find,
+    reads.getSession,
+    reads.getEntry,
+    reads.stateRead,
+    reads.isCurrent,
+    reads.nonterminal,
+    reads.noResolution,
+    reads.unload,
+    reads.bootObservation,
+    reads.activeObservation,
+    reads.bootMatch,
+    reads.localBinding,
+    reads.originRead,
+    reads.cloneOrigin,
+    reads.cloneUnload,
+    reads.contextRead,
+    reads.baseRead,
+    reads.nativePresent,
+    reads.completedOriginal,
+    reads.historicalRunning,
+    reads.historicalMatch,
+    reads.live,
+    reads.continuedRead,
+    reads.requirementRead,
+    reads.sourceProjection,
+    reads.appendActions,
+    reads.appendReceipts,
+    reads.identityRead,
+    reads.sameBootText,
+    reads.nonzeroPid,
+    reads.nonzeroTicks,
+    reads.startupRead,
+    reads.sameTransaction,
+    reads.optionsRead,
+    reads.credentialRead,
+    reads.cloneNode,
+    reads.cloneRegistration,
+    reads.cloneSource,
+    reads.encodeOptions,
+    reads.digestOptions,
+    reads.collectActions,
+    reads.collectReceipts]
+  have generationEq := reads.sameGeneration
+  generalize reads.credential = credential at generationEq ⊢
+  rcases credential with ⟨generation, digest⟩
+  have sameValue : generation.val = reads.native.generation.val :=
+    congrArg (fun value : U64 => value.val) generationEq
+  simp [sameValue, question]
+
+theorem actual_continued_keeps_full_work {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : ContinuedRead host serde tx ns intent now input)
+    (encoded : alloc.vec.Vec U8) (binding : Binding) (action : Action)
+    (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encoded))
+    (digest : ParentCalls.digestCompleteBytes encoded.deref = .ok binding)
+    (slot : reads.actionIdentities.val[1]? = some action)
+    (resource : ParentCalls.cloneResource action.resource = .ok action.resource)
+    (limits : ParentCalls.cloneLimits input.limits = .ok input.limits) :
+    controller.lifecycle_inbox.source_work.snapshot.current host serde tx ns intent now input =
+      .ok (.Ok (workFor reads.expected input.limits binding action)) := by
+  rw [actual_continued_reaches_exact_question reads]
+  exact question_keeps_full_anchor reads.expected input.limits encoded binding action encode digest
+    reads.cloneNode reads.cloneRegistration slot resource reads.cloneSource limits
+
+
+omit [Representations] [ParentCalls] in
+theorem successful_push_keeps_complete_prefix {A : Type} (before : alloc.vec.Vec A) (item : A)
+    (after : alloc.vec.Vec A) (pushed : alloc.vec.Vec.push before item = .ok after) :
+    after.val = before.val ++ [item] := by
+  unfold alloc.vec.Vec.push at pushed
+  dsimp only at pushed
+  split at pushed
+  · have same := congrArg (fun value : alloc.vec.Vec A => value.val) (Result.ok_injective pushed).symm
+    simpa using same
+  · simp at pushed
+
+theorem continued_keeps_original_actions_and_receipts {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : SandproofUnloadFirstObservation.rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : ContinuedRead host serde tx ns intent now input) :
+    reads.expandedActions.val = reads.originalActions.val ++ [reads.continuedAction] ∧
+    reads.expandedReceipts.val = reads.originalReceipts.val ++ [reads.continuedReceipt] :=
+  ⟨successful_push_keeps_complete_prefix _ _ _ reads.appendActions,
+    successful_push_keeps_complete_prefix _ _ _ reads.appendReceipts⟩
+
+end SandboxModel.Stage1Protocol.UnloadParentLink.Continuation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Continuation.actual_continued_reaches_exact_question
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Continuation.actual_continued_keeps_full_work
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Continuation.successful_push_keeps_complete_prefix
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.Continuation.continued_keeps_original_actions_and_receipts

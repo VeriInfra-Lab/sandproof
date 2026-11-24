@@ -1,0 +1,164 @@
+// Append after #920 and #929's fixtures in a disposable native checkout.
+#[test]
+fn proof_first_unload_prepare_orders_inbox_authentication_and_source_decode() {
+    use rusqlite::{Connection, Error, OpenFlags, types::Type};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("first-prepare-preflight.db");
+    let (mut journal, state) = ready(&path);
+    let intent = unload();
+    let context = v3::context();
+    let mut center = context.center().clone();
+    center.center = "different-center".try_into().unwrap();
+    let foreign = AuthenticatedCenterContext::from_verified_peer_registration(
+        center,
+        context.expected_node().clone(),
+    );
+    let observer = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let before = proof_first_prepare_durable_rows(&observer);
+    assert!(before.1.is_empty());
+    let queried = state.lock().unwrap().source_calls;
+    let inbox_hash: Vec<u8> = observer
+        .query_row(
+            "SELECT sha256 FROM controller_lifecycle_inbox WHERE id=1",
+            (),
+            |row| row.get(0),
+        )
+        .unwrap();
+    let source_hash: Vec<u8> = observer
+        .query_row(
+            "SELECT sha256 FROM controller_source_work WHERE id=1",
+            (),
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    // Change the same connection so the earlier data_version check does not
+    // reject an external writer before these specific failures are reached.
+    let save_inbox_hash = |journal: &ControllerJournal, hash: &[u8]| {
+        assert_eq!(
+            journal
+                .journal
+                .connection
+                .execute(
+                    "UPDATE controller_lifecycle_inbox SET sha256=?1 WHERE id=1",
+                    [hash],
+                )
+                .unwrap(),
+            1
+        );
+    };
+    let assert_preflight_left_no_record = |journal: &ControllerJournal| {
+        assert!(journal.journal.connection.is_autocommit());
+        let populated: i64 = observer
+            .query_row(
+                "SELECT count(*) FROM controller_source_work_records WHERE work_key IS NOT NULL",
+                (),
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(populated, 0);
+        assert_eq!(state.lock().unwrap().source_calls, queried);
+    };
+
+    assert_ne!(inbox_hash, [0; 32]);
+    save_inbox_hash(&journal, &[0; 32]);
+    assert_eq!(journal.journal.connection.execute(
+        "UPDATE controller_source_work SET sha256='0123456789abcdef0123456789abcdef' WHERE id=1", (),
+    ).unwrap(), 1);
+    assert!(matches!(
+        journal.prepare_lifecycle_source_work::<Evidence>(&intent, &foreign, 10, &mut NeverCrash,),
+        Err(JournalError::CorruptStore)
+    ));
+    assert_preflight_left_no_record(&journal);
+
+    save_inbox_hash(&journal, &inbox_hash);
+    let unauthenticated =
+        journal.prepare_lifecycle_source_work::<Evidence>(&intent, &foreign, 10, &mut NeverCrash);
+    assert!(
+        matches!(&unauthenticated, Err(JournalError::Conflict)),
+        "authentication must precede source decode: {unauthenticated:?}"
+    );
+    assert_preflight_left_no_record(&journal);
+
+    assert!(matches!(journal.prepare_lifecycle_source_work::<Evidence>(
+        &intent, &context, 10, &mut NeverCrash,
+    ), Err(JournalError::Sqlite(Error::InvalidColumnType(1, column, Type::Text))) if column == "sha256"));
+    assert_preflight_left_no_record(&journal);
+
+    assert_eq!(
+        journal
+            .journal
+            .connection
+            .execute(
+                "UPDATE controller_source_work SET sha256=?1 WHERE id=1",
+                [source_hash.as_slice()],
+            )
+            .unwrap(),
+        1
+    );
+    assert_eq!(proof_first_prepare_durable_rows(&observer), before);
+    let record = prepare(&mut journal);
+    assert_eq!(record.work.request(), &intent);
+    assert_eq!(
+        proof_first_prepare_durable_rows(&observer),
+        (before.0, vec![record])
+    );
+    assert_eq!(state.lock().unwrap().source_calls, queried);
+}
+
+#[test]
+fn proof_first_unload_prepare_save_error_follows_construction_without_durable_work() {
+    use rusqlite::{Connection, Error, ErrorCode, OpenFlags};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("first-prepare-save.db");
+    let (mut journal, state) = ready(&path);
+    let intent = unload();
+    let observer = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let before = proof_first_prepare_durable_rows(&observer);
+    assert!(before.1.is_empty());
+    let queried = state.lock().unwrap().source_calls;
+
+    // The original save assigns a work key to a preallocated empty row. A
+    // failed update reaches save only after work construction and encoding.
+    journal
+        .journal
+        .connection
+        .execute_batch(
+            "CREATE TEMP TRIGGER reject_first_source_save
+         BEFORE UPDATE OF work_key ON main.controller_source_work_records
+         WHEN OLD.work_key IS NULL AND NEW.work_key IS NOT NULL
+         BEGIN SELECT RAISE(ABORT, 'reached first source save'); END;",
+        )
+        .unwrap();
+    let result = journal.prepare_lifecycle_source_work::<Evidence>(
+        &intent,
+        &v3::context(),
+        10,
+        &mut NeverCrash,
+    );
+    assert!(
+        matches!(&result,
+        Err(JournalError::Sqlite(Error::SqliteFailure(error, Some(message))))
+        if error.code == ErrorCode::ConstraintViolation && message == "reached first source save"),
+        "first Unload must preserve the original save error: {result:?}"
+    );
+    assert!(journal.journal.connection.is_autocommit());
+    assert_eq!(proof_first_prepare_durable_rows(&observer), before);
+    assert_eq!(state.lock().unwrap().source_calls, queried);
+
+    journal
+        .journal
+        .connection
+        .execute_batch("DROP TRIGGER temp.reject_first_source_save")
+        .unwrap();
+    let record = prepare(&mut journal);
+    assert_eq!(record.work.request(), &intent);
+    assert_eq!(prepare(&mut journal), record);
+    assert_eq!(
+        proof_first_prepare_durable_rows(&observer),
+        (before.0, vec![record])
+    );
+    assert_eq!(state.lock().unwrap().source_calls, queried);
+}

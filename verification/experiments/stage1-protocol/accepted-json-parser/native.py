@@ -169,10 +169,17 @@ def run(output):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--lock', type=Path, default=ROOT.parent / '.proof-heavy.lock')
+    parser.add_argument('--lock-fd', type=int)
     args = parser.parse_args()
     os.umask(0o077)
-    with (ROOT.parent / '.proof-heavy.lock').open('r+') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
+    inherited = args.lock_fd is not None
+    lock = os.fdopen(os.dup(args.lock_fd), 'r+') if inherited else args.lock.open('r+')
+    with lock:
+        observed, expected = os.fstat(lock.fileno()), args.lock.stat()
+        if (observed.st_dev, observed.st_ino) != (expected.st_dev, expected.st_ino):
+            raise ValueError('native inherited lock is a different file')
+        fcntl.flock(lock, fcntl.LOCK_EX | (fcntl.LOCK_NB if inherited else 0))
         result = run(args.output.absolute())
     print(json.dumps({name: result.get(name) for name in ('development_complete', 'seconds', 'error')}))
     raise SystemExit(0 if result['development_complete'] else 1)

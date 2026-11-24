@@ -5,7 +5,7 @@
     "sandbox-protocol/src/identifiers.rs": "c799f564cb21208a6572d5c98672ba8a200da6eb88d53657d84a78ceeb61be83",
     "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
     "sandbox-protocol/src/internal/window.rs": "ffabf825e91636fb5c549fa874a7ec2c3e10298c34ef5026fca8ffdae58c79eb",
-    "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
     "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
     "sandbox-protocol/src/lifecycle/access.rs": "e21818fb5d6ef97a079e9c1c155a450386d2d4dc70df9eb6dbcff79268afa7f2",
     "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
@@ -94,5 +94,10 @@
     ],
     "full_create_matches_request_proved": false,
     "native_mutations_are_not_formal_counterexamples": true
+  },
+  "current_candidate_input_review": {
+    "base": "3aa6312b641c72350d13c21e082b0237d28fa2ee",
+    "original_source": "29b0661e3424960922752bc122c622bb2f20026b",
+    "basis": "The only change in the original source list is HOST_STORE_FORMAT_VERSION 23 to 24. The observation, request, and explicit mutation definitions match their original inputs. The original value, conversion, guard, and native variants remain required."
   }
 }

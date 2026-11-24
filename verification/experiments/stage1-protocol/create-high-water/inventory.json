@@ -7,7 +7,7 @@
   "source_inputs": {
     "controller-service/src/controller/lifecycle_inbox/model.rs": "f67d17d3eb862d7466c486081fe509c47b06639bc524c6575b7884f026a3e3cb",
     "controller-service/src/controller/lifecycle_inbox/codec.rs": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
-    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/lifecycle_inbox.rs": "4d87f72906bb2ba5ec541b8969ecd90cf7caf74280dd42e5e6e6bbd0488888a8",
     "controller-service/src/capture.rs": "85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24"
@@ -34,7 +34,7 @@
     "verification/experiments/stage1-protocol/create-install/CreateInstallQuery.lean.in": "4c43ca17cc7af2b59a232b96d9c9ab71754b68c8b29a53ef70733fa2baba9107",
     "verification/experiments/stage1-protocol/create-install/CreateInstallSelection.lean.in": "27a293b7c6d02c05a13abb37a6704f28c4b30201524ae3709c710ab1d99ec90d",
     "verification/experiments/stage1-protocol/create-install/CreateInstallValues.lean.in": "ad007da1a9159f13ea8ff07ee2850cd06c25c43fd2154e1a50ca94828c703217",
-    "verification/experiments/stage1-protocol/create-install/inventory.json": "67dab05e13c9c37c821f7e25b7ffdade85d3c3b8b6f902e3f48679d80cb209f2",
+    "verification/experiments/stage1-protocol/create-install/inventory.json": "bf0c7e6d991dfca2f97d604b8d3428775396f7126406112b80f0183c68f08e3e",
     "verification/experiments/stage1-protocol/create-install/root.rs.in": "f0f95cf99af530c307f831e37bb77b11fa5a2e69ec8c88889a506d06139cce50",
     "verification/experiments/stage1-protocol/create-load-capacity/CreateLoadCapacityModel.lean.in": "2b4390867cbb1727c04aeec8ac2b28481a3871a93c6c54f2e493c8fcb10f74d3",
     "verification/experiments/stage1-protocol/create-load-capacity/CreateLoadCounter.lean.in": "93c0b92733347cad677b1171e45f77f2c69cbce0b36212778b7e4d565b7bbce1",
@@ -42,10 +42,10 @@
     "verification/experiments/stage1-protocol/create-load-capacity/CreateLoadFixture.lean.in": "a5c9448ad63b52c05a26d4349f03ba465d440e3b9f0b4ed90dd5a9a99ccaf725",
     "verification/experiments/stage1-protocol/create-load-capacity/CreateLoadOwnerBound.lean.in": "09c67074017b72bf9b7f6824c0d5b42879af908dd2658486d5c118a3b9d748ab",
     "verification/experiments/stage1-protocol/create-load-capacity/CreateLoadOwnerLimitCounter.lean.in": "957b5f70cd5fd4d97c7d913670f7f650b8b55e081377243bc71399531fc8e1be",
-    "verification/experiments/stage1-protocol/create-load-capacity/README.md": "a173f09144b66550c4cea2718330485a71ec58b29f1b7c2dbf56c04a0dd5fbff",
+    "verification/experiments/stage1-protocol/create-load-capacity/README.md": "c5f154fc9fb455e572610a0f00d0548feab59a161dd367a7b2fcb0cdd33f3992",
     "verification/experiments/stage1-protocol/create-load-capacity/binding.py": "077e58945d42834416d58acace4d8ce564e4ee0ef1b60473dd785527f961ef86",
-    "verification/experiments/stage1-protocol/create-load-capacity/formal.py": "bf5db9b1337b1140bb63dbf7f74e98ed7f9c21cda26f219a7f0c654759f5e23c",
-    "verification/experiments/stage1-protocol/create-load-capacity/inventory.json": "d5517545b54f34aadc1128d55d7be28a5dca61e370dd23a9d5eacfc7c8e2bd28",
+    "verification/experiments/stage1-protocol/create-load-capacity/formal.py": "5f6478e55e24ce1f6416581eeb44d67b58c50297051f8afbb80f2ae62c43ed3e",
+    "verification/experiments/stage1-protocol/create-load-capacity/inventory.json": "853267fc4ff124b6c96244a7666c1d1045c89b1fbbd20a2c3c7a21ec7c5d2b32",
     "verification/experiments/stage1-protocol/create-load-capacity/native-cases.rs.in": "38eb6b4602d67f1cd3014039b08861739a79e6b9e5781b6d317fecd5569e668f",
     "verification/experiments/stage1-protocol/create-load-capacity/native.py": "a594fdff4f3e3a3a17b2bd362cf0737dc6c29be923b86823fe09688a08a5c86c",
     "verification/experiments/stage1-protocol/create-load-capacity/support.py": "0a880bc00fd9f5355b17ad011af0453e23937f20a818077d2e49ab1346f40c8d",
@@ -62,7 +62,7 @@
     "verification/experiments/stage1-protocol/create-owner-check/OmitLocalCounter.lean.in": "17f97481c53a17512df802896697c20a5d271a5a5f3b87ad07ac938adcbdb2c8",
     "verification/experiments/stage1-protocol/create-owner-check/README.md": "38fce20b27c950bc5fd5cb202ea35e1e5e4f50af767c251687a5b659e3f4d21b",
     "verification/experiments/stage1-protocol/create-owner-check/formal.py": "0050f88a58eb3acf7bbd657d624b1115f65cf51a3fe8c9bf690ea829f36a929b",
-    "verification/experiments/stage1-protocol/create-owner-check/inventory.json": "0b79ef72139a9bb55774424ab09256fa3c11d93602461a1797a74047cb71902f",
+    "verification/experiments/stage1-protocol/create-owner-check/inventory.json": "7e8b1623395fbb8f17ced40343ddebf9fa92c83b80b8a3eda890f66cac4f5a47",
     "verification/experiments/stage1-protocol/create-owner-check/native-common.rs.in": "a299edce69c9bdf9b2acbcb0715554be706bbdb7642aa9d6f90111e4e63d2ba3",
     "verification/experiments/stage1-protocol/create-owner-check/native.py": "f7ec687c4d9ce0af122a7e8dc0c6523c4454b0349c8d971e0b9d7ebec680cdb7",
     "verification/experiments/stage1-protocol/create-owner-check/root.rs.in": "ea8d07584eba80659d8ebbd5b80a1847230063d7917787e3848288b9266f44b2",
@@ -98,7 +98,7 @@
     "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageModel.lean.in": "1719ab7b6eb5e53d00cec69961ce736dfcd7b729a48bea9f9d9fb7beaffa90cb",
     "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageStep.lean.in": "9206544e55569be6f9d65444f6db573cc6860bc2034e5c59c39190831029a115",
     "verification/experiments/stage1-protocol/inbox-lineage/InboxLineageSupport.lean.in": "53bc310cf60d96d9cf51446f01fe94c0c3d05816607d2416ac899cae7f7562f4",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadCanonicalAcceptance.lean.in": "e4bbc2c790b6df67e908216d4c8255db8c4d5a3913c7db9e7bf90766cbc6ed4e",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadCanonicalAcceptance.lean.in": "d8639c085987960114492f3faa0adfb865f52e75bd74bee78a753ffe4d485c78",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadCanonicalCounterexample.lean.in": "f344a6108ba18de5e41167a9ab21c1b0fec24a2db64274bfa13e03be5cb9c307",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadCapacityBounds.lean.in": "a9e601d67f52e9926be1e451025cdec44b7181f03ba58238c416449c94ecae22",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadCapacityValidation.lean.in": "bcd588310545097bc0d5185d2b4a0372e06e4c9160b0f340a869d0339a7db250",
@@ -110,30 +110,30 @@
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadConfigValues.lean.in": "0c999a2b930b3a53cb8b75ba4b32e9af90a8dd6963487406c8ac0bd2d39c0a34",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadContextual.lean.in": "b03b7ca7f97eb787bbddbd05ed15b1e4b372b50b17351efb7100eb53d4c9de41",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadControlFlow.lean.in": "1439b69c80c6a7107dbba786e2821b9eceb8ba8230b9ded876e10beb5fd8ebe3",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestAcceptance.lean.in": "707ed30d6d9ee9e300f54dd292ad84de1a0e97c70104ea40798877bf48b55efe",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestAcceptance.lean.in": "ef928888a702508ffc0b7435b11c99abec3d3877b8238e57ecbd9bac90c4568c",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestCounterexample.lean.in": "946e6da18c76896fec69e587440228614669a57471fa52edd10b8ee921d55273",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadDigestLibrary.lean.in": "bff852876e56c03cb89701b4b728fc94a948aa9c1fdfc599a075f9831b6cd808",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadEarlyErrors.lean.in": "b38620b2ef3b4b6146243f609be9ef6ade3de9cb04930d14d6d7eadbca5a3c43",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadFixturePrefix.lean.in": "2806d4e87de37615c2da95f5bf391a069d80f91e587d951fc1b8e76512aaf6eb",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadFixturePrefix.lean.in": "245b0d0fa29d75c681ecddf409e5d2c31668cb3294ada5430bc0619968b1cccf",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadHeader.lean.in": "4927d9aab86b1be576dc1ae0a63442e2af32ccfd55a4ae47d1c9282d343a0ad4",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadLibrary.lean.in": "29dfcc593e4e1cb372f987f06ec3503ed442823b307704499976a55a75e63c59",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadLifecycleConfigValues.lean.in": "54e82e929f3e6a611432ec809de4ec1d2cf63fbb8f8b831f7b61b326961c225a",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadMaintenanceBounds.lean.in": "85f9ab2c153aa45e9502ae2bd656f498e6177cd8933da9e2c75c6064554729c1",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadModel.lean.in": "c9618071efa68abf4da7fa00e146427757dd3215561822f6fafce2e17fddee8a",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyAcceptance.lean.in": "df32e3cdf185f5fab32a93f8c5c59c5afc234a32b6507df14313cee7e7f98605",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyAcceptance.lean.in": "40e9dd730a60578ff1b23fdd6ee602f16005c083a3e37e8fcfccfc03c89dd1d6",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyCounterexample.lean.in": "0b4b40a87fe40de59a092dcfae8fef0d93f1c4d4be097ae867b0e46b37fa7ef4",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadPolicyThreeValues.lean.in": "f08e6577bbfcb1f939efdb7750bd406650a7b1c9b5e19b0f1304561ed597c66c",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadPositiveBodyValues.lean.in": "a12d616031051e18d902780dc52c6c346a58737b9fa3d43c332ffb21118b6853",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadPositiveFullValues.lean.in": "1564e33f5430c7985532da5ab88b922f635ec8ac3426ede745d2b370e8e81c29",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadRawCorrespondence.lean.in": "abbf3faa1a67bec78214539c030dfafacd9423916a63ee878500d30016529c4f",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadSuccess.lean.in": "ef2a8c9990e94f426884ae9eae253c9c1ab1af1f190050c8a78c0da0d586710b",
-    "verification/experiments/stage1-protocol/inbox-load/InboxLoadValidationAcceptance.lean.in": "daaaa9cc54ee94cd37f1eb931b90d630f74f4f870992b3a20a41533ccae8d184",
+    "verification/experiments/stage1-protocol/inbox-load/InboxLoadValidationAcceptance.lean.in": "73b2e26c41dae684a58e1e93da9aaa23d9ae6086b16f93b1efa2c10c31a497e0",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadValidationCounterexample.lean.in": "d4200b950fe1e38b39b1c7828b97a6c1589e7048345d1ab88c9d86099f7eac60",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadValueLibrary.lean.in": "7778e5d1f335eeec4e14ba5e5b918013d85fc51feae384b02d4c2ca3eb37fa1d",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadWitnessValues.lean.in": "1f56c9ac588e61e65729de5dede4b75da04cdc527ea43f964bdf9d43b4167aac",
     "verification/experiments/stage1-protocol/inbox-load/InboxLoadWitnesses.lean.in": "6934921c2e09fdb9d54cbdc5e2df48b8bf7050e188a9ef1e84949546a11261f1",
     "verification/experiments/stage1-protocol/inbox-load/generic-root.rs.in": "895df96182beaaad2211e76585263877ae9adc7189fdbac13ca03e6125a0f76e",
-    "verification/experiments/stage1-protocol/inbox-load/inventory.json": "c1ac14fae5e32e97ba8bf8d46a1c19df73c7edd9f95facae76a545396b4fd410",
+    "verification/experiments/stage1-protocol/inbox-load/inventory.json": "09237889056447a50a089f38313ff165394898b112ae10fb2f3b6da74bf526b6",
     "verification/experiments/stage1-protocol/inbox-load/native_common.rs": "306303b212637f378a1f08828aa81674b7e4f33688d5aff0a4b57b8a36adbafe",
     "verification/experiments/stage1-protocol/inbox-load/native_effects.rs": "9cc8dfd35ef4d2a049c35be2b90602b37f22879125b1eb74e26bca6a6a967836",
     "verification/experiments/stage1-protocol/inbox-lookup/InboxLookup.lean.in": "f6f6465db3047785dc1f6b0850c86f6b856b879164b229cdb192674c8bdb29c3",
@@ -3199,14 +3199,14 @@
       "generated_raw_files": {
         "original": {
           "FunsExternal_Template.lean": "9851a31f09eabdd89fb235ac2b1978850893f9d5347c12b4da56bbc04ef14dc3",
-          "Types.lean": "8fc0aae82f179afbe800c30fca5a75904cf874d01451de41046aa2cb9290f319",
-          "Funs.lean": "a9cc976af4d801c9c4e67968f0580c60e1c45249eb0f349f7c8718cd0de5b5d9",
+          "Types.lean": "ab0247922cffb001c72f130057327f1e4b7bc90ba3957c43729cb3a0c846f817",
+          "Funs.lean": "85ce01e6ece3fd2479c7e3b2a6b00bcabb7d30a120be499978d12fbc40c76d74",
           "TypesExternal_Template.lean": "4f5052467b2f63a7eccaa3dff27b9cef33699aa4590584c705cf1abbe6062a91"
         },
         "request": {
           "FunsExternal_Template.lean": "9851a31f09eabdd89fb235ac2b1978850893f9d5347c12b4da56bbc04ef14dc3",
-          "Types.lean": "84f8ca9c9416ba330a41a787eb51a49e27dec37a6d125497b4567accc68d48e4",
-          "Funs.lean": "a9cc976af4d801c9c4e67968f0580c60e1c45249eb0f349f7c8718cd0de5b5d9",
+          "Types.lean": "cd6e6f47d47d61bc2a1679e9868e3a4c91efe09680d907681f9996a3a9f14a55",
+          "Funs.lean": "85ce01e6ece3fd2479c7e3b2a6b00bcabb7d30a120be499978d12fbc40c76d74",
           "TypesExternal_Template.lean": "2f76af46a522870345c485e06cc4a3aa1c8c3c1d720702fdc61759a307f12b93"
         },
         "primitive": {
@@ -6916,14 +6916,14 @@
       "generated_raw_files": {
         "original": {
           "FunsExternal_Template.lean": "9851a31f09eabdd89fb235ac2b1978850893f9d5347c12b4da56bbc04ef14dc3",
-          "Types.lean": "8fc0aae82f179afbe800c30fca5a75904cf874d01451de41046aa2cb9290f319",
-          "Funs.lean": "c4a11c9c5adffd30f04902f42bfb1527587c9443915e29d50990427b70320c0a",
+          "Types.lean": "ab0247922cffb001c72f130057327f1e4b7bc90ba3957c43729cb3a0c846f817",
+          "Funs.lean": "692a946508a61d59d1e0296fae5f32176506ec004eeaacf1195bdf4f5dbd566b",
           "TypesExternal_Template.lean": "4f5052467b2f63a7eccaa3dff27b9cef33699aa4590584c705cf1abbe6062a91"
         },
         "request": {
           "FunsExternal_Template.lean": "9851a31f09eabdd89fb235ac2b1978850893f9d5347c12b4da56bbc04ef14dc3",
-          "Types.lean": "84f8ca9c9416ba330a41a787eb51a49e27dec37a6d125497b4567accc68d48e4",
-          "Funs.lean": "c4a11c9c5adffd30f04902f42bfb1527587c9443915e29d50990427b70320c0a",
+          "Types.lean": "cd6e6f47d47d61bc2a1679e9868e3a4c91efe09680d907681f9996a3a9f14a55",
+          "Funs.lean": "692a946508a61d59d1e0296fae5f32176506ec004eeaacf1195bdf4f5dbd566b",
           "TypesExternal_Template.lean": "2f76af46a522870345c485e06cc4a3aa1c8c3c1d720702fdc61759a307f12b93"
         },
         "primitive": {
@@ -9966,14 +9966,14 @@
       "generated_raw_files": {
         "original": {
           "FunsExternal_Template.lean": "9851a31f09eabdd89fb235ac2b1978850893f9d5347c12b4da56bbc04ef14dc3",
-          "Types.lean": "8fc0aae82f179afbe800c30fca5a75904cf874d01451de41046aa2cb9290f319",
-          "Funs.lean": "388b73812dcc20e72c1a4eeaedb1ebd43675ebd405928a6eae7c62188c76f8f2",
+          "Types.lean": "ab0247922cffb001c72f130057327f1e4b7bc90ba3957c43729cb3a0c846f817",
+          "Funs.lean": "5142ca41de047a8157b7fbfc704900e0529e80550c75d01fad9833070a41b48b",
           "TypesExternal_Template.lean": "4f5052467b2f63a7eccaa3dff27b9cef33699aa4590584c705cf1abbe6062a91"
         },
         "request": {
           "FunsExternal_Template.lean": "9851a31f09eabdd89fb235ac2b1978850893f9d5347c12b4da56bbc04ef14dc3",
-          "Types.lean": "84f8ca9c9416ba330a41a787eb51a49e27dec37a6d125497b4567accc68d48e4",
-          "Funs.lean": "388b73812dcc20e72c1a4eeaedb1ebd43675ebd405928a6eae7c62188c76f8f2",
+          "Types.lean": "cd6e6f47d47d61bc2a1679e9868e3a4c91efe09680d907681f9996a3a9f14a55",
+          "Funs.lean": "5142ca41de047a8157b7fbfc704900e0529e80550c75d01fad9833070a41b48b",
           "TypesExternal_Template.lean": "2f76af46a522870345c485e06cc4a3aa1c8c3c1d720702fdc61759a307f12b93"
         },
         "primitive": {
@@ -10219,13 +10219,13 @@
           "code": "unused_variables",
           "message": "unused variable: `inbox`",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 456
+          "line": 427
         },
         {
           "code": "unused_variables",
           "message": "unused variable: `inbox`",
           "source": "controller-service/src/controller/lifecycle_inbox.rs",
-          "line": 456
+          "line": 427
         }
       ]
     },
@@ -10319,5 +10319,10 @@
       }
     ],
     "manifest_is_proof_evidence": false
+  },
+  "current_candidate_input_review": {
+    "base": "8672eeeaacedf67e95123837704f7623f3588f6f",
+    "full_original_acceptance_required": true,
+    "basis": "The original function inventory, all physical page/audit names, and all generated definitions match the original high-water comparison. Changed generated file bytes are confined to source-location comments. The unchecked seed retains both identical Clippy diagnostics at its current parameter line."
   }
 }

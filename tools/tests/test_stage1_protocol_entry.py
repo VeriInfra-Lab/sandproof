@@ -166,7 +166,7 @@ class CommittedArchiveTests(unittest.TestCase):
             + '    (output/"fixture-call.json").write_text(json.dumps(sys.argv[1:]))\n'
             + '    print("registered-output-new")\n'
             + '    sys.exit(0)\n'
-            + 'assert sys.argv[1]=="verification/experiments/stage1-protocol/component.py"\n'
+            + 'assert sys.argv[1]=="verification/experiments/stage1-protocol/retained_runtime.py"\n'
             + 'p=Path(' + repr(str(HERE/'component.py')) + ')\n'
             + 'spec=importlib.util.spec_from_file_location("entry_fixture",p)\n'
             + 'module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)\n'

@@ -70,10 +70,10 @@ python3 verification/experiments/stage1-protocol/production-json/materialize.py 
 安装时不读取它们。实际源输入、提供方和原始文件摘要不符时拒绝，不以刷新摘要冒充
 重新抽取。
 
-Encoding 通过原 `local_view.install` 在临时私有 scratch 中取得，只安装其原输出；
-不复制另一份变换算法，也不把 scratch 的抽取根带入实际视图。Writer 使用当前 tracked
-完整 Funs／Types（0a6bb723／c58fbdbf），保留新增错误分支。正式页保持03387795及九条
-审计，原正确／错误矩阵和数学不由这个安装器再跑。
+Encoding 通过原 `local_view.install` 在临时私有目录中取得，只安装其原输出。
+Writer 继续使用相同的 Funs（0a6bb723）。当前抽取的 Types（36eabd6d）只更新了
+`WorkerReject` 注释里的源码行号。读取原证明时，安装器先校验当前位置，只在私有目录恢复
+这一行，并核对原 Types 的完整摘要 c58fbdbf。证明源码指纹和九条正式审计由原证据核对。
 
 Lake 使用现有 `local-view.toml.in`（f38d6b65）。它与先前通过视图的旧配置 d412ef1b
 字节不同，但六个实际消费库的 module→source 路径逐项相同，比较记录在清单中。

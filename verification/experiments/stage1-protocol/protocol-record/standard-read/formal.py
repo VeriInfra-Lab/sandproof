@@ -28,6 +28,21 @@ CHECKED_FILES = (
     'SandboxModel/Access/Cloning.lean',
     'SandboxModel/Lifecycle/Protocol/StandardRecordReads.lean',
 )
+CURRENT_PROVIDER_FILES = (
+    'verification/aeneas/stage1-protocol/request/SandproofStage1Request/Types.lean',
+    'verification/aeneas/stage1-protocol/request/SandproofStage1Request/TypesExternal.lean',
+    'verification/aeneas/bounded-writer/SandproofBoundedWriter/TypesExternal.lean',
+    str(HERE/'generated/SandproofStandardRecord/CodecTypes.lean'),
+)
+CURRENT_GENERATED = (
+    str(HERE/'generated/SandproofStandardRecord/Types.lean'),
+    str(HERE/'generated/SandproofStandardRecord/Funs.lean'),
+)
+CURRENT_INPUTS = (
+    HERE/'current_capture.py', PARENT/'archive.py', PARENT/'formal_runtime.py',
+    PARENT/'unload-parent-link/revision_capture.py', PARENT/'unload-parent-link/check_capture.py',
+    PARENT/'unload-base-provenance/materialize.py', Path('verification/foundations-environment.json'),
+)
 
 
 def module(name, path):
@@ -53,7 +68,7 @@ def current(root):
     root = Path(root).resolve()
     view, capture = (read(root/HERE/name) for name in ('view.json', 'capture.json'))
     support = module('standard_read_fixed_support', root/HERE/'support.py')
-    if (view.get('schema') != 1 or capture.get('schema') != 1
+    if (view.get('schema') != 1 or capture.get('schema') not in (1, 2)
             or capture['roots'] != support.ROOTS or capture['include'] != support.INCLUDE
             or capture['opaque'] != support.OPAQUE
             or sha(root/HERE/'root.rs.in') != capture['root_sha256']):
@@ -77,19 +92,27 @@ def current(root):
             if before.encode() not in content:
                 raise ValueError('missing original namespace binding')
             content = content.replace(before.encode(), after.encode())
+        if 'isolate' in row:
+            if capture['schema'] != 2 or name != CURRENT_PROVIDER_FILES[0]:
+                raise ValueError('unexpected standard read type metadata isolation')
+            isolation = module('standard_read_type_isolation', root/PARENT/'unload-base-provenance/materialize.py')
+            content = isolation.apply_isolation(content, row['isolate'])
         if hashlib.sha256(content).hexdigest() != row['sha256']:
             raise ValueError('finite namespace view changed: '+name)
         values[name] = content
     for name in ('formal.py', 'view.json', 'capture.json', 'root.rs.in', 'support.py'):
         path = root/HERE/name
         evidence[str(path)] = sha(path)
+    if capture['schema'] == 2:
+        evidence.update({str(root/name): sha(root/name) for name in CURRENT_INPUTS})
     return view, capture, values, evidence
 
 
 def plan(root):
-    _, _, values, _ = current(root)
-    files = list(CHECKED_FILES)
-    audits = [audit for name in files for audit in re.findall(
+    _, capture, values, _ = current(root)
+    files = list(CHECKED_FILES + (CURRENT_PROVIDER_FILES if capture['schema'] == 2 else ()))
+    declared = (name for name in files if capture['schema'] == 1 or name not in CURRENT_GENERATED)
+    audits = [audit for name in declared for audit in re.findall(
         r'^#audit_controller_proof (\S+)$', values[name].decode(), re.M)]
     if len(audits) != len(set(audits)) or len(audits) != 9:
         raise ValueError('missing, duplicate or extra read declarations')
@@ -99,6 +122,9 @@ def plan(root):
 def capture_evidence(root, directory):
     _, fixed, _, evidence = current(root)
     directory = Path(directory)
+    if fixed['schema'] == 2:
+        producer = module('current_standard_read_capture', root/HERE/'current_capture.py')
+        return evidence | producer.evidence(root, directory, fixed, sha)
     for name, expected in fixed['files'].items():
         path = directory/name
         if sha(path) != expected:
@@ -117,8 +143,17 @@ def capture_evidence(root, directory):
     return evidence
 
 
-def install(root, project):
-    _, _, values, _ = current(root)
+def materialized_inputs(root, directory):
+    _, config, values, _ = current(root)
+    if config['schema'] == 2:
+        for name in CURRENT_GENERATED:
+            relative = Path(name).relative_to(HERE/'generated')
+            values[name] = (Path(directory)/'generated'/relative).read_bytes()
+    return values
+
+
+def install(root, project, directory=None):
+    values = materialized_inputs(root, directory)
     project = Path(project)
     project.mkdir(parents=True, exist_ok=False)
     for name, content in values.items():
@@ -162,10 +197,9 @@ def check(result, root):
         expected[producer] = ORIGINAL_PRODUCER_SHA256
     if old != expected or any(sha(Path(name)) != digest for name, digest in old.items()):
         raise ValueError('current content or preserved original source no longer matches')
-    view, _, _, _ = current(root)
     project = Path(result['project'])
-    for name, row in view['files'].items():
-        if sha(project/name) != row['sha256']:
+    for name, data in materialized_inputs(root, result['capture_directory']).items():
+        if sha(project/name) != hashlib.sha256(data).hexdigest():
             raise ValueError('actual materialized read input changed: '+name)
     recipe = plan(root)['views']['actual']
     actual, = result['actuals']
@@ -194,9 +228,8 @@ def evidence(result, root):
         return values
     values = dict(result['source_evidence'])
     values.update(current(root)[3])
-    view, _, _, _ = current(root)
-    values.update({str(Path(result['project'])/name): row['sha256']
-                   for name, row in view['files'].items()})
+    values.update({str(Path(result['project'])/name): hashlib.sha256(data).hexdigest()
+                   for name, data in materialized_inputs(root, result['capture_directory']).items()})
     for command in result['commands']:
         values[command['log']] = command['log_sha256']
     physical = Path(result['physical'])
@@ -228,7 +261,12 @@ def run(output):
             return result
         if len(os.sched_getaffinity(0)) > 4:
             raise ValueError('the fixed read proof needs one admitted four-CPU slot')
+        _, config, _, _ = current(ROOT)
         directory = os.environ.get(CAPTURE_ENV)
+        if config['schema'] == 2 and not directory:
+            directory = str(output/'capture')
+            producer = module('current_standard_read_capture', ROOT/HERE/'current_capture.py')
+            producer.capture(ROOT, Path(directory), config)
         if not directory:
             raise ValueError('missing original read capture: '+CAPTURE_ENV)
         source_evidence = capture_evidence(ROOT, directory)
@@ -238,15 +276,14 @@ def run(output):
             project = Path(prepared)
             if not project.is_absolute() or project.resolve() != project:
                 raise ValueError('prepared project must be an absolute private directory')
-            view, _, _, _ = current(ROOT)
-            for name, row in view['files'].items():
-                if sha(project/name) != row['sha256']:
+            for name, data in materialized_inputs(ROOT, directory).items():
+                if sha(project/name) != hashlib.sha256(data).hexdigest():
                     raise ValueError('prepared read project differs: '+name)
             if ((project/'.tools').resolve() != runtime.tool_root(ROOT).resolve()
                     or (project/'.lake/packages').resolve() != runtime.package_root(ROOT).resolve()):
                 raise ValueError('prepared project has a different fixed tool or package binding')
         else:
-            project = install(ROOT, output/'project')
+            project = install(ROOT, output/'project', directory)
             (project/'.tools').symlink_to(runtime.tool_root(ROOT))
             (project/'.lake').mkdir()
             (project/'.lake/packages').symlink_to(runtime.package_root(ROOT))

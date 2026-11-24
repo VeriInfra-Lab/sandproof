@@ -31,7 +31,11 @@ def prepare(project, variant):
     before = views.inputs(project, HERE)
     mutation = None
     if variant not in ('original', 'restored'):
-        parent.prepare(project, 'candidate')
+        parent_inventory = json.loads((project/parent.HERE/'inventory.json').read_text())
+        inherited = parent_inventory['production_inputs'].keys() | parent_inventory.get('original_inputs', {}).keys()
+        if not inherited <= before.keys():
+            raise ValueError('missing inherited input in the current Inbox load view')
+        parent.append_roots(project)
         if variant in FAILURES:
             mutation = views.edit(project, SOURCE, [mutations.MUTATIONS[variant]], 'fn load_using<')
         views.append(project, SOURCE, (project/HERE/'generic-root.rs.in').read_text())

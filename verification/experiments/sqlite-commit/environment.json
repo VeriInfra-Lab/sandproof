@@ -11,7 +11,7 @@
     "Option/Result/ControlFlow/tuple": "plain payloads or transaction/callback disposal under the stated A4/B2/B4 frame; original pure backend erasure remains explicit"
   },
   "core": {
-    "llbc_digest": "a0b7f84ab79cfff663bfc58b82122a0877fc05dd6c4091eec0476f41ebf2ef35",
+    "llbc_digest": "7edd58b4962fd5d556ed26f705f345a55982fb38112a5b797126ec0dccc9b5a8",
     "charon_options": {
       "ullbc": false,
       "precise_drops": false,
@@ -3227,7 +3227,7 @@
     }
   },
   "wrapper": {
-    "llbc_digest": "ae6b2f9ecf774259aad456c82213afc08b3d329f80b7470f649eedced6c9fabe",
+    "llbc_digest": "1663d2eacf1de325956f3deec5a064a50c1e7bd0669dfe85a073f7a238078cf1",
     "charon_options": {
       "ullbc": false,
       "precise_drops": false,
@@ -3355,7 +3355,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "3de9ee9b633b5478d53b19cb9eb604a4136e23a10fe9808447e0d7f6fea894e1"
+          "declaration_sha256": "d34e3532b73e4c0c2851e667dae4978194202df537da2767fffa55dcafc6c9f0"
         },
         {
           "def_id": 1,
@@ -3416,7 +3416,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "d982ba75b3121d8949cf5db4146a11bb0b605aaedf75960839da2b683766c987"
+          "declaration_sha256": "4f806c8978997b1a39fd41ee335a10ddffb779cce3623ea2981ed6fccc1750f5"
         },
         {
           "def_id": 2,
@@ -3444,7 +3444,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "06155c622fe70a33def3da010bb3078c979b4623760d5e9bb7f099323e23f30b"
+          "declaration_sha256": "c23d5fe3c4b5c7e358fabf2400631464576067f63a96931f67874cbb7a8e7998"
         },
         {
           "def_id": 3,
@@ -3490,7 +3490,7 @@
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 157
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [
@@ -3516,13 +3516,13 @@
                                 "regions": [],
                                 "types": [
                                   {
-                                    "Deduplicated": 154
+                                    "Deduplicated": 156
                                   },
                                   {
                                     "Deduplicated": 10
                                   },
                                   {
-                                    "Deduplicated": 157
+                                    "Deduplicated": 159
                                   }
                                 ],
                                 "const_generics": [],
@@ -3542,13 +3542,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 152
+                      "Deduplicated": 154
                     },
                     {
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 157
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3559,7 +3559,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "0a3460a0c1d728cae7a569596f9f8e14678d3f880fd4e352e5e786599c93ed20"
+          "declaration_sha256": "ffdf831e2aa1bbadc1c51d9a0639e1f7db221b6e6411062d18c32de23c6acf2b"
         },
         {
           "def_id": 4,
@@ -3611,7 +3611,7 @@
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 157
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3636,10 +3636,10 @@
                                     "Deduplicated": 10
                                   },
                                   {
-                                    "Deduplicated": 154
+                                    "Deduplicated": 156
                                   },
                                   {
-                                    "Deduplicated": 157
+                                    "Deduplicated": 159
                                   }
                                 ],
                                 "const_generics": [],
@@ -3659,13 +3659,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 157
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3676,7 +3676,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "f2b770b5f2da2f9e130233b8ecb0f1ca35c3729df7d37b58a172a9a7c3b35983"
+          "declaration_sha256": "7392b17a45e6f609b7bbcfeb93422142a5f347492287e686491019c4df7b3c54"
         },
         {
           "def_id": 5,
@@ -3722,7 +3722,7 @@
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 157
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [
@@ -3748,13 +3748,13 @@
                                 "regions": [],
                                 "types": [
                                   {
-                                    "Deduplicated": 154
+                                    "Deduplicated": 156
                                   },
                                   {
                                     "Deduplicated": 10
                                   },
                                   {
-                                    "Deduplicated": 157
+                                    "Deduplicated": 159
                                   }
                                 ],
                                 "const_generics": [],
@@ -3774,13 +3774,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 152
+                      "Deduplicated": 154
                     },
                     {
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 157
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3791,7 +3791,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "f46a7b885bd4b4a53951334451d3758783b96081f57d9332377919e2ebb688d5"
+          "declaration_sha256": "e0a43ecf3494be909f46b9e98f8611105f75c3e94f29fe6d818ae998f930f3aa"
         },
         {
           "def_id": 6,
@@ -3843,7 +3843,7 @@
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 157
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3860,13 +3860,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 157
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3877,7 +3877,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "2ba77593622f337ff1f0d2125b36061235ca346f040cc018edf58af072a20800"
+          "declaration_sha256": "404557edd3c88ab61b7fbeb470677a168fa6764e86582358c63d237a06324b51"
         },
         {
           "def_id": 7,
@@ -3939,7 +3939,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -3953,7 +3953,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "c1fe2358d9d91ca4e318af568f26a1e0799efd5ed9fa1fe179deba6300e85457"
+          "declaration_sha256": "2845252f950bb8f8438f2ffa3c73c8575e38e8ba834ae262ba9d6b1681da877c"
         },
         {
           "def_id": 8,
@@ -4015,7 +4015,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -4029,7 +4029,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "039e2224559d48f86a67b4ebe5b5abb7251562a3e2b1fb1f00c95f3165ea520f"
+          "declaration_sha256": "f5415ddbea373029d54671606def9e38654051654dffb114dab1366f635c246e"
         },
         {
           "def_id": 9,
@@ -4088,13 +4088,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 162
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4105,7 +4105,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "aac06962e175444d77a8e7b233125597c1f828bae358f6007329a08e31e70df9"
+          "declaration_sha256": "01955acf8530d83d98abca2bce151e898a6327d58e37d2dbc90742cd08cba537"
         },
         {
           "def_id": 10,
@@ -4164,13 +4164,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 162
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4181,7 +4181,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "6a472b970d3c5c514934e2890c5116549465227b405e0490b52fe82496d1ce36"
+          "declaration_sha256": "8c0f4616dd5e8bc89fca4ab75276ac4ac2a6e3d36d6c10bc8c6f3eeaa41921b5"
         },
         {
           "def_id": 11,
@@ -4215,7 +4215,7 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "Normal",
-          "declaration_sha256": "b1ea812747d52484081529b35f9cc9c37b831ddf0d56c33b14c5d0689e5488c2"
+          "declaration_sha256": "b8ae62a21dfe00ddd37c385a718a2fc3f73a082e505f9a4c693a11806c6a6c7d"
         },
         {
           "def_id": 12,
@@ -4277,7 +4277,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -4291,7 +4291,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "5a61a9f3dd0d4612f313f49e2d2c7e1305a93b96ed3f4bedcdfe2f3c8bdd7061"
+          "declaration_sha256": "cd227fbf520b065ed09359a9a7d3ef5d42ac612a5e9c7c08d5ddd52d4c665e26"
         },
         {
           "def_id": 13,
@@ -4353,7 +4353,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -4367,7 +4367,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "c7570e428654b867f25db5d5c9b9fd9e6842eef3ddb6584f51431f580bda66bb"
+          "declaration_sha256": "ab27768445557438dcd5617287522092144cbedeec58babeb511c78a71f9f6a8"
         },
         {
           "def_id": 14,
@@ -4429,7 +4429,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -4443,7 +4443,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "689389e98811a9184915c4fce789f0ca9e0305ed59aca38a1edc189e55f88b66"
+          "declaration_sha256": "af99b96b5371244824701cdef4fced5c9a788d0fedbc64c94329864728f1f01e"
         },
         {
           "def_id": 15,
@@ -4505,7 +4505,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -4519,7 +4519,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "2959e00a484d8d7a73a2f7a68431b252943be1b4b47f7b88420ba9235c9fc795"
+          "declaration_sha256": "766494a5478b923a7c486ba1e3d3296c0f60f35b6c5fe7c0f1737d1f96ee529c"
         },
         {
           "def_id": 16,
@@ -4578,13 +4578,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 162
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4595,7 +4595,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "addda9edd69910da3f3ba93a734f30903069474bea3b0a400c8d43b50369065e"
+          "declaration_sha256": "340a1a22db42b4f2c6ad230ec4357f04e2f43e1b6084d66f80e48abce4df7858"
         },
         {
           "def_id": 17,
@@ -4654,13 +4654,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 162
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4671,7 +4671,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "eebe1f40c665f8a447738bc730465c995a292ad305c6f24649b615ad5d6211f6"
+          "declaration_sha256": "406718cd4a9d0f7e0cd1b3e83972c7d9e32f7f4bee989161f63e21b99a0140eb"
         },
         {
           "def_id": 18,
@@ -4730,13 +4730,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 162
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4747,7 +4747,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "9f456c539b58aa12bbef7567570e44b0fca8704d7126b800902a0289057bd2af"
+          "declaration_sha256": "e8198398523d31fd70aa2dce21625bb0e48c8b62469e848ddb31c89d86576f54"
         },
         {
           "def_id": 19,
@@ -4806,13 +4806,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 162
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 154
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4823,7 +4823,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "d7450b9b944cc4511efeb9177603cd23d9cd993f2ad36e14ec8b3ffa12606565"
+          "declaration_sha256": "86b1c5d5b7e6565de6f830d76341e19a4894741a62da2975291dc15ae732044d"
         },
         {
           "def_id": 20,
@@ -4883,7 +4883,7 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "Normal",
-          "declaration_sha256": "f064d48820b9fe2667b2a7688a78a08294e2265dc4631b2c7e02e055029b6663"
+          "declaration_sha256": "5c2fbaa7f340c2ad2402f1be18ed81d37c9f982aa08e51a8c2ca61f9f02a672d"
         },
         {
           "def_id": 22,
@@ -4923,7 +4923,7 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "Normal",
-          "declaration_sha256": "d31b4ed7a22dabf0d071df3f86117909b126d4cd324ea92f65ff42f572cf1128"
+          "declaration_sha256": "136dccd1689e7633f9ca863d36e2cb9bbdb3b16e6317bfb944697713a64841ba"
         },
         {
           "def_id": 23,
@@ -5001,7 +5001,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "2f9c2b2e305744e38081e108fe66536b25e5d6de88e8e2cd21f9e2d73038ac28"
+          "declaration_sha256": "73bf72d8088aa4ae5cff697b8eb35acbd66c47f3766b068304f007eb02077a4e"
         },
         {
           "def_id": 24,
@@ -5165,7 +5165,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "579c8313d1bdef7a4bf474b1c7d4f5fca7e5e1d134ea0586caac463d67531fbb"
+          "declaration_sha256": "c05343846d11870cc37b12517c2b420361007b9f4722391700142344d1bdd0c7"
         },
         {
           "def_id": 27,
@@ -5306,7 +5306,7 @@
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 157
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -5328,7 +5328,7 @@
                                 "regions": [],
                                 "types": [
                                   {
-                                    "Deduplicated": 157
+                                    "Deduplicated": 159
                                   },
                                   {
                                     "Deduplicated": 10
@@ -5365,7 +5365,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "3de310dec692ac78635c44ec2f6185f1212894dd6f47ae29ce3933cc23a03608"
+          "declaration_sha256": "049cd95cf7fccd9021ce70e038d39bc499a358a7d590f0792f12b8b0dc009d51"
         },
         {
           "def_id": 30,
@@ -5440,7 +5440,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "3b3a2f660e4079fbe66f53b71fbcfe5f9c862b377e2acf5d902f17f0d37323ce"
+          "declaration_sha256": "b6013af06820fcdf22a7157af3ac432af8c8d15b48605b503714c6e65a310130"
         },
         {
           "def_id": 31,
@@ -5515,7 +5515,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "5d6af319c67225ebf00974fe950bdbaf1b5b300e311eaa2be99a9114e9c2b165"
+          "declaration_sha256": "0b4e82708c307edb58710e4d2c0c3d87a4670ef8101762f6f58aa711882fafef"
         },
         {
           "def_id": 32,
@@ -5587,7 +5587,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "123f4eff999c7965ab32228636875da486572ce9d021eec8e5b87b06cdd55959"
+          "declaration_sha256": "505735a2612793e5b3ce8d18aee5bbf3b578d5a5172191e78692c4ff4087d06b"
         },
         {
           "def_id": 33,
@@ -5657,7 +5657,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "e1115bd2ba43966c6b7ccd3f1d6d220d1d034b6f516553ed23c873c655ccb8c8"
+          "declaration_sha256": "b4040fc01b6f9f59a9c581bd73e2160435001d708553d930260453a4bbafba82"
         },
         {
           "def_id": 34,
@@ -5706,7 +5706,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 288
+                      "Deduplicated": 287
                     }
                   ],
                   "const_generics": [],
@@ -5717,7 +5717,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "ef59b1b238bfacdca04d08b8733c36d015c241cc59926b0cf002c42b2b0c3ef3"
+          "declaration_sha256": "764c4bf145dca74f876e613ac4fc5a4260833376d4d8210ec77a12ba86ea7b22"
         },
         {
           "def_id": 35,
@@ -5783,7 +5783,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "5fdc68f5bc8bbc9810ee74f6df92bdd8ca32b5af7ecf8e4b8d77e9de9534c548"
+          "declaration_sha256": "42405b479e2fdb81ba17c212b6b042911fa7d9ad62e59a70f07407bc32013431"
         },
         {
           "def_id": 36,
@@ -5856,7 +5856,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "7542d74a7bd374f56d92a429f347e45d6ac4afdc605beee8c1fba256033fe0d1"
+          "declaration_sha256": "991ac21449e8ca176f4316eed0e2bdfe072902ff339dcdb5c1d0112e12d0891e"
         },
         {
           "def_id": 37,
@@ -5991,7 +5991,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 292
+                      "Deduplicated": 291
                     }
                   ],
                   "const_generics": [],
@@ -6002,7 +6002,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "5fb6c0ff9dfa7030db0722a17d2495f14c6e95c059df0cfc915a95706a44e54f"
+          "declaration_sha256": "7d8d180393d142b6f93f67a928bb8b28d3e97d14192dc35a8180c83acc82b00d"
         },
         {
           "def_id": 39,
@@ -6122,7 +6122,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "30d15920a1f56975dabbb560b1bc1e7e31b33d322300f8b2e32d1d7739d3c234"
+          "declaration_sha256": "9070e3ae3aeb1582240c17959b63d2fea4eb613e583a80d4afe6d2e9b5d31616"
         },
         {
           "def_id": 41,
@@ -6181,7 +6181,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 295
+                      "Deduplicated": 294
                     },
                     {
                       "Deduplicated": 9
@@ -6195,7 +6195,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "5f9eebf6ff1f0ebed4c100b91b4b03baa6d343752b47dede0050224e73d7ef33"
+          "declaration_sha256": "2adbe829154d3f602ae372480ac818b7118ac194ac9f07e038babd813dabea96"
         },
         {
           "def_id": 42,
@@ -6252,7 +6252,7 @@
               "item_id": 0
             }
           },
-          "declaration_sha256": "4fb1b23a29165f8f499ed3b45c438f1bc36459da6807b17648b03fd0fe2f183e"
+          "declaration_sha256": "dec5ab2fffe891e6144847f514673236dd5dda74b83935aa0aaf30ca36918538"
         },
         {
           "def_id": 44,
@@ -6292,64 +6292,10 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "Normal",
-          "declaration_sha256": "a64406ecf1855c7095c0f5f2a694674286d94d98f33cef68320fb43cf24a99c4"
+          "declaration_sha256": "2c4062f8476d956383ff355e35ff6d4a47fe5f2c45da0704b05fc56691c088d5"
         },
         {
           "def_id": 45,
-          "name": [
-            {
-              "Ident": [
-                "rusqlite",
-                0
-              ]
-            },
-            {
-              "Ident": [
-                "transaction",
-                0
-              ]
-            },
-            {
-              "Impl": {
-                "Ty": {
-                  "params": {
-                    "regions": [
-                      {
-                        "index": 0,
-                        "name": null,
-                        "variance": "Unknown",
-                        "mutability": "Unknown"
-                      }
-                    ],
-                    "types": [],
-                    "const_generics": [],
-                    "trait_clauses": [],
-                    "regions_outlive": [],
-                    "types_outlive": [],
-                    "trait_type_constraints": []
-                  },
-                  "skip_binder": {
-                    "Deduplicated": 8
-                  },
-                  "kind": "InherentImplBlock"
-                }
-              }
-            },
-            {
-              "Ident": [
-                "rollback",
-                0
-              ]
-            }
-          ],
-          "label": "rusqlite::transaction::rollback",
-          "opacity": "Opaque",
-          "body": "Opaque",
-          "src": "Normal",
-          "declaration_sha256": "64741f394fc911f79b1b060e5d3daa82d99827208db33ef61a29371cb23b5f4a"
-        },
-        {
-          "def_id": 46,
           "name": [
             {
               "Ident": [
@@ -6405,7 +6351,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 294
+                      "Deduplicated": 293
                     }
                   ],
                   "const_generics": [],
@@ -6416,10 +6362,10 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "3fbd8c2fdf6ccf0fee34132b681e6fdb5aa990f81ceef9b2ec0510bc8eb2023b"
+          "declaration_sha256": "f223580a2b3206625692f947a0dd9e4cc380fb00b7ff125eedb8f78931cc3328"
         },
         {
-          "def_id": 47,
+          "def_id": 46,
           "name": [
             {
               "Ident": [
@@ -6481,7 +6427,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 295
+                      "Deduplicated": 294
                     }
                   ],
                   "const_generics": [],
@@ -6492,7 +6438,135 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "b8e1bef41c7522cbe3b876b78848de7d24ed276349d4bd12c8a635f9aa086f7e"
+          "declaration_sha256": "ff7bf1cbdabe1ffb44d0c85b7e4c1ae8edbf390ecbb19045a030db6495e6d09d"
+        },
+        {
+          "def_id": 47,
+          "name": [
+            {
+              "Ident": [
+                "sandproof_controller_service",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "controller",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "transaction",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Trait": 16
+              }
+            },
+            {
+              "Ident": [
+                "drop",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Trait": 21
+              }
+            },
+            {
+              "Ident": [
+                "call_once",
+                0
+              ]
+            }
+          ],
+          "label": "sandproof_controller_service::controller::transaction::drop::call_once",
+          "opacity": "Transparent",
+          "body": "Structured",
+          "src": {
+            "TraitImpl": {
+              "impl_ref": {
+                "id": 21,
+                "generics": {
+                  "regions": [
+                    {
+                      "Var": {
+                        "Free": 0
+                      }
+                    },
+                    {
+                      "Var": {
+                        "Free": 1
+                      }
+                    }
+                  ],
+                  "types": [],
+                  "const_generics": [],
+                  "trait_refs": []
+                }
+              },
+              "trait_ref": {
+                "id": 4,
+                "generics": {
+                  "regions": [],
+                  "types": [
+                    {
+                      "Deduplicated": 301
+                    },
+                    {
+                      "Value": [
+                        304,
+                        {
+                          "Adt": {
+                            "id": 0,
+                            "generics": {
+                              "regions": [],
+                              "types": [
+                                {
+                                  "Value": [
+                                    305,
+                                    {
+                                      "Adt": {
+                                        "id": 2,
+                                        "generics": {
+                                          "regions": [
+                                            "Erased"
+                                          ],
+                                          "types": [],
+                                          "const_generics": [],
+                                          "trait_refs": []
+                                        },
+                                        "builtin": null
+                                      }
+                                    }
+                                  ]
+                                }
+                              ],
+                              "const_generics": [],
+                              "trait_refs": []
+                            },
+                            "builtin": "Tuple"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "Deduplicated": 144
+                    }
+                  ],
+                  "const_generics": [],
+                  "trait_refs": []
+                }
+              },
+              "item_id": 0,
+              "reuses_default": false
+            }
+          },
+          "declaration_sha256": "49852e092afa3a03213431af42f68866b3cd702fcb2dd646ef0b8723f9bb2888"
         },
         {
           "def_id": 48,
@@ -6550,108 +6624,10 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "fdf9ccb38bbfc00163b329c78d054a0ece92343d47820460b98a3cdeb66ce4be"
+          "declaration_sha256": "5b638b355accf014a5cb9f6a1aa2189be1b46b372b410f2d32c16041221b13b7"
         },
         {
           "def_id": 49,
-          "name": [
-            {
-              "Ident": [
-                "rusqlite",
-                0
-              ]
-            },
-            {
-              "Ident": [
-                "transaction",
-                0
-              ]
-            },
-            {
-              "Impl": {
-                "Ty": {
-                  "params": {
-                    "regions": [
-                      {
-                        "index": 0,
-                        "name": null,
-                        "variance": "Unknown",
-                        "mutability": "Unknown"
-                      }
-                    ],
-                    "types": [],
-                    "const_generics": [],
-                    "trait_clauses": [],
-                    "regions_outlive": [],
-                    "types_outlive": [],
-                    "trait_type_constraints": []
-                  },
-                  "skip_binder": {
-                    "Deduplicated": 8
-                  },
-                  "kind": "InherentImplBlock"
-                }
-              }
-            },
-            {
-              "Impl": {
-                "Trait": 21
-              }
-            },
-            {
-              "Ident": [
-                "call_once",
-                0
-              ]
-            }
-          ],
-          "label": "rusqlite::transaction::call_once",
-          "opacity": "Opaque",
-          "body": "Opaque",
-          "src": {
-            "TraitImpl": {
-              "impl_ref": {
-                "id": 21,
-                "generics": {
-                  "regions": [
-                    {
-                      "Var": {
-                        "Free": 0
-                      }
-                    }
-                  ],
-                  "types": [],
-                  "const_generics": [],
-                  "trait_refs": []
-                }
-              },
-              "trait_ref": {
-                "id": 4,
-                "generics": {
-                  "regions": [],
-                  "types": [
-                    {
-                      "Deduplicated": 303
-                    },
-                    {
-                      "Deduplicated": 163
-                    },
-                    {
-                      "Deduplicated": 164
-                    }
-                  ],
-                  "const_generics": [],
-                  "trait_refs": []
-                }
-              },
-              "item_id": 0,
-              "reuses_default": false
-            }
-          },
-          "declaration_sha256": "a61b993512fc4ad038ebbc80052d127d07ad90df1daf8525f6f5f1e7ecede328"
-        },
-        {
-          "def_id": 50,
           "name": [
             {
               "Ident": [
@@ -6707,7 +6683,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 295
+                      "Deduplicated": 294
                     },
                     {
                       "Deduplicated": 9
@@ -6721,11 +6697,137 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "ecbfc0f9eac3c19dc6390afe0ab6cc8fed63e22217ecd28d3a3704bee7e3dd18"
+          "declaration_sha256": "5411fddc92486a365a8466184fc8f9ae0d98b9192790643f059ce7f2634a2045"
+        },
+        {
+          "def_id": 50,
+          "name": [
+            {
+              "Ident": [
+                "rusqlite",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "transaction",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Ty": {
+                  "params": {
+                    "regions": [
+                      {
+                        "index": 0,
+                        "name": null,
+                        "variance": "Unknown",
+                        "mutability": "Unknown"
+                      }
+                    ],
+                    "types": [],
+                    "const_generics": [],
+                    "trait_clauses": [],
+                    "regions_outlive": [],
+                    "types_outlive": [],
+                    "trait_type_constraints": []
+                  },
+                  "skip_binder": {
+                    "Deduplicated": 8
+                  },
+                  "kind": "InherentImplBlock"
+                }
+              }
+            },
+            {
+              "Ident": [
+                "rollback",
+                0
+              ]
+            }
+          ],
+          "label": "rusqlite::transaction::rollback",
+          "opacity": "Opaque",
+          "body": "Opaque",
+          "src": "Normal",
+          "declaration_sha256": "ace1c71afe704ee3c5e58c00fa9da769a1204c9dc5be9ddc6ae7c6471ac10cbb"
+        },
+        {
+          "def_id": 51,
+          "name": [
+            {
+              "Ident": [
+                "rusqlite",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "transaction",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "Transaction",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Trait": 23
+              }
+            },
+            {
+              "Builtin": [
+                "DropGlue",
+                0
+              ]
+            }
+          ],
+          "label": "rusqlite::transaction::Transaction",
+          "opacity": "Opaque",
+          "body": "Opaque",
+          "src": {
+            "TraitImpl": {
+              "impl_ref": {
+                "id": 23,
+                "generics": {
+                  "regions": [
+                    {
+                      "Var": {
+                        "Free": 0
+                      }
+                    }
+                  ],
+                  "types": [],
+                  "const_generics": [],
+                  "trait_refs": []
+                }
+              },
+              "trait_ref": {
+                "id": 5,
+                "generics": {
+                  "regions": [],
+                  "types": [
+                    {
+                      "Deduplicated": 12
+                    }
+                  ],
+                  "const_generics": [],
+                  "trait_refs": []
+                }
+              },
+              "item_id": 0,
+              "reuses_default": false
+            }
+          },
+          "declaration_sha256": "ea7f6fc9b49edacf923e61a89bdef61bf7db99d426bb664c472d1a4842c22eb1"
         }
       ],
-      "drop_sites": 117,
-      "all_drop_sites_sha256": "ada47541031faaaba8c36fe8b374bd346e27a9a01559af1146031c36e37b948c",
+      "drop_sites": 120,
+      "all_drop_sites_sha256": "9b71fec2bff8ef61ab90e6ee17063c8b2e837f8e56a76e6971d28abe2f429573",
       "drop_groups": [
         {
           "function": 11,
@@ -7171,7 +7273,7 @@
           },
           "unwind": false,
           "count": 1,
-          "sites_sha256": "68b0aea3fbad50d83013efb11f3051207b23b03e2d6c3cfd33525722317a4c4f"
+          "sites_sha256": "74f0a0b5a65d6215383da136e78ca6b4927e0a128ee76ba51c67aa0ee2147ce3"
         },
         {
           "function": 22,
@@ -7208,7 +7310,7 @@
           ],
           "unwind": true,
           "count": 5,
-          "sites_sha256": "9f35f086ffc0ba2730df64d84771b3f94195b520f98ab203692dd79dfc136dd7"
+          "sites_sha256": "c42d62a65a98bca5377308cb1bc50603f800cad5f7a221dcdb79a70ae4853610"
         },
         {
           "function": 22,
@@ -7251,7 +7353,7 @@
           ],
           "unwind": true,
           "count": 2,
-          "sites_sha256": "3208abf5baf4dcdc3b3526a30c06215f2ff6b4f79d934f2b29e9db1f227b0b84"
+          "sites_sha256": "95a560b1538a17947fdce88c9bc74e0f35524d59df2745a472471486db629515"
         },
         {
           "function": 22,
@@ -7288,7 +7390,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "5534aeb9d3547ed13a1f23bebb5862ba51c08eea44bc7da6c270a509b4279f4a"
+          "sites_sha256": "233a0321ac30267beb1f5b154b75aceb7d639f139b58f4f75b20f23fb7021d2e"
         },
         {
           "function": 22,
@@ -7331,7 +7433,7 @@
           ],
           "unwind": false,
           "count": 2,
-          "sites_sha256": "dc0536bf261d324b81f100b16cf298e93466d06db3800d14b05fdd5cfea16e6e"
+          "sites_sha256": "c0d5271feddc0af7b0a20afc8fcbffff37123ed0e2d7d4ec25cf4b840f49db85"
         },
         {
           "function": 22,
@@ -7456,7 +7558,7 @@
           ],
           "unwind": true,
           "count": 2,
-          "sites_sha256": "8b7de602bb2eae8e32ff78170dd9c360e844fcdb6241faf60bb839faf533a00b"
+          "sites_sha256": "56c1d09c9b20fa71189097c56004c9fff9ba0a32fe2537cbf2aca546fe99c3e2"
         },
         {
           "function": 23,
@@ -7493,7 +7595,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "3472d96ad5f796a05183856ff2ed6e023a3737cfea9d0e482501d85045428edd"
+          "sites_sha256": "a7a5afe9eb25888be81da80ca3aa452781e914f67633b7a3297098e2789fe9ed"
         },
         {
           "function": 23,
@@ -7530,7 +7632,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "34c61a197aacd64d729a47e9288860054fb7ee4a95aac87c6f474feb5894fe4c"
+          "sites_sha256": "b9ef489666a6f81a08a6ad3fed7b308788e95925edadfb2eafc75423cda760d2"
         },
         {
           "function": 30,
@@ -7604,7 +7706,7 @@
           ],
           "unwind": true,
           "count": 3,
-          "sites_sha256": "ae835ef4ce9986b8537e5b9b6e8f5e94dad0bdb1d7015538be1f01c7db9a3a99"
+          "sites_sha256": "f885b67bd285b3e5b9a2b8ba838f7348a85de680e68c302956d40b158643c55c"
         },
         {
           "function": 30,
@@ -7641,7 +7743,7 @@
           ],
           "unwind": false,
           "count": 3,
-          "sites_sha256": "61abf617f9e3c6301d52f0ee62d57fb0c24865b3f4253450c5f2d9c3ca9d506c"
+          "sites_sha256": "1ccd820354f2c1eeac2bb49cf2c48275c11b1f89def97f1a88ce7f55866555d7"
         },
         {
           "function": 30,
@@ -7678,7 +7780,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "3645c3d7071964ff0a46ed4b6fdccbd29416eab861a9cf1ff9c9dab15897f4a6"
+          "sites_sha256": "0cab98d808dd3ed6fc513f0a95a0cee3fad5b7d1c875eaf88449d3c464d15f49"
         },
         {
           "function": 31,
@@ -7715,7 +7817,7 @@
           ],
           "unwind": true,
           "count": 2,
-          "sites_sha256": "dd0918726ea5e6cc2d7796db8683edc4b045c5a3f9dfd69e4cdc4b2d0f723372"
+          "sites_sha256": "1062e5ee32d932b954fc3fb04068471ec65620ec4f7c366679da127664ac3d5a"
         },
         {
           "function": 31,
@@ -7752,7 +7854,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "ba8b429b5128b8cf7499b31299fd2cef72e44fee353d25e37e1fba572c45516f"
+          "sites_sha256": "14cadf9e1cc714520f841c86b0cb2a843104249ccec330b2b7136b1d078f4c53"
         },
         {
           "function": 34,
@@ -7766,7 +7868,7 @@
           },
           "unwind": false,
           "count": 1,
-          "sites_sha256": "d682be6cc328ef9c2de1fe937d0e055595002cc4ff4b1f30ce5e1197268dceaf"
+          "sites_sha256": "cea14a8e72659f1228655731cd1d0dabc3bcc3d978fc918e3876651eb65c51bd"
         },
         {
           "function": 44,
@@ -7780,7 +7882,7 @@
           },
           "unwind": true,
           "count": 14,
-          "sites_sha256": "2eded15dd10fc79a199e1ce3d4c4622cede9c97e6f2834afc7d10170d3d66b81"
+          "sites_sha256": "2682dc2c244d9047488a72976309876681ff5216e57649b38bc7240dbc8eb0b9"
         },
         {
           "function": 44,
@@ -7807,7 +7909,7 @@
           ],
           "unwind": true,
           "count": 1,
-          "sites_sha256": "f21919ac2cfc89e1a09760f6d3f78680b7bdc4cb6b9f831b1dff9164f09dc5d3"
+          "sites_sha256": "1f43e70d5d2b6b246a94b58919c8cbab1e7afc74cf2698fc05e8c39ffa9c893f"
         },
         {
           "function": 44,
@@ -7821,7 +7923,7 @@
           },
           "unwind": true,
           "count": 7,
-          "sites_sha256": "ae2a44e137dede3e1925d67b6be9c1e4170fd699b8f7c554e7d9fd0145a49221"
+          "sites_sha256": "c178e0e8f619c7aecd0ba74e36591b8d66f7b60ff831de3469d3a27f3b10de7c"
         },
         {
           "function": 44,
@@ -7858,7 +7960,7 @@
           ],
           "unwind": true,
           "count": 9,
-          "sites_sha256": "64b94285cb7f9ebad732280ebaab68bbc793fa48b13b4e31f25aee5caaa13cf4"
+          "sites_sha256": "40501e49494cb0faf9c06bfd6817e9b42ef5d9aab1085192dfa9cbaaa3d77e81"
         },
         {
           "function": 44,
@@ -7872,7 +7974,7 @@
           },
           "unwind": false,
           "count": 3,
-          "sites_sha256": "1d6a142be0caebdcfa3aa221dc8d51c2f4eab1710cfd27a35186939da3a68023"
+          "sites_sha256": "a397dfbcbcbb5cc98519d69afb45b6cd1c43a5ae779d0b025109a934994f7e6d"
         },
         {
           "function": 44,
@@ -7909,7 +8011,7 @@
           ],
           "unwind": true,
           "count": 2,
-          "sites_sha256": "a5f4b21c2b6b3f2e8a45b37494c5f47ff2d897cec7219a45c88d940f6105f607"
+          "sites_sha256": "c503efd7ce2ca7eb455d92b9e12a71ad6a871f31dcd34d90ba58c7fb52a3933d"
         },
         {
           "function": 44,
@@ -7946,7 +8048,7 @@
           ],
           "unwind": false,
           "count": 2,
-          "sites_sha256": "36d9577a8e1e22c1651f4ae5a1d03e3bc73cea847f9c88ff04c8091b835d183b"
+          "sites_sha256": "4c288bc6b1cd869fea8170e4993e8df9be1974d1fd995dd3aa58bf1567ffcbb9"
         },
         {
           "function": 44,
@@ -7983,7 +8085,7 @@
           ],
           "unwind": false,
           "count": 3,
-          "sites_sha256": "6641bac1634fd38dfe4fc4ffd4aecd7252a6799e83dd0e1a6374482d73e66277"
+          "sites_sha256": "193d0d803dcd7710e5927902d1ce1945e84c2203f3489a38b3c0ac87d74828c2"
         },
         {
           "function": 44,
@@ -7997,7 +8099,81 @@
           },
           "unwind": false,
           "count": 1,
-          "sites_sha256": "f7007ac270f2d6c843717e730f2e87cf9ed00fa14aa8747e5cc23707344ed74e"
+          "sites_sha256": "9a1b5d87362976fd06e2507072c3386a79365ece51f980923c2b3bb11272f9b2"
+        },
+        {
+          "function": 47,
+          "target": [
+            {
+              "Ident": [
+                "rusqlite",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "transaction",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "Transaction",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Trait": 23
+              }
+            },
+            {
+              "Builtin": [
+                "DropGlue",
+                0
+              ]
+            }
+          ],
+          "unwind": true,
+          "count": 2,
+          "sites_sha256": "7840f647f599e89f0ce84d14ab76bc39e328d299c7af62aa539e6f8b63261e3a"
+        },
+        {
+          "function": 47,
+          "target": [
+            {
+              "Ident": [
+                "rusqlite",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "transaction",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "Transaction",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Trait": 23
+              }
+            },
+            {
+              "Builtin": [
+                "DropGlue",
+                0
+              ]
+            }
+          ],
+          "unwind": false,
+          "count": 1,
+          "sites_sha256": "3473b2f94b2174eb6e09e9cbd8e51f74446ea58377e0f84dee59b3fc26a6e6ee"
         }
       ]
     }

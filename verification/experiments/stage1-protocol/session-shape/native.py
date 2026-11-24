@@ -86,7 +86,7 @@ def run(output):
             for label, args in checks:
                 argv = ['cargo', label, '-p', 'sandproof-controller-service', '--locked', '--offline', *args]
                 if label == 'format':
-                    argv = ['rustfmt', '--edition', '2024', '--check', preparation.SOURCE, preparation.SAVED,
+                    argv = ['rustfmt', '--edition', '2024', '--check', preparation.SOURCE, preparation.SHIM,
                         str(HERE/'native_tests.rs'), str(HERE/'callback_tests.rs')]
                 log = folder / (label + '.log')
                 begin = time.monotonic()

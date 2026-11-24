@@ -1905,7 +1905,7 @@ structure controller.lifecycle_inbox.source_work.SourceAnchor where
     sandproof_protocol.lifecycle.digest.ContentDigest
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::validate_execution_origin::{closure}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 324:17-324:47 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 375:17-375:47 -/
 @[reducible]
 def controller.lifecycle_inbox.source_work.snapshot.validate_execution_origin.closure
   :=

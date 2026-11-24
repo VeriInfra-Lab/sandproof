@@ -30,6 +30,28 @@ support = module('current_standard_save_digest_support', ROOT/HERE/'support.py')
 capture = module('current_standard_save_digest_capture', ROOT/HERE/'capture.py')
 blob_capture = module('current_standard_save_digest_blob_capture', ROOT/HERE.parent/'standard-blob/capture.py')
 sha = support.sha
+registration = module('current_standard_save_digest_registration', ROOT/HERE/'registration.py')
+
+
+def run_blob_update(project, folder, command, env, changed, commands):
+    inventory = registration.blob_inventory(ROOT)
+    recapture = module('current_save_blob_capture', ROOT/HERE/'recapture.py')
+    capture = recapture.update_probe(project, folder, command, blob_capture, changed)
+    registration.check_blob_capture(capture, inventory)
+    materialize = module('current_save_blob_materialization', ROOT/HERE/'blob/materialize.py')
+    installed = materialize.install(project)
+    if {name: value for name, value in installed['changed'].items()
+            if name.endswith('.lean')} != inventory['files']:
+        raise ValueError('current two-BLOB materialized physical inventory differs')
+    changed.update(installed['changed'])
+    command(project, folder, 'build-blob-update', ['lake', 'build', installed['seed']])
+    output = folder/'actual-files'
+    output.mkdir()
+    actual = support.checker.actual_files(project, sorted(inventory['files']), output, env, command)
+    support.reader._saved_physical_view(actual, project, output/'physical-files', commands)
+    result = dict(capture=capture, actual=actual)
+    registration.check_blob_update(result, ROOT)
+    return result
 
 
 def run(output, lock_path, prepare_only=False, lock_fd=None):
@@ -216,6 +238,16 @@ def run(output, lock_path, prepare_only=False, lock_fd=None):
                 row.update(complete=True, property_rejected=variant != 'actual',
                     all_original_kernel_service_dependencies_read_back=True)
                 (folder/'result.json').write_text(json.dumps(row, indent=2)+'\n'); save()
+            if not prepare_only:
+                folder = output/'blob-update'
+                project = project_at(folder)
+                record['phase'] = 'current-two-BLOB-update'
+                save()
+                changed = {}
+                bridge = run_blob_update(project, folder, command, env, changed, record['commands'])
+                keep_source(project, changed, 'current-two-BLOB-update')
+                captures.append(dict(bridge['capture'], generated_files=bridge['capture']['generated']))
+                record['blob_update'] = bridge
             for source in record['independent_sources']:
                 project = Path(source['project'])
                 if any((project/n).is_symlink() or sha(project/n) != h

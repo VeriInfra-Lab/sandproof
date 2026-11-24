@@ -1,0 +1,583 @@
+{
+  "ActualStartupParentCompose.lean": {
+    "raw_sha256": "26e71ebd7be9a8ea3bae6a4f86af0ddd4ca1b58ca0a34b352d0b11e3bacd9236",
+    "view_sha256": "1db2f3fe01d307fb2323c5e1df04a0ee0cc3474f15ba073318abdb1b3d2c61c8",
+    "edits": [
+      {
+        "offset": 3583,
+        "before": "    (startupReturned : SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records\n",
+        "after": "    (_startupReturned : SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records\n"
+      },
+      {
+        "offset": 3926,
+        "before": "    (linked : ParentStartupLinked host serde startupHost startupSerde tx ns input.world reads.localValue\n",
+        "after": "    (_linked : ParentStartupLinked host serde startupHost startupSerde tx ns input.world reads.localValue\n"
+      },
+      {
+        "offset": 4108,
+        "before": "    (receiptDigestsLinked : LinkedReceiptDigests digestRepresentation reads.originalReceipts)\n    (normalReceiptBytes : ∀ raw ∈ reads.originalReceipts.val,\n",
+        "after": "    (_receiptDigestsLinked : LinkedReceiptDigests digestRepresentation reads.originalReceipts)\n    (_normalReceiptBytes : ∀ raw ∈ reads.originalReceipts.val,\n"
+      },
+      {
+        "offset": 4378,
+        "before": "    (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))\n    (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)\n    (cloneResource : ∀ resource : sandproof_protocol.ResourceRef,\n",
+        "after": "    (_encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))\n    (_digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)\n    (_cloneResource : ∀ resource : sandproof_protocol.ResourceRef,\n"
+      },
+      {
+        "offset": 4695,
+        "before": "    (cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),\n",
+        "after": "    (_cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),\n"
+      }
+    ]
+  },
+  "BaseSecondInbox.lean": {
+    "raw_sha256": "54de54e8dd199584e59f0df60ebd74d37331ea91531d6367f9681009ea720e21",
+    "view_sha256": "04db30f29ccfbd817268653b9f619430b69179c4504d887bc4c6bee91ef15d5e",
+    "edits": [
+      {
+        "offset": 2931,
+        "before": "      (atSession : (fromInbox c left).sessions.val[s.val]? = some session)\n      (atState : SandproofUnloadFirstObservation.ParentCalls.inboxState (fromInbox c left) s e = .ok state)\n      (picked : SandproofUnloadFirstObservation.ParentCalls.sessionExecutionOrigin session = .ok (some origin))\n      (localRead : state.«local» = some binding),\n",
+        "after": "      (_atSession : (fromInbox c left).sessions.val[s.val]? = some session)\n      (_atState : SandproofUnloadFirstObservation.ParentCalls.inboxState (fromInbox c left) s e = .ok state)\n      (_picked : SandproofUnloadFirstObservation.ParentCalls.sessionExecutionOrigin session = .ok (some origin))\n      (_localRead : state.«local» = some binding),\n"
+      },
+      {
+        "offset": 7480,
+        "before": "    Nonempty (@BaseInput.Reads (BaseReps ready) ops tx\n      (BaseSnapshotLink.toBaseIntent Record ready origin) context (baseLocalFromParent ready binding) native) := by\n",
+        "after": "    (∃ reads : @BaseInput.Reads (BaseReps ready) ops tx\n      (BaseSnapshotLink.toBaseIntent Record ready origin) context (baseLocalFromParent ready binding) native,\n      reads.connection = before.connection) := by\n"
+      },
+      {
+        "offset": 8734,
+        "before": "  exact ⟨{ toReadsBeforeLocal := before, localEq := sameSession.symm ▸ localAt }⟩\n",
+        "after": "  exact ⟨{ toReadsBeforeLocal := before, localEq := sameSession.symm ▸ localAt }, rfl⟩\n"
+      }
+    ]
+  },
+  "BaseSnapshotLink.lean": {
+    "raw_sha256": "d356ce308153fb08544ed6c757c1ea7315dfb00337dcea96ed7d1652406804ed",
+    "view_sha256": "dda3ddd3feb2b9c56c613b957dcf05da227271c10d2260712a62f5df7900ce85",
+    "edits": [
+      {
+        "offset": 386,
+        "before": "",
+        "after": "  rusqlite_row_Row := p.revision_rusqlite_row_Row\n  rusqlite_statement_Statement := p.revision_rusqlite_statement_Statement\n  rusqlite_types_to_sql_ToSqlOutput := p.revision_rusqlite_types_to_sql_ToSqlOutput\n  rusqlite_types_value_ref_ValueRef := p.revision_rusqlite_types_value_ref_ValueRef\n  rusqlite_types_from_sql_FromSqlError := p.revision_rusqlite_types_from_sql_FromSqlError\n  sandproof_protocol_SandboxId := p.sandproof_protocol_SandboxId\n"
+      },
+      {
+        "offset": 12006,
+        "before": "",
+        "after": "    native_revision := candidate.native_revision\n"
+      },
+      {
+        "offset": 16559,
+        "before": "    (connection : SandproofUnloadFirstObservation.rusqlite.Connection)\n",
+        "after": ""
+      },
+      {
+        "offset": 16860,
+        "before": "    (current : BIntent SandboxRecord LifecycleReadyObservation)\n    (localBinding : BLocalBinding SandboxRecord LifecycleReadyObservation)\n    (native : BNative SandboxRecord LifecycleReadyObservation)\n    (history : Option SandproofUnloadFirstObservation.sandbox_controller_core.model.OperationResult)\n    (ready : BReadiness SandboxRecord LifecycleReadyObservation)\n",
+        "after": ""
+      },
+      {
+        "offset": 17393,
+        "before": "      actualReadBaseSnapshot SandboxRecord LifecycleReadyObservation readiness tx ns world intent context)\n    (evaluated : @SandproofUnloadBaseSnapshot.controller.lifecycle_inbox.readiness.snapshot.base_snapshot\n      (baseRepresentations SandboxRecord LifecycleReadyObservation) ops tx ns world\n      (toBaseIntent SandboxRecord LifecycleReadyObservation intent) context =\n      @SandproofUnloadBaseSnapshot.finishRead\n        (baseRepresentations SandboxRecord LifecycleReadyObservation) ops connection\n        (toBaseIntent SandboxRecord LifecycleReadyObservation intent) current localBinding native history ready)\n    (high : ops.inputHighWater connection = .ok (.Err error)) :\n    SandproofUnloadFirstObservation.ParentCalls.readBaseSnapshot tx ns world intent context =\n      .ok (.Err (fromBaseError SandboxRecord LifecycleReadyObservation error)) := by\n  apply parentCallError SandboxRecord LifecycleReadyObservation readiness tx ns world intent context error linked\n  rw [evaluated]\n  exact @SandproofUnloadBaseSnapshot.highWaterError\n    (baseRepresentations SandboxRecord LifecycleReadyObservation) ops connection\n    (toBaseIntent SandboxRecord LifecycleReadyObservation intent) current localBinding native history ready error high\n",
+        "after": "      actualReadBaseSnapshot SandboxRecord LifecycleReadyObservation readiness tx ns world intent context) :\n    letI : SandproofUnloadBaseSnapshot.Representations := baseRepresentations SandboxRecord LifecycleReadyObservation\n    letI : SandproofUnloadBaseSnapshot.Operations := ops\n    ∀ (reads : RevisionReadErrors.BeforeRevision tx ns world\n        (toBaseIntent SandboxRecord LifecycleReadyObservation intent) context)\n      (id : SandproofUnloadBaseSnapshot.sandproof_protocol.SandboxId) (key : Str) (revision : I64),\n      ops.sandboxId ns reads.localBinding.sandbox = .ok (.Ok id) →\n      ops.sandboxIdText id = .ok key →\n      RevisionReadErrors.revisionQuery reads.connection key = .ok (.Ok revision) →\n      0 ≤ revision.val →\n      ops.cloneIntent (toBaseIntent SandboxRecord LifecycleReadyObservation intent) =\n        .ok (toBaseIntent SandboxRecord LifecycleReadyObservation intent) →\n      ops.inputHighWater reads.connection = .ok (.Err error) →\n      SandproofUnloadFirstObservation.ParentCalls.readBaseSnapshot tx ns world intent context =\n        .ok (.Err (fromBaseError SandboxRecord LifecycleReadyObservation error)) := by\n  letI : SandproofUnloadBaseSnapshot.Representations := baseRepresentations SandboxRecord LifecycleReadyObservation\n  letI : SandproofUnloadBaseSnapshot.Operations := ops\n  intro reads id key revision idOk textOk queried nonnegative cloned failed\n  exact parentCallError SandboxRecord LifecycleReadyObservation readiness tx ns world intent context error linked\n    (SandproofUnloadBaseSnapshot.highWaterError reads id key revision error idOk textOk queried nonnegative cloned failed)\n"
+      },
+      {
+        "offset": 18660,
+        "before": "\n",
+        "after": ""
+      }
+    ]
+  },
+  "BaseWorldParent.lean": {
+    "raw_sha256": "31f5cfb43cb19726efd886b1de013613a614e8a4a2d661ca7561a65e039273ee",
+    "view_sha256": "3ee858a85ff934e50170dd3d2b55c7c3c9913b57c141b5c3de19df24e7d25e48",
+    "edits": [
+      {
+        "offset": 3007,
+        "before": "",
+        "after": "structure Revision [SandproofUnloadBaseSnapshot.Representations]\n    (ops : SandproofUnloadBaseSnapshot.Operations)\n    (ns : Str) (connection : SandproofUnloadBaseSnapshot.rusqlite.Connection)\n    (binding : SandproofUnloadBaseSnapshot.controller.internal_inbox.model.InternalLocalBinding) where\n  identity : SandproofUnloadBaseSnapshot.sandproof_protocol.SandboxId\n  key : Str\n  value : I64\n  idOk : ops.sandboxId ns binding.sandbox = .ok (.Ok identity)\n  textOk : ops.sandboxIdText identity = .ok key\n  queried : @RevisionReadErrors.revisionQuery _ ops connection key = .ok (.Ok value)\n  nonnegative : 0 ≤ value.val\n\n"
+      },
+      {
+        "offset": 5126,
+        "before": "",
+        "after": "    letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready\n"
+      },
+      {
+        "offset": 5210,
+        "before": "",
+        "after": "    ∀ (revision : BaseInput.Revision (installBaseReads carriers nv nativeOps lv ledgerOps ops)\n      ns baseRead.connection (baseLocalFromParent ready binding)),\n"
+      },
+      {
+        "offset": 5510,
+        "before": "      candidate.view.historical_result = (ledger.result.map lv.resultFromStartup).map lv.resultToParent := by\n",
+        "after": "      candidate.view.historical_result = (ledger.result.map lv.resultFromStartup).map lv.resultToParent ∧\n      candidate.native_revision = some (IScalar.hcast .U64 revision.value) := by\n"
+      },
+      {
+        "offset": 5810,
+        "before": "",
+        "after": "  intro revision\n"
+      },
+      {
+        "offset": 6389,
+        "before": "  have evaluated := SandproofUnloadBaseSnapshot.originalExecutionRead tx baseRead.connection ns world\n    baseIntent context baseRead.inbox baseRead.session baseRead.entry baseLocal record native history baseRead.ready\n    baseRead.s baseRead.e baseRead.createOrResume baseRead.derefOk baseRead.loaded baseRead.authOk baseRead.found\n    baseRead.indexed baseRead.entryFound baseRead.localEq baseRead.cloneOk gotRecord gotNative gotHistory\n    baseRead.readyOk baseRead.requestCloneOk\n  dsimp only [baseIntent] at evaluated\n",
+        "after": "  let reads : RevisionReadErrors.BeforeRevision tx ns world baseIntent context :=\n    { connection := baseRead.connection\n      inbox := baseRead.inbox\n      session := baseRead.session\n      entry := baseRead.entry\n      s := baseRead.s\n      e := baseRead.e\n      createOrResume := baseRead.createOrResume\n      derefOk := baseRead.derefOk\n      loaded := baseRead.loaded\n      authOk := baseRead.authOk\n      found := baseRead.found\n      indexed := by simpa only [alloc.vec.Vec.index_slice_index] using baseRead.indexed\n      entryFound := baseRead.entryFound\n      cloneOk := baseRead.cloneOk\n      localBinding := baseLocal\n      record := record\n      native := native\n      history := history\n      ready := baseRead.ready\n      localEq := baseRead.localEq\n      recordFound := gotRecord\n      nativeOk := gotNative\n      historyOk := gotHistory\n      readyOk := baseRead.readyOk }\n  have evaluated := RevisionReadSuccess.revision_then_allocator reads revision.identity revision.key\n    revision.value revision.idOk revision.textOk revision.queried revision.nonnegative\n  have calledClone : baseOps.cloneIntent baseIntent = .ok baseIntent := baseRead.requestCloneOk\n  have calledAllocator : baseOps.inputHighWater baseRead.connection = .ok (.Ok baseRead.high) := baseRead.highOk\n"
+      },
+      {
+        "offset": 6978,
+        "before": "  simp only [SandproofUnloadBaseSnapshot.finishRead]\n  rw [baseRead.highOk]\n  simp only [bind_tc_ok]\n  refine ⟨_, rfl, ?_, rfl, rfl⟩\n",
+        "after": "  dsimp only [reads]\n  simp only [RevisionReadSuccess.finishCandidate, calledClone, calledAllocator, bind_tc_ok]\n  refine ⟨_, rfl, ?_, rfl, rfl, rfl⟩\n"
+      }
+    ]
+  },
+  "InboxParentCarriers.lean": {
+    "raw_sha256": "29d7352d59dc123f3a9e3e7ac46899dea577f60fe71fac4f0081ac86a25ca4e0",
+    "view_sha256": "b837c8cbbef84d58a19baadd99adbda5edecfdc56fbaf0f3fa5932ab289086ae",
+    "edits": [
+      {
+        "offset": 18591,
+        "before": "",
+        "after": "omit [SandproofUnloadFirstObservation.Representations] in\n"
+      },
+      {
+        "offset": 18845,
+        "before": "",
+        "after": "omit [SandproofUnloadFirstObservation.Representations] in\n"
+      },
+      {
+        "offset": 19256,
+        "before": "  cases value <;> simp [toOperation, fromOperation, Function.comp_def]\n",
+        "after": "  cases value <;> simp [toOperation, fromOperation]\n"
+      },
+      {
+        "offset": 19522,
+        "before": "  cases value <;> simp [toLocal, fromLocal, Function.comp_def]\n",
+        "after": "  cases value\n  simp [toLocal, fromLocal]\n"
+      },
+      {
+        "offset": 19787,
+        "before": "  cases value <;> simp [toRequest, fromRequest, Function.comp_def]\n",
+        "after": "  cases value\n  simp [toRequest, fromRequest]\n"
+      },
+      {
+        "offset": 20062,
+        "before": "  cases value <;> simp [toIntent, fromIntent, Function.comp_def]\n",
+        "after": "  cases value\n  simp [toIntent, fromIntent]\n"
+      },
+      {
+        "offset": 20308,
+        "before": "  cases value <;> simp [toEntry, fromEntry, Function.comp_def]\n",
+        "after": "  cases value\n  simp [toEntry, fromEntry, Function.comp_def]\n"
+      },
+      {
+        "offset": 20560,
+        "before": "  cases value <;> simp [toSession, fromSession, Function.comp_def, mapVec_cancel _ _ (from_to_Entry c)]\n",
+        "after": "  cases value\n  simp [toSession, fromSession, Function.comp_def, mapVec_cancel _ _ (from_to_Entry c)]\n"
+      },
+      {
+        "offset": 20857,
+        "before": "  cases value <;> simp [toRegistration, fromRegistration, Function.comp_def]\n",
+        "after": "  cases value\n  simp [toRegistration, fromRegistration]\n"
+      },
+      {
+        "offset": 21123,
+        "before": "  cases value <;> simp [toObservation, fromObservation, Function.comp_def]\n",
+        "after": "  cases value\n  simp [toObservation, fromObservation]\n"
+      },
+      {
+        "offset": 21397,
+        "before": "  cases value <;> simp [toConfig, fromConfig, Function.comp_def]\n",
+        "after": "  cases value\n  simp [toConfig, fromConfig, Function.comp_def]\n"
+      },
+      {
+        "offset": 21643,
+        "before": "  cases value <;> simp [toInbox, fromInbox, Function.comp_def, mapVec_cancel _ _ (from_to_Session c)]\n",
+        "after": "  cases value\n  simp [toInbox, fromInbox, Function.comp_def, mapVec_cancel _ _ (from_to_Session c)]\n"
+      },
+      {
+        "offset": 21939,
+        "before": "  cases value <;> simp [toState, fromState, Function.comp_def]\n",
+        "after": "  cases value\n  simp [toState, fromState, Function.comp_def]\n"
+      },
+      {
+        "offset": 22207,
+        "before": "  cases value <;> simp [fromOperation, toOperation, Function.comp_def]\n",
+        "after": "  cases value <;> simp [fromOperation, toOperation]\n"
+      },
+      {
+        "offset": 22497,
+        "before": "  cases value <;> simp [fromLocal, toLocal, Function.comp_def]\n",
+        "after": "  cases value\n  simp [fromLocal, toLocal]\n"
+      },
+      {
+        "offset": 22757,
+        "before": "  cases value <;> simp [fromRequest, toRequest, Function.comp_def]\n",
+        "after": "  cases value\n  simp [fromRequest, toRequest]\n"
+      },
+      {
+        "offset": 23027,
+        "before": "  cases value <;> simp [fromIntent, toIntent, Function.comp_def]\n",
+        "after": "  cases value\n  simp [fromIntent, toIntent]\n"
+      },
+      {
+        "offset": 23297,
+        "before": "  cases value <;> simp [fromEntry, toEntry, Function.comp_def]\n",
+        "after": "  cases value\n  simp [fromEntry, toEntry, Function.comp_def]\n"
+      },
+      {
+        "offset": 23573,
+        "before": "  cases value <;> simp [fromSession, toSession, Function.comp_def, mapVec_cancel _ _ (to_from_Entry c)]\n",
+        "after": "  cases value\n  simp [fromSession, toSession, Function.comp_def, mapVec_cancel _ _ (to_from_Entry c)]\n"
+      },
+      {
+        "offset": 23894,
+        "before": "  cases value <;> simp [fromRegistration, toRegistration, Function.comp_def]\n",
+        "after": "  cases value\n  simp [fromRegistration, toRegistration]\n"
+      },
+      {
+        "offset": 24184,
+        "before": "  cases value <;> simp [fromObservation, toObservation, Function.comp_def]\n",
+        "after": "  cases value\n  simp [fromObservation, toObservation]\n"
+      },
+      {
+        "offset": 24482,
+        "before": "  cases value <;> simp [fromConfig, toConfig, Function.comp_def]\n",
+        "after": "  cases value\n  simp [fromConfig, toConfig, Function.comp_def]\n"
+      },
+      {
+        "offset": 24752,
+        "before": "  cases value <;> simp [fromInbox, toInbox, Function.comp_def, mapVec_cancel _ _ (to_from_Session c)]\n",
+        "after": "  cases value\n  simp [fromInbox, toInbox, Function.comp_def, mapVec_cancel _ _ (to_from_Session c)]\n"
+      },
+      {
+        "offset": 25072,
+        "before": "  cases value <;> simp [fromState, toState, Function.comp_def]\n",
+        "after": "  cases value\n  simp [fromState, toState, Function.comp_def]\n"
+      }
+    ]
+  },
+  "NativeSnapshotFields.lean": {
+    "raw_sha256": "91607fd4c845350658a55d79a545bc9b0cc8cb617c2c0816416919499a49bb09",
+    "view_sha256": "4bff47cd5c67ed7c96acfe3b6dfb6354bb803869fa47a05486a0ba36a94a54fc",
+    "edits": [
+      {
+        "offset": 2107,
+        "before": "    core.cmp.PartialEq.ne.default, sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId,\n",
+        "after": "    core.cmp.PartialEq.ne.default,\n"
+      },
+      {
+        "offset": 2901,
+        "before": "    sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId, owner, bind_tc_ok]\n",
+        "after": "    owner, bind_tc_ok]\n"
+      }
+    ]
+  },
+  "RefoundWorldParent.lean": {
+    "raw_sha256": "edf4149aa70e10e0b3eea5947645481a873720979acd81914fe827382b2f66fc",
+    "view_sha256": "b90fe1669fd71af32f0c80eb28515eca9e26f170fd72977b13c6e8c7f598fcab",
+    "edits": [
+      {
+        "offset": 1691,
+        "before": "    (native : BaseNative ready) (ledger : StartupLedger) (selectedPlan : UnloadFirstActualStartup.Plan) : Prop :=\n",
+        "after": "    (native : BaseNative ready) (ledger : StartupLedger) (selectedPlan : UnloadFirstActualStartup.Plan) (revision : I64) : Prop :=\n"
+      },
+      {
+        "offset": 3069,
+        "before": "          .ok (some plan) ∧ plan = selectedPlan ∧ plan.sealed = true\n",
+        "after": "          .ok (some plan) ∧ plan = selectedPlan ∧ plan.sealed = true ∧\n      reads.base.native_revision = some (IScalar.hcast .U64 revision)\n"
+      },
+      {
+        "offset": 6058,
+        "before": "      (firstInbox : input.inbox = fromInbox inboxViews left)\n      (found : left.find (toIntent inboxViews intent) = .ok (.Ok (some (reads.sessionIndex, reads.entryIndex))))\n",
+        "after": "      (_firstInbox : input.inbox = fromInbox inboxViews left)\n      (_found : left.find (toIntent inboxViews intent) = .ok (.Ok (some (reads.sessionIndex, reads.entryIndex))))\n"
+      },
+      {
+        "offset": 6805,
+        "before": "      (read₂ : load_using saved terminal renewal unload graphic io (stateForConnection before.connection) =\n",
+        "after": "      (_read₂ : load_using saved terminal renewal unload graphic io (stateForConnection before.connection) =\n"
+      },
+      {
+        "offset": 6957,
+        "before": "      (nativeRead : actualNativeRead carriers nv nativeOps tx ns input.world\n",
+        "after": "      (revision : BaseInput.Revision (installBaseReads carriers nv nativeOps lv ledgerOps inboxBase)\n        ns before.connection (baseLocalFromParent ready reads.localValue))\n      (_nativeRead : actualNativeRead carriers nv nativeOps tx ns input.world\n"
+      },
+      {
+        "offset": 7123,
+        "before": "      RefoundWorkPost reads carriers lv native prepare.ledger calls.plan := by\n",
+        "after": "      RefoundWorkPost reads carriers lv native prepare.ledger calls.plan revision.value := by\n"
+      },
+      {
+        "offset": 7381,
+        "before": "  intro load inboxParent inboxBase E host serde tx ns intent now input reads firstInbox found calls prepare native before read₂ nativeRead\n",
+        "after": "  intro load inboxParent inboxBase E host serde tx ns intent now input reads firstInbox found calls prepare native before read₂ revision nativeRead\n"
+      },
+      {
+        "offset": 8604,
+        "before": "  obtain ⟨baseRead⟩ := BaseSecondInbox.prefix_from_second_read\n",
+        "after": "  obtain ⟨baseRead, connectionEq⟩ := BaseSecondInbox.prefix_from_second_read\n"
+      },
+      {
+        "offset": 8918,
+        "before": "",
+        "after": "  let actualRevision : BaseInput.Revision (installBaseReads carriers nv nativeOps lv ledgerOps inboxBase)\n      ns baseRead.connection (baseLocalFromParent ready reads.localValue) :=\n    { identity := revision.identity\n      key := revision.key\n      value := revision.value\n      idOk := revision.idOk\n      textOk := revision.textOk\n      queried := by rw [connectionEq]; exact revision.queried\n      nonnegative := revision.nonnegative }\n"
+      },
+      {
+        "offset": 9143,
+        "before": "    nv nativeOps lv ledgerOps inboxBase readyView reads calls prepare native baseRead nativeRead\n",
+        "after": "    nv nativeOps lv ledgerOps inboxBase readyView reads calls prepare native baseRead actualRevision nativeRead\n"
+      }
+    ]
+  },
+  "SandproofOriginalSourceRows/Funs.lean": {
+    "raw_sha256": "bf6241578f7e25cc2e91990da51bf5386633708aaf66122c0637925fbcd38b0e",
+    "view_sha256": "e61ea82124b1516af175ed040b280351cf3af17a10e51ce6a7a6fec8825cd132",
+    "edits": [
+      {
+        "offset": 4868,
+        "before": "  __bind_in := ArrayT1.Insts.RusqliteParamsParams.__bind_in\n",
+        "after": "  __bind_in := ArrayT1.Insts.RusqliteParamsParams.bindIn\n"
+      }
+    ]
+  },
+  "SandproofOriginalSourceRows/FunsExternal.lean": {
+    "raw_sha256": "fc212ce04fc7b1b5a2581bee5ac6e333978d0db5c28374e1c9a63ecb81fb12f5",
+    "view_sha256": "a61b3ef8c06972195dd2d52ee88f9c5f7cd72dadc3caaa7c70f04079ad1cf197",
+    "edits": [
+      {
+        "offset": 686,
+        "before": "abbrev ArrayT1.Insts.RusqliteParamsParams.__bind_in :=\n",
+        "after": "abbrev ArrayT1.Insts.RusqliteParamsParams.bindIn :=\n"
+      }
+    ]
+  },
+  "SandproofUnloadBaseSnapshot/Provider.lean": {
+    "raw_sha256": "ac3af69518cb8ddfad10945f47db94651e28ccc319024c1d208e8be898bd17b8",
+    "view_sha256": "bbe9c36d590ee59e3960298d54fcb798ef10f64708e7a94831086fc91f19ea1e",
+    "edits": [
+      {
+        "offset": 0,
+        "before": "import SandproofUnloadBaseSnapshot.Funs\n",
+        "after": "import RevisionReadSuccess\n"
+      },
+      {
+        "offset": 196,
+        "before": "open controller.lifecycle_inbox.model (Inbox Session Entry)\nopen controller.internal_inbox.model (InternalLocalBinding)\nopen controller.lifecycle_inbox.readiness (NativeCreateSnapshot CreateReadiness)\nopen controller.lifecycle_inbox.readiness.snapshot (ReadyCandidate base_snapshot first_entry_at_version)\n",
+        "after": "open controller.lifecycle_inbox.model (Entry)\nopen controller.lifecycle_inbox.readiness.snapshot (base_snapshot first_entry_at_version)\n"
+      },
+      {
+        "offset": 599,
+        "before": "open sandproof_protocol.lifecycle.request (LifecycleOperation)\nopen sandbox_controller_core.model (World SandboxRecord OperationResult)\n",
+        "after": "open sandbox_controller_core.model (World)\n"
+      },
+      {
+        "offset": 736,
+        "before": "def finishRead\n    (connection : rusqlite.Connection) (intent current : AcceptedLifecycleIntent)\n    (localBinding : InternalLocalBinding) (native : NativeCreateSnapshot)\n    (history : Option OperationResult) (ready : CreateReadiness) :\n    Result (core.result.Result ReadyCandidate JournalError) := do\n  let high ← ops.inputHighWater connection\n  match high with\n  | .Err error => .ok (.Err error)\n  | .Ok value => .ok (.Ok {\n      view := {\n        request := intent\n        current_request := current\n        «local» := some localBinding\n        historical_result := history\n        native_input_high_water := value\n        native := some native\n        readiness := ready\n      }\n      actions := alloc.vec.Vec.new _\n      continuation := none\n      receipts := alloc.vec.Vec.new _\n      source := none\n      credential := none\n      options := none\n      ready_fact := none\n    })\n",
+        "after": "section Revision\nopen RevisionReadErrors RevisionReadSuccess\n"
+      },
+      {
+        "offset": 1628,
+        "before": "theorem originalExecutionRead\n    (tx : rusqlite.transaction.Transaction) (connection : rusqlite.Connection)\n    (ns : Str) (world : World) (intent : AcceptedLifecycleIntent)\n    (context : AuthenticatedCenterContext) (inbox : Inbox) (session : Session)\n    (entry : Entry) (localBinding : InternalLocalBinding) (record : SandboxRecord)\n    (native : NativeCreateSnapshot) (history : Option OperationResult)\n    (ready : CreateReadiness) (s e : Usize)\n    (createOrResume :\n      (∃ binding incarnation, intent.request.operation = .Create binding incarnation) ∨\n      (∃ source capture target digest, intent.request.operation = .Resume source capture target digest))\n    (derefOk : ops.deref tx = .ok connection)\n    (loaded : ops.loadInbox connection = .ok (.Ok (some inbox)))\n    (authOk : ops.authenticate inbox intent context = .ok (.Ok ()))\n    (found : ops.findIntent inbox intent = .ok (.Ok (some (s, e))))\n    (indexed : alloc.vec.Vec.index (core.slice.index.SliceIndexUsizeSlice Session)\n        inbox.sessions s = .ok session)\n    (entryFound : first_entry_at_version (alloc.vec.Vec.deref session.entries) session.current_version\n        = .ok (some entry))\n    (localEq : session.«local» = some localBinding)\n    (cloneOk : ops.cloneIntent entry.intent = .ok entry.intent)\n    (recordFound : ops.sandboxRecord world localBinding.sandbox = .ok (some record))\n    (nativeOk : ops.nativeSnapshot tx ns world localBinding record = .ok (.Ok native))\n    (historyOk : ops.originalResult world localBinding = .ok (.Ok history))\n    (readyOk : ops.readiness intent entry.intent entry session (some native) = .ok ready)\n    (requestCloneOk : ops.cloneIntent intent = .ok intent) :\n",
+        "after": "variable {tx : rusqlite.transaction.Transaction} {ns : Str} {world : World}\nvariable {intent : AcceptedLifecycleIntent} {context : AuthenticatedCenterContext}\n\n/-- The generated base returns its original fields after the selected row's\n    revision has been read and checked. The allocator read is the next step. -/\ntheorem originalExecutionRead (reads : BeforeRevision tx ns world intent context)\n    (id : sandproof_protocol.SandboxId) (key : Str) (revision : I64)\n    (idOk : ops.sandboxId ns reads.localBinding.sandbox = .ok (.Ok id))\n    (textOk : ops.sandboxIdText id = .ok key)\n    (queried : revisionQuery reads.connection key = .ok (.Ok revision))\n    (nonnegative : 0 ≤ revision.val) :\n"
+      },
+      {
+        "offset": 3366,
+        "before": "      finishRead connection intent entry.intent localBinding native history ready := by\n  rcases createOrResume with ⟨binding, incarnation, operation⟩ | ⟨source, capture, target, digest, operation⟩\n  all_goals\n    simp_all [base_snapshot, finishRead, core.option.Option.ok_or, core.option.Option.map,\n      core.option.OptionResult.transpose, core.option.OptionOption.flatten,\n      core.result.Result.Insts.CoreOpsTry.branch,\n      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,\n      controller.lifecycle_inbox.readiness.snapshot.base_snapshot.closure.Insts.CoreOpsFunctionFnOnceTupleInternalLocalBindingResultOptionOperationResultJournalError.call_once]\n  all_goals\n    apply congrArg (fun (next : core.result.Result U64 JournalError →\n      Result (core.result.Result ReadyCandidate JournalError)) =>\n        ops.inputHighWater connection >>= next)\n    funext high\n    cases high <;> simp only [bind_tc_ok]\n",
+        "after": "      finishCandidate reads.connection intent reads.entry.intent (some reads.localBinding)\n        (some reads.native) reads.history reads.ready (some (IScalar.hcast .U64 revision)) :=\n  revision_then_allocator reads id key revision idOk textOk queried nonnegative\n\ntheorem highWaterError (reads : BeforeRevision tx ns world intent context)\n    (id : sandproof_protocol.SandboxId) (key : Str) (revision : I64) (error : JournalError)\n    (idOk : ops.sandboxId ns reads.localBinding.sandbox = .ok (.Ok id))\n    (textOk : ops.sandboxIdText id = .ok key)\n    (queried : revisionQuery reads.connection key = .ok (.Ok revision))\n    (nonnegative : 0 ≤ revision.val) (cloned : ops.cloneIntent intent = .ok intent)\n    (failed : ops.inputHighWater reads.connection = .ok (.Err error)) :\n    base_snapshot tx ns world intent context = .ok (.Err error) :=\n  read_revision_precedes_allocator_error reads id key revision error idOk textOk queried nonnegative cloned failed\n\nend Revision\n"
+      },
+      {
+        "offset": 4937,
+        "before": "theorem highWaterError\n    (connection : rusqlite.Connection) (intent current : AcceptedLifecycleIntent)\n    (localBinding : InternalLocalBinding) (native : NativeCreateSnapshot)\n    (history : Option OperationResult) (ready : CreateReadiness) (error : JournalError)\n    (high : ops.inputHighWater connection = .ok (.Err error)) :\n    finishRead connection intent current localBinding native history ready = .ok (.Err error) := by\n  simp only [finishRead, high, bind_tc_ok]\n\n",
+        "after": ""
+      },
+      {
+        "offset": 5807,
+        "before": "",
+        "after": "omit [Operations] in\n"
+      },
+      {
+        "offset": 7334,
+        "before": "",
+        "after": "omit [Operations] in\n"
+      }
+    ]
+  },
+  "SandproofUnloadContinuedReady/Funs.lean": {
+    "raw_sha256": "eb47b128e84d29480430d4d4b655d014aae407d69ef41c6733c363f2ea7f5774",
+    "view_sha256": "b60736075a19398d9a4fcea4349cdb168f4d3a999527c2fb2a2a23534f6b1fbd",
+    "edits": [
+      {
+        "offset": 3400,
+        "before": "  __bind_in := ArrayT1.Insts.RusqliteParamsParams.__bind_in\n",
+        "after": "  __bind_in := ArrayT1.Insts.RusqliteParamsParams.bindIn\n"
+      }
+    ]
+  },
+  "SandproofUnloadContinuedReady/FunsExternal.lean": {
+    "raw_sha256": "3e6e6b3a0da73df21478a41759378b976dbc29ebc3f15c2aaead34d0c4afb8a3",
+    "view_sha256": "552bed0f94b7784d8a6ad1842c0b39ebd0cb05d6e146c2f559e053ae7a908870",
+    "edits": [
+      {
+        "offset": 2884,
+        "before": "abbrev ArrayT1.Insts.RusqliteParamsParams.__bind_in := @CursorOps.bindArray1\n",
+        "after": "abbrev ArrayT1.Insts.RusqliteParamsParams.bindIn := @CursorOps.bindArray1\n"
+      }
+    ]
+  },
+  "SandproofUnloadFirstObservation/Types.lean": {
+    "raw_sha256": "7be9ccb91025f44fbb0c24a1b2a9090d3ef675d50ab9a9b7cfed73100bc846a6",
+    "view_sha256": "1d07197bd25addb722db10ffa6bd2fa30eb288e85325adccdf1a9097f5c7fb36",
+    "edits": [
+      {
+        "offset": 957,
+        "before": "@[discriminant isize, rust_type\n",
+        "after": "@[rust_type\n"
+      },
+      {
+        "offset": 3020,
+        "before": "@[discriminant isize, rust_type\n",
+        "after": "@[rust_type\n"
+      },
+      {
+        "offset": 15363,
+        "before": "@[discriminant isize]\n",
+        "after": ""
+      }
+    ]
+  },
+  "SandproofUnloadFirstObservation/TypesExternal.lean": {
+    "raw_sha256": "f2c08705c6aa17c04427671ce4c6e0ad2e10bc81465e809b0f51425b0a8bfd60",
+    "view_sha256": "a9d7742ccce0ca8d1979f39912275bfc713d18a11469187d28d6d4063b1607d3",
+    "edits": [
+      {
+        "offset": 137,
+        "before": "",
+        "after": "  revision_rusqlite_row_Row : Type\n  revision_rusqlite_statement_Statement : Type\n  revision_rusqlite_types_to_sql_ToSqlOutput : Type\n  revision_rusqlite_types_value_ref_ValueRef : Type\n  revision_rusqlite_types_from_sql_FromSqlError : Type\n"
+      }
+    ]
+  },
+  "SandproofUnloadOptionsRead/Funs.lean": {
+    "raw_sha256": "7cf1c557e86ff68d3e8f4652a75cb6931bffe020541bd7a5d201bb0e50a5500d",
+    "view_sha256": "1eeb867d2126a9646fd7de8115bbaf29a4052ba30f6acec8f288b6c5fd8bf8ad",
+    "edits": [
+      {
+        "offset": 2008,
+        "before": "  __bind_in := ArrayT1.Insts.RusqliteParamsParams.__bind_in\n",
+        "after": "  __bind_in := ArrayT1.Insts.RusqliteParamsParams.bindIn\n"
+      }
+    ]
+  },
+  "SandproofUnloadOptionsRead/FunsExternal.lean": {
+    "raw_sha256": "1f4b22ca18f02099f1612044422f9fed1aceb2dfc167c878b71da418922953ad",
+    "view_sha256": "dda531277ccffcb37fc1d4d57085944cf3cbbf9430fcec548b64868db81f0af8",
+    "edits": [
+      {
+        "offset": 3384,
+        "before": "abbrev ArrayT1.Insts.RusqliteParamsParams.__bind_in := @ops.bindSingleParameter\n",
+        "after": "abbrev ArrayT1.Insts.RusqliteParamsParams.bindIn := @ops.bindSingleParameter\n"
+      }
+    ]
+  },
+  "SandproofUnloadStartupJoint/Funs.lean": {
+    "raw_sha256": "74e1335fda9625d7301059c7d50eac90ba497908a75d609b2145fd8c2a8ec920",
+    "view_sha256": "ae17e63e778f7cf71a59fa2dc3481deee17f99fbfc68ec63e834d9c7c4059d2e",
+    "edits": [
+      {
+        "offset": 2765,
+        "before": "  __bind_in := ArrayT1.Insts.RusqliteParamsParams.__bind_in\n",
+        "after": "  __bind_in := ArrayT1.Insts.RusqliteParamsParams.bindIn\n"
+      }
+    ]
+  },
+  "SandproofUnloadStartupJoint/FunsExternal.lean": {
+    "raw_sha256": "b824036058f056d23ad0c67c49420582493ae2caa77b6987f843f6b3a5dd8e3e",
+    "view_sha256": "ef649abcc542277242a328ed0f941c7c0c7a8dc4512171ff815c53a801dac8b3",
+    "edits": [
+      {
+        "offset": 9322,
+        "before": "abbrev ArrayT1.Insts.RusqliteParamsParams.__bind_in := @ops.op7\n",
+        "after": "abbrev ArrayT1.Insts.RusqliteParamsParams.bindIn := @ops.op7\n"
+      }
+    ]
+  },
+  "StartupParentBound.lean": {
+    "raw_sha256": "3a17f486cac9103a3c6b5d215627366c3aaa4ab3107b057f48ce2875615490fa",
+    "view_sha256": "94a4cf201931411f69054b963b2b6f6c00f10ee0db6299b1f948c8c54624d288",
+    "edits": [
+      {
+        "offset": 1840,
+        "before": "    (startupReturned : SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records\n",
+        "after": "    (_startupReturned : SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records\n"
+      },
+      {
+        "offset": 2167,
+        "before": "    (receiptDigestsLinked : LinkedReceiptDigests digestRepresentation reads.originalReceipts)\n    (normalReceiptBytes : ∀ raw ∈ reads.originalReceipts.val,\n",
+        "after": "    (_receiptDigestsLinked : LinkedReceiptDigests digestRepresentation reads.originalReceipts)\n    (_normalReceiptBytes : ∀ raw ∈ reads.originalReceipts.val,\n"
+      },
+      {
+        "offset": 2437,
+        "before": "    (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))\n    (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)\n    (cloneResource : ∀ resource : sandproof_protocol.ResourceRef,\n",
+        "after": "    (_encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))\n    (_digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)\n    (_cloneResource : ∀ resource : sandproof_protocol.ResourceRef,\n"
+      },
+      {
+        "offset": 2754,
+        "before": "    (cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),\n",
+        "after": "    (_cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),\n"
+      }
+    ]
+  },
+  "StartupReadAgreement.lean": {
+    "raw_sha256": "b5c546fdc8b6846eedbb5f0acb61e9705d2394ec6ce539dba156b6482f041983",
+    "view_sha256": "70a34d37964a665a1b8c17785cfae66045a63046085a8b76cfd8875cda1c6bbd",
+    "edits": [
+      {
+        "offset": 1652,
+        "before": "      simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,\n",
+        "after": "      simp [core.option.Option.ok_or,\n"
+      }
+    ]
+  },
+  "WorldParentConclusion.lean": {
+    "raw_sha256": "33dd368af6648e1b73cdb67e58b0251cccb550d6c4e587c918d52ed6dd094068",
+    "view_sha256": "78100d3765c31615eddf76b8e87947321d57c60827356730399f7705a3a9a1ed",
+    "edits": [
+      {
+        "offset": 1264,
+        "before": "",
+        "after": "    letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready\n"
+      },
+      {
+        "offset": 2438,
+        "before": "      (nativeRead : actualNativeRead carriers nv nativeOps tx ns input.world\n",
+        "after": "      (revision : BaseInput.Revision (installBaseReads carriers nv nativeOps lv ledgerOps ops)\n        ns baseRead.connection (baseLocalFromParent ready reads.localValue))\n      (_nativeRead : actualNativeRead carriers nv nativeOps tx ns input.world\n"
+      },
+      {
+        "offset": 2687,
+        "before": "      (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encoded))\n      (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encoded) = .ok digestValue)\n      (slot : reads.actionIdentities.val[1]? = some startupAction)\n      (cloneResource : ParentCalls.cloneResource startupAction.resource = .ok startupAction.resource)\n      (cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),\n",
+        "after": "      (_encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encoded))\n      (_digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encoded) = .ok digestValue)\n      (_slot : reads.actionIdentities.val[1]? = some startupAction)\n      (_cloneResource : ParentCalls.cloneResource startupAction.resource = .ok startupAction.resource)\n      (_cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),\n"
+      },
+      {
+        "offset": 3786,
+        "before": "            .ok (some plan) ∧ plan = calls.plan ∧ plan.sealed = true := by\n",
+        "after": "            .ok (some plan) ∧ plan = calls.plan ∧ plan.sealed = true ∧\n        reads.base.native_revision = some (IScalar.hcast .U64 revision.value) := by\n  letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready\n"
+      },
+      {
+        "offset": 4226,
+        "before": "  intro E host serde tx ns intent now input reads calls prepare native baseRead nativeRead\n",
+        "after": "  intro E host serde tx ns intent now input reads calls prepare native baseRead revision nativeRead\n"
+      },
+      {
+        "offset": 4400,
+        "before": "  obtain ⟨base, computed, _, nativeAt, ledgerAt⟩ :=\n",
+        "after": "  obtain ⟨base, computed, _, nativeAt, ledgerAt, revisionAt⟩ :=\n"
+      },
+      {
+        "offset": 4672,
+        "before": "      prepare.recordRead prepare.ledgerRead nativeRead\n",
+        "after": "      prepare.recordRead prepare.ledgerRead nativeRead revision\n"
+      },
+      {
+        "offset": 5717,
+        "before": "    encode digest slot cloneResource cloneLimits, rfl, sameNative, ?_, planRead, planEq, planEq.symm ▸ sealed⟩\n  rw [sameBase, ledgerAt]\n",
+        "after": "    encode digest slot cloneResource cloneLimits, rfl, sameNative, ?_, planRead, planEq, planEq.symm ▸ sealed, ?_⟩\n  · rw [sameBase, ledgerAt]\n  · rw [sameBase, revisionAt]\n"
+      }
+    ]
+  }
+}

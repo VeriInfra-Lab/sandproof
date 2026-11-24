@@ -2694,3 +2694,18 @@ Option 按原 A6 逐符号模型接入，业务守卫和闭包保持透明，没
 历史、重启、物理资源及 V4/V5/V6/V7 条件没有因此证明；JSON/SHA/SQLite 的既有依赖
 合同不升级为第三方内部证明。公共登记、独立实现对应和本有限封口不表示整个 V3、
 旧 `full`/全项目或部署系统已完成。
+
+## V3 首次 Unload 的读回、登记与提交顺序候选
+
+本批整理 [#779 至 #939 的首次卸载证明](../verification/experiments/stage1-protocol/unload-parent-link/README.md)。
+证明开发证据保留原提交和生成物身份。父调用的来源行、完整原选项及回执连接以
+`c265145f` 为生产基线。当前 revision 读取、事务开始、首错前缀及保存后段各有
+独立生成环境。[保存与提交说明](../verification/experiments/stage1-protocol/unload-parent-link/finish/README.md)
+列出 `7b278764` 上的三个抽取入口、实际 Lean 文件与调序反例。其合同在既有 V5
+条件下连接同一事务、原 SQLite 错误及提交后钩子的原结果。提交未知仍需经原账本
+读回判断。保存内部的 SQL 与编解码、Drop 的物理回滚及完整父调用的实现连接仍待完成。
+
+[#935](https://github.com/VeriInfra-Lab/sandproof/pull/935) 和
+[#962](https://github.com/VeriInfra-Lab/sandproof/pull/962) 提供原 SQLite
+登记、revision 首错、写锁、选槽与回滚的工程对照。完整普通入口、保存前缀和后段的
+原生对照、当前实际抽取、正式登记和 Lean 审计取本批候选的独立收据。

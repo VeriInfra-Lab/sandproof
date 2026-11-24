@@ -81,7 +81,7 @@ theorem actual_wrong_digest_accepts (trace : Trace) :
     core.convert.FromSame.from]
   simp [LIFECYCLE_STORE_FORMAT_VERSION, core.num.I64.cast_unsigned, Slice.len, alloc.vec.Vec.len,
     wrongDigest, Array.to_slice, completeTrace, List.append_assoc]
-  have currentLiteral : ((23#64)#iscalar : I64).val = 23 := by decide
+  have currentLiteral : ((24#64)#iscalar : I64).val = 24 := by decide
   have reserveValue : ((286720#64)#uscalar : U64).val = 286720 := by decide
   have lengthValue : ((2#64)#uscalar : U64).val = 2 := by decide
   have capacityValue : InboxLoadConfig.LifecycleValues.capacity.max_sql_value_bytes.val = 4194304 := by decide

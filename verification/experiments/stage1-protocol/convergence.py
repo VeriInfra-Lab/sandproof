@@ -169,6 +169,14 @@ def component(root, name):
     return result
 
 
+def caller_evidence(root):
+    spec = importlib.util.spec_from_file_location(
+        'stage1_protocol_record_current_evidence', root/HERE/'protocol-record/evidence.py')
+    result = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(result)
+    return result
+
+
 def extra(root, name):
     """A finite adapter validates its own retained source and original evidence."""
     path, _, _ = EXTRA_DRIVERS[name]
@@ -305,7 +313,10 @@ def actuals(result):
         'current-standard-blob-and-original-load-domain-development',
         'current-standard-digest-and-original-load-development',
         'current-standard-save-digest-and-original-save-development'}:
-        return [row['actual'] for row in result.get('views', {}).values()]
+        views = [row['actual'] for row in result.get('views', {}).values()]
+        if 'blob_update' in result:
+            views.append(result['blob_update']['actual'])
+        return views
     return None
 
 
@@ -313,7 +324,10 @@ def check_actual(result, job, root):
     name = job['convergence_package']
     if result.get('complete') is not True or result.get('prepare_only'):
         raise ValueError('incomplete or preparation-only convergence result: '+name)
-    if name in ('standard-blob', 'standard-digest', 'standard-save-digest'):
+    if name == 'standard-save-digest':
+        component(root, name).check(result, root, require_blob_update=job['profile'] == 'full')
+        return
+    if name in ('standard-blob', 'standard-digest'):
         component(root, name).check(result, root)
         return
     data = read(root, name)
@@ -386,41 +400,30 @@ def check_actual(result, job, root):
                            for row in rows.values())):
                 raise ValueError('missing complete actual reply source/runtime binding')
         return
-    if name in ('native-readiness', 'protocol-record'):
+    if name == 'protocol-record':
+        caller_evidence(root).certificate(result, job, data)
+        return
+    if name == 'native-readiness':
         variant, = job['cases']
-        kind = name+'-formal-development'
         actual = result.get('actual', {})
-        view = data['views'][variant] if name == 'protocol-record' else None
-        files = view['files'] if view else data['correct_files' if variant == 'correct' else 'wrong_files']
-        file_inventory_matches = (set(actual.get('files', {})) == set(files) if view
-                                  else len(actual.get('files', {})) == files)
-        audit_inventory_matches = (sorted(actual.get('audits', [])) == sorted(job['views'][variant]['audits']) if view
-                                   else len(actual.get('audits', [])) == data[
-                                       'correct_audits' if variant == 'correct' else 'wrong_audits'])
-        rejection_matches = result.get('property_rejected') is (variant != 'correct')
-        if name == 'native-readiness' and 'property_rejected' not in result:
-            # The original producer reports its exact positive counterexample
-            # proofs, not this aggregate Boolean. Keep that result unchanged.
-            rejection_matches = sorted(actual.get('audits', [])) == sorted(
-                job['views'][variant]['audits'])
-            if variant != 'correct':
-                rejection_matches = rejection_matches and (
-                    'SandboxModel.Stage1Protocol.NativeReadiness.wrong_status_refutes_full_contract'
-                    in actual.get('audits', []))
-        original_files_match = actual.get('files') == result.get('files')
-        original_audits_match = actual.get('audits') == result.get('audits')
-        if name == 'native-readiness':
-            original_files_match = (len(result.get('prepared_files', [])) == len(actual.get('files', {}))
-                                    and set(result.get('prepared_files', [])) == set(actual.get('files', {})))
-            original_audits_match = sorted(result.get('prepared_audits', [])) == sorted(actual.get('audits', []))
-        if (result.get('kind') != kind or result.get('variant') != variant
-                or not rejection_matches
-                or not file_inventory_matches or not audit_inventory_matches
-                or not original_files_match
+        files, audits = actual.get('files', {}), actual.get('audits', [])
+        expected = job['views'][variant]['audits']
+        rej = variant != 'correct'
+        if ((result.get('kind'), result.get('variant')) != ('native-readiness-formal-development', variant)
+                or len(files) != data['wrong_files' if rej else 'correct_files']
+                or len(audits) != data['wrong_audits' if rej else 'correct_audits']
+                or len(result.get('prepared_files', [])) != len(files)
+                or set(result.get('prepared_files', [])) != set(files)
+                or sorted(result.get('prepared_audits', [])) != sorted(audits)
                 or not actual.get('service_log_sha256')
-                or not original_audits_match
-                or (name == 'native-readiness' and result.get(
-                    'source_modes_tools_libraries_logs_postguards_complete') is not True)):
+                or result.get('source_modes_tools_libraries_logs_postguards_complete') is not True):
+            raise ValueError('incomplete actual caller/readiness view: '+name+':'+variant)
+        if 'property_rejected' in result:
+            rejection_matches = result['property_rejected'] is rej
+        else:
+            rejection_matches = sorted(audits) == sorted(expected) and (not rej or
+                'SandboxModel.Stage1Protocol.NativeReadiness.wrong_status_refutes_full_contract' in audits)
+        if not rejection_matches:
             raise ValueError('incomplete actual caller/readiness view: '+name+':'+variant)
         return
     raise ValueError('missing convergence result validator: '+name)

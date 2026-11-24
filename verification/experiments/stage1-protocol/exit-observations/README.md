@@ -37,6 +37,14 @@ python3 verification/experiments/stage1-protocol/exit-observations/native.py \
 共享执行器可通过 --lock-fd 传递同一已持有描述符；不能重开另一锁等待自身。
 原生入口由外层或 ning 共享套件持锁，不重复获取父锁。
 
+在 ning 的 `data2` 对 `f432b56efea232507a74852a2133e69b834c8b82` 重抽了正确版和三个
+原错误版。每版均覆盖 63 个函数声明和完全透明的三个原 `matches` 方法，八个生成 Lean
+文件与 #757 原记录的摘要一致。此次保存了四份当前 LLBC，旧记录只有原 LLBC 字节摘要，
+生成文件一致的结论限于 Lean 文件。本次收据
+`exit-observations-current.f432b56e/result.json` 的 SHA256 为
+`7fa3c25f71c3ede15b9b43443e6a79bf10efec3e58e3f5892556be372a576789`。
+原定理和原生断言继续由正式入口验收。
+
 原生五视图复用原 SQLite 候选夹具与同一22条断言，含三种正常观察、完整 action
 身份/命令尝试、32字节末尾、PID/ticks/boot 变异及直接恢复的正值边界。
 三个错误版精确失败集合分别为1/2/2；每版使用全新 Cargo target，检查实际协议库
