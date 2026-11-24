@@ -10,7 +10,8 @@ use super::unload_resolution::UnloadEncoding;
 use crate::{CrashInjector, CrashPoint, InternalLocalBinding, JournalError};
 use sandbox_controller_core as core;
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleOperation,
+    AcceptedLifecycleIntent, AuthenticatedCenterContext, IncarnationId, LifecycleOperation,
+    OperationBinding,
 };
 
 #[cfg(test)]
@@ -283,13 +284,26 @@ impl<D: RecordCodec> RecordTransaction for StandardRecord<'_, '_, D> {
     ) -> Result<(), JournalError> {
         // The original write is still tentative under the same world transaction.
         // Rejection drops the transaction before any new intent can be observed.
-        if super::super::branching::blocks_parent_unload(&self.tx, intent)? {
-            return Err(JournalError::Conflict);
+        match unload_branch_scope(intent) {
+            Some((binding, source)) => {
+                super::super::branching::check_parent_unload(&self.tx, binding, source)
+            }
+            None => Ok(()),
         }
-        Ok(())
     }
 
     fn commit(self) -> Result<(), JournalError> {
         self.tx.commit()
+    }
+}
+
+fn unload_branch_scope(
+    intent: &AcceptedLifecycleIntent,
+) -> Option<(&OperationBinding, IncarnationId)> {
+    match intent.request.operation {
+        LifecycleOperation::Unload {
+            source_incarnation, ..
+        } => Some((&intent.request.binding, source_incarnation)),
+        _ => None,
     }
 }

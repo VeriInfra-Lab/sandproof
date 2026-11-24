@@ -10,8 +10,8 @@ use sandproof_protocol::{
     SandboxId,
     internal::NodeIdentity,
     lifecycle::{
-        AcceptedLifecycleIntent, AuthenticatedCenterContext, ContentDigest,
-        LifecycleAccessIdentity, OperationKey,
+        AcceptedLifecycleIntent, AuthenticatedCenterContext, ContentDigest, IncarnationId,
+        LifecycleAccessIdentity, OperationBinding, OperationKey,
     },
 };
 use serde::{Deserialize, Serialize};
@@ -540,27 +540,21 @@ pub(super) fn retire_closed_parent(
     Ok(())
 }
 
-pub(super) fn blocks_parent_unload(
-    connection: &Connection,
-    intent: &sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
-) -> Result<bool, JournalError> {
-    let sandproof_protocol::lifecycle::LifecycleOperation::Unload {
-        source_incarnation, ..
-    } = intent.request.operation
-    else {
-        return Ok(false);
+pub(super) fn check_parent_unload(
+    tx: &WorldTransaction<'_>,
+    binding: &OperationBinding,
+    source_incarnation: IncarnationId,
+) -> Result<(), JournalError> {
+    let Some(limits) = read_limits(tx)? else {
+        return Ok(());
     };
-    let Some(limits) = read_limits(connection)? else {
-        return Ok(false);
-    };
-    let binding = &intent.request.binding;
     let execution = digest(&(
         &binding.node,
         &binding.session,
         source_incarnation,
         &binding.key.owner,
     ))?;
-    let mut statement = connection.prepare(
+    let mut statement = tx.prepare(
         "SELECT operation,parent,execution,record,sha256 FROM controller_host_branch_batches WHERE execution=?1 LIMIT ?2",
     )?;
     let rows = statement.query_map(
@@ -588,10 +582,10 @@ pub(super) fn blocks_parent_unload(
             return Err(JournalError::CorruptStore);
         }
         if original.holds_any() {
-            return Ok(true);
+            return Err(JournalError::Conflict);
         }
     }
-    Ok(false)
+    Ok(())
 }
 
 impl ControllerJournal {
