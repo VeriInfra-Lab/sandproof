@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
-if [[ $# != 3 || ($1 != preflight && $1 != run) || ! $3 =~ ^[0-9a-f]{40}$ ]]; then
-    echo 'Usage: run-stage1-native-host.sh preflight|run CHECKOUT EXACT_COMMIT' >&2
+if [[ $# -lt 3 || ! $3 =~ ^[0-9a-f]{40}$ ]] ||
+   [[ ($1 == formal && $# != 4) || ($1 != formal && $# != 3) ]] ||
+   [[ $1 != preflight && $1 != native && $1 != formal ]]; then
+    echo 'Usage: run-stage1-host.sh preflight|native CHECKOUT EXACT_COMMIT or formal CHECKOUT EXACT_COMMIT NATIVE_EVIDENCE' >&2
     exit 2
 fi
 mode=$1
@@ -27,26 +29,41 @@ cd -- "$native/${checkout#"$storage"/}"
 [[ $PWD -ef "$checkout" ]]
 export SANDPROOF_STAGE1_NATIVE_JOBS="${SANDPROOF_STAGE1_NATIVE_JOBS:-16}"
 export SANDPROOF_STAGE1_LIGHT_JOBS="${SANDPROOF_STAGE1_LIGHT_JOBS:-32}"
+export SANDPROOF_STAGE1_JOBS="${SANDPROOF_STAGE1_JOBS:-8}"
 export SANDPROOF_ACCEPTANCE_ROLE=native TMPDIR="$xfs"
+if [[ $mode == formal ]]; then
+    evidence=$(realpath -e -- "$4")
+    [[ $evidence == "$storage"/runs/* || $evidence == "$native"/runs/* ]]
+    [[ -s $evidence/complete.json ]]
+    export SANDPROOF_NATIVE_EVIDENCE="$evidence" SANDPROOF_ACCEPTANCE_ROLE=formal
+fi
 export CARGO_TARGET_DIR="$native/cache/native-target"
 unset PYTHONPATH
 
 if [[ $mode == preflight ]]; then
-    exec bash scripts/python-entry.sh tools/stage1_native_host.py preflight "$expected" "$xfs"
+    exec bash scripts/python-entry.sh tools/stage1_host.py preflight "$expected" "$xfs"
 fi
 
-run=$(mktemp -d "$native/runs/native.XXXXXXXX")
+run=$(mktemp -d "$native/runs/$mode.XXXXXXXX")
 printf 'Evidence directory: %s\n' "$storage/runs/${run##*/}"
-mkdir -m700 "$run/redis"
-export SANDPROOF_REDIS_TEST_TMPDIR="$run/redis"
+if [[ $mode == native ]]; then
+    mkdir -m700 "$run/redis"
+    export SANDPROOF_REDIS_TEST_TMPDIR="$run/redis"
+else
+    mkdir -m700 "$run/lean"
+    export TMPDIR="$run/lean" CARGO_TARGET_DIR="$run/target"
+fi
 # Keep the launcher lock separate from the child unit. Only the child opens and
 # owns the shared lock. Losing the SSH caller cannot release it mid-run.
-unit="sandproof-stage1-native-${run##*.}"
+unit="sandproof-stage1-$mode-${run##*.}"
 preserve=(PATH TMPDIR CARGO_HOME RUSTUP_HOME CARGO_NET_OFFLINE CARGO_INCREMENTAL
           CARGO_BUILD_JOBS CARGO_TARGET_DIR PYTHONDONTWRITEBYTECODE
           SANDPROOF_PYTHON SANDPROOF_REDIS_SERVER SANDPROOF_STAGE1_REDIS_SHA256
           SANDPROOF_REDIS_TEST_TMPDIR SANDPROOF_ACCEPTANCE_ROLE
-          SANDPROOF_STAGE1_NATIVE_JOBS SANDPROOF_STAGE1_LIGHT_JOBS
+          SANDPROOF_STAGE1_NATIVE_JOBS SANDPROOF_STAGE1_LIGHT_JOBS SANDPROOF_STAGE1_JOBS
+          SANDPROOF_NATIVE_EVIDENCE SANDPROOF_FORMAL_CACHE SANDPROOF_STAGE1_RESUME_FROM
+          SANDPROOF_PROOF_RUNTIME_ROOT SANDPROOF_PROOF_TOOL_ROOT SANDPROOF_FORMAL_PACKAGES
+          SANDPROOF_STAGE1_SOURCE_SAVE_RESULT ELAN_HOME ELAN_TOOLCHAIN LEAN_NUM_THREADS LEAN_STACK_SIZE_KB
           SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE
           SANDPROOF_WRITER_SOURCE_ARCHIVE SANDPROOF_LIBRARY_SOURCE_ARCHIVE
           SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE SANDPROOF_SOURCE_ROWS_PROVIDER_ROOT
@@ -61,4 +78,4 @@ exec systemd-run --user --wait --pipe --collect --quiet --unit="$unit" \
     --property=MemoryAccounting=yes --property=MemoryHigh=128G \
     --property=MemoryMax=160G --property=MemorySwapMax=0 \
     --property=KillMode=control-group --working-directory="$PWD" "${env_options[@]}" \
-    bash scripts/python-entry.sh tools/stage1_native_host.py run "$expected" "$xfs" "$run" "$native/formal.lock"
+    bash scripts/python-entry.sh tools/stage1_host.py "$mode" "$expected" "$xfs" "$run" "$native/formal.lock"

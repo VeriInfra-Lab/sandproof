@@ -1,8 +1,9 @@
-"""Run the unchanged Stage1 native entrance in a private cgroup."""
+"""Run the original Stage1 native or formal entrance in a private cgroup."""
 import argparse
 import fcntl
 import json
 import os
+import runpy
 from pathlib import Path
 import shutil
 import subprocess
@@ -35,16 +36,18 @@ ARCHIVE_SHA256 = {
 }
 
 
-def admit(commit, xfs):
+def admit(commit, xfs, mode):
     root = Path.cwd()
     proof_native_suite.trusted_checkout(root)
     if (subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() != commit
             or subprocess.check_output(["git", "status", "--porcelain"])):
         raise ValueError("the exact clean source checkout is required")
-    workers = int(os.environ["SANDPROOF_STAGE1_NATIVE_JOBS"])
+    setting = "SANDPROOF_STAGE1_JOBS" if mode == "formal" else "SANDPROOF_STAGE1_NATIVE_JOBS"
+    workers = int(os.environ[setting])
     light_jobs = int(os.environ["SANDPROOF_STAGE1_LIGHT_JOBS"])
     cpus = sorted(os.sched_getaffinity(0))
-    if not 1 <= workers <= 16 or not 1 <= light_jobs <= 32 or len(cpus) < max(4*workers, light_jobs):
+    worker_limit = 8 if mode == "formal" else 16
+    if not 1 <= workers <= worker_limit or not 1 <= light_jobs <= 32 or len(cpus) < max(4*workers, light_jobs):
         raise ValueError("CPU affinity is too small for the requested native and lightweight parallelism")
     memory = Path("/proc/meminfo").read_text().split("MemAvailable:", 1)[1].split()[0]
     if (int(memory) * 1024 < MIN_AVAILABLE_MEMORY or shutil.disk_usage(root).free < MIN_STORAGE_FREE
@@ -56,20 +59,20 @@ def admit(commit, xfs):
         raise ValueError("native Redis differs from the pinned local build")
     if acceptance_receipts.source_archive_inputs() != ARCHIVE_SHA256:
         raise ValueError("the five registered native source archives are required")
-    if subprocess.run(["cargo", "metadata", "--offline", "--locked", "--format-version", "1"],
-                      stdout=subprocess.DEVNULL, check=False).returncode:
-        raise ValueError("the fixed Rust toolchain cannot resolve the locked dependencies offline")
+    if mode != "formal":
+        subprocess.run(["cargo", "metadata", "--offline", "--locked", "--format-version", "1"],
+                       stdout=subprocess.DEVNULL, check=True)
     proof_native_suite.stage1_source_admission("stage1-protocol")
-    runtime = proof_native_suite.runtime(temporary_parent=xfs)
-    return dict(commit=commit, cpu_affinity=cpus, native_jobs=workers, light_jobs=light_jobs,
+    runtime = proof_native_suite.runtime(temporary_parent=xfs) if mode != "formal" else None
+    return dict(commit=commit, mode=mode, cpu_affinity=cpus, workers=workers, light_jobs=light_jobs,
                 data_disk_free_bytes=shutil.disk_usage(root).free, xfs_free_bytes=shutil.disk_usage(xfs).free,
                 redis=material, source_archives=ARCHIVE_SHA256, runtime=runtime)
 
 
-def cgroup():
+def cgroup(mode):
     line, = (row for row in Path("/proc/self/cgroup").read_text().splitlines() if row.startswith("0::/"))
     path = Path("/sys/fs/cgroup") / line.removeprefix("0::/")
-    if (not path.name.startswith("sandproof-stage1-native-")
+    if (not path.name.startswith(f"sandproof-stage1-{mode}-")
             or int((path / "memory.max").read_text()) != MEMORY_LIMIT):
         raise ValueError("run native acceptance in its dedicated bounded systemd unit")
     return path
@@ -109,8 +112,42 @@ def tidy_ephemeral(run, native, xfs):
     remove_private_tree(redis, [identity.st_dev, identity.st_ino])
 
 
-def execute(commit, xfs, run, lock):
-    group = cgroup()
+def original_native_approval(commit):
+    folder = Path(os.environ["SANDPROOF_NATIVE_EVIDENCE"])
+    seal = folder / "complete.json"
+    result = json.loads(seal.read_text())
+    snapshot = acceptance_receipts.digest(acceptance_receipts.repository_inputs(Path.cwd()))
+    if (result.get("complete") is not True or result.get("exit_code") != 0
+            or result.get("scope") != "stage1-protocol" or result.get("repository_sha256") != snapshot):
+        raise ValueError("formal Stage1 requires a complete native seal for the exact candidate inputs")
+    return dict(commit=commit, path=str(seal), sha256=acceptance_receipts.sha(seal))
+
+
+def independent_reference():
+    """Record an applicable result as a separate slice, outside the Stage1 seal."""
+    value = os.environ.get("SANDPROOF_STAGE1_SOURCE_SAVE_RESULT")
+    if not value:
+        return None
+    path = Path(value).resolve(strict=True)
+    result = json.loads(path.read_text())
+    package = Path("verification/experiments/source-save-order/unload-parent-link")
+    original = runpy.run_path(str(package / "verify.py"))["candidate"]()
+    keys = ("source_commit", "source_tree", "source_archive_sha256", "fixture_sha256", "entry_sha256")
+    if (result.get("kind") != "source-save-order-formal" or result.get("complete") is not True
+            or any(result.get(key) != original[key] for key in keys)
+            or set(result.get("views", ())) != {"factored", "reordered"}):
+        raise ValueError("independent SourceSaveOrder result is incomplete or uses different inputs")
+    review = result.get("review_commit")
+    tree = subprocess.check_output(["git", "rev-parse", f"{review}^{{tree}}"], text=True).strip()
+    if (tree != result.get("review_tree")
+            or subprocess.run(["git", "diff", "--quiet", review, "HEAD", "--", str(package)]).returncode):
+        raise ValueError("independent SourceSaveOrder proof files differ from the reviewed candidate")
+    return dict(path=str(path), sha256=acceptance_receipts.sha(path), review_commit=review,
+                source_commit=result["source_commit"], scope="independent-source-save-order")
+
+
+def execute(mode, commit, xfs, run, lock):
+    group = cgroup(mode)
     native = run / "native"
     with lock.open("r+") as guard:
         try:
@@ -121,14 +158,22 @@ def execute(commit, xfs, run, lock):
         fd = str(guard.fileno())
         env = dict(os.environ, SANDPROOF_LOCK_FILE=str(lock), SANDPROOF_LOCK_FD=fd,
                    SANDPROOF_PROOF_HEAVY_LOCK=str(lock), SANDPROOF_PROOF_HEAVY_LOCK_FD=fd)
-        admission = admit(commit, xfs)
-        acceptance_receipts.write_json(run / "admission.json", admission)
         started = time.monotonic()
+        admission = admit(commit, xfs, mode)
+        if mode == "formal":
+            admission["native_evidence"] = original_native_approval(commit)
+            independent = independent_reference()
+            if independent is not None:
+                admission["independent_result"] = independent
+            command = ["bash", "scripts/verify-stage1-protocol.sh"]
+        else:
+            command = ["bash", "scripts/python-entry.sh", "tools/proof_native_suite.py", "run",
+                       "--scope", "stage1-protocol", "--output", str(native)]
+        acceptance_receipts.write_json(run / "admission.json", admission)
         history = []
-        with (run / "native.log").open("xb") as log, (run / "resource-samples.jsonl").open("x") as samples:
+        with (run / f"{mode}.log").open("xb") as log, (run / "resource-samples.jsonl").open("x") as samples:
             child = subprocess.Popen(
-                ["bash", "scripts/python-entry.sh", "tools/proof_native_suite.py", "run",
-                 "--scope", "stage1-protocol", "--output", str(native)],
+                command,
                 env=env, stdout=log, stderr=subprocess.STDOUT, pass_fds=(guard.fileno(),))
             while True:
                 row = sample(run, xfs, group, started)
@@ -147,13 +192,16 @@ def execute(commit, xfs, run, lock):
         # test scratch; the build manifest remains under the official handoff.
         remaining = {int(pid) for pid in (group / "cgroup.procs").read_text().split()} - {os.getpid()}
         events = {k: int(v) for k, v in (row.split() for row in (group / "memory.events").read_text().splitlines())}
-        cleanup = "unknown" if remaining else "retained after native failure"
-        if status == 0 and not remaining and not events["oom_kill"]:
+        cleanup = "unknown" if remaining else "formal artifacts retained"
+        if mode == "native":
+            cleanup = "unknown" if remaining else "retained after native failure"
+        if mode == "native" and status == 0 and not remaining and not events["oom_kill"]:
             tidy_ephemeral(run, native, xfs)
             cleanup = "private temporary files removed"
         acceptance_receipts.write_json(run / "resources.json", dict(
-            commit=commit, exit_code=status, elapsed_seconds=history[-1]["elapsed_seconds"],
-            cgroup_memory_peak_bytes=history[-1]["cgroup_memory_peak_bytes"], memory_events=events,
+            commit=commit, mode=mode, exit_code=status,
+            elapsed_seconds=round(time.monotonic() - started, 3),
+            cgroup_memory_peak_bytes=int((group / "memory.peak").read_text()), memory_events=events,
             private_run_sampled_disk_peak_bytes=max(row["private_run_allocated_bytes"] for row in history),
             dedicated_xfs_sampled_used_peak_bytes=max(row["dedicated_xfs_used_bytes"] for row in history),
             shared_data_disk_min_free_bytes=min(row["shared_data_disk_free_bytes"] for row in history),
@@ -163,16 +211,16 @@ def execute(commit, xfs, run, lock):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("preflight", "run"))
+    parser.add_argument("mode", choices=("preflight", "native", "formal"))
     parser.add_argument("commit")
     parser.add_argument("xfs", type=Path)
     parser.add_argument("run", type=Path, nargs="?")
     parser.add_argument("lock", type=Path, nargs="?")
     args = parser.parse_args()
     if args.mode == "preflight":
-        print(json.dumps(admit(args.commit, args.xfs), indent=2))
+        print(json.dumps(admit(args.commit, args.xfs, args.mode), indent=2))
         return 0
-    return execute(args.commit, args.xfs, args.run, args.lock)
+    return execute(args.mode, args.commit, args.xfs, args.run, args.lock)
 
 
 if __name__ == "__main__":

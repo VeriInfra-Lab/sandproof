@@ -310,11 +310,11 @@ Rust envd 的受控验收阶段（#311）：
 
 安装前审查源码及批准配置、保留原 CI 文件恢复副本，验证单元；只重启管理服务，不停止在途工作。门槛按 owner 授权启用并通过正常晋升 PR 实测，安装和通过证据记录在 #14。单次安装不代表永久运行的缓存/历史保留已验收；未知资源由管理员核对，不自动忘掉。不加入绿色占位工作流，不通过移除必需检查合入失败版本。
 
-### Stage1 手动原生验收
+### Stage1 手动分阶段验收
 
-在已准备的原生主机上，`scripts/run-stage1-native-host.sh` 使用同一 Stage1 锁和原
-`proof_native_suite.py run --scope stage1-protocol` 入口。启动器接收 `preflight|run`、
-干净的提交目录和完整提交哈希。运维环境提供以下四项。
+在已准备的原生主机上，`scripts/run-stage1-host.sh` 通过同一 Stage1 锁运行原生和正式入口。
+`preflight`、`native` 和 `formal` 均接收干净的提交目录和完整提交哈希，
+`formal` 还接收原 `native/complete.json` 所在的目录。运维环境提供以下四项。
 
 - `SANDPROOF_STAGE1_STORAGE_ROOT` 指数据盘的私有 Stage1 根。候选必须位于它的
   `runs/` 目录。构建共享缓存、原始收据和运行日志也留在这里。
@@ -328,12 +328,15 @@ Rust envd 的受控验收阶段（#311）：
   归档构建，记录实际二进制摘要。GitHub CI 继续使用已有的 root 封存材料。
 
 先运行 `preflight` 核对入口、CPU、内存、数据盘、固定材料和锁定依赖的离线解析。
-`run` 通过用户 systemd 单元执行。并行度由 `SANDPROOF_STAGE1_NATIVE_JOBS`
-与 `SANDPROOF_STAGE1_LIGHT_JOBS` 设置，默认分别为 16 和 32；候选仍需支持对应选项。
-与同主机形式验收共用外层锁，等待者可根据退出码 75 稍后重试。实际并行、成功状态与
-证明准入仍以原入口记录为准。
+两种验收使用独立的用户 systemd 单元。原生与轻量检查默认 16 路和 32 路，
+由 `SANDPROOF_STAGE1_NATIVE_JOBS` 与 `SANDPROOF_STAGE1_LIGHT_JOBS` 设置。
+正式入口默认 8 路，由 `SANDPROOF_STAGE1_JOBS` 设置。候选需要支持对应的并行数。
+同主机的两阶段共用外层锁，等待者可根据退出码 75 稍后重试。正式入口先比对原
+完整原生结果的全仓输入摘要，再执行 `verify-stage1-protocol.sh` 的原收据准入。
+有适用的独立来源保存结果时，可用 `SANDPROOF_STAGE1_SOURCE_SAVE_RESULT` 关联
+其原 `result.json`。将其登记为独立切片，完整 Stage1 仍按默认入口验收。
 
-从每次私有运行目录读取 `admission.json`、`native.log`、`native/complete.json`
+从每次私有运行目录读取 `admission.json`、阶段日志、原始验收结果
 和 `resources.json`。资源采样分别报告 elapsed、单元的 `memory.peak` 和 OOM 事件、
 私有运行目录的实际分配字节、专用 XFS 的已用量及共享数据盘最少剩余空间。磁盘数字
 是定期采样，短时峰值可能落在采样点之间。确认单元只剩监控进程且原命令成功后，
