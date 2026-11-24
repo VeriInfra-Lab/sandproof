@@ -61,6 +61,8 @@ class FunctionEntryTests(unittest.TestCase):
         for name in sorted(selected) + ['sandproof-unselected-profile-probe']:
             with self.subTest(package=name), tempfile.TemporaryDirectory() as temporary:
                 stage = Path(temporary)
+                # The fixture is outside the repository's toolchain search path.
+                (stage / 'rust-toolchain.toml').write_bytes((root / 'rust-toolchain.toml').read_bytes())
                 (stage / 'src').mkdir()
                 (stage / 'Cargo.toml').write_text(
                     '[package]\nname="' + name + '"\nversion="0.0.0"\n'
