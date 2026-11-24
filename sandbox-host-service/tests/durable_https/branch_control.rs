@@ -96,6 +96,10 @@ impl Fixture {
     }
 
     fn route_open(&self, index: usize) -> bool {
+        self.route_credential(index).is_some()
+    }
+
+    fn route_credential(&self, index: usize) -> Option<String> {
         let identity = BranchAccessIdentity {
             parent: self.request.parent.clone(),
             selector: BranchAccessSelector {
@@ -106,7 +110,16 @@ impl Fixture {
         };
         self.app
             .lifecycle_branch_data_authorization(&identity, &self.context, DataKind::FileRead)
-            .is_ok()
+            .ok()
+            .map(|(_, credential)| credential)
+    }
+
+    fn assert_sibling_credential(&self, expected: &str) {
+        assert!(
+            self.route_credential(1)
+                .is_some_and(|credential| credential == expected),
+            "the sibling did not retain its original credential"
+        );
     }
 
     fn release_first(&mut self) {
@@ -289,6 +302,8 @@ async fn native_branch_control_start_reuses_plan_and_requires_exact_ready() {
 async fn native_branch_control_release_fences_before_exchange_and_waits_for_census() {
     let mut fixture = Fixture::new().await;
     fixture.exchange(|_| Ok(complete_ready())).await.unwrap();
+    let first_credential = fixture.route_credential(0).unwrap();
+    let sibling_credential = fixture.route_credential(1).unwrap();
     fixture.release_first();
     let state = Arc::clone(&fixture.state);
     let app = Arc::clone(&fixture.app);
@@ -325,11 +340,8 @@ async fn native_branch_control_release_fences_before_exchange_and_waits_for_cens
         fixture.exchange(|_| Ok(partial_ready())).await,
         Err(sandproof_internal::ReceiveError::Unavailable),
     );
-    fixture.state.lock().unwrap().live_branch_relay = None;
-    assert_eq!(
-        fixture.exchange(|_| Ok(partial_ready())).await,
-        Ok(BranchControlStatus::Released {}),
-    );
+    let fixture =
+        replay_fenced_release_after_restart(fixture, &first_credential, &sibling_credential).await;
 
     let mut fixture = fixture.restarted();
     assert!(!fixture.route_open(0) && !fixture.route_open(1));
@@ -344,7 +356,85 @@ async fn native_branch_control_release_fences_before_exchange_and_waits_for_cens
         })
         .await
         .unwrap();
-    assert!(!fixture.route_open(0) && fixture.route_open(1));
+    assert!(!fixture.route_open(0));
+    fixture.assert_sibling_credential(&sibling_credential);
+}
+
+async fn replay_fenced_release_after_restart(
+    fixture: Fixture,
+    first_credential: &str,
+    sibling_credential: &str,
+) -> Fixture {
+    // Reopen before the exact original relay exits. Guest release evidence
+    // alone must not free the port when the original volatile pins disappear.
+    let mut fixture = fixture.restarted();
+    assert!(!fixture.route_open(0) && !fixture.route_open(1));
+    fixture.request.action = BranchControlAction::Observe {};
+    assert_eq!(
+        fixture.exchange(|_| Ok(partial_ready())).await,
+        Ok(BranchControlStatus::Pending {}),
+    );
+    assert!(!fixture.route_open(0));
+    fixture.assert_sibling_credential(sibling_credential);
+
+    let mut replacement_operation = fixture.request.operation.clone();
+    replacement_operation.sequence = 11.try_into().unwrap();
+    let mut replacement_batch = fixture.request.batch.clone();
+    replacement_batch.batch = "replacement-batch".try_into().unwrap();
+    let replacement = HostBranchBatchKey {
+        operation: replacement_operation,
+        batch: replacement_batch,
+    };
+    let mut targets = [fixture.request.targets[0].clone()];
+    targets[0].sandbox = "replacement".try_into().unwrap();
+    let reserve_replacement = |fixture: &Fixture| {
+        fixture.app.reserve_host_branch_batch(
+            &fixture.request.parent,
+            &fixture.context,
+            &replacement,
+            &targets,
+        )
+    };
+    assert_eq!(
+        reserve_replacement(&fixture),
+        Err(ApplicationError::NotFound)
+    );
+
+    fixture.release_first();
+    assert_eq!(
+        fixture
+            .exchange(|command| {
+                assert_eq!(
+                    command,
+                    json!({"operation": "release", "batch_id": "batch", "branch_id": "first"})
+                );
+                Ok(partial_ready())
+            })
+            .await,
+        Err(sandproof_internal::ReceiveError::Unavailable),
+    );
+    assert_eq!(
+        reserve_replacement(&fixture),
+        Err(ApplicationError::NotFound)
+    );
+
+    // Only the sibling's relay remains live. Its port and credential must
+    // survive retirement of the original branch and reservation of its port.
+    fixture.state.lock().unwrap().live_branch_relay = Some(31_001);
+    assert_eq!(
+        fixture.exchange(|_| Ok(partial_ready())).await,
+        Ok(BranchControlStatus::Released {}),
+    );
+    assert!(reserve_replacement(&fixture).is_ok());
+    let new_plan = fixture
+        .app
+        .pending_host_branch_guest_plan(&fixture.request.parent, &fixture.context, &replacement)
+        .unwrap();
+    let reissued_original = new_plan[0].token() == first_credential;
+    assert!(!reissued_original, "retired credential was issued again");
+    assert!(!fixture.route_open(0));
+    fixture.assert_sibling_credential(sibling_credential);
+    fixture
 }
 
 #[tokio::test]
@@ -447,6 +537,13 @@ async fn exact_parent_exit_fences_original_native_routes_without_releasing_capac
     );
     assert!(fixture.route_open(0) && fixture.route_open(1));
 
+    let key = HostBranchBatchKey {
+        operation: fixture.request.operation.clone(),
+        batch: fixture.request.batch.clone(),
+    };
+    assert_reused_parent_pid_refused(&fixture, &key);
+    assert!(fixture.route_open(0) && fixture.route_open(1));
+
     let exact = fixture
         .lifecycle
         .drive_branch_control(
@@ -485,10 +582,6 @@ async fn exact_parent_exit_fences_original_native_routes_without_releasing_capac
         .await
         .unwrap();
     assert_eq!(reply, exact);
-    let key = HostBranchBatchKey {
-        operation: durable.request.operation.clone(),
-        batch: durable.request.batch.clone(),
-    };
     assert!(
         durable
             .app
@@ -514,5 +607,34 @@ async fn exact_parent_exit_fences_original_native_routes_without_releasing_capac
             &[target],
         ),
         Err(ApplicationError::NotFound)
+    );
+}
+
+fn assert_reused_parent_pid_refused(fixture: &Fixture, key: &HostBranchBatchKey) {
+    let (control, _) = fixture
+        .app
+        .prepare_host_branch_control(
+            &fixture.request.parent,
+            &fixture.context,
+            key,
+            &fixture.request.targets,
+            false,
+            |_, _| Ok(Some(())),
+        )
+        .unwrap()
+        .unwrap();
+    let mut reused_pid = fixture
+        .app
+        .host_branch_exit_source(&control, &fixture.request, &fixture.context)
+        .unwrap();
+    reused_pid.start_time_ticks = reused_pid.start_time_ticks.checked_add(1).unwrap();
+    assert_eq!(
+        fixture.app.fence_exited_host_branch_parent(
+            &control,
+            &fixture.request,
+            &fixture.context,
+            &reused_pid,
+        ),
+        Err(ApplicationError::OutcomeUnknown),
     );
 }
