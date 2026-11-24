@@ -67,12 +67,12 @@ bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-look
 bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-lookup/formal.py --variant key-only --output /private/lookup-key-only
 ```
 
-在 msra 已配置的精确检出里，可以给这**一个**重任务分配总计 64 个 CPU。
+在证明机已配置的精确检出里，可以给这**一个**重任务分配总计 64 个 CPU。
 先据当前 CPU 余量确定可用的 64 个编号，把列表赋给 `SANDPROOF_EXCLUSIVE_CPUS`，
 例如 CPU 32–95 空闲时使用 `32-95`。下列命令占用同一 Stage1 协调锁。
 
 ```sh
-base=/mnt/data2tb/ning/sandproof-stage1
+base=${SANDPROOF_STAGE1_STORAGE_ROOT:?set the private Stage1 data-disk root}
 source "$base/bin/environment.sh"
 run=$(mktemp -d "$base/runs/lookup-heavy.XXXXXXXX")
 mkdir -m 700 "$run/tmp"

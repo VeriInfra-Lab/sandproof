@@ -354,14 +354,14 @@ Rust envd 的受控验收阶段（#311）：
 
 #### 批次操作与交接
 
-ning 承担 GitHub CI。msra 的手动批次以 `/mnt/data2tb/ning/sandproof-stage1` 为根，
+隔离 CI 执行器承担 GitHub CI。证明机的手动批次以 `SANDPROOF_STAGE1_STORAGE_ROOT` 为根，
 `bin/stage1-host` 调用固定提交里的启动器。实际底层设备由 `findmnt` 核对。
 `runs/` 保存每批的私有检出、收据与日志，`cache/` 和固定工具目录共享已验证依赖。
 专用 XFS 只用于需要真实文件系统语义的临时工作。可信短挂载指向同一批数据，
 容量统计按设备去重。一个候选只启动一次相应的正式阶段。
 
 ```sh
-host=/mnt/data2tb/ning/sandproof-stage1/bin/stage1-host
+host="$SANDPROOF_STAGE1_STORAGE_ROOT/bin/stage1-host"
 "$host" preflight "$checkout" "$commit"
 "$host" native "$checkout" "$commit"
 # native 成功后取其输出目录内的 native/，该目录包含 complete.json。
@@ -390,19 +390,21 @@ host=/mnt/data2tb/ning/sandproof-stage1/bin/stage1-host
 
 ### Lean 模块增量编译
 
-在 msra 的私有开发工程根目录中使用[模块构建脚本](../scripts/stage1-lean-build-dev.sh)。
-工程应位于 `/mnt/data2tb/ning/` 下，使用固定的 Lean 4.31.0，并已准备好
-`.lake/packages`。每个任务使用自己的工作目录；同一用户的可信开发任务可以指定
+在证明机的私有开发工程根目录中使用[模块构建脚本](../scripts/stage1-lean-build-dev.sh)。
+工程及开发缓存应位于已配置的 `SANDPROOF_STAGE1_STORAGE_ROOT` 下。固定 Lean 4.31.0
+由宿主准备，默认从该根的 `runtime/` 读取，可信宿主配置也可设
+`SANDPROOF_PROOF_RUNTIME_ROOT`。启动前需准备好工程的 `.lake/packages`。
+每个任务使用自己的工作目录，同一用户的可信开发任务可以指定
 同一个私有缓存目录（权限 0700）。缓存须与工程、依赖及工具目录分开，只存开发编译产物。
 
 ```sh
-export SANDPROOF_DEV_LAKE_CACHE=/mnt/data2tb/ning/sandproof-stage1/cache/lean-dev-4.31
+export SANDPROOF_DEV_LAKE_CACHE="$SANDPROOF_STAGE1_STORAGE_ROOT/cache/lean-dev-4.31"
 export SANDPROOF_DEV_LAKE_LIMIT_MIB=4096
 bash scripts/stage1-lean-build-dev.sh SandboxModel.Lifecycle.Protocol.RenewalResultTag
 ```
 
-私有派生工程中没有仓库脚本时，可在相同工作目录使用 msra 的已安装入口
-`/mnt/data2tb/ning/sandproof-stage1/bin/stage1-lean-build-dev`。两者接受相同的模块名。
+私有派生工程中没有仓库脚本时，可在相同工作目录使用宿主安装的入口
+`$SANDPROOF_STAGE1_STORAGE_ROOT/bin/stage1-lean-build-dev`。两者接受相同的模块名。
 Lake 按源码、导入依赖和构建配置决定哪些模块需要重编。入口只为 Sandproof 包启用
 缓存写入，第三方依赖和项目源码只读。每个项目的构建和配置输出位于自己的
 `.lake/build` 与 `.lake/config`，拒绝通过符号链接共用这些输出目录。

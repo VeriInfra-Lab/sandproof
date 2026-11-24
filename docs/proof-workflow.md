@@ -137,7 +137,7 @@
 
 ### 普通测试机与证明机的分工及证据交接
 
-GitHub CI 在 ning 的隔离 runner 上执行。手动原生验收和形式证明都在 msra 的
+GitHub CI 在隔离执行器上运行。手动原生验收和形式证明都在证明机的
 数据盘工作区执行。两段各有独立的输出目录与执行身份，使用同一个干净提交。
 原生阶段运行 Rust/Python 检查、Clippy 和正确/错误版断言，形式阶段按原收据
 核对 Rust 捕获、Charon/Aeneas 抽取、Lean 内核检查和服务审计。
@@ -236,7 +236,7 @@ Create 及 protocol-convergence 的形式并行度允许值为
 并纳入此组件一次。形式入口只接当前六字段的真实 caller，不调用历史四字段值层 replay：
 
 ```sh
-# msra 同一干净提交的固定原生环境。
+# 使用同一干净提交的固定原生验收环境。
 bash scripts/python-entry.sh tools/proof_native_suite.py run \
   --scope capture-caller --output /private/acceptance/capture-caller-native
 # 证明机：保留全部原 commands、runtime、complete 和 source.tar/源清单；不传 target。
