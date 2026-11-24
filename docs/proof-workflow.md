@@ -137,12 +137,20 @@
 
 ### 普通测试机与证明机的分工及证据交接
 
-普通 CI 继续使用现有 ning 上的隔离 runner。普通 Rust/Python 测试、格式、
-Clippy、SDK、组件回归和错误实现的原生断言也都在 ning 执行。
-证明机（如 msra）仅运行证明所需的编译/MIR 捕获、固定 Charon/Aeneas 抽取、Lean 构建、
-形式反例、真实文件诊断和依赖审计；不在证明机安装或复制另一套 CI 环境。
+GitHub CI 在 ning 的隔离 runner 上执行。手动原生验收和形式证明都在 msra 的
+数据盘工作区执行。两段各有独立的输出目录与执行身份，使用同一个干净提交。
+原生阶段运行 Rust/Python 检查、Clippy 和正确/错误版断言，形式阶段按原收据
+核对 Rust 捕获、Charon/Aeneas 抽取、Lean 内核检查和服务审计。
 
-一次完整证明批次先在 ning 的确定提交上运行：
+手动 Stage1 完整批次设置 `SANDPROOF_STAGE1_NATIVE_JOBS=16` 和
+`SANDPROOF_STAGE1_LIGHT_JOBS=32`。前者适用于有独立源码副本和构建目录的原生模块；
+后者在 Linux 工具测试阶段并行运行列入清单的轻量模块。每个模块保留全部原测试和
+unittest 夹具，其余用例按原顺序在单进程执行。这两个阶段依次运行。共享归档、
+可写缓存、端口和资源锁仍按原条件准入。完整证明阶段单独设置
+`SANDPROOF_STAGE1_JOBS=8`。记录各阶段墙钟时间、进程组内存峰值和任务磁盘用量峰值，
+注明磁盘采样间隔。原始证据和可复用依赖分别保存。
+
+以下为底层原生入口。Stage1 批次需显式指定范围。
 
 ```sh
 # 使用现有的固定 Rust、Python、离线 Cargo 和真实 Redis 环境。
@@ -153,7 +161,7 @@ export SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE=/private/acceptance/child-orig
 export SANDPROOF_WRITER_SOURCE_ARCHIVE=/private/acceptance/writer-original.tar.gz
 export SANDPROOF_LIBRARY_SOURCE_ARCHIVE=/private/acceptance/library-original.tar
 bash scripts/python-entry.sh tools/proof_native_suite.py run \
-  --output /private/acceptance/native-evidence
+  --scope stage1-protocol --output /private/acceptance/native-evidence
 ```
 
 这个入口包含完整 Linux `check-function.sh`，并运行原证明入口中的独立抽取
@@ -165,7 +173,7 @@ crate 测试/Clippy、任务持额、撤销、持额消息、Notify、JoinSet、
 移除错误版包缓存，保留其它依赖。原 Child 入口同样绑定实际同 crate 的业务测试程序，
 检查 package/manifest/src/fresh，并只清理 sandbox-runtime 自有包的变体缓存。源码时间较旧不能作为复用前一变体库的依据。
 SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这份证明批次记录替代。
-涉及整文件 CoW 的 ning 普通测试须把 `TMPDIR` 配在已具备 XFS 条件的安全父目录；
+涉及整文件 CoW 的普通测试须把 `TMPDIR` 配在已具备 XFS 条件的安全父目录；
 入口保留该文件系统并新建 0700 私有子目录，逐级核对属主、模式和非符号链接，非法显式配置直接拒绝。
 稳定的父目录身份参与原生缓存判断，随机子目录名不参与；这项 XFS 要求不适用于 msra 的 Lean 编译。
 不放宽真实文件的属主、符号链接或祖先写权限检查。普通功能验收绑定全部跟踪输入，文档变化也必须重新检查，
@@ -173,8 +181,8 @@ SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这�
 源码副本应在 `umask 077` 下建立；入口只核对其祖先及跟踪目录，不自动 chmod
 工作区或共享父目录。权限不符合原用例要求时，在昂贵测试前失败。
 
-原始工作目录、二进制摘要和日志留在 ning。将完整的 `commands/`、`runtime.json`
-和 `complete.json` 交给证明机；不传 Cargo target。只有全部子检查成功后才写
+原始工作目录、二进制摘要与日志保存在数据盘。形式阶段直接读取已完成原生阶段的
+`commands/`、`runtime.json` 和 `complete.json`，核对原始字节及候选身份。只有全部子检查成功后才写
 `complete.json`。证明机必须检查完整记录及其所有日志摘要，缺一个、被修改或
 未完成都拒绝入场，不能只信文件名或一个 `success` 字段。
 
@@ -211,13 +219,13 @@ Charon 或 Aeneas。原生入口在完整 `functional` 前核对整包和每个�
 不同均拒绝。原四份边界归档不改签；第五包沿原 `source_archives` 键进入本批四份
 原生封口，所以三个旧有限范围也保守地携带它，两机须设置同一变量/原字节。
 
-只有显式 Create profile 允许 `SANDPROOF_STAGE1_JOBS=8` 或 `12`；允许值为
+Create 及 protocol-convergence 的形式并行度允许值为
 1、2、4、8、12，默认仍为 1。父进程按实际获准 CPU 分成互不重叠的四核组，
 12 路须有 48 核、8 路须有 32 核；预算不足直接拒绝。每任务用新 Python 子进程
 设置并读回自己的四核组，再执行原驱动；多线程父进程不改自身 affinity，
 不使用 `preexec_fn`。同一锁 FD 继续贯穿，实际 CPU 准入记录进入原证据。
 每任务仍有独立构建、缓存和日志；首个失败后不再派发新任务，已启动任务保留结果。
-`full` 保留原 1、2、4 路及默认一路，不因机器核数自动增并行或缩减检查。
+`full` 允许 1、2、4、8 路；手动入口使用 8 路及 32 个获准逻辑 CPU。
 
 当前捕获调用方的独立入口使用固定 `--scope capture-caller`，只包含完整 Linux 基础检查
 `functional` 和原 `capture-caller` 组件。组件仍运行其最终清单中的正确/错误版、实际编译
@@ -226,7 +234,7 @@ Charon 或 Aeneas。原生入口在完整 `functional` 前核对整包和每个�
 并纳入此组件一次。形式入口只接当前六字段的真实 caller，不调用历史四字段值层 replay：
 
 ```sh
-# ning：同一干净提交及本节固定普通环境。
+# msra 同一干净提交的固定原生环境。
 bash scripts/python-entry.sh tools/proof_native_suite.py run \
   --scope capture-caller --output /private/acceptance/capture-caller-native
 # 证明机：保留全部原 commands、runtime、complete 和 source.tar/源清单；不传 target。
@@ -278,7 +286,7 @@ bash scripts/verify-capture-caller.sh
 并纳入此组件一次。本有限封口不能替代全 V3、事务来源、异步或物理资源验收。
 
 V3 原正式入口的登记子任务可通过 `SANDPROOF_STAGE1_JOBS=2` 并行执行；允许值为
-`1`、`2`、`4`，默认仍为 `1`，按宿主实际预算选择，不因 CPU 空闲自动增加。
+`1`、`2`、`4`、`8`，底层入口默认值为 `1`，按宿主实际预算选择，不因 CPU 空闲自动增加。
 每个任务使用独立进程、输出、Cargo target 和形式缓存，保留原清单、负例和汇总审计。
 入口接受的并行度、默认值和实际通过的并行资格分别记录；两任务/两路小样不能写成
 四路或全部登记任务已通过。操作者须同时核对外层 CPU 亲和性、内层 Lean 线程、内存
@@ -357,7 +365,7 @@ bash scripts/verify-controller.sh --recompute
 
 MIR 捕获须通过 `v0_use_inventory.py check-published`；已有捕获仍适用于当前输入时
 不重做十组编译。清单是防漏证据，不能解释成全部调用或异步行为已经证明。
-各单模块入口仍可单独运行，原生步骤同样要求上述 ning 证据；不经批次协调时，
+各单模块入口仍可单独运行，原生步骤同样要求上述原生验收证据；不经批次协调时，
 公共抽取步骤会正常重新执行，不存在无凭据的“跳过检查”开关。
 
 ### 一批去重与跨批复用
