@@ -393,7 +393,7 @@ host=/mnt/data2tb/ning/sandproof-stage1/bin/stage1-host
 在 msra 的私有开发工程根目录中使用[模块构建脚本](../scripts/stage1-lean-build-dev.sh)。
 工程应位于 `/mnt/data2tb/ning/` 下，使用固定的 Lean 4.31.0，并已准备好
 `.lake/packages`。每个任务使用自己的工作目录；同一用户的可信开发任务可以指定
-同一个私有缓存目录（权限 0700）。只把开发编译产物放在这里。
+同一个私有缓存目录（权限 0700）。缓存须与工程、依赖及工具目录分开，只存开发编译产物。
 
 ```sh
 export SANDPROOF_DEV_LAKE_CACHE=/mnt/data2tb/ning/sandproof-stage1/cache/lean-dev-4.31
@@ -405,7 +405,7 @@ bash scripts/stage1-lean-build-dev.sh SandboxModel.Lifecycle.Protocol.RenewalRes
 `/mnt/data2tb/ning/sandproof-stage1/bin/stage1-lean-build-dev`。两者接受相同的模块名。
 Lake 按源码、导入依赖和构建配置决定哪些模块需要重编。入口只为 Sandproof 包启用
 缓存写入，第三方依赖和项目源码只读。每个项目的构建和配置输出位于自己的
-`.lake/build` 与 `.lake/config`。
+`.lake/build` 与 `.lake/config`，拒绝通过符号链接共用这些输出目录。
 
 示例的 4096 MiB 是启动前检查的阈值。单次或并发构建仍可能越过它。
 达到阈值时入口退出，由负责人盘点开发缓存和仍在使用它的任务。入口不会自动删除缓存。
