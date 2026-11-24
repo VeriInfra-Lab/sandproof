@@ -1,0 +1,60 @@
+import SaveRetentionSpec
+import RetentionProviders
+
+open Aeneas Aeneas.Std SandproofSaveRetention alloc.vec
+open controller.lifecycle_inbox.source_work controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SaveRetentionComposition
+
+theorem complete_save_retention {C N Db Keys Rows Save Check : Type}
+    (config : core.cmp.PartialEq C C) (node : core.cmp.PartialEq N N)
+    (io : IO C N Db Keys Rows Save) (check : SavedKeyCheck Check Keys)
+    (known : Keys → SourceRetentionProviders.Cases.Binding → Bool)
+    (keyResult : ∀ keys binding, check.contains keys binding = .ok (known keys binding))
+    (db : Db) (sources current : Inventory C N) (sessions : U16)
+    (header : SourceSaveOrder.HeaderAccepted config node (packed io check) db sources current sessions)
+    (reserved : U64) (capacity : SourceSaveOrder.CapacityAccepted (packed io check) db sources sessions reserved)
+    (keys : Keys) (rows : Rows) (encoded : io.encode sources = .ok (.Ok (keys, rows))) :
+    save_retaining_using config node io check db sources sessions =
+      expected io known db current sources keys rows := by
+  rw [original_call_decomposes]
+  have retention : (packed io check).retains current sources keys =
+      .ok (retained known current sources keys) :=
+    SourceRetentionProviders.original_providers_refine_retention check known keyResult
+      current.records sources.records keys
+  cases selected : retained known current sources keys with
+  | false =>
+    have denied : (packed io check).retains current sources keys = .ok false := by
+      simpa only [selected] using retention
+    simpa only [expected, selected, Bool.false_eq_true, ↓reduceIte] using
+      SourceSaveOrder.retention_conflict config node (packed io check) db sources current sessions
+        header reserved capacity keys rows encoded denied
+  | true =>
+    have allowed : (packed io check).retains current sources keys = .ok true := by
+      simpa only [selected] using retention
+    simpa only [expected, selected, ↓reduceIte, packed] using
+      SourceSaveOrder.original_write_reply config node (packed io check) db sources current sessions
+        header reserved capacity keys rows encoded allowed
+
+open SourceRetentionProviders.Cases in
+theorem normal_save (reply : SourceSaveOrder.Reply) :
+    save_retaining_using SourceSaveOrder.witnessEquality SourceSaveOrder.witnessEquality
+      (Witness.io reply) keyPort 7 (Witness.candidate old) 1#u16 = reply := by
+  rw [complete_save_retention _ _ _ _ known (fun _ _ => rfl) 7 _ Witness.current 1#u16
+    (Witness.header reply old) 1#u64 (Witness.capacity reply old) () 9 (by rfl)]
+  exact Witness.unchanged_contract reply
+
+open SourceRetentionProviders.Cases in
+theorem changed_work_conflict (reply : SourceSaveOrder.Reply) :
+    save_retaining_using SourceSaveOrder.witnessEquality SourceSaveOrder.witnessEquality
+      (Witness.io reply) keyPort 7 (Witness.candidate changed) 1#u16 = .ok (.Err .Conflict) := by
+  rw [complete_save_retention _ _ _ _ known (fun _ _ => rfl) 7 _ Witness.current 1#u16
+    (Witness.header reply changed) 1#u64 (Witness.capacity reply changed) () 9 (by rfl)]
+  exact Witness.changed_contract reply
+
+end SandboxModel.Stage1Protocol.SaveRetentionComposition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionComposition.complete_save_retention
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionComposition.normal_save
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionComposition.changed_work_conflict

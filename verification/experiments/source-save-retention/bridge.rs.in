@@ -1,0 +1,25 @@
+
+impl<C, N, Db, Keys, Rows, Save, Check>
+    SourceSaveEffects<C, N, SourceWorkRecord, Db, Keys, Rows> for (Save, Check)
+where
+    Save: SourceSaveEffects<C, N, SourceWorkRecord, Db, Keys, Rows>,
+    Check: SavedKeyCheck<Keys>,
+{
+    fn read(db: &Db) -> Result<Option<Sources<C, N, SourceWorkRecord>>, JournalError> { Save::read(db) }
+    fn limit(db: &Db, sessions: u16) -> Result<u64, JournalError> { Save::limit(db, sessions) }
+    fn encode(sources: &Sources<C, N, SourceWorkRecord>) -> Result<(Keys, Rows), JournalError> { Save::encode(sources) }
+    fn retains(current: &Sources<C, N, SourceWorkRecord>, sources: &Sources<C, N, SourceWorkRecord>, keys: &Keys) -> bool {
+        retains_with_saved_keys::<Keys, Check>(&current.records, &sources.records, keys)
+    }
+    fn write(db: &Db, rows: Rows) -> Result<(), JournalError> { Save::write(db, rows) }
+}
+
+fn save_retaining_using<C: PartialEq, N: PartialEq, Db, Keys, Rows, Save, Check>(
+    connection: &Db, sources: &Sources<C, N, SourceWorkRecord>, max_sessions: u16,
+) -> Result<(), JournalError>
+where
+    Save: SourceSaveEffects<C, N, SourceWorkRecord, Db, Keys, Rows>,
+    Check: SavedKeyCheck<Keys>,
+{
+    save_using::<C, N, SourceWorkRecord, Db, Keys, Rows, (Save, Check)>(connection, sources, max_sessions)
+}

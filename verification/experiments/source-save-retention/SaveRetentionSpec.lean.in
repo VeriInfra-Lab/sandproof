@@ -1,0 +1,88 @@
+import SourceSaveOrder
+import RetentionProviderCases
+
+open Aeneas Aeneas.Std SandproofSaveRetention alloc.vec
+open controller.lifecycle_inbox.source_work controller.lifecycle_inbox.source_work.codec
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SaveRetentionComposition
+
+abbrev Inventory (C N : Type) := Sources C N SourceWorkRecord
+abbrev IO (C N Db Keys Rows Save : Type) :=
+  SourceSaveEffects Save C N SourceWorkRecord Db Keys Rows
+
+def packed {C N Db Keys Rows Save Check : Type} (io : IO C N Db Keys Rows Save)
+    (check : SavedKeyCheck Check Keys) :
+    SourceSaveOrder.Effects C N SourceWorkRecord Db Keys Rows where
+  read := io.read
+  limit := io.limit
+  encode := io.encode
+  retains old next keys := retains_with_saved_keys check old.records next.records keys
+  write := io.write
+
+noncomputable def retained {C N Keys : Type}
+    (known : Keys → SourceRetentionProviders.Cases.Binding → Bool)
+    (current sources : Inventory C N) (keys : Keys) : Bool :=
+  current.records.val.all (SourceFirstMatch.retained
+    (fun ks old => known ks old.work.requirement.work_binding)
+    (SourceFirstMatch.completeMatch SourceWorkRecord.work) SourcePreservation.Expected
+    keys sources.records.val)
+
+noncomputable def expected {C N Db Keys Rows Save : Type}
+    (io : IO C N Db Keys Rows Save)
+    (known : Keys → SourceRetentionProviders.Cases.Binding → Bool) (db : Db)
+    (current sources : Inventory C N) (keys : Keys) (rows : Rows) : SourceSaveOrder.Reply :=
+  if retained known current sources keys then io.write db rows else .ok (.Err .Conflict)
+
+theorem original_call_decomposes {C N Db Keys Rows Save Check : Type}
+    (config : core.cmp.PartialEq C C) (node : core.cmp.PartialEq N N)
+    (io : IO C N Db Keys Rows Save) (check : SavedKeyCheck Check Keys)
+    (db : Db) (sources : Inventory C N) (sessions : U16) :
+    save_retaining_using config node io check db sources sessions =
+      SourceSaveOrder.run config node (packed io check) db sources sessions := by
+  rfl
+
+namespace Witness
+open SourceRetentionProviders.Cases
+
+def current : Inventory Unit Unit := ⟨(), (), 1#u16, inventory old⟩
+def candidate (next : SourceWorkRecord) : Inventory Unit Unit :=
+  { current with records := inventory next }
+
+def io (reply : SourceSaveOrder.Reply) : IO Unit Unit Nat Unit Nat Unit where
+  read db := if db = 7 then .ok (.Ok (some current)) else .ok (.Err .UnsupportedStore)
+  limit db sessions := if db = 7 ∧ sessions = 1#u16 then .ok (.Ok 1#u64)
+    else .ok (.Err .MaintenanceCapacity)
+  encode _ := .ok (.Ok ((), 9))
+  retains _ _ _ := .ok true
+  write db rows := if db = 7 ∧ rows = 9 then reply else .ok (.Err .CorruptStore)
+
+theorem header (reply : SourceSaveOrder.Reply) (next : SourceWorkRecord) :
+    SourceSaveOrder.HeaderAccepted SourceSaveOrder.witnessEquality SourceSaveOrder.witnessEquality
+      (packed (io reply) keyPort) 7 (candidate next) current 1#u16 := by
+  constructor <;> rfl
+
+theorem capacity (reply : SourceSaveOrder.Reply) (next : SourceWorkRecord) :
+    SourceSaveOrder.CapacityAccepted (packed (io reply) keyPort) 7 (candidate next) 1#u16 1#u64 := by
+  constructor
+  · rfl
+  · simp [SourceSaveOrder.rowCount, candidate, current, inventory, alloc.vec.Vec.len]
+
+theorem unchanged_contract (reply : SourceSaveOrder.Reply) :
+    expected (io reply) known 7 current (candidate old) () 9 = reply := by
+  have h : retained known current (candidate old) () = true := unchanged_expected
+  simp [expected, h, io]
+
+theorem changed_contract (reply : SourceSaveOrder.Reply) :
+    expected (io reply) known 7 current (candidate changed) () 9 = .ok (.Err .Conflict) := by
+  have h : retained known current (candidate changed) () = false := changed_expected
+  simp [expected, h]
+
+end Witness
+end SandboxModel.Stage1Protocol.SaveRetentionComposition
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionComposition.original_call_decomposes
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionComposition.Witness.header
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionComposition.Witness.capacity
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionComposition.Witness.unchanged_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveRetentionComposition.Witness.changed_contract

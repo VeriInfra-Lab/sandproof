@@ -1,0 +1,24 @@
+{
+  "id": "source-save-retention",
+  "issue": 635,
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "0b00572ed94fe72ae8cb94b9919f081c9ab1e892",
+  "providers": "5f84dbf199c19ffb4505ca657d1c9fb11905e65d",
+  "formal_entry": "verification/experiments/source-save-retention/check.py",
+  "native_entry": "verification/experiments/source-save-retention/native.py",
+  "positive_root": "SaveRetentionComposition",
+  "negative_root": "SaveRetentionBindingOnly",
+  "contract": "SaveRetentionSpec.expected",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveRetentionComposition.complete_save_retention",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveRetentionComposition.binding_only_refutes_same_complete_contract",
+  "scope": "decoded complete source records; original first complete match and saved facts; Conflict before original writer reply",
+  "remaining": [
+    "Ning exact candidate ordinary and native acceptance",
+    "main-coordinated public imports, Stage1 task, complete input inventory and coverage registration",
+    "V0 exact BTreeSet contains and encoder key-set construction connection",
+    "original load/limit/encode and row SQL providers, JSON/SHA uses, transaction durability and actual resources"
+  ],
+  "public_registration_complete": false,
+  "public_acceptance": false,
+  "coverage_candidate": "verification/experiments/source-save-retention/coverage-candidate.patch"
+}
