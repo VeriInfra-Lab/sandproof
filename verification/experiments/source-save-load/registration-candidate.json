@@ -1,0 +1,21 @@
+{
+  "issue": 635,
+  "id": "source-save-load",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "1d792dff8938981d314d1783e893a5711eeef982",
+  "metadata_provider": "c887260527b5071fd78a68f3f8d84698fd0c9bd2",
+  "capture_entry": "verification/experiments/source-save-load/load_capture.py",
+  "formal_entry": "verification/experiments/source-save-load/load_check.py",
+  "native_entry": "verification/experiments/source-save-load/load_native.py",
+  "root": "SaveLoadWitness",
+  "first_error_theorem": "SandboxModel.Stage1Protocol.SaveLoadProof.save_returns_original_first_read_error",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveLoadWitness.original_save_keeps_metadata_error",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveLoadWitness.early_save_violates_the_same_parent_contract",
+  "remaining": [
+    "Ning ordinary and original, correct and mutation native acceptance",
+    "shared registration and coverage adoption",
+    "metadata load success and original record scan with corresponding typed providers",
+    "real JSON/SHA and V5 physical transaction durability and V6 actual material"
+  ],
+  "public_acceptance": false
+}
