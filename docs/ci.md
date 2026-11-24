@@ -321,7 +321,7 @@ Rust envd 的受控验收阶段（#311）：
 - `SANDPROOF_STAGE1_NATIVE_ROOT` 指同一目录的短且可信的绑定挂载路径。
   `SANDPROOF_STAGE1_XFS_ROOT` 指专用临时 XFS 文件卷的短路径。原权限检查要求沿途目录
   归 root 或本账号。数据盘上级归其他用户时，运维可单独绑定本账号的私有目录，
-  并保留原目录权限。XFS 卷从新建普通文件创建，验证 reflink 和实际挂载身份。
+  并保留原目录权限。XFS 卷从新建普通文件创建，启用项目配额，验证 reflink 和实际挂载身份。
 - `SANDPROOF_STAGE1_NATIVE_ENV` 指受信的主机配置。它提供固定 Rust、Python、
   离线 Cargo、五份固定源码归档，以及 `SANDPROOF_REDIS_SERVER` 和
   `SANDPROOF_STAGE1_REDIS_SHA256`。Redis 可在目标主机上以原配方从固定的 7.2.16
@@ -332,7 +332,8 @@ Rust envd 的受控验收阶段（#311）：
 由 `SANDPROOF_STAGE1_NATIVE_JOBS` 与 `SANDPROOF_STAGE1_LIGHT_JOBS` 设置。
 正式入口默认 8 路，由 `SANDPROOF_STAGE1_JOBS` 设置。候选需要支持对应的并行数。
 同主机的两阶段共用外层锁，等待者可根据退出码 75 稍后重试。正式入口先比对原
-完整原生结果的全仓输入摘要，再执行 `verify-stage1-protocol.sh` 的原收据准入。
+完整原生结果的全仓输入摘要及标有确切提交的原运行记录，再执行
+`verify-stage1-protocol.sh` 的原收据准入。
 有适用的独立来源保存结果时，可用 `SANDPROOF_STAGE1_SOURCE_SAVE_RESULT` 关联
 其原 `result.json`。将其登记为独立切片，完整 Stage1 仍按默认入口验收。
 
@@ -340,5 +341,5 @@ Rust envd 的受控验收阶段（#311）：
 和 `resources.json`。资源采样分别报告 elapsed、单元的 `memory.peak` 和 OOM 事件、
 私有运行目录的实际分配字节、专用 XFS 的已用量及共享数据盘最少剩余空间。磁盘数字
 是定期采样，短时峰值可能落在采样点之间。确认单元只剩监控进程且原命令成功后，
-清理本次 Redis 和 XFS 临时文件。Cargo 私有目标按本页的原始清单和独立观察交接。
-失败或资源状态未知时保留原日志和现场。
+清理本次原生 XFS 临时目录。Cargo 私有目标按本页的原始清单和独立观察交接。
+失败或资源状态未知时保留原日志和现场，采样中路径消失时单独记录缺失值。

@@ -102,7 +102,7 @@ def record_sample(run, xfs, group, started, history, log_errors):
         log_errors.append(str(error))
 
 
-def tidy_ephemeral(run, native, xfs):
+def tidy_ephemeral(native, xfs):
     recorded = native / "temporary-root.json"
     if recorded.is_file():
         info = json.loads(recorded.read_text())
@@ -115,12 +115,6 @@ def tidy_ephemeral(run, native, xfs):
             reject_mounts(target)
             identity = target.stat()
             remove_private_tree(target, [identity.st_dev, identity.st_ino])
-    redis = run / "redis"
-    if redis.is_symlink():
-        raise ValueError("original private Redis scratch was replaced")
-    reject_mounts(redis)
-    identity = redis.stat()
-    remove_private_tree(redis, [identity.st_dev, identity.st_ino])
 
 
 def original_native_approval(commit):
@@ -218,7 +212,7 @@ def execute(mode, commit, xfs, run, lock):
             cleanup = "formal artifacts retained" if mode == "formal" else "native scratch retained"
             if mode == "native" and status == 0 and not remaining and not events["oom_kill"]:
                 try:
-                    tidy_ephemeral(run, native, xfs)
+                    tidy_ephemeral(native, xfs)
                     cleanup = "private temporary files removed"
                 except (OSError, ValueError) as error:
                     cleanup_error = str(error)

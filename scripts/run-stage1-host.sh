@@ -19,6 +19,11 @@ native=$(realpath -e -- "$SANDPROOF_STAGE1_NATIVE_ROOT")
 xfs=$(realpath -e -- "$SANDPROOF_STAGE1_XFS_ROOT")
 [[ $checkout == "$storage"/runs/* && "$storage" -ef "$native" ]]
 [[ $(findmnt -n --mountpoint "$xfs" -o FSTYPE) == xfs && $native != "$xfs" ]]
+xfs_options=,$(findmnt -n --mountpoint "$xfs" -o OPTIONS),
+if [[ $xfs_options != *,prjquota,* && $xfs_options != *,pquota,* ]]; then
+    echo 'Stage1 XFS scratch requires project quotas.' >&2
+    exit 2
+fi
 [[ -f $native/formal.lock && ! -L $native/formal.lock ]]
 cd -- "$checkout"
 [[ $(git rev-parse HEAD) == "$expected" && -z $(git status --porcelain) ]]
@@ -31,7 +36,7 @@ cd -- "$native/${checkout#"$storage"/}"
 export SANDPROOF_STAGE1_NATIVE_JOBS="${SANDPROOF_STAGE1_NATIVE_JOBS:-16}"
 export SANDPROOF_STAGE1_LIGHT_JOBS="${SANDPROOF_STAGE1_LIGHT_JOBS:-32}"
 export SANDPROOF_ACCEPTANCE_ROLE=native TMPDIR="$xfs"
-clean_environment=(env -u PYTHONPATH)
+clean_environment=(env -u PYTHONPATH -u PYTHONOPTIMIZE)
 if [[ $mode == formal ]]; then
     evidence=$(realpath -e -- "$4")
     [[ $evidence == "$storage"/runs/* || $evidence == "$native"/runs/* ]]
@@ -43,7 +48,7 @@ else
     clean_environment+=(-u SANDPROOF_STAGE1_JOBS -u SANDPROOF_STAGE1_RESUME_FROM -u SANDPROOF_PROOF_RECOMPUTE)
 fi
 export CARGO_TARGET_DIR="$native/cache/native-target"
-unset PYTHONPATH
+unset PYTHONPATH PYTHONOPTIMIZE
 
 if [[ $mode == preflight ]]; then
     exec bash scripts/python-entry.sh tools/stage1_host.py preflight "$expected" "$xfs"
@@ -51,10 +56,7 @@ fi
 
 run=$(mktemp -d "$native/runs/$mode.XXXXXXXX")
 printf 'Evidence directory: %s\n' "$storage/runs/${run##*/}"
-if [[ $mode == native ]]; then
-    mkdir -m700 "$run/redis"
-    export SANDPROOF_REDIS_TEST_TMPDIR="$run/redis"
-else
+if [[ $mode == formal ]]; then
     mkdir -m700 "$run/lean"
     export TMPDIR="$run/lean" CARGO_TARGET_DIR="$run/target"
 fi
@@ -64,7 +66,7 @@ unit="sandproof-stage1-$mode-${run##*.}"
 preserve=(PATH TMPDIR CARGO_HOME RUSTUP_HOME CARGO_NET_OFFLINE CARGO_INCREMENTAL
           CARGO_BUILD_JOBS CARGO_TARGET_DIR PYTHONDONTWRITEBYTECODE
           SANDPROOF_PYTHON SANDPROOF_REDIS_SERVER SANDPROOF_STAGE1_REDIS_SHA256
-          SANDPROOF_REDIS_TEST_TMPDIR SANDPROOF_ACCEPTANCE_ROLE
+          SANDPROOF_ACCEPTANCE_ROLE
           SANDPROOF_STAGE1_NATIVE_JOBS SANDPROOF_STAGE1_LIGHT_JOBS SANDPROOF_STAGE1_JOBS
           SANDPROOF_NATIVE_EVIDENCE SANDPROOF_FORMAL_CACHE SANDPROOF_STAGE1_RESUME_FROM SANDPROOF_PROOF_RECOMPUTE
           SANDPROOF_PROOF_RUNTIME_ROOT SANDPROOF_PROOF_TOOL_ROOT SANDPROOF_FORMAL_PACKAGES
@@ -82,6 +84,7 @@ done
 exec systemd-run --user --wait --pipe --collect --quiet --unit="$unit" \
     --property=MemoryAccounting=yes --property=MemoryHigh=128G \
     --property=MemoryMax=160G --property=MemorySwapMax=0 \
-    --property=KillMode=control-group --working-directory="$PWD" "${env_options[@]}" \
+    --property=OOMPolicy=continue --property=KillMode=control-group \
+    --working-directory="$PWD" "${env_options[@]}" \
     "${clean_environment[@]}" bash scripts/python-entry.sh tools/stage1_host.py \
     "$mode" "$expected" "$xfs" "$run" "$native/formal.lock"
