@@ -362,7 +362,7 @@ fn pending_and_closing_guest_work_both_block_native_parent_unload() {
 }
 
 #[test]
-fn native_unload_preserves_authentication_and_replay_order_with_damaged_branch_ledger() {
+fn native_unload_preserves_original_errors_and_replay_with_damaged_branch_ledger() {
     let directory = tempfile::tempdir().unwrap();
     let (mut journal, parent, context) = running(&directory.path().join("db"));
     journal.configure_host_branching(LIMITS).unwrap();
@@ -388,6 +388,24 @@ fn native_unload_preserves_authentication_and_replay_order_with_damaged_branch_l
         journal.record_lifecycle_intent(&unload, &foreign, &mut NeverCrash),
         Err(JournalError::Conflict)
     ));
+    journal
+        .journal
+        .connection
+        .execute_batch(
+            "CREATE TEMP TRIGGER fail_original_save BEFORE UPDATE ON controller_lifecycle_inbox
+             BEGIN SELECT RAISE(ABORT, 'original inbox save failed'); END;",
+        )
+        .unwrap();
+    assert!(matches!(
+        journal.record_lifecycle_intent(&unload, &context, &mut NeverCrash),
+        Err(JournalError::Sqlite(rusqlite::Error::SqliteFailure(_, Some(message))))
+            if message == "original inbox save failed"
+    ));
+    journal
+        .journal
+        .connection
+        .execute_batch("DROP TRIGGER fail_original_save")
+        .unwrap();
     assert!(matches!(
         journal.record_lifecycle_intent(&unload, &context, &mut NeverCrash),
         Err(JournalError::CorruptStore)
