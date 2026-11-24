@@ -1,0 +1,28 @@
+#[test]
+fn proof_source_save_preserves_metadata_numbers_error() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let _ = prepare(&mut journal);
+    let connection = &journal.journal.connection;
+    let sources = codec::load(connection).unwrap().unwrap();
+    let sessions = sources.max_sessions;
+    let transaction = connection.unchecked_transaction().unwrap();
+
+    codec::save(&transaction, &sources, sessions).unwrap();
+    assert_eq!(
+        transaction
+            .execute("DELETE FROM controller_source_work WHERE id=1", [])
+            .unwrap(),
+        1
+    );
+    let result = codec::save(&transaction, &sources, sessions);
+    transaction.rollback().unwrap();
+
+    assert!(
+        matches!(
+            &result,
+            Err(JournalError::Sqlite(rusqlite::Error::QueryReturnedNoRows))
+        ),
+        "source save must preserve the missing metadata numbers row: {result:?}"
+    );
+}
