@@ -142,7 +142,11 @@ def main(argv=None):
     if args.preflight_only:
         print(f'Python {sys.version.split()[0]}; tool-test mode={args.mode}')
         return 0
-    os.environ.pop('SANDPROOF_STAGE1_NATIVE_JOBS', None)
+    # Unit fixtures exercise the scheduler defaults in isolation. An operator's
+    # choices for this batch still belong to the parent native/formal processes.
+    for name in ('SANDPROOF_STAGE1_NATIVE_JOBS', 'SANDPROOF_STAGE1_JOBS',
+                 'SANDPROOF_STAGE1_RESUME_FROM', 'SANDPROOF_PROOF_RECOMPUTE'):
+        os.environ.pop(name, None)
     sys.path.insert(0, str(ROOT))
     suite = unittest.defaultTestLoader.discover(str(ROOT / 'tools/tests'))
     chosen, excluded = partition(suite, args.mode)
