@@ -1,6 +1,6 @@
 //! `SQLite` plus the original native Running admission, with protected guest
 //! readiness/cleanup observations supplied by each test.
-use super::{ControllerJournal, tests as fixture};
+use super::super::{ControllerJournal, tests as fixture};
 use crate::application::branching::{
     BranchAccessIdentity, BranchAccessSelector, BranchBatchIdentity, BranchTarget,
 };
@@ -294,18 +294,8 @@ fn fenced_branch_cannot_route_or_reuse_its_port_before_exact_cleanup() {
     );
 }
 
-#[test]
-fn pending_and_closing_guest_work_both_block_native_parent_unload() {
+fn unload_parent(parent: &LifecycleAccessIdentity) -> AcceptedLifecycleIntent {
     use sandproof_protocol::lifecycle::ExpectedSession;
-
-    let directory = tempfile::tempdir().unwrap();
-    let (mut journal, parent, context) = running(&directory.path().join("db"));
-    journal.configure_host_branching(LIMITS).unwrap();
-    let original = key(&parent, "batch-a", 10);
-    let planned = [target("a", 31_000)];
-    journal
-        .reserve_host_branch_batch(&parent, &context, &original, &planned, NOW)
-        .unwrap();
 
     let mut unload = fixture::create("alpha", "session-a");
     unload.accepted_version = 2;
@@ -315,8 +305,27 @@ fn pending_and_closing_guest_work_both_block_native_parent_unload() {
         source_incarnation: parent.incarnation,
         capture: 1.try_into().unwrap(),
     };
+    unload
+}
+
+#[test]
+fn pending_and_closing_guest_work_both_block_native_parent_unload() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, parent, context) = running(&directory.path().join("db"));
+    journal.configure_host_branching(LIMITS).unwrap();
+    let original = key(&parent, "batch-a", 10);
+    let planned = [target("a", 31_000)];
+    journal
+        .reserve_host_branch_batch(&parent, &context, &original, &planned, NOW)
+        .unwrap();
+
+    let unload = unload_parent(&parent);
     assert!(matches!(
         journal.record_lifecycle_intent(&unload, &context, &mut NeverCrash),
+        Err(JournalError::Conflict)
+    ));
+    assert!(matches!(
+        journal.lifecycle_work_state(&unload, &context),
         Err(JournalError::Conflict)
     ));
     journal
@@ -349,6 +358,55 @@ fn pending_and_closing_guest_work_both_block_native_parent_unload() {
         journal
             .reserve_host_branch_batch(&parent, &context, &after_unload, &planned, NOW)
             .is_err()
+    );
+}
+
+#[test]
+fn native_unload_preserves_authentication_and_replay_order_with_damaged_branch_ledger() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, parent, context) = running(&directory.path().join("db"));
+    journal.configure_host_branching(LIMITS).unwrap();
+    let unload = unload_parent(&parent);
+    let set_limit = |journal: &ControllerJournal, limit: u16| {
+        journal
+            .journal
+            .connection
+            .execute(
+                "UPDATE controller_host_branch_config SET max_batches=?1",
+                [limit],
+            )
+            .unwrap();
+    };
+    set_limit(&journal, 0);
+    let mut foreign_center = unload.center.clone();
+    foreign_center.center = "other-center".try_into().unwrap();
+    let foreign = AuthenticatedCenterContext::from_verified_peer_registration(
+        foreign_center,
+        unload.request.binding.node.clone(),
+    );
+    assert!(matches!(
+        journal.record_lifecycle_intent(&unload, &foreign, &mut NeverCrash),
+        Err(JournalError::Conflict)
+    ));
+    assert!(matches!(
+        journal.record_lifecycle_intent(&unload, &context, &mut NeverCrash),
+        Err(JournalError::CorruptStore)
+    ));
+    assert!(matches!(
+        journal.lifecycle_work_state(&unload, &context),
+        Err(JournalError::Conflict)
+    ));
+
+    set_limit(&journal, LIMITS.max_batches);
+    let accepted = journal
+        .record_lifecycle_intent(&unload, &context, &mut NeverCrash)
+        .unwrap();
+    set_limit(&journal, 0);
+    assert_eq!(
+        journal
+            .record_lifecycle_intent(&unload, &context, &mut NeverCrash)
+            .unwrap(),
+        accepted,
     );
 }
 

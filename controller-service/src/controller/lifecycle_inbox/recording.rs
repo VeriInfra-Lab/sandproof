@@ -13,6 +13,10 @@ use sandproof_protocol::lifecycle::{
     AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleOperation,
 };
 
+#[cfg(test)]
+#[path = "branching_tests.rs"]
+mod branching_tests;
+
 pub(super) enum RecordOutcome {
     Replay(LifecycleWorkState),
     Recorded(LifecycleWorkState),
@@ -25,6 +29,8 @@ pub(super) trait RecordEffects: InboxLoadEffects + InboxSaveEffects {
 }
 
 pub(super) trait RecordTransaction: RecordEffects {
+    fn check_before_commit(&mut self, intent: &AcceptedLifecycleIntent)
+    -> Result<(), JournalError>;
     fn commit(self) -> Result<(), JournalError>;
 }
 
@@ -74,6 +80,7 @@ pub(super) fn record_transaction_using<
         RecordOutcome::Replay(state) => return Ok(state),
         RecordOutcome::Recorded(state) => state,
     };
+    transaction.check_before_commit(intent)?;
     crashes.hit(CrashPoint::BeforeCommit)?;
     transaction.commit()?;
     crashes.hit(CrashPoint::AfterCommit)?;
@@ -270,6 +277,18 @@ impl<D: RecordCodec> RecordEffects for StandardRecord<'_, '_, D> {
 }
 
 impl<D: RecordCodec> RecordTransaction for StandardRecord<'_, '_, D> {
+    fn check_before_commit(
+        &mut self,
+        intent: &AcceptedLifecycleIntent,
+    ) -> Result<(), JournalError> {
+        // The original write is still tentative under the same world transaction.
+        // Rejection drops the transaction before any new intent can be observed.
+        if super::super::branching::blocks_parent_unload(&self.tx, intent)? {
+            return Err(JournalError::Conflict);
+        }
+        Ok(())
+    }
+
     fn commit(self) -> Result<(), JournalError> {
         self.tx.commit()
     }

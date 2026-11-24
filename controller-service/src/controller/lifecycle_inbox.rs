@@ -10,8 +10,6 @@ mod sha256;
 mod validation;
 mod window;
 pub use audit::{LifecycleAudit, LifecycleAuditOperation};
-#[cfg(test)]
-mod branching_tests;
 mod model;
 mod pending;
 mod readiness;
@@ -239,13 +237,6 @@ impl ControllerJournal {
         crashes: &mut impl CrashInjector,
     ) -> Result<LifecycleWorkState, JournalError> {
         let tx = WorldTransaction::begin(&mut self.journal.connection, &self.committed_world)?;
-        if super::branching::blocks_parent_unload(&tx, intent)? {
-            let inbox = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
-            authenticated(&inbox, intent, context)?;
-            if inbox.find(intent)?.is_none() {
-                return Err(JournalError::Conflict);
-            }
-        }
         let transaction = recording::StandardRecord {
             tx,
             namespace: &self.namespace,
