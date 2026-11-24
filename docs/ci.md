@@ -309,3 +309,33 @@ Rust envd 的受控验收阶段（#311）：
 给现有专用 App 增加 Checks 写入须由 owner 更新 App 及安装授权；私有仓库的自动源码获取另需 Contents 只读。普通执行器令牌仍仅请求 Actions 只读、Administration 写入、Metadata 只读，不自动获得 Checks 或 Contents 权限。E2E 检查客户端独立请求 Actions 只读、Checks 写入、Metadata 只读，不带 Administration；源码客户端仅请求 Contents/Metadata 只读。源码令牌仅进入一次 Git 网络调用的私有环境，不写入 argv、Git 配置或检出目录；不借用个人凭据。App 私钥只进入管理服务的 systemd 凭据目录，不进入独立准备/批次单元、来宾、产物或报告。原检查 ID 与回写意图先持久保存；丢终态回执只重试同一检查，不重跑题目。未授权 Checks 时只能执行 `--local-only`，不能称自动检查已回写。
 
 安装前审查源码及批准配置、保留原 CI 文件恢复副本，验证单元；只重启管理服务，不停止在途工作。门槛按 owner 授权启用并通过正常晋升 PR 实测，安装和通过证据记录在 #14。单次安装不代表永久运行的缓存/历史保留已验收；未知资源由管理员核对，不自动忘掉。不加入绿色占位工作流，不通过移除必需检查合入失败版本。
+
+### Stage1 手动原生验收
+
+在已准备的原生主机上，`scripts/run-stage1-native-host.sh` 使用同一 Stage1 锁和原
+`proof_native_suite.py run --scope stage1-protocol` 入口。启动器接收 `preflight|run`、
+干净的提交目录和完整提交哈希。运维环境提供以下四项。
+
+- `SANDPROOF_STAGE1_STORAGE_ROOT` 指数据盘的私有 Stage1 根。候选必须位于它的
+  `runs/` 目录。构建共享缓存、原始收据和运行日志也留在这里。
+- `SANDPROOF_STAGE1_NATIVE_ROOT` 指同一目录的短且可信的绑定挂载路径。
+  `SANDPROOF_STAGE1_XFS_ROOT` 指专用临时 XFS 文件卷的短路径。原权限检查要求沿途目录
+  归 root 或本账号。数据盘上级归其他用户时，运维可单独绑定本账号的私有目录，
+  并保留原目录权限。XFS 卷从新建普通文件创建，验证 reflink 和实际挂载身份。
+- `SANDPROOF_STAGE1_NATIVE_ENV` 指受信的主机配置。它提供固定 Rust、Python、
+  离线 Cargo、五份固定源码归档，以及 `SANDPROOF_REDIS_SERVER` 和
+  `SANDPROOF_STAGE1_REDIS_SHA256`。Redis 可在目标主机上以原配方从固定的 7.2.16
+  归档构建，记录实际二进制摘要。GitHub CI 继续使用已有的 root 封存材料。
+
+先运行 `preflight` 核对入口、CPU、内存、数据盘、固定材料和锁定依赖的离线解析。
+`run` 通过用户 systemd 单元执行。并行度由 `SANDPROOF_STAGE1_NATIVE_JOBS`
+与 `SANDPROOF_STAGE1_LIGHT_JOBS` 设置，默认分别为 16 和 32；候选仍需支持对应选项。
+与同主机形式验收共用外层锁，等待者可根据退出码 75 稍后重试。实际并行、成功状态与
+证明准入仍以原入口记录为准。
+
+从每次私有运行目录读取 `admission.json`、`native.log`、`native/complete.json`
+和 `resources.json`。资源采样分别报告 elapsed、单元的 `memory.peak` 和 OOM 事件、
+私有运行目录的实际分配字节、专用 XFS 的已用量及共享数据盘最少剩余空间。磁盘数字
+是定期采样，短时峰值可能落在采样点之间。确认单元只剩监控进程且原命令成功后，
+清理本次 Redis 和 XFS 临时文件。Cargo 私有目标按本页的原始清单和独立观察交接。
+失败或资源状态未知时保留原日志和现场。
