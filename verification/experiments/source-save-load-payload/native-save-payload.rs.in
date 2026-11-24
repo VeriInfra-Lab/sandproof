@@ -1,0 +1,28 @@
+#[test]
+fn proof_source_save_requires_exact_metadata_reserve() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let _ = prepare(&mut journal);
+    let connection = &journal.journal.connection;
+    let sources = codec::load(connection).unwrap().unwrap();
+    let sessions = sources.max_sessions;
+    let transaction = connection.unchecked_transaction().unwrap();
+
+    codec::save(&transaction, &sources, sessions).unwrap();
+    assert_eq!(
+        transaction
+            .execute(
+                "UPDATE controller_source_work SET reserve_bytes = 8193 WHERE id = 1 AND reserve_bytes = 8192",
+                [],
+            )
+            .unwrap(),
+        1
+    );
+    let result = codec::save(&transaction, &sources, sessions);
+    transaction.rollback().unwrap();
+
+    assert!(
+        matches!(&result, Err(JournalError::CorruptStore)),
+        "source save must reject an inflated metadata reserve: {result:?}"
+    );
+}
