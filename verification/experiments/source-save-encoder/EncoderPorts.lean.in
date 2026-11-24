@@ -1,0 +1,72 @@
+import JointComposition
+import Aeneas.Std.SliceIter
+
+open Aeneas Aeneas.Std Result ControlFlow
+set_option autoImplicit false
+
+namespace SandproofSaveRetentionRows
+open controller.lifecycle_inbox.source_work controller.lifecycle_inbox.source_work.codec
+
+abbrev EncoderKey := Array U8 32#usize
+abbrev EncoderRows := alloc.vec.Vec (EncoderKey × alloc.vec.Vec U8)
+abbrev EncoderSources := Sources capture.source.SourceObservationConfig sandproof_protocol.internal.NodeIdentity SourceWorkRecord
+
+structure EncoderPorts (Keys : Type) where
+  empty : Result Keys
+  order : core.cmp.Ord EncoderKey
+  insert : Keys → EncoderKey → Result (Bool × Keys)
+  contains : Keys → EncoderKey → Result Bool
+  anchorJson : SourceAnchor → Result (core.result.Result (alloc.vec.Vec U8) serde_json.error.Error)
+  recordJson : SourceWorkRecord → Result (core.result.Result (alloc.vec.Vec U8) serde_json.error.Error)
+  digest : Slice U8 → Result sandproof_protocol.lifecycle.digest.ContentDigest
+  load : rusqlite.Connection → Result (core.result.Result (Option EncoderSources) JournalError)
+  limit : rusqlite.Connection → U16 → Result (core.result.Result U64 JournalError)
+
+def boxedIter {R : Type} (_allocator : Type) (rows : alloc.vec.Vec R) : Result (core.slice.iter.Iter R) :=
+  .ok ⟨rows.slice, 0⟩
+
+-- DATA_AND_ARITHMETIC
+
+section
+variable {Keys : Type} (ports : EncoderPorts Keys)
+
+local notation "alloc.collections.btree.set.BTreeSet" => (fun (_ _ : Type) => Keys)
+local notation "alloc.collections.btree.set.BTreeSetTGlobal.new" => (fun (_ : Type) => ports.empty)
+local notation "alloc.collections.btree.set.BTreeSet.contains" =>
+  (fun (_ : core.clone.Clone Global) (_ : core.borrow.Borrow EncoderKey EncoderKey)
+    (_ _ : core.cmp.Ord EncoderKey) => ports.contains)
+local notation "alloc.collections.btree.set.BTreeSet.insert" =>
+  (fun (_ : core.clone.Clone Global) (_ : core.cmp.Ord EncoderKey) => ports.insert)
+local notation "Array.Insts.CoreCmpOrd" => (fun (_ : Usize) (_ : core.cmp.Ord U8) => ports.order)
+local notation "SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter" => boxedIter
+local notation "controller.lifecycle_inbox.source_work.codec.encode_anchor_json" => ports.anchorJson
+local notation "controller.lifecycle_inbox.source_work.codec.encode_record_json" => ports.recordJson
+local notation "controller.lifecycle_inbox.source_work.digest" => ports.digest
+local notation "controller.lifecycle_inbox.source_work.codec.load" => ports.load
+local notation "controller.lifecycle_inbox.source_work.codec.reserved_records" => ports.limit
+
+-- ACTUAL_STEP
+
+local notation "controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop.body" =>
+  controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop.body ports
+
+-- ACTUAL_LOOP
+
+local notation "controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop" =>
+  controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop ports
+
+-- ACTUAL_ENTRY
+
+local notation "controller.lifecycle_inbox.source_work.codec.encode_candidate_records" =>
+  controller.lifecycle_inbox.source_work.codec.encode_candidate_records ports
+
+-- ACTUAL_WIRING
+
+end
+
+abbrev encodeCandidate := @controller.lifecycle_inbox.source_work.codec.encode_candidate_records
+abbrev encodeLoop := @controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop
+abbrev encodeStep := @controller.lifecycle_inbox.source_work.codec.encode_candidate_records_loop.body
+abbrev saveWithEncoder := @controller.lifecycle_inbox.source_work.codec.save
+
+end SandproofSaveRetentionRows

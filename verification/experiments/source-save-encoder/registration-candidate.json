@@ -1,0 +1,21 @@
+{
+  "issue": 635,
+  "id": "source-save-encoder",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "662e986e069881aa79843ea1e498f3e59be49b15",
+  "encoder_provider": "36f551f005e29b960cf1ac0a2638e21c47f4fa2a",
+  "capture_entry": "verification/experiments/source-save-encoder/encoder_capture.py",
+  "formal_entry": "verification/experiments/source-save-encoder/encoder_check.py",
+  "native_entry": "verification/experiments/source-save-encoder/encoder_native.py",
+  "roots": {"correct": "EncoderCheck", "zero-row-key": "EncoderCheck"},
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveEncoder.actual_save_with_complete_encoded_inputs",
+  "first_error_theorem": "SandboxModel.Stage1Protocol.SaveEncoder.save_returns_first_row_encoding_failure",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveEncoder.Witness.actual_encoder_rejects_same_contract",
+  "remaining": [
+    "Ning exact candidate native and ordinary acceptance",
+    "public Stage1 wiring, registration and coverage adoption",
+    "V0 BTreeSet<[u8;32]> membership, actual original read and capacity, JSON/SHA byte providers",
+    "V5 physical row state, rollback and durability, V6 material state"
+  ],
+  "public_acceptance": false
+}
