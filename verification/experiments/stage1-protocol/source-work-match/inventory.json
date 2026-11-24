@@ -8,7 +8,7 @@
     "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
     "controller-core/Cargo.toml": "bfe39b44a5bbcd38f44ec479443a7456c2c7d2cdf85b8678259f343f25865656",
     "controller-core/src/capture.rs": "cfe090e04654b40de4b26ee751aa83e1333806b0eaf9e0f2df656f4874c4fe54",
-    "controller-core/src/capture/continuation.rs": "1712667f5e6aef2748a7635035bb655f9903046bf8ac785547b1ee123c4585b6",
+    "controller-core/src/capture/continuation.rs": "540ca8a735690eae6a4334baca947e22fd7c564b2b92b13c66d2096ff60d5833",
     "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
     "controller-core/src/lib.rs": "2a260eede2d65205ba650e745ec718450cd5f99b0a0a26e4d092206ea4f9950c",
     "controller-core/src/maintenance.rs": "3b4b60b60bce6a7203b6fcf5735ac58183841afe68811897a6201af131a17808",
@@ -24,7 +24,7 @@
     "controller-service/src/controller/checkpoint.rs": "f86709d33690765c3c283085387c146e69b515dcf02dd1206f9b09235640cede",
     "controller-service/src/controller/internal_inbox.rs": "8d5cd81b597add57f37cf129cca27c0c6ce2bbc29d2a9a1e9f405278d1a84a8e",
     "controller-service/src/controller/internal_inbox/model.rs": "4d6629825e1289b285851ae47eaf2b38172ffd59e66b20b1b9678fa8a1a1f649",
-    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/lifecycle_inbox.rs": "4d87f72906bb2ba5ec541b8969ecd90cf7caf74280dd42e5e6e6bbd0488888a8",
     "controller-service/src/controller/lifecycle_inbox/readiness.rs": "0f278a2c97a6a7c37a8d6c6e0fc4516a71775254845bcde5995a074d7f15ae6a",
     "controller-service/src/controller/lifecycle_inbox/source_work.rs": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a",
     "controller-service/src/controller/lifecycle_inbox/source_work/full.rs": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26",
@@ -33,9 +33,9 @@
     "controller-service/src/controller/lifecycle_inbox/source_work/restore.rs": "3bc21d0f6e354de0718a254ec0cf9dd73389d3afc7e906aeb1fb880d32f046be",
     "controller-service/src/controller/lifecycle_inbox/source_work/retirement.rs": "adae46047f72df39496e9d8e1f32619c7b74a85ae2b9a8a48a8407021457a3c3",
     "controller-service/src/controller/lifecycle_inbox/source_work/tests.rs": "77c06c23da0d136e07be206ea2df71a2182697490805a2b2b19cbef6cc28d0bb",
-    "controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement.rs": "82bc3ecec50fc8c2cd928d350bce1faade4101b2ed35ef538d722ebd098136d3",
+    "controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement.rs": "477516343515960273e5c6e56522a0231c5f0fb1bbaac13802c95ff5cb57bf5d",
     "controller-service/src/controller/mod.rs": "3108ade2ef3bc126f469094170db9d058f6a729fe4923c38cc7f414fa1f507ca",
-    "controller-service/src/host_contract.rs": "423dfff6ff8ab44056981898a5dcedd5f1e5dc069b011243f7f4ddc8648a3f0a",
+    "controller-service/src/host_contract.rs": "5b94f7e4b3e7e3bf140462e7f43462af7aec698e524a3c9e58eff13001bb2d5d",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",
     "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
@@ -55,9 +55,9 @@
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
     "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
-    "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
-    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
-    "tools/proof_batch.py": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869",
+    "verification/experiments/stage1-protocol/formal.py": "59878b437b00bf4e2e36c32b315482e87147cf4f9255bebffbcf4a726697cc6d",
+    "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",
+    "tools/proof_batch.py": "e8c5cab7e5c13ce7eef157ff23c37b761a90ad1f49a8bc43da2ea482cf36887c",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
     "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
@@ -437,5 +437,86 @@
         "current": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26"
       }
     }
+  },
+  "current_source_recapture": {
+    "candidate": "13cdef0530f00483fff329b14e0312cd3c94d0e3",
+    "source_review_sha256": "e5b7d52d00d756616fbf734d7823c760baef3ed521ae5922451766629844e0e4",
+    "readback_sha256": "f20257bc73d0b32be19d1b705768883f5201a928683c0d6d40a0c405dc85fb4c",
+    "actual_capture_index_sha256": "e4d1887d7eba6e30be97e7352c00da3364fd3a855bf771185eda31bf2731a73b",
+    "views": {
+      "correct": {
+        "llbc_sha256": "5d9101565b71f5646f577da842ac2eb3b0f7ae435f0bfeccc5b4668feb0f871e",
+        "compressed_sha256": "a53c81e663d635267232aad879830b1e863e881f93c62a0bc2225b02065f7197",
+        "generated": {
+          "Types.lean": {
+            "old": "3e2feebfdac4ff99c1a2738f284a1271fc2467f4c39c73e456be57b96acf0921",
+            "current": "3e2feebfdac4ff99c1a2738f284a1271fc2467f4c39c73e456be57b96acf0921"
+          },
+          "Funs.lean": {
+            "old": "df9d22c8ac281dd86367a748d16e18330c9162f5ccdd9d5aa76262aaf4275e06",
+            "current": "df9d22c8ac281dd86367a748d16e18330c9162f5ccdd9d5aa76262aaf4275e06"
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "197b7e7e4e24298f073792d402f60ca7fe0fcad144676d68f29a63608ecbe443"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "f3fb32c0182ef45424463373c414754ca74d854a3805abc034314e0754f7cb99"
+          }
+        }
+      },
+      "key-only": {
+        "llbc_sha256": "bb2376c46ccbcaa9386f23e38c7fb8d5a18540eaa63b88564063dd624e6d9d74",
+        "compressed_sha256": "6d9a24f6f054e4c9db02c66a0c526346cb6615c0a141965966f604dac5a05124",
+        "generated": {
+          "Types.lean": {
+            "old": "1a48671c8d0de6c1fdd570f2750b7a88426710ecbd04b55e7ec191e6650bf097",
+            "current": "1a48671c8d0de6c1fdd570f2750b7a88426710ecbd04b55e7ec191e6650bf097"
+          },
+          "Funs.lean": {
+            "old": "986022ca3a804c0bdfa87c4edb0d68748bcb9d924578b459356ea5ba9c312e3c",
+            "current": "986022ca3a804c0bdfa87c4edb0d68748bcb9d924578b459356ea5ba9c312e3c"
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "802ad2164a084fc40fcf3af39e0b7848b807b038e55d3eeef934a225e7dbdf30"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "7d4c3bc39b7652ed20d1cd82daa3f3b63878b4d7532934cad0abc1077c13646a"
+          }
+        }
+      },
+      "anchor-only": {
+        "llbc_sha256": "0b7d9c2b1ba393ef48d769d1deb21f8b665e3552a8ca1f34f5618ff901234ab4",
+        "compressed_sha256": "e5b569073e38a406dc0e7207af94686702a152292e37869953ea0dfb52b18b83",
+        "generated": {
+          "Types.lean": {
+            "old": "3e2feebfdac4ff99c1a2738f284a1271fc2467f4c39c73e456be57b96acf0921",
+            "current": "3e2feebfdac4ff99c1a2738f284a1271fc2467f4c39c73e456be57b96acf0921"
+          },
+          "Funs.lean": {
+            "old": "13f930ffff2e2f96bddfc62cb08687e9207e2ff93d69e7eb5b8038fbd1dd0924",
+            "current": "13f930ffff2e2f96bddfc62cb08687e9207e2ff93d69e7eb5b8038fbd1dd0924"
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "1d3a1690d910834b18288341c5a8fd4b99bbb5aa0f7b91f2d77cff2ebb03927a"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "3246eb40f98ee7d437f06400a0a8a18af1181a3623bb1650f4e55f34e14fed97"
+          }
+        }
+      }
+    },
+    "acceptance_pending": true
   }
 }

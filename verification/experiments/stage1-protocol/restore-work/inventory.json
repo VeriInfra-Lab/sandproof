@@ -34,9 +34,9 @@
     "verification/experiments/stage1-protocol/inbox-load/admission.py": "e32f33a57a2e8a30312bf7877b61a1fe5a77df23db1b58aecc3833568bc12639",
     "verification/experiments/stage1-protocol/create-standard-adapter/FunsExternal.lean.in": "ff1df8c22d30902ed5e755c35181b692f8d24c4000604458cd7e3f83d8ba1814",
     "verification/aeneas/foundations/SandproofFoundations/FunsExternal.lean": "23f9e47340b35666ebd55d920c01f6db44e269dcd09743aa3344a92789fe8a12",
-    "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
-    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
-    "tools/proof_batch.py": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869",
+    "verification/experiments/stage1-protocol/formal.py": "59878b437b00bf4e2e36c32b315482e87147cf4f9255bebffbcf4a726697cc6d",
+    "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",
+    "tools/proof_batch.py": "e8c5cab7e5c13ce7eef157ff23c37b761a90ad1f49a8bc43da2ea482cf36887c",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
     "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
@@ -64,13 +64,13 @@
   "cases": {
     "correct": {
       "generated": {
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "Funs.lean": "21c7e933ba309aed610a32d18ce120bb400e31b7227711493387be54e77633c1"
       },
       "emitted": {
         "Funs.lean": "21c7e933ba309aed610a32d18ce120bb400e31b7227711493387be54e77633c1",
         "FunsExternal_Template.lean": "a211d3cef6b42316cf7bad1716e711c6facdd2db6b6f99761527cddeb89cdbd7",
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "TypesExternal_Template.lean": "93e1f4b52434f5c1cc9c83c0abcdc4440f102bc3f76c0978634259ba7cbb137c"
       },
       "normal_witness": "SandboxModel.Stage1Protocol.RestoreWork.Witnesses.normal_actual",
@@ -174,13 +174,13 @@
     },
     "drop-material-use": {
       "generated": {
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "Funs.lean": "039159a28c70167bb0b858d5b2be21e29206a3ed06e6d6ab7b265b20ea4e7826"
       },
       "emitted": {
         "Funs.lean": "039159a28c70167bb0b858d5b2be21e29206a3ed06e6d6ab7b265b20ea4e7826",
         "FunsExternal_Template.lean": "a211d3cef6b42316cf7bad1716e711c6facdd2db6b6f99761527cddeb89cdbd7",
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "TypesExternal_Template.lean": "93e1f4b52434f5c1cc9c83c0abcdc4440f102bc3f76c0978634259ba7cbb137c"
       },
       "normal_witness": "SandboxModel.Stage1Protocol.RestoreWork.Witnesses.normal_actual",
@@ -279,13 +279,13 @@
     },
     "mask-generation": {
       "generated": {
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "Funs.lean": "3858be6f4fab91d17e2ad1552177f0393e6bba80661d918dcd7044919b6a9a61"
       },
       "emitted": {
         "Funs.lean": "3858be6f4fab91d17e2ad1552177f0393e6bba80661d918dcd7044919b6a9a61",
         "FunsExternal_Template.lean": "a211d3cef6b42316cf7bad1716e711c6facdd2db6b6f99761527cddeb89cdbd7",
-        "Types.lean": "536993ee74ec90bed92aeb2934d6a3e64cc3df39fad85b45cb4f6c0ef5d0cf6f",
+        "Types.lean": "ffb8c150d1ed83d40ce173ec39bb30c759b24d135b6a9e696c77ca930598e133",
         "TypesExternal_Template.lean": "93e1f4b52434f5c1cc9c83c0abcdc4440f102bc3f76c0978634259ba7cbb137c"
       },
       "normal_witness": "SandboxModel.Stage1Protocol.RestoreWork.Witnesses.normal_actual",

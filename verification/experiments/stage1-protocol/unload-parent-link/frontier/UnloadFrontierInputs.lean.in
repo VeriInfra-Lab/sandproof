@@ -1,0 +1,30 @@
+import SandproofUnloadFrontier.Funs
+
+open Aeneas Aeneas.Std SandproofUnloadFrontier
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.UnloadFrontier
+
+abbrev Conn := SandproofUnloadFrontier.rusqlite.Connection
+abbrev Memo := controller.transaction.CommittedWorld
+abbrev Intent := sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+abbrev Context := sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
+abbrev Inbox := controller.lifecycle_inbox.model.Inbox
+abbrev Reader (Rows : Type) := controller.lifecycle_inbox.source_work.ReadSourceInputs Unit Rows
+abbrev authenticate := SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated
+
+/-- The provider supplies the original result for the source read on this connection. -/
+def sourceReader {Rows : Type}
+    (read : OriginalConnection → Result (core.result.Result (Option Rows) OriginalError)) : Reader Rows :=
+  { read := fun connection => do
+      let reply ← read connection.origin.base
+      .ok (fromOriginalReply reply) }
+
+structure Started (connection : Conn) (memo : Memo) where
+  owner : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction
+  after : SandproofUnloadWorldBegin.rusqlite.Connection
+  tx : SandproofUnloadWorldBegin.rusqlite.transaction.Transaction
+  began : UnloadWorldBegin.begin connection.origin memo = .ok (.Ok owner, after)
+  transaction : owner.transaction = some tx
+
+end SandboxModel.Stage1Protocol.UnloadFrontier

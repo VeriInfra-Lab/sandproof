@@ -10,7 +10,8 @@ import subprocess
 import sys
 import tarfile
 
-from unload_audits import AUDIT, HERE, KIND, LABEL, PACKAGES, capture_hashes, digest, frozen_inputs, package_audits
+from unload_audits import AUDIT, HERE, KIND, LABEL, PACKAGES, digest, frozen_inputs, package_audits
+import unload_current_capture
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT))
@@ -100,41 +101,40 @@ def run_native(output, result):
         exact(f'restored-{index}', test)
 
 
-def copy_captures(output):
-    setting = os.environ.get('SANDPROOF_UNLOAD_CAPTURE_EVIDENCE')
-    if not setting or not Path(setting).is_absolute():
-        raise ValueError('SANDPROOF_UNLOAD_CAPTURE_EVIDENCE must name the original unload LLBC directory')
-    root = Path(setting).resolve(strict=True)
-    for package in PACKAGES:
-        folder = output / package
-        folder.mkdir()
-        for name, expected in capture_hashes(ROOT, package).items():
-            relative = Path(package) / (name + '.llbc')
-            source = root / relative
-            if source.resolve() != source or digest(source) != expected:
-                raise ValueError('original unload capture differs: ' + str(relative))
-            target = output / relative
-            shutil.copyfile(source, target)
-            if digest(target) != expected:
-                raise ValueError('original unload capture changed while copying: ' + str(relative))
+def prepare_current(output, source, native_archive, runtime, run):
+    parent = ROOT / HERE / 'unload-parent-link'
+    sys.path.insert(0, str(parent))
+    from check_revision_pair import check_pair, source_identity
+    from prepare import materialize_current
+    import prepare_revision_call
 
-
-def prepare_project(package, project, runtime):
-    path = ROOT / HERE / package
-    if package == 'unload-startup-source':
-        load(path / 'materialize.py').materialize(project)
-    elif package == 'unload-base-provenance':
-        load(path / 'materialize.py').materialize(ROOT, project)
-    else:
-        load(ROOT / HERE / 'unload-continued-observation/materialize.py').materialize(project, path)
-    (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
-    (project / '.lake').mkdir()
-    (project / '.lake/packages').symlink_to(runtime.package_root(ROOT), target_is_directory=True)
-    for name in ('tools/proof_services.py', 'tools/lean_session.py', 'scripts/lean-mcp-server.sh'):
-        destination = project / name
-        destination.parent.mkdir(exist_ok=True)
-        shutil.copyfile(ROOT / name, destination)
-    (project / 'artifacts').mkdir()
+    identity = source_identity(source['commit'], source['commit'])
+    if identity['tree'] != source['tree']:
+        raise ValueError('current Unload checkout differs from the native archive')
+    artifacts = output/'artifacts'
+    leaf = unload_current_capture.run(ROOT, native_archive, artifacts/'current-captures',
+                                      runtime.tool_root(ROOT)/'aeneas', run, digest)
+    lock = artifacts/'revision.lock'
+    lock.touch()
+    revisions = {mode: artifacts/('revision-' + mode) for mode in ('base-revision', 'parent')}
+    for mode, folder in revisions.items():
+        run(dict(os.environ), ROOT, artifacts, folder.name,
+            [sys.executable, parent/'capture.py', '--mode', mode, '--source-commit', source['commit'],
+             '--lock', lock, '--output', folder])
+    descriptor = json.loads((ROOT/HERE/'unload-startup-source/capture-profile.json').read_bytes())['parent']
+    descriptor.update(namespace=prepare_revision_call.PARENT, subdir=prepare_revision_call.PARENT)
+    fixed = json.loads((ROOT/'verification/foundations-environment.json').read_bytes())
+    pair = check_pair(revisions['base-revision'], revisions['parent'], identity, descriptor, fixed['target'])
+    write_json(artifacts/'revision-pair.json', pair)
+    revision, project = output/'revision-project', output/'current-project'
+    prepare_revision_call.prepare_call(
+        revisions['base-revision']/'generated'/prepare_revision_call.BASE,
+        revisions['parent']/'generated'/prepare_revision_call.PARENT,
+        runtime.package_root(ROOT), runtime.tool_root(ROOT)/'lean-mcp', revision, identity=identity)
+    materialize_current(project, revision, identity)
+    shutil.copyfile(ROOT/'tools/proof_services.py', project/'tools/proof_services.py')
+    (project/'artifacts').mkdir(exist_ok=True)
+    return (project, leaf, identity['source_archive_sha256'])
 
 
 def run_formal(output, result):
@@ -143,7 +143,8 @@ def run_formal(output, result):
     receipt = registered._original_file(native, 'result.json')
     native_result = json.loads(receipt.read_text())
     archive = load(ROOT / HERE / 'archive.py')
-    source = archive.verify(registered._original_file(native, 'source.tar'),
+    native_archive = registered._original_file(native, 'source.tar')
+    source = archive.verify(native_archive,
                             registered._original_file(native, 'source-manifest.json'))
     if (native_result.get('kind') != KIND or native_result.get('complete') is not True
             or native_result.get('commit') != source['commit'] or native_result.get('tree') != source['tree']
@@ -153,16 +154,33 @@ def run_formal(output, result):
                 'wrong-0', 'wrong-1', 'restored-0', 'restored-1'}):
         raise ValueError('missing original unload native assertion evidence')
     result['native_result_sha256'] = digest(receipt)
-    copy_captures(output / 'artifacts')
+    verify_current(output, result, source, native_archive, registered)
+
+
+def verify_current(output, result, source, native_archive, registered):
     runtime = load(ROOT / HERE / 'formal_runtime.py')
     checker = load(ROOT / HERE / 'formal.py')
     templates = registered.audit_templates(ROOT)
     env = dict(os.environ, LEAN_NUM_THREADS='4', LEAN_STACK_SIZE_KB='65536')
+
+    def capture(env, cwd, logs, label, argv):
+        command(result, env, cwd, logs, label, argv)
+
+    def run(cwd, logs, label, argv):
+        command(result, env, cwd, logs, label, argv)
+
+    project, leaves, source_sha256 = prepare_current(output, source, native_archive, runtime, capture)
+    result.update(commit=source['commit'], tree=source['tree'], source_sha256=source_sha256,
+                  current_captures=leaves)
+    plan = json.loads((project/'plan.json').read_bytes())
+    if (plan['roots'] != ['UnloadParentLink'] or plan['source_commit'] != source['commit']
+            or any(digest(project/name) != item['sha256'] for name, item in plan['modules'].items())):
+        raise ValueError('current Unload proof plan differs from its checked inputs')
+    run(project, output, 'build', ['lake', 'build', 'UnloadParentLink'])
+
     for package in PACKAGES:
         folder = output / package
         folder.mkdir()
-        project = folder / 'project'
-        prepare_project(package, project, runtime)
         audit_files = package_audits(templates, package)
         audited = {}
         for name, expected in audit_files.items():
@@ -171,26 +189,6 @@ def run_formal(output, result):
                 raise ValueError('materialized unload audit differs: ' + name)
             audited[str(relative)] = expected
 
-        def run(cwd, logs, label, argv):
-            command(result, env, cwd, logs, label, argv)
-
-        if package == 'unload-startup-source':
-            modules = ['.'.join(Path(name).with_suffix('').parts) for name in audited]
-            run(project, folder, 'build', ['lake', 'build', *modules])
-        elif package == 'unload-base-provenance':
-            run(project, folder, 'build', ['bash', ROOT / HERE / package / 'check-materialized.sh', project])
-            objects = project / '.lake/build/lib/lean'
-            objects.parent.mkdir(parents=True, exist_ok=True)
-            objects.symlink_to(project / 'objects', target_is_directory=True)
-        else:
-            for index, module in enumerate((project / 'build-order.txt').read_text().splitlines()):
-                source = Path(module + '.lean')
-                if source.is_absolute() or '..' in source.parts:
-                    raise ValueError('invalid original unload module: ' + module)
-                obj = project / '.lake/build/lib/lean' / (module + '.olean')
-                obj.parent.mkdir(parents=True, exist_ok=True)
-                run(project, folder, f'build-{index}',
-                    ['lake', 'env', 'lean', '--root=' + str(project), '-o', obj, source])
         actual = checker.actual_files(project, sorted(audited), folder, env, run)
         registered._saved_physical_view(actual, project, folder / 'physical-files', result['commands'])
         result['cases'][package] = dict(actual, complete=True)

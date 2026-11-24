@@ -1,7 +1,7 @@
 {
   "kind": "actual-lifetime-two-values-review",
   "source_inputs": {
-    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/lifecycle_inbox.rs": "4d87f72906bb2ba5ec541b8969ecd90cf7caf74280dd42e5e6e6bbd0488888a8",
     "controller-service/src/controller/lifecycle_inbox/lifetime_sql.rs": "0f0679d18495900430c24771f49b341bed3ec2d0504be2b7a875f2942aebda96",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73"
   },
@@ -21,7 +21,7 @@
     "lake-manifest.json": "feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264",
     "lean-toolchain": "efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
-    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7"
+    "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892"
   },
   "templates": {
     "TypesExternal.lean.in": "f5a3833e38da6e1143a20bc21ffa454a407344973637cac2df8abb8373df40ab",
@@ -628,5 +628,10 @@
       }
     ],
     "manifest_is_proof_evidence": false
+  },
+  "current_candidate_input_review": {
+    "base": "76315770aa4478804b6ed9db63416e47cbbf65cd",
+    "full_original_acceptance_required": true,
+    "basis": "The current lifetime SQL helper and its actual forwarding implementation match the earlier inputs byte for byte. The parent source change is in StandardRecord transaction wiring. The service provider changed only the default file list, adding SourceLive and PauseReceipt; the original selected pages, explicit kernel and service checks, and all three variant contracts remain required."
   }
 }

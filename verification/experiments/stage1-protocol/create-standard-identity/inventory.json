@@ -4,8 +4,8 @@
     "controller-service/src/controller/identity.rs": "a24003c26837b31f681e5b6c28ec6cc35ec40c0bcc39742ec11f8911731ada20",
     "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
-    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
-    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b"
+    "controller-service/src/controller/lifecycle_inbox.rs": "4d87f72906bb2ba5ec541b8969ecd90cf7caf74280dd42e5e6e6bbd0488888a8",
+    "controller-service/src/controller/transaction.rs": "100391ccee63bd0e481ac7828971c2ac8eb97e781330fc6eb92a399c9d5f6bde"
   },
   "providers": {
     "verification/aeneas/foundations/SandproofFoundations/TypesExternal.lean": "10deee0bfc54132835d05b064231b13a9e4806a7dddea94b8d584561d66fc3f8",
@@ -1288,5 +1288,10 @@
       }
     ],
     "manifest_is_proof_evidence": false
+  },
+  "current_candidate_input_review": {
+    "base": "095fcb413168ad8e227931db8d5e02a23cbb1df7",
+    "full_original_acceptance_required": true,
+    "basis": "The real StandardCreateAttachment type and both effect implementation bodies, the WorldTransaction and CommittedWorld fields, WorldTransaction.world and Deref match the old source byte for byte. Changes to the owning transaction entry, commit, and Drop are outside these borrowed-usepoint contracts. The original source-closure admission and each original mutant remain required in the full run."
   }
 }

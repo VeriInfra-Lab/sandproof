@@ -429,6 +429,10 @@ PID/start 回执及尚未记录的 Cleanup 回执；动作缺失、退出码不�
 原命令迟到重复，不覆盖第一次物理删除与位置释放的任意竞争，也不把准备停启写作 E13。
 观察证据不足时保留两会话、原输入和责任；最终须取得两次产品 Destroy/GC 及零额度证据。
 
+有序到期保留 TTL 前的原冻结观察。Center 持久接受自动终止后、Host 重开前，
+用现有观察器在 Host SQLite 复查原 Freeze 回执为空、Full 未放行、原材料责任及原端点。
+报告保存 `freeze_after_expiry_acceptance`。复查失败仍保留原自动接受，停止终止接续。
+
 在 `capture-freeze-receipt-destroy` 的 Host 重开前，以当前 Destroy 版本和新键尝试 Resume，
 要求 409。原样重放 Destroy 须返回同一完整接受，仅改 `expected_version` 的同键请求须返回
 409。每次请求后核对完整公开 Terminating 视图。Resume 拒绝及 Destroy 重放检查后，分别

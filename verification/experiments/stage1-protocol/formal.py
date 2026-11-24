@@ -80,7 +80,7 @@ def generated_files(profile):
     return [str(p.relative_to(ROOT)) for p in sorted((ROOT / LIBRARY / profile).rglob('*.lean'))]
 
 
-def actual_files(project, files, output, env, run):
+def actual_files(project, files, output, env, run, *, repeat_across_pages=False):
     """Use the existing strict batch client, with an explicit component inventory."""
     before = {n: sha(project / n) for n in files}
     for index, name in enumerate(files):
@@ -97,10 +97,14 @@ def actual_files(project, files, output, env, run):
         raise ValueError('expected one original batch-service evidence directory')
     physical = output / 'physical-files'
     shutil.move(str(created.pop()), physical)
-    expected = [n for name in files for n in re.findall(
-        r'^#audit_controller_proof (\S+)$', (project / name).read_text(), re.M)]
+    audits = [re.findall(r'^#audit_controller_proof (\S+)$', (project / name).read_text(), re.M)
+              for name in files]
+    if any(len(set(page)) != len(page) for page in audits):
+        raise ValueError('duplicate dependency audit on one physical page')
+    expected = [name for page in audits for name in page]
     observed = re.findall(r'^Checked (\S+): \d+ standard logical dependencies$', stdout.getvalue(), re.M)
-    if len(set(expected)) != len(expected) or sorted(expected) != sorted(observed):
+    if (not repeat_across_pages and len(set(expected)) != len(expected)
+            or sorted(expected) != sorted(observed)):
         raise ValueError('missing, duplicate or extra component audit messages')
     if before != {n: sha(project / n) for n in files}:
         raise ValueError('physical files changed during checking')

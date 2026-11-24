@@ -5,11 +5,11 @@
 两个方法已由原 Charon→Aeneas 捕获；八条数学声明经原 Lean 服务检查通过。
 正式物理页、公共登记与整批验收分别记录，不能由此认领完整 V3 完成。
 
-`root.rs.in` 只在新的私有源码副本追加两个透明委托。`support.py` 复用现有
-create-standard-adapter 的 World／库表示规则，并将 INCLUDE 限定到实际查询闭包，
-OPAQUE 保持原 `rusqlite::error::Error`。两个根均指向原实际方法；不能将这两个
-自有方法、比较、Store 查询或循环整体设为 opaque。独立生成命名空间为
-SandproofStandardRecordRust，子目录为 generated/SandproofStandardRecord。
+`root.rs.in` 只在私有源码副本追加两个泛型透明委托。两条定理都接受任意
+`RecordCodec<D>`，并保留完整 `StandardRecord<D>`。查询不会调用编解码方法。
+抽取只选择实际查询闭包中的 service 方法。准入核对两个委托各自调用原透明方法，
+只允许原六项库函数保留为外部调用，并核对生成 Lean 的标记内容。
+独立命名空间为 SandproofStandardRecordRust，子目录为 generated/SandproofStandardRecord。
 
 目标合同只覆盖正常借用、候选为同一 some World、普通值克隆／分配条件下的一次读取：
 
@@ -32,12 +32,13 @@ WorldTransaction.world、NormalWorldBorrow 和 WorldReadCell／Guard 复用原 C
 同一事务候选，以及 terminate_local 建立的真实业务状态。这里不证明 terminate_local，
 也不假设“V5 正确”就跳过原 sandbox 首查与 operation.id 连接。
 
-数学与有限提供方先在私有草稿中尝试；原工具实测由统筹协调 msra 四核。
+数学与有限提供方在独立目录检查，正式入口沿用原工具及四核配额。
 未变的 World 克隆／Store 数学优先复用，不增加无消费者 helper、堆解释器或错误矩阵。
 
 实际抽取只保留两根、两个方法及闭包、WorldTransaction.world、core World／Clone／Store
 和实际 Option 调用。StandardRecord、WorldTransaction、CommittedWorld 的完整字段透明；
-不因此抽取 SQL／commit／terminate_local，没有更改 typecheck 或扩大 opaque。
+编解码接口引用的配置、Inbox 和错误类型沿用已有实际类型与值表示。
+组合时私有视图隔离载体模块的重复实例属性，并可逆核对原字节。
 
 准入必须在原 IR／translation 中核对两个方法、WorldTransaction.world、World.clone、
 World.sandbox_record、Store.get 及其循环、自有 key／phase 比较和实际回调透明；原方法
@@ -64,18 +65,19 @@ sandbox 比较和 Releasing 判断由 `actual_slot_callback` 证明，没有放�
 
 ## 有限验收入口
 
-`capture.json` 固定原成功捕获、完整生成物、57项实际源码/配置与两根范围。
-`view.json` 固定32份有限视图文件及原样复制或仅命名空间绑定；生成 Funs／Types
-保持原字节。未变公共提供方仍绑定完整输入；新增和重绑定的七页经原内核及服务
-检查，完整九项审计包括八条读取定理及原 CaptureHandoff 克隆引理。
+`capture.json` 固定当前实际源码、工具、转发内容、抽取范围和生成 Lean 的标记。
+`view.json` 固定有限证明闭包和允许的命名空间及属性隔离。运行从干净候选重新抽取，
+保留原始 LLBC、生成物及同提交源码归档。证明直接使用此次生成的 Funs／Types。
+九项审计含八条读取定理和原 CaptureHandoff 克隆引理。
 
 ```sh
-export SANDPROOF_STANDARD_RECORD_CAPTURE_EVIDENCE=/private/original-read-capture/actual
 python3 verification/experiments/stage1-protocol/protocol-record/standard-read/formal.py \
   --output /private/new-read-proof
 ```
 
-入口使用同一固定工具和原 `actual_files` 检查器。可显式设置
+入口使用同一固定工具和原 `actual_files` 检查器。
+可设置 `SANDPROOF_STANDARD_RECORD_CAPTURE_EVIDENCE` 使用同一精确提交的完整原始抽取。
+可设置
 `SANDPROOF_STANDARD_RECORD_PREPARED_PROJECT` 复用本模块已准备的私有视图和 `.lake`；
 每份输入与工具/库绑定仍需一致，不改旧源来凑摘要。
 后续同一数学输入可用 `SANDPROOF_STANDARD_RECORD_REUSE_EVIDENCE` 指向上述完整结果目录，

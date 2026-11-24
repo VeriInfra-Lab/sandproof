@@ -88,7 +88,7 @@
     },
     "ContinuedDriverCaller": {
       "package": "proof-inputs/ContinuedDriverCaller.lean.in",
-      "sha256": "b07322caf5d558c8f273b25c862593669f09dc3eb2be694334cac05ea2c9dd12"
+      "sha256": "107e3d3db40766cb17b661e2dbf36023d8e400ab9c2e6d28ca4229803f0a92c6"
     }
   }
 }

@@ -1,0 +1,34 @@
+import UnloadFinishInputs
+
+open Aeneas Aeneas.Std SandproofUnloadFinish
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.UnloadFinish
+
+local notation "finish" => controller.lifecycle_inbox.source_work.finish_source_work
+
+/-- On the reordered caller, a failing post-commit hook wins even when the
+    original commit would report uncertainty. -/
+theorem reordered_hook_hides_commit_uncertain {Rows C : Type} (writer : Writer Rows) (hooks : CrashInjector C)
+    (owner : Owner) (raw : Raw) (live : owner.transaction = some raw)
+    (sources : Rows) (limit : U16) (input before after : C)
+    (error : SandproofParentCommitRust.rusqlite.error.Error)
+    (saved : writer.save raw.conn sources limit = .ok (.Ok ()))
+    (checked : hooks.hit input .BeforeCommit = .ok (.Ok (), before))
+    (_committed : controller.transaction.WorldTransaction.commit owner = .ok (.Err (.CommitUncertain error)))
+    (called : hooks.hit before .AfterCommit = .ok (.Err (.InjectedCrash .AfterCommit), after)) :
+    finish writer hooks owner sources limit input = .ok (.Err (.InjectedCrash .AfterCommit), after) ∧
+      finish writer hooks owner sources limit input ≠ .ok (.Err (.CommitUncertain error), before) := by
+  have returned : finish writer hooks owner sources limit input =
+      .ok (.Err (.InjectedCrash .AfterCommit), after) := by
+    unfold controller.lifecycle_inbox.source_work.finish_source_work
+    simp [live_deref owner raw live, saved, checked, called,
+      SandproofParentCommitRust.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  refine ⟨returned, ?_⟩
+  simp [returned, Result.ok.injEq]
+
+end SandboxModel.Stage1Protocol.UnloadFinish
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFinish.reordered_hook_hides_commit_uncertain

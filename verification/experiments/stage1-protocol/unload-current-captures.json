@@ -1,0 +1,255 @@
+{
+  "startup-joint": {
+    "roots": [
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::startup_records",
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::expected_commands",
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::accept_startup_row",
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::startup_command_index"
+    ],
+    "include": [
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::startup_records",
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::expected_commands",
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::accept_startup_row",
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::startup_command_index",
+      "sandproof_controller_service::controller::internal_inbox::model::InternalLocalBinding",
+      "sandproof_controller_service::host_contract::HostEvidence",
+      "sandproof_controller_service::JournalError",
+      "sandbox_controller_core::model::Command",
+      "sandbox_controller_core::model::EffectId",
+      "sandbox_controller_core::model::LogicalEffectId",
+      "sandbox_controller_core::model::EffectOrigin",
+      "sandbox_controller_core::model::LogicalEffectRecord",
+      "sandbox_controller_core::model::OperationKey",
+      "sandbox_controller_core::model::OperationPlan",
+      "sandbox_controller_core::model::SandboxRecord",
+      "sandbox_controller_core::model::Operation",
+      "sandbox_controller_core::model::OperationKind",
+      "sandbox_controller_core::model::OperationStatus",
+      "sandbox_controller_core::model::OperationLedgerRecord",
+      "sandbox_controller_core::model::{sandbox_controller_core::model::EffectId}::command",
+      "sandbox_controller_core::model::{core::cmp::PartialEq<sandbox_controller_core::model::Command, sandbox_controller_core::model::Command>}::eq",
+      "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::SandboxId, sandbox_controller_core::ids::SandboxId>}::eq",
+      "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::VmId, sandbox_controller_core::ids::VmId>}::eq",
+      "sandbox_controller_core::ids::{core::cmp::PartialEq<sandbox_controller_core::ids::NetSlotId, sandbox_controller_core::ids::NetSlotId>}::eq",
+      "sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ResourceRef, sandproof_protocol::ResourceRef>}::eq",
+      "sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ResourceKind, sandproof_protocol::ResourceKind>}::eq",
+      "sandproof_protocol::{core::cmp::PartialEq<sandproof_protocol::ResourceId, sandproof_protocol::ResourceId>}::eq",
+      "sandbox_controller_core::ids::SandboxId",
+      "sandbox_controller_core::ids::VmId",
+      "sandbox_controller_core::ids::NetSlotId",
+      "sandproof_protocol::ResourceId",
+      "sandbox_controller_core::capture::continuation::OriginalContinueIdentity",
+      "sandbox_controller_core::capture::continuation::OriginalContinuation",
+      "sandproof_protocol::WorkAction",
+      "sandproof_protocol::ActionIdentity",
+      "sandproof_protocol::WorkReceipt",
+      "sandproof_protocol::WorkOutcome",
+      "sandproof_protocol::ResourceRef",
+      "sandproof_protocol::ResourceKind",
+      "sandproof_protocol::ResourceEvidence",
+      "sandproof_protocol::ContractError"
+    ],
+    "opaque": [
+      "sandproof_controller_service",
+      "sandbox_controller_core",
+      "sandproof_protocol",
+      "rusqlite",
+      "serde_json",
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::accept_startup_rows"
+    ],
+    "namespace": "SandproofUnloadStartupJoint",
+    "name_metadata": true,
+    "generated": {
+      "Funs.lean": "a53d3862f6e2565bbefa1ed9f8bbc3b0595ef156dd2523282f99089a53461315",
+      "FunsExternal_Template.lean": "b7e567376974f390617b7a3388f560c012c226c075394ad9be3b3c3a28ef4b3e",
+      "Types.lean": "afa25786f6f884ffab42ed9aa0e11acb762f44bf146ad48b94bc40f23eb19856",
+      "TypesExternal_Template.lean": "fff11df3d9bd4316c28b8b8aa050041272528e2f7e6cb78aebdba7fa794a24e6"
+    }
+  },
+  "native": {
+    "roots": [
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::native_snapshot"
+    ],
+    "include": [
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::native_snapshot",
+      "sandproof_controller_service::controller::internal_inbox::model::InternalLocalBinding",
+      "sandproof_controller_service::JournalError",
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::NativeCreateSnapshot",
+      "sandproof_controller_service::controller::admission::Lifetime",
+      "sandbox_controller_core::model::SandboxRecord",
+      "sandbox_controller_core::model::Operation",
+      "sandbox_controller_core::model::OperationKind",
+      "sandbox_controller_core::model::OperationStatus",
+      "sandbox_controller_core::model::EffectStatus",
+      "sandbox_controller_core::model::EffectId",
+      "sandbox_controller_core::model::Phase"
+    ],
+    "opaque": [
+      "sandproof_controller_service",
+      "sandbox_controller_core",
+      "sandproof_protocol",
+      "rusqlite",
+      "serde_json"
+    ],
+    "namespace": "SandproofUnloadNativeSnapshot",
+    "generated": {
+      "Funs.lean": "68e79486a3658c573d7a4f9174a3ba4cfcc56d8b7f882a881e27809a791d0f29",
+      "FunsExternal_Template.lean": "40114057e76359073956c127d25dc513f934c326d703334d3327ad1bcbdfcb43",
+      "Types.lean": "f47a406b7bb80e90b12453026f1779f0365c2e5971189222a87b06c09a8b7c40",
+      "TypesExternal_Template.lean": "1ea6d41799b35b42a4377cbbf47bed044a62cc2dbb53d1a89d02bf62d4300b78"
+    }
+  },
+  "ledger": {
+    "roots": [
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::original_result"
+    ],
+    "include": [
+      "sandproof_controller_service::controller::lifecycle_inbox::readiness::snapshot::original_result",
+      "sandproof_controller_service::controller::internal_inbox::model::InternalLocalBinding",
+      "sandproof_controller_service::JournalError",
+      "sandbox_controller_core::model::OperationKey",
+      "sandbox_controller_core::model::OperationLedgerRecord",
+      "sandbox_controller_core::model::Operation",
+      "sandbox_controller_core::model::OperationResult",
+      "sandbox_controller_core::model::OperationKind",
+      "sandbox_controller_core::model::OperationStatus",
+      "sandbox_controller_core::model::Actor",
+      "sandbox_controller_core::model::Event",
+      "sandbox_controller_core::request::QueryRequest",
+      "sandbox_controller_core::request::Decision",
+      "sandbox_controller_core::request::Reject"
+    ],
+    "opaque": [
+      "sandproof_controller_service",
+      "sandbox_controller_core",
+      "sandproof_protocol",
+      "rusqlite",
+      "serde_json"
+    ],
+    "namespace": "SandproofUnloadOriginalLedger",
+    "generated": {
+      "Funs.lean": "38ac828b5c3ccdb0f3da2c0774519ad785df9efa3b749937007e702a4a0039d5",
+      "FunsExternal_Template.lean": "52c3ba3d45ad495efd4418325edd745b74dc167ff587a4d38cb56b821b1ffc71",
+      "Types.lean": "4c8e0ab16a26bfbf994a11c3ae063e814207cd22146f6b222e617503517f7c2c",
+      "TypesExternal_Template.lean": "b1b9d9e8ae0c7ef8e3c37989fe418b1d8329d0f47c94e192c6da1aa084ebfa56"
+    }
+  },
+  "origin": {
+    "roots": [
+      "sandproof_controller_service::controller::lifecycle_inbox::model::proof_execution_origin"
+    ],
+    "include": [
+      "sandproof_controller_service::controller::lifecycle_inbox::model",
+      "sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent",
+      "sandproof_protocol::lifecycle::request::LifecycleRequest",
+      "sandproof_protocol::lifecycle::request::LifecycleOperation"
+    ],
+    "opaque": [
+      "sandproof_controller_service",
+      "sandbox_controller_core",
+      "sandproof_protocol",
+      "rusqlite",
+      "serde_json"
+    ],
+    "namespace": "SandproofUnloadInboxOrigin",
+    "origin_forwarder": true,
+    "generated": {
+      "Funs.lean": "2337996b46681458b266b88487ccc25ed0ea36def49e75b5d0442859287e5005",
+      "Types.lean": "22810881a721f8f6361e6f1e1ccca4e20b601b8a7d10678b99514c15557ae28e",
+      "TypesExternal_Template.lean": "6b4f655847339d7f65370bbcf7bdfb070901aa24bd5ccc16dc90dca55522b6c3"
+    }
+  },
+  "continued": {
+    "roots": [
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::full::continuation::ready_records"
+    ],
+    "include": [
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::full::continuation::ready_records",
+      "sandproof_controller_service::JournalError",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::codec::Sources",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::SourceWorkRecord",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::SourceAnchor",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::SourceWork",
+      "sandproof_controller_service::capture::continuation::OriginalContinueWorkRequest",
+      "sandproof_protocol::WorkAction",
+      "sandproof_protocol::WorkReceipt",
+      "sandproof_protocol::WorkOutcome",
+      "sandbox_controller_core::capture::continuation::OriginalContinueIdentity",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::full::continuation::continued_row",
+      "sandbox_controller_core::model::EffectId",
+      "sandbox_controller_core::model::LogicalEffectId",
+      "sandbox_controller_core::model::LogicalEffectRecord",
+      "sandproof_controller_service::host_contract::HostEvidence",
+      "sandproof_controller_service::capture::SourceProcessIdentity",
+      "sandproof_controller_service::capture::source::SourceObservationRequirement",
+      "sandproof_controller_service::capture::work::FullCaptureWorkRequest",
+      "sandproof_controller_service::controller::internal_inbox::model::InternalLocalBinding",
+      "sandproof_protocol::ActionIdentity",
+      "sandproof_protocol::ResourceRef",
+      "sandproof_protocol::ResourceKind",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::full::continuation::scan_continued_rows"
+    ],
+    "opaque": [
+      "sandproof_controller_service",
+      "sandbox_controller_core",
+      "sandproof_protocol",
+      "rusqlite",
+      "serde_json"
+    ],
+    "namespace": "SandproofUnloadContinuedReady",
+    "generated": {
+      "Funs.lean": "4f21108ca6dc92d0624cf29890a6c32982f72663180929a9e9b1863f1a253cc6",
+      "FunsExternal_Template.lean": "083854c51dc49df3dddc7bbf8716db4a1a3dc54db25209c8a27fa98dd45dbc03",
+      "Types.lean": "98c99e8ded7ce362f9240baa5e558adeb463f28354e7ea1979f254b7299a71fd",
+      "TypesExternal_Template.lean": "ee63a6d804b504360b6b19459788d319829a419a9efc67f47b97dc4878f56070"
+    }
+  },
+  "encoder": {
+    "roots": [
+      "sandproof_controller_service::host_contract::_::encoded"
+    ],
+    "include": [
+      "sandproof_controller_service::host_contract::_::encoded",
+      "sandproof_controller_service::host_contract::CreateOptions",
+      "sandproof_controller_service::host_contract::AdmissionError",
+      "sandproof_controller_service::host_contract::valid_create_fields"
+    ],
+    "opaque": [
+      "sandproof_controller_service",
+      "sandbox_controller_core",
+      "sandproof_protocol",
+      "serde_json"
+    ],
+    "namespace": "SandproofCreateOptionsEncoded",
+    "generated": {
+      "Funs.lean": "36bbc55380daef09ed7dffb65555ef8dea2ef486d5b620a9ad3ca918257007f7",
+      "FunsExternal_Template.lean": "0bfb339d14179688694faefe7300cd23cdf2f23f84bef1e988fb62ee80cca94a",
+      "Types.lean": "b9ee1b8e5513b0f23bb992d160a5f2f16aedc9758ebe6a9b43686f19a94ccdd6",
+      "TypesExternal_Template.lean": "8baa11b47cd8e4ce198d4d040ed0419979f21358b55d85e9e835bb02b0ebfcee"
+    }
+  },
+  "reader": {
+    "roots": [
+      "sandproof_controller_service::controller::admission::read_create_options"
+    ],
+    "include": [
+      "sandproof_controller_service::controller::admission::read_create_options",
+      "sandproof_controller_service::host_contract::AdmissionError",
+      "sandproof_controller_service::JournalError"
+    ],
+    "opaque": [
+      "sandproof_controller_service",
+      "sandbox_controller_core",
+      "sandproof_protocol",
+      "rusqlite",
+      "serde_json"
+    ],
+    "namespace": "SandproofUnloadOptionsRead",
+    "generated": {
+      "Funs.lean": "4b51f7969556f459e438c1c2169210d44578d4b767d08b22a55d59bf73ffba63",
+      "FunsExternal_Template.lean": "34fdf54cf2e7ddbab2ede5225e23278bcb3fc94a85d2e082dba9121c77615c7e",
+      "Types.lean": "322f389f28a8013bfe65bd7d976637a698541e97ab395782c691803ef5e7224f",
+      "TypesExternal_Template.lean": "c37f38ebeaf1e627e9ac3b7d1fb19988b14ec386435e71feb5b11409e7481795"
+    }
+  }
+}

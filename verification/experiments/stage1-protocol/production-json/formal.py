@@ -33,6 +33,13 @@ def load(root, name):
     return json.loads(file_bytes(root/HERE/name))
 
 
+def materializer(root):
+    spec = importlib.util.spec_from_file_location('finite_json_materialize', root/HERE/'materialize.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def current(root):
     root = Path(root).resolve()
     view, interface, fixed = (load(root, name) for name in
@@ -60,9 +67,14 @@ def current(root):
             checked(name, expected)
     checked(view['raw_provenance']['source'], view['raw_provenance']['sha256'])
     installed, contents = {}, {}
+    materialize = materializer(root)
     for name, row in view['files'].items():
         contents[name] = checked(row['source'], row['sha256'], row['mode'])
         installed[name] = row.get('installed_sha256', row['sha256'])
+        if row.get('transform') == materialize.WRITER_LOCATION:
+            if name != materialize.WRITER_TYPES or row['source'] != name:
+                raise ValueError('invalid historical Writer location source')
+            contents[name] = materialize.restore_writer_location(contents[name], installed[name])
     # The service fingerprint includes every local Lean source, in this order.
     # This pins the imports too, not just the ten explicitly checked files.
     fingerprint = hashlib.sha256()
@@ -207,11 +219,8 @@ def run(output):
         if not directory:
             raise ValueError('missing original JSON evidence: '+ENV)
         raw, consumed = original(ROOT, directory)
-        spec = importlib.util.spec_from_file_location('finite_json_materialize', ROOT/HERE/'materialize.py')
-        materialize = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(materialize)
         project = output/'project'
-        materialize.install(project)
+        materializer(ROOT).install(project)
         result.update(original_directory=directory, materialized_project=str(project),
                       original_result_sha256=consumed[str(Path(directory)/'result.json')],
                       original_seconds=raw['seconds'], original_actual_cpus=raw['actual_cpus'],

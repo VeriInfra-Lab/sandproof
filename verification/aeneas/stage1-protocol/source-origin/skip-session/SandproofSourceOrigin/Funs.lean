@@ -2919,7 +2919,7 @@ def
       residual
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::source_origin_epoch_matches]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 303:0-314:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 354:0-365:1 -/
 def controller.lifecycle_inbox.source_work.snapshot.source_origin_epoch_matches
   (world : sandbox_controller_core.model.World)
   (anchor : controller.lifecycle_inbox.source_work.SourceAnchor)
@@ -2937,7 +2937,7 @@ def controller.lifecycle_inbox.source_work.snapshot.source_origin_epoch_matches
       o anchor.continued_from
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::validate_execution_origin::{impl core::ops::function::FnOnce<(sandproof_controller_service::JournalError,), sandproof_controller_service::JournalError> for sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::validate_execution_origin::{closure}}::call_once]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 324:17-324:47 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 375:17-375:47 -/
 def
   controller.lifecycle_inbox.source_work.snapshot.validate_execution_origin.closure.Insts.CoreOpsFunctionFnOnceTupleJournalErrorJournalError.call_once
   (c :
@@ -2948,7 +2948,7 @@ def
   ok JournalError.CorruptStore
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::validate_execution_origin::{impl core::ops::function::FnOnce<(sandproof_controller_service::JournalError,), sandproof_controller_service::JournalError> for sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::validate_execution_origin::{closure}}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 324:17-324:47 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 375:17-375:47 -/
 @[reducible]
 def
   controller.lifecycle_inbox.source_work.snapshot.validate_execution_origin.closure.Insts.CoreOpsFunctionFnOnceTupleJournalErrorJournalError
@@ -2960,7 +2960,7 @@ def
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::validate_execution_origin]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 316:0-355:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 367:0-406:1 -/
 def controller.lifecycle_inbox.source_work.snapshot.validate_execution_origin
   (world : sandbox_controller_core.model.World)
   (inbox : controller.lifecycle_inbox.model.Inbox)

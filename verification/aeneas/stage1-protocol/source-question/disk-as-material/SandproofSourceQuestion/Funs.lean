@@ -181,7 +181,7 @@ def capture.SourceProcessIdentity.Insts.CoreCloneClone.clone
   ok { pid := i, start_time_ticks := i1, boot_id := s }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::source_work::snapshot::question_from_binding]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 170:0-190:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs', lines 212:0-232:1 -/
 def controller.lifecycle_inbox.source_work.snapshot.question_from_binding
   (anchor : controller.lifecycle_inbox.source_work.SourceAnchor)
   (limits : capture.source.SourceObservationConfig)

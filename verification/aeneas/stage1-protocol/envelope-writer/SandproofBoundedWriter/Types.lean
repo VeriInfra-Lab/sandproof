@@ -68,7 +68,7 @@ inductive sandbox_controller_core.capture.continuation.CaptureReject where
   sandbox_controller_core.capture.continuation.CaptureReject
 
 /-- [sandbox_controller_core::worker::WorkerReject]
-    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/worker.rs', lines 67:0-67:21
+    Source: '/home/zn/u333-5tuoxof8/std-mutex-source/controller-core/src/worker.rs', lines 68:0-68:21
     Name pattern: [sandbox_controller_core::worker::WorkerReject]
     Visibility: public -/
 @[discriminant isize, rust_type

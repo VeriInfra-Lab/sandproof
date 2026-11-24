@@ -2,13 +2,68 @@
 from pathlib import Path
 import hashlib
 import json
+import subprocess
 
 HERE = Path('verification/experiments/stage1-protocol/standard-save-digest')
 KIND = 'current-standard-save-digest-and-original-save-development'
 CASES = ('actual','save-input-empty','save-tail-zero','delegate-input-empty')
 
 
-def check(result, root):
+def blob_inventory(root):
+    view = json.loads((root/HERE/'blob/inventory.json').read_text())['current_view']
+    parent = view['embedded_parent_source']
+    source = root/parent['path']
+    if source.is_symlink() or hashlib.sha256(source.read_bytes()).hexdigest() != parent['current_sha256']:
+        raise ValueError('reviewed source containing the two-BLOB update differs')
+    return view
+
+
+def check_blob_capture(capture, inventory):
+    if (capture.get('capture_only') is not True or capture.get('formal_acceptance') is not False
+            or capture.get('ir_value_sha256') != inventory['full_ir_value_sha256']
+            or capture.get('generated') != inventory['raw_generated']):
+        raise ValueError('current two-BLOB original extraction differs from the reviewed capture')
+
+
+def check_blob_update(result, root):
+    inventory = blob_inventory(root)
+    check_blob_capture(result.get('capture', {}), inventory)
+    actual = result.get('actual', {})
+    if (actual.get('files') != inventory['files']
+            or sorted(actual.get('audits', [])) != sorted(inventory['audits'])
+            or not actual.get('service_log_sha256')):
+        raise ValueError('missing or changed physical two-BLOB pages or audits')
+    return actual
+
+
+def check_blob_evidence(result, root, folder, evidence):
+    """Bind the extra view to fresh full IR and raw Lean from the current checkout."""
+    actual = check_blob_update(result['blob_update'], root)
+    commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
+    if result.get('source_commit') != commit:
+        raise ValueError('two-BLOB update is not bound to the current source')
+    bridge = folder/'blob-update'
+    project = bridge/'source'
+    capture = result['blob_update']['capture']
+    ir = project/'artifacts/save-update.llbc'
+    generated = bridge/'generated-update'
+    if capture['ir'] != str(ir) or capture['generated_directory'] != str(generated):
+        raise ValueError('two-BLOB original extraction left its private view')
+    service = bridge/'actual-files/physical-files/service.log'
+    expected = {ir: capture['ir_sha256'], service: actual['service_log_sha256']}
+    expected.update({project/name: digest for name, digest in actual['files'].items()})
+    expected.update({generated/name: digest for name, digest in capture['generated'].items()})
+    for label in ('save-update-charon', 'save-update-aeneas', 'build-blob-update'):
+        rows = [row for row in result['commands'] if row['label'] == label]
+        if (len(rows) != 1 or rows[0]['cwd'] != str(project) or rows[0]['folder'] != str(bridge)
+                or rows[0]['exit_code'] != 0):
+            raise ValueError('missing current two-BLOB tool invocation: '+label)
+        expected[bridge/(label+'.log')] = rows[0]['log_sha256']
+    if any(path.is_symlink() or evidence.get(str(path)) != digest for path, digest in expected.items()):
+        raise ValueError('missing or changed current two-BLOB extraction evidence')
+
+
+def check(result, root, *, require_blob_update=False):
     data = json.loads((root/HERE/'inventory.json').read_text())
     if (result.get('kind') != KIND or result.get('complete') is not True
             or result.get('prepared') is not False
@@ -56,7 +111,10 @@ def check(result, root):
         raise ValueError('complete SHA audit union differs')
     if any(row.get('published_comparison', {}).get('complete') is not True for row in published):
         raise ValueError('fresh original generated-body comparison is missing')
-    return [result['views'][case]['actual'] for case in CASES]
+    actuals = [result['views'][case]['actual'] for case in CASES]
+    if require_blob_update or 'blob_update' in result:
+        actuals.append(check_blob_update(result.get('blob_update', {}), root))
+    return actuals
 
 
 def check_native(result, root, folder):

@@ -8,7 +8,7 @@
     "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
     "controller-core/Cargo.toml": "bfe39b44a5bbcd38f44ec479443a7456c2c7d2cdf85b8678259f343f25865656",
     "controller-core/src/capture.rs": "cfe090e04654b40de4b26ee751aa83e1333806b0eaf9e0f2df656f4874c4fe54",
-    "controller-core/src/capture/continuation.rs": "1712667f5e6aef2748a7635035bb655f9903046bf8ac785547b1ee123c4585b6",
+    "controller-core/src/capture/continuation.rs": "540ca8a735690eae6a4334baca947e22fd7c564b2b92b13c66d2096ff60d5833",
     "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
     "controller-core/src/lib.rs": "2a260eede2d65205ba650e745ec718450cd5f99b0a0a26e4d092206ea4f9950c",
     "controller-core/src/maintenance.rs": "3b4b60b60bce6a7203b6fcf5735ac58183841afe68811897a6201af131a17808",
@@ -24,7 +24,7 @@
     "controller-service/src/controller/checkpoint.rs": "f86709d33690765c3c283085387c146e69b515dcf02dd1206f9b09235640cede",
     "controller-service/src/controller/internal_inbox.rs": "8d5cd81b597add57f37cf129cca27c0c6ce2bbc29d2a9a1e9f405278d1a84a8e",
     "controller-service/src/controller/internal_inbox/model.rs": "4d6629825e1289b285851ae47eaf2b38172ffd59e66b20b1b9678fa8a1a1f649",
-    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/lifecycle_inbox.rs": "4d87f72906bb2ba5ec541b8969ecd90cf7caf74280dd42e5e6e6bbd0488888a8",
     "controller-service/src/controller/lifecycle_inbox/readiness.rs": "0f278a2c97a6a7c37a8d6c6e0fc4516a71775254845bcde5995a074d7f15ae6a",
     "controller-service/src/controller/lifecycle_inbox/source_work.rs": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a",
     "controller-service/src/controller/lifecycle_inbox/source_work/full.rs": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26",
@@ -33,9 +33,9 @@
     "controller-service/src/controller/lifecycle_inbox/source_work/restore.rs": "3bc21d0f6e354de0718a254ec0cf9dd73389d3afc7e906aeb1fb880d32f046be",
     "controller-service/src/controller/lifecycle_inbox/source_work/retirement.rs": "adae46047f72df39496e9d8e1f32619c7b74a85ae2b9a8a48a8407021457a3c3",
     "controller-service/src/controller/lifecycle_inbox/source_work/tests.rs": "77c06c23da0d136e07be206ea2df71a2182697490805a2b2b19cbef6cc28d0bb",
-    "controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement.rs": "82bc3ecec50fc8c2cd928d350bce1faade4101b2ed35ef538d722ebd098136d3",
+    "controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement.rs": "477516343515960273e5c6e56522a0231c5f0fb1bbaac13802c95ff5cb57bf5d",
     "controller-service/src/controller/mod.rs": "3108ade2ef3bc126f469094170db9d058f6a729fe4923c38cc7f414fa1f507ca",
-    "controller-service/src/host_contract.rs": "423dfff6ff8ab44056981898a5dcedd5f1e5dc069b011243f7f4ddc8648a3f0a",
+    "controller-service/src/host_contract.rs": "5b94f7e4b3e7e3bf140462e7f43462af7aec698e524a3c9e58eff13001bb2d5d",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",
     "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
@@ -55,9 +55,9 @@
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
     "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
-    "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
-    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
-    "tools/proof_batch.py": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869",
+    "verification/experiments/stage1-protocol/formal.py": "59878b437b00bf4e2e36c32b315482e87147cf4f9255bebffbcf4a726697cc6d",
+    "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",
+    "tools/proof_batch.py": "e8c5cab7e5c13ce7eef157ff23c37b761a90ad1f49a8bc43da2ea482cf36887c",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
     "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c"
@@ -148,24 +148,24 @@
   },
   "generated": {
     "correct": {
-      "Types.lean": "fb4ec57f9cba849b2a4e599dd84f2c3167082325caeced9f304336733665ca19",
-      "Funs.lean": "ac74175c54f584fe1a741e2ddd126e07d9cafb97eb7fbb89a17916853368d754"
+      "Types.lean": "c4e4f523f083f8e65bce96b20c4c2f051d2c9e9e223e3652b30ce5abdf5e1840",
+      "Funs.lean": "94b6259248ce49906b6cb2db4273e936805cb6cbe85e76eb4e1f1d46f10de262"
     },
     "drop-producer": {
-      "Types.lean": "79259665b521fafce700beb89a47d171dd67a65ccba3c5bf419d74de495dc730",
-      "Funs.lean": "93c868a18b81d31dab860d3f703892bb41b67c609e3969ed0a4c97cf08f8375f"
+      "Types.lean": "48e968b82354bd6a111aa85ed9557ca641df2199a61201fbcb41e6b5fcb375ea",
+      "Funs.lean": "770e629f5cd0a57533766e92b6dd1dae943f00e3de555832774b71761ba8a6c6"
     },
     "drop-consumer": {
-      "Types.lean": "79259665b521fafce700beb89a47d171dd67a65ccba3c5bf419d74de495dc730",
-      "Funs.lean": "2001cf02e422a2d2bdff312dd1da10fea990b4ff89d7ebbc0558cd3f3fcb22cc"
+      "Types.lean": "48e968b82354bd6a111aa85ed9557ca641df2199a61201fbcb41e6b5fcb375ea",
+      "Funs.lean": "33c441a9d07ce2a98b09237cade8438ef3d1194434607ce27f7f1b6dd37ebf6c"
     },
     "plan-binding-only": {
-      "Types.lean": "fb4ec57f9cba849b2a4e599dd84f2c3167082325caeced9f304336733665ca19",
-      "Funs.lean": "0739f9ef3afeafcc74bcf4826669c7afaa72e46d958d809b475ea0143ae2fcb8"
+      "Types.lean": "c4e4f523f083f8e65bce96b20c4c2f051d2c9e9e223e3652b30ce5abdf5e1840",
+      "Funs.lean": "677d7762933486bc6293d384fa0f81e50b4d9b5cd3c29ee07065c564809dfb3b"
     },
     "forget-settled": {
-      "Types.lean": "fb4ec57f9cba849b2a4e599dd84f2c3167082325caeced9f304336733665ca19",
-      "Funs.lean": "9a9f463e4c84623ec745981d66d6599ccab7c1aec9aacd801a3b70cfbc85ccee"
+      "Types.lean": "c4e4f523f083f8e65bce96b20c4c2f051d2c9e9e223e3652b30ce5abdf5e1840",
+      "Funs.lean": "fb9ef99bb7d93c79ddde3c167421bded6b2d0d6e43ae2f8cee170ea04c4e57e9"
     }
   },
   "files": {
@@ -425,5 +425,144 @@
         "current": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26"
       }
     }
+  },
+  "current_source_recapture": {
+    "candidate": "13cdef0530f00483fff329b14e0312cd3c94d0e3",
+    "source_review_sha256": "e5b7d52d00d756616fbf734d7823c760baef3ed521ae5922451766629844e0e4",
+    "readback_sha256": "f20257bc73d0b32be19d1b705768883f5201a928683c0d6d40a0c405dc85fb4c",
+    "actual_capture_index_sha256": "e4d1887d7eba6e30be97e7352c00da3364fd3a855bf771185eda31bf2731a73b",
+    "views": {
+      "correct": {
+        "llbc_sha256": "da33a3d147d840c1033489a36e57dd3f01ce8373e87c01e71619fc5a01e26727",
+        "compressed_sha256": "ab5e4f479a8c01a33b3ff46c8242a85657c41d130286b321826548355684d671",
+        "generated": {
+          "Types.lean": {
+            "old": "fb4ec57f9cba849b2a4e599dd84f2c3167082325caeced9f304336733665ca19",
+            "current": "c4e4f523f083f8e65bce96b20c4c2f051d2c9e9e223e3652b30ce5abdf5e1840",
+            "location_only": true
+          },
+          "Funs.lean": {
+            "old": "ac74175c54f584fe1a741e2ddd126e07d9cafb97eb7fbb89a17916853368d754",
+            "current": "94b6259248ce49906b6cb2db4273e936805cb6cbe85e76eb4e1f1d46f10de262",
+            "location_only": true
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "1e7af2ed3dffaf7faacf3733652c8b7d38c2793f4c594b07456a91c89cf656d5"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "84d8532740dde344c384aff2e4816ccfe66c3af44c47892e377bef9bea8cc9d3"
+          }
+        }
+      },
+      "drop-producer": {
+        "llbc_sha256": "d3186d1145829ea938051fe1e27d3738addc341965d238070c180209c637c635",
+        "compressed_sha256": "e1c6bdac409b0e32d53085541463c3ce4f44f10a2159449d500d3a09789b1128",
+        "generated": {
+          "Types.lean": {
+            "old": "79259665b521fafce700beb89a47d171dd67a65ccba3c5bf419d74de495dc730",
+            "current": "48e968b82354bd6a111aa85ed9557ca641df2199a61201fbcb41e6b5fcb375ea",
+            "location_only": true
+          },
+          "Funs.lean": {
+            "old": "93c868a18b81d31dab860d3f703892bb41b67c609e3969ed0a4c97cf08f8375f",
+            "current": "770e629f5cd0a57533766e92b6dd1dae943f00e3de555832774b71761ba8a6c6",
+            "location_only": true
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "e985f9129db394508235011cbae66afac7b40a5e6a722a637e318f04c53cc77d"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "36d28092ba73429f0b6b04aa9e089dc64fdbbfdd623679b47f8b9ee3df6b0427"
+          }
+        }
+      },
+      "drop-consumer": {
+        "llbc_sha256": "d011c0d1665412d5834a3cd019957a219774a8e2d798ed5c0ac94bae10661edb",
+        "compressed_sha256": "66bdca196fd260554c8744e3a2f13d2ffc914c0c9e231a57de0f4008bae67e60",
+        "generated": {
+          "Types.lean": {
+            "old": "79259665b521fafce700beb89a47d171dd67a65ccba3c5bf419d74de495dc730",
+            "current": "48e968b82354bd6a111aa85ed9557ca641df2199a61201fbcb41e6b5fcb375ea",
+            "location_only": true
+          },
+          "Funs.lean": {
+            "old": "2001cf02e422a2d2bdff312dd1da10fea990b4ff89d7ebbc0558cd3f3fcb22cc",
+            "current": "33c441a9d07ce2a98b09237cade8438ef3d1194434607ce27f7f1b6dd37ebf6c",
+            "location_only": true
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "a8d375e524ed2a74242f4e0e208b0f011124c000bb1500384df0a04f359adaf3"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "8ee5d9629cf44e1b29c2eb56170e693c18c7901be2353deaa4ddf7b9456bc432"
+          }
+        }
+      },
+      "plan-binding-only": {
+        "llbc_sha256": "d8f169bfbf1cd37105907994d33003f48444bdbb2ef00ed5ea8543d2baca3647",
+        "compressed_sha256": "3cc16eeaea9fde0ac81535ee3e8ae120c96ba2bcc5a900f5501379c4211d4f2d",
+        "generated": {
+          "Types.lean": {
+            "old": "fb4ec57f9cba849b2a4e599dd84f2c3167082325caeced9f304336733665ca19",
+            "current": "c4e4f523f083f8e65bce96b20c4c2f051d2c9e9e223e3652b30ce5abdf5e1840",
+            "location_only": true
+          },
+          "Funs.lean": {
+            "old": "0739f9ef3afeafcc74bcf4826669c7afaa72e46d958d809b475ea0143ae2fcb8",
+            "current": "677d7762933486bc6293d384fa0f81e50b4d9b5cd3c29ee07065c564809dfb3b",
+            "location_only": true
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "40861d5868595f8cbde71870982f71c14cddedace466327557a2ed2a70aa366c"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "ea2a9831067732a74d6dbed1bb90347737a8eeb6e394b2df1d34f3c6e7dae9d8"
+          }
+        }
+      },
+      "forget-settled": {
+        "llbc_sha256": "f9e0f0b95813e0eaae857f10767e43bc02b6c265f427ba6e1d5d19b1fea32ee7",
+        "compressed_sha256": "c3e5466ed980b68ef9b548749df1f727c0d341d5210edadedfba85e8c0dd3442",
+        "generated": {
+          "Types.lean": {
+            "old": "fb4ec57f9cba849b2a4e599dd84f2c3167082325caeced9f304336733665ca19",
+            "current": "c4e4f523f083f8e65bce96b20c4c2f051d2c9e9e223e3652b30ce5abdf5e1840",
+            "location_only": true
+          },
+          "Funs.lean": {
+            "old": "9a9f463e4c84623ec745981d66d6599ccab7c1aec9aacd801a3b70cfbc85ccee",
+            "current": "fb9ef99bb7d93c79ddde3c167421bded6b2d0d6e43ae2f8cee170ea04c4e57e9",
+            "location_only": true
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "a07d79355450956c167b7a3c6297f01853c93ddf19ec8d57e03f1585c14b04b6"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "6515f3c69d29496fa02ed23bfb02fc7af166116793a6858723d3ec95f535e091"
+          }
+        }
+      }
+    },
+    "acceptance_pending": true
   }
 }

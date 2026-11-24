@@ -10,3 +10,7 @@
 在 ning 的原 native 环境中，使用 `bash scripts/python-entry.sh tools/proof_native_suite.py run --scope stage1-v3-transaction-source --output <new-native-evidence>`。该固定范围包含完整普通功能检查、实际事务断言和实际来源行断言。按原证明机入口传入同一提交的 native seal 后，在 MSRA 运行 `bash scripts/verify-v3-transaction-source.sh <new-formal-evidence>`。普通测试和形式化检查分别在相应机器执行。原始 proof 运行和当前公共验收的执行身份分别保留。
 
 依赖接口的完整条件见 [V3 事务录入与来源行的边界](../../../../docs/formal/v3-transaction-source-boundaries.md)。
+
+### 当前 Rust 与原抽取的对应
+
+`rust-source-binding.json` 保留原始输入，`current_file_overrides` 登记当前调用方验收使用的精确文件版本。`c265145f5614535c068c464bc37b6162edcdc45c` 将 `host_contract.rs` 中 `CreateOptions::validate` 的字段检查和序列化提取成独立函数。当前录入调用方的抽取在固定工具链下分别使用当前文件和原冻结文件比对，两份 `Types.lean` 和 `Funs.lean` 均与已登记的生成文件逐字节相同。请求证明的传递输入仍使用 `CreateOptions::MAX_ENCODED_BYTES`，其值保持 64 KiB，供 `CapacityConfig::validate` 计算最大输入容量。字段检查和序列化没有进入本次录入调用方抽取。验收仍须重抽真实调用方，并检查完整生成文件、证明闭包和原审计。

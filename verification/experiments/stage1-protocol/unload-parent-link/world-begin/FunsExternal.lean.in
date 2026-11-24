@@ -1,0 +1,71 @@
+import SandproofUnloadWorldBegin.Types
+
+open Aeneas Aeneas.Std
+
+namespace SandproofUnloadWorldBegin
+
+open SandboxModel.Stage1Protocol.UnloadStartedTransaction
+
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  SandproofStage1RequestRust.toStr text bounded
+
+def committedView (committed : controller.transaction.CommittedWorld) : Committed :=
+  ⟨committed.value, committed.data_version⟩
+
+def startedView (calls : BeginCalls) (owner : StartedOwner) : controller.transaction.WorldTransaction :=
+  { transaction := owner.transaction.map (fun tx => ⟨tx, calls⟩)
+    committed := ⟨owner.committed.value, owner.committed.data_version⟩
+    candidate := owner.candidate
+    input_start := owner.input_start }
+
+def originalOwner (owner : controller.transaction.WorldTransaction) : StartedOwner :=
+  { transaction := owner.transaction.map (·.base)
+    committed := committedView owner.committed
+    candidate := owner.candidate
+    input_start := owner.input_start }
+
+def rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref
+    (tx : rusqlite.transaction.Transaction) : Result rusqlite.Connection :=
+  .ok ⟨tx.base.conn, tx.calls⟩
+
+def rusqlite.transaction.Connection.transaction_with_behavior (connection : rusqlite.Connection)
+    (behavior : rusqlite.transaction.TransactionBehavior) :
+    Result (core.result.Result rusqlite.transaction.Transaction rusqlite.error.Error × rusqlite.Connection) := do
+  let statement := match behavior with
+    | .Deferred => "BEGIN DEFERRED"
+    | .Immediate => "BEGIN IMMEDIATE"
+    | .Exclusive => "BEGIN EXCLUSIVE"
+  let (reply, after) ← connection.calls.beginSqlite connection.base statement
+  let translated := match reply with
+    | .Ok tx => core.result.Result.Ok (⟨tx, connection.calls⟩ : rusqlite.transaction.Transaction)
+    | .Err error => .Err error
+  .ok (translated, ⟨after, connection.calls⟩)
+
+def controller.allocators.read (connection : rusqlite.Connection) (kind scope : Str) :
+    Result (core.result.Result U64 JournalError) :=
+  connection.calls.readAllocator connection.base kind scope
+
+def controller.checkpoint.prepare_write (connection : rusqlite.Connection) (world : World)
+    (committed : controller.transaction.CommittedWorld) :
+    Result (core.result.Result Unit JournalError × rusqlite.Connection) := do
+  let (reply, after) ← connection.calls.prepareWrite connection.base world (committedView committed)
+  .ok (reply, ⟨after, connection.calls⟩)
+
+def controller.transaction.CommittedWorld.world
+    (committed : controller.transaction.CommittedWorld) (connection : rusqlite.Connection) :
+    Result (core.result.Result World JournalError) :=
+  connection.calls.world (committedView committed) connection.base
+
+abbrev JournalError.Insts.CoreConvertFromError.from := SandproofStage1RequestRust.JournalErrorFromSqlite.from
+
+/-- Keep the original generated constructor and version check from #770. -/
+def controller.transaction.WorldTransaction.from_started_transaction
+    (tx : rusqlite.transaction.Transaction) (committed : controller.transaction.CommittedWorld)
+    (start : U64) (world : World) : Result (core.result.Result controller.transaction.WorldTransaction JournalError) := do
+  let reply ← makeOwner tx.base (committedView committed) start world
+  match reply with
+  | .Ok owner => .ok (.Ok (startedView tx.calls owner))
+  | .Err error => .ok (.Err error)
+
+end SandproofUnloadWorldBegin

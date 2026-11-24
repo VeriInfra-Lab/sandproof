@@ -24,6 +24,14 @@ FAILURES = mutation_module.FAILURES
 VARIANTS = ('original', 'candidate', *FAILURES, 'restored')
 
 
+def append_roots(project):
+    views.append(project, SOURCE, (project/HERE/'generic-root.rs.in').read_text())
+    views.append(project, 'controller-service/src/capture.rs', (project/HERE/'primitive-roots.rs.in').read_text())
+    views.append(project, SHIM, (project/HERE.parent/'terminal-binding/roots.rs.in').read_text())
+    renewal = json.loads((project/HERE.parent/'inbox-renewal-session/fragments.json').read_text())
+    views.append(project, SHIM, renewal['renewal_roots'])
+
+
 def prepare(project, variant):
     if variant not in VARIANTS:
         raise ValueError('unknown actual source variant: ' + variant)
@@ -32,9 +40,5 @@ def prepare(project, variant):
     if variant not in ('original', 'restored'):
         if variant in FAILURES:
             mutation = mutation_module.mutate(project, variant)
-        views.append(project, SOURCE, (project/HERE/'generic-root.rs.in').read_text())
-        views.append(project, 'controller-service/src/capture.rs', (project/HERE/'primitive-roots.rs.in').read_text())
-        views.append(project, SHIM, (project/HERE.parent/'terminal-binding/roots.rs.in').read_text())
-        renewal = json.loads((project/HERE.parent/'inbox-renewal-session/fragments.json').read_text())
-        views.append(project, SHIM, renewal['renewal_roots'])
+        append_roots(project)
     return views.finish(project, before, mutation)
