@@ -269,6 +269,43 @@ class NativeScopeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '81 complete components'):
             receipts.validate_native(self.cache, scope='stage1-protocol')
 
+    def test_registered_native_admission_rechecks_local_files_without_rescanning_packet(self):
+        scope = 'stage1-protocol'
+        seal = self.packet()
+        os.environ['SANDPROOF_ACCEPTANCE_ROLE'] = 'formal'
+        label = self.labels[2]
+        key = receipts.native_key(label, ['component-case'], self.source)
+        entry = self.cache/'commands'/receipts.digest(key)
+        original = entry/'evidence/fixture.log'
+        data = original.read_bytes()
+        marker = self.cache/'complete.json'
+        marker_bytes = marker.read_bytes()
+        with mock.patch.object(receipts, 'load_success', wraps=receipts.load_success) as reads:
+            with receipts.registered_native_admission(self.cache, scope=scope):
+                self.assertEqual(reads.call_count, len(seal['commands']))
+                reads.reset_mock()
+                self.assertTrue(receipts.validate_native(self.cache, scope=scope)['complete'])
+                self.assertEqual(receipts.native_case(label, self.source, None, scope=scope)['key'], key)
+                self.assertEqual([call.args[0] for call in reads.call_args_list], [entry])
+                with self.assertRaisesRegex(ValueError, 'outside requested native scope'):
+                    receipts.native_case(label, self.source, None, scope='capture-caller')
+                for updated in (None, b'changed native file'):
+                    if updated is None:
+                        original.unlink()
+                    else:
+                        original.write_bytes(updated)
+                    with self.subTest(updated=updated), self.assertRaisesRegex(ValueError, 'changed native component'):
+                        receipts.native_case(label, self.source, None, scope=scope)
+                    original.write_bytes(data)
+                marker.write_bytes(marker_bytes+b'\n')
+                with self.assertRaisesRegex(ValueError, 'seal or runtime changed'):
+                    receipts.validate_native(self.cache, scope=scope)
+                marker.write_bytes(marker_bytes)
+        original.unlink()
+        with self.assertRaisesRegex(ValueError, 'missing or corrupt native command evidence'):
+            with receipts.registered_native_admission(self.cache, scope=scope):
+                self.fail('incomplete full packet entered formal admission')
+
     def test_additional_component_in_limited_packet_is_rejected(self):
         self.packet(extra=True)
         with self.assertRaisesRegex(ValueError, '81 complete components'):

@@ -94,6 +94,10 @@ with open(sys.argv[2], 'x') as stream:
                    actual=actual, parent_allowed=before, pid=os.getpid()), stream)
 os.execv(sys.argv[3], sys.argv[3:])
 """
+NATIVE_ADMISSION_BOOTSTRAP = """import sys
+from tools.acceptance_receipts import _run_registered_native_child
+_run_registered_native_child(int(sys.argv[1]), sys.argv[2:])
+"""
 CREATE_SOURCE_MEMBERS = tuple('aeneas/backends/lean/Aeneas/'+name for name in (
     'Std/Scalar/CoreConvertNum.lean', 'Std/Scalar/Ops/Mul.lean', 'Std/Scalar/Ops/Add.lean',
     'Std/Scalar/Core.lean', 'Std/Core/Result.lean', 'Data/Discriminant.lean'))
@@ -418,9 +422,12 @@ def _sha(path):
 
 
 def _invoke(root, driver, args, env=None, *, log=None, pass_fds=(), cpu_affinity=None, cpu_admission=None,
-            cpu_width=CREATE_CPUS_PER_JOB):
+            cpu_width=CREATE_CPUS_PER_JOB, native_admission_fd=None):
     # Inherit stdout: only the original actual_files checker emits Checked lines.
     argv = [sys.executable, str(root/driver), *map(str, args)]
+    if native_admission_fd is not None:
+        argv = [sys.executable, '-c', NATIVE_ADMISSION_BOOTSTRAP, str(native_admission_fd), *argv[1:]]
+        pass_fds = (*pass_fds, native_admission_fd)
     if cpu_affinity is not None:
         if (cpu_width not in (1, CREATE_CPUS_PER_JOB) or len(cpu_affinity) != cpu_width
                 or len(set(cpu_affinity)) != cpu_width
@@ -1804,7 +1811,7 @@ def _reuse_job(helper, job, context, previous):
 
 
 def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=None,
-                original_readback=False, *, budgeted=False):
+                original_readback=False, *, budgeted=False, native_admission_fd=None):
     started = time.monotonic()
     directory.mkdir(mode=0o700, parents=True)
     for name in ('runtime-cache', 'cargo-target'):
@@ -1847,6 +1854,8 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
     env = dict(os.environ, SANDPROOF_FORMAL_CACHE=str(directory/'runtime-cache'),
                CARGO_TARGET_DIR=str(directory/'cargo-target'), PYTHONDONTWRITEBYTECODE='1')
     transport = dict(pass_fds=pass_fds) if pass_fds else {}
+    if native_admission_fd is not None:
+        transport['native_admission_fd'] = native_admission_fd
     if budgeted or requires_formal_cpu_slot(job):
         transport.update(cpu_affinity=cpu_affinity, cpu_admission=directory/'cpu-admission.json')
         if budgeted:
@@ -1905,7 +1914,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
             progress([results[job['name']] for job in plan if job['name'] in results], dict(failures), dict(misses))
     publish()
     stopped = False
-    with ThreadPoolExecutor(max_workers=jobs) as executor:
+    with shared.registered_native_child_descriptor() as native_fd, ThreadPoolExecutor(max_workers=jobs) as executor:
         inflight = {}
         free_slots = allowed.copy()
         while pending or inflight:
@@ -1922,6 +1931,8 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
                     options.update(cpu_affinity=placement, budgeted=True)
                 elif requires_formal_cpu_slot(job):
                     options['cpu_affinity'] = slots[placement[0]]
+                if native_fd is not None:
+                    options['native_admission_fd'] = native_fd
                 if profile_is_convergence_job(job):
                     options['original_readback'] = not recompute
                 future = executor.submit(_launch_job, root, job, output/'execution'/job['name'], paths,
@@ -2024,7 +2035,13 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
     shared = _shared()
     cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
     scope = native_scope(profile)
-    shared.validate_native(cache, scope=scope)
+    with shared.registered_native_admission(cache, scope=scope) as seal_sha256:
+        return _run_admitted_formal(output, retained_result, root, options, profile, cache, scope, seal_sha256)
+
+
+def _run_admitted_formal(output, retained_result, root, options, profile, cache, scope, seal_sha256):
+    shared = _shared()
+    jobs, resume_from = options['workers'], options['resume_from']
     # Validate the exact current source/rules/runtime of every prerequisite.
     labels = ('functional', *(('stage1-protocol',) if profile == 'full' else ()), *native_labels(profile))
     receipts = {name: shared.native_case(name, root, None, scope=scope) for name in labels}
@@ -2049,7 +2066,7 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
     record = dict(kind='registered-stage1-formal-drivers', complete=False, results=[], covered=[],
                   profile=profile, create_definition=create_profile(root),
                   whole_V3_acceptance=False,
-                  shared_seal_sha256=_sha(cache/'complete.json'),
+                  shared_seal_sha256=seal_sha256,
                   source_snapshot_sha256=shared.digest(source_before),
                   native_receipts={name: dict(path=str(paths[name].parent/'receipt.json'),
                       sha256=_sha(paths[name].parent/'receipt.json')) for name in receipts},
@@ -2140,6 +2157,7 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
             record['retained_inventory_sha256'] = _sha(root/HERE/'retained-protocol.json')
         elif expected_audits != observed_audits:
             raise ValueError('unexpected fixed-profile audit declarations')
+        shared._validate_native_full(cache, scope=scope)
         shared.validate_native(cache, scope=scope)
         check_create_sources(root)
         source_guard()

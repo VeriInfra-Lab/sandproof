@@ -23,6 +23,7 @@ MIN_AVAILABLE_MEMORY = 176 * GIB
 MEMORY_LIMIT = 160 * GIB
 CPU_LIMIT = 64
 SAMPLE_INTERVAL = 60
+SERDE_RUST_SOURCE_PIN = Path("verification/experiments/stage1-protocol/serde-binding/candidate.json")
 ARCHIVE_SHA256 = {
     "SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE":
         "c872dffa1831db48d38e7b90649e65ee5e354ef69b73971061c8642a0b6e57c9",
@@ -43,6 +44,31 @@ def cpuset(value):
         first, separator, last = field.partition("-")
         cpus.update(range(int(first), int(last) + 1) if separator else (int(first),))
     return sorted(cpus)
+
+
+def pinned_rust_sources(root, rustup_home, target):
+    """Check the exact rust-src bytes used by the existing serde binding."""
+    pinned = json.loads((root / SERDE_RUST_SOURCE_PIN).read_text())["library_inputs"]["standard_library"]
+    if set(pinned) != {"1.97.0", "nightly-2026-02-07"}:
+        raise ValueError("unexpected Rust source toolchains in the serde binding")
+    checked = {}
+    for channel, sources in pinned.items():
+        if set(sources) != {"std/src/io/mod.rs", "std/src/io/impls.rs", "core/src/convert/mod.rs",
+                             "core/src/result.rs"}:
+            raise ValueError(f"unexpected rust-src inputs in the serde binding: {channel}")
+        sysroot = rustup_home / "toolchains" / f"{channel}-{target}"
+        rustc = sysroot / "bin/rustc"
+        if not rustc.is_file() or not os.access(rustc, os.X_OK):
+            raise ValueError(f"fixed Rust toolchain is missing locally: {channel}")
+        library = sysroot / "lib/rustlib/src/rust/library"
+        for relative, expected in sources.items():
+            path = library / relative
+            if path.is_symlink() or not path.is_file():
+                raise ValueError(f"fixed rust-src is missing locally: {channel}/{relative}")
+            if acceptance_receipts.sha(path) != expected:
+                raise ValueError(f"fixed rust-src differs from the serde binding: {channel}/{relative}")
+        checked[channel] = dict(sysroot=str(sysroot.resolve()), sources=sources)
+    return checked
 
 
 def admit(commit, xfs, mode):
@@ -75,17 +101,26 @@ def admit(commit, xfs, mode):
         raise ValueError("native Redis differs from the pinned local build")
     if acceptance_receipts.source_archive_inputs() != ARCHIVE_SHA256:
         raise ValueError("the five registered native source archives are required")
-    if native:
-        subprocess.run(["cargo", "metadata", "--offline", "--locked", "--format-version", "1"],
-                       stdout=subprocess.DEVNULL, check=True)
-    proof_native_suite.stage1_source_admission("stage1-protocol")
-    compiler = subprocess.check_output(["rustc", "-vV"], text=True).splitlines()[0]
     frozen = json.loads((root / "verification/first-chain-linux-environment.json").read_text())
+    rust_env = dict(os.environ, RUSTUP_AUTO_INSTALL="0")
+    rust_sources = {}
+    if mode != "native":
+        rust_sources = pinned_rust_sources(root, Path(os.environ["RUSTUP_HOME"]), frozen["target"])
+        for channel, local in rust_sources.items():
+            found = subprocess.check_output(["rustc", f"+{channel}", "--print", "sysroot"], text=True, env=rust_env)
+            if Path(found.strip()).resolve() != Path(local["sysroot"]):
+                raise ValueError(f"Rust proxy resolves a different local toolchain: {channel}")
+    compiler = subprocess.check_output(["rustc", "-vV"], text=True, env=rust_env).splitlines()[0]
     if compiler != frozen["production_compiler"]:
         raise ValueError("native compiler differs from the frozen production compiler")
+    if native:
+        subprocess.run(["cargo", "metadata", "--offline", "--locked", "--format-version", "1"],
+                       stdout=subprocess.DEVNULL, check=True, env=rust_env)
+    proof_native_suite.stage1_source_admission("stage1-protocol")
     return dict(commit=commit, mode=mode, cpu_affinity=cpus, workers=workers, light_jobs=light_jobs,
                 data_disk_free_bytes=shutil.disk_usage(root).free, xfs_free_bytes=shutil.disk_usage(xfs).free,
-                redis=material, source_archives=ARCHIVE_SHA256, rustc=compiler, python=sys.version)
+                redis=material, source_archives=ARCHIVE_SHA256, rustc=compiler, rust_sources=rust_sources,
+                python=sys.version)
 
 
 def cgroup(mode):
@@ -191,7 +226,8 @@ def execute(mode, commit, xfs, run, lock):
             return 75
         fd = str(guard.fileno())
         env = dict(os.environ, SANDPROOF_LOCK_FILE=str(lock), SANDPROOF_LOCK_FD=fd,
-                   SANDPROOF_PROOF_HEAVY_LOCK=str(lock), SANDPROOF_PROOF_HEAVY_LOCK_FD=fd)
+                   SANDPROOF_PROOF_HEAVY_LOCK=str(lock), SANDPROOF_PROOF_HEAVY_LOCK_FD=fd,
+                   RUSTUP_AUTO_INSTALL="0")
         started = time.monotonic()
         history = []
         log_errors = []
