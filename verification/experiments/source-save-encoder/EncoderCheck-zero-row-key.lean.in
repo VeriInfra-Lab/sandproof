@@ -1,0 +1,15 @@
+import EncoderWitnessRun
+
+open Aeneas Aeneas.Std SandproofSaveRetentionRows
+set_option autoImplicit false
+
+namespace SandboxModel.Stage1Protocol.SaveEncoder.Witness
+
+theorem actual_encoder_rejects_same_contract :
+    ∃ keys result, encodeCandidate ports sources = .ok (.Ok (keys, result)) ∧
+      ¬ CompleteEncoding ports has sources keys result :=
+  ⟨_, _, actual_encoder_returns_example, wrong_key_breaks_complete⟩
+
+end SandboxModel.Stage1Protocol.SaveEncoder.Witness
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SaveEncoder.Witness.actual_encoder_rejects_same_contract

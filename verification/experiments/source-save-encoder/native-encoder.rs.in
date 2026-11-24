@@ -1,0 +1,24 @@
+#[test]
+fn proof_source_save_stores_the_exact_key_and_json_from_one_record() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&dir.path().join("db"));
+    let record = prepare(&mut journal);
+    let key = record.work.requirement.work_binding.as_bytes();
+    assert_ne!(*key, [0_u8; 32], "fixture requires a nonzero complete key");
+    let json = serde_json::to_vec(&record).unwrap();
+    let saved: (Vec<u8>, Vec<u8>) = journal
+        .journal
+        .connection
+        .query_row(
+            "SELECT work_key,state_json FROM controller_source_work_records WHERE work_key IS NOT NULL AND state_json=?1",
+            [json.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(saved.1, json, "the selected row must retain the exact JSON");
+    assert_eq!(
+        saved.0.as_slice(),
+        key,
+        "the encoded SQL row must keep its complete key"
+    );
+}
