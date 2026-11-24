@@ -28,6 +28,7 @@
     "sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord}::releasing",
     "sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord}::terminate_local",
     "sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord}::current_operation",
+    "sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordTransaction for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord}::check_before_commit",
     "sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordTransaction for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord}::commit",
     "sandbox_controller_core::maintenance::slots::HostBinding"
   ],
@@ -36,6 +37,8 @@
     "sandbox_controller_core",
     "sandproof_protocol",
     "sandproof_controller_service::controller::lifecycle_inbox::recording::record_using",
+    "sandproof_controller_service::controller::lifecycle_inbox::recording::unload_branch_scope",
+    "sandproof_controller_service::controller::branching::check_parent_unload",
     "sandproof_controller_service::controller::transaction::{sandproof_controller_service::controller::transaction::WorldTransaction}::commit",
     "sandproof_controller_service::controller::transaction::{sandproof_controller_service::controller::transaction::WorldTransaction}::world",
     "sandproof_controller_service::controller::transaction::{impl core::ops::drop::Drop for sandproof_controller_service::controller::transaction::WorldTransaction}::drop",
@@ -68,13 +71,34 @@
     "serde_json"
   ],
   "exclude": [],
+  "unload_branch_scope": {
+    "roots": [
+      "sandproof_controller_service::controller::lifecycle_inbox::recording::unload_branch_scope"
+    ],
+    "include": [
+      "sandproof_controller_service::controller::lifecycle_inbox::recording::unload_branch_scope",
+      "sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent",
+      "sandproof_protocol::lifecycle::request::LifecycleRequest",
+      "sandproof_protocol::lifecycle::request::LifecycleOperation"
+    ],
+    "opaque": [
+      "sandproof_controller_service",
+      "sandproof_protocol"
+    ],
+    "exclude": [],
+    "generated_files": {
+      "Funs.lean": "50bb2da0492f0448a84deefd73a62de191a1576c002510e9d08f71beb99dd250",
+      "Types.lean": "052092f0b0cfb7c676106879ab89d09ec9a7b5fa4187e755d11574ca61fc54c9"
+    }
+  },
   "source_inputs": {
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
     "rust-toolchain.toml": "174a086284d57e79557b62bc627e96257893375dfd37239e3c3e830ce2629b95",
     "controller-service/Cargo.toml": "f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
-    "controller-service/src/controller/lifecycle_inbox/recording.rs": "528c763e1ea71d26e84e45ad9f0cb149f252cfa19b6c8b98cdc876783500a5f0",
+    "controller-service/src/controller/lifecycle_inbox/recording.rs": "dc28175e1f72b6d482b75452d2903b949f3d97dfc0546f77ecc414dd273cedfa",
+    "controller-service/src/controller/branching.rs": "74df2ce73bc26fe6484788fecc3b309d69e45df64d550a56ca2b40cf8a681ac3",
     "controller-service/src/controller/lifecycle_inbox/codec.rs": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
     "controller-service/src/controller/internal_inbox/admission.rs": "58647835030f202abb57816d87bf486b8eb424015f493c17cec623a743c2db33",
     "controller-service/src/controller/transaction.rs": "100391ccee63bd0e481ac7828971c2ac8eb97e781330fc6eb92a399c9d5f6bde",
@@ -89,6 +113,7 @@
   "selected_transparent": [
     "sandproof_controller_service::controller::lifecycle_inbox::recording::proof_record_actual_parent",
     "sandproof_controller_service::controller::lifecycle_inbox::recording::record_transaction_using",
+    "sandproof_controller_service::controller::lifecycle_inbox::recording::check_before_commit",
     "sandproof_controller_service::controller::lifecycle_inbox::recording::releasing",
     "sandproof_controller_service::controller::lifecycle_inbox::recording::terminate_local",
     "sandproof_controller_service::controller::lifecycle_inbox::recording::current_operation",

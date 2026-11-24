@@ -45,6 +45,16 @@ abbrev sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext :=
   SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
 abbrev sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent :=
   SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+abbrev sandproof_protocol.lifecycle.identity.IncarnationId :=
+  SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId
+abbrev sandproof_protocol.lifecycle.identity.OperationBinding :=
+  SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.OperationBinding
+abbrev sandproof_protocol.lifecycle.request.LifecycleOperation :=
+  SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleOperation
+namespace sandproof_protocol.lifecycle.request.LifecycleOperation
+export SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleOperation
+  (Create Unload Resume Renew Destroy)
+end sandproof_protocol.lifecycle.request.LifecycleOperation
 abbrev sandproof_protocol.lifecycle.digest.ContentDigest :=
   SandproofStage1RequestRust.sandproof_protocol.lifecycle.digest.ContentDigest
 abbrev sandproof_protocol.lifecycle.renewal.RenewalConfirmation :=
@@ -65,9 +75,15 @@ abbrev SourceLocal := SandproofStage1RequestRust.sandproof_controller_service.co
 abbrev TerminateObservation :=
   ParentOwner → Str → SourceLocal → Result (core.result.Result Unit JournalError)
 
+abbrev UnloadGateObservation :=
+  ParentOwner → sandproof_protocol.lifecycle.identity.OperationBinding →
+    sandproof_protocol.lifecycle.identity.IncarnationId →
+    Result (core.result.Result Unit JournalError)
+
 structure CallerOwnerView where
   parent : ParentOwner
   terminate : TerminateObservation
+  checkParentUnload : UnloadGateObservation
 
 abbrev controller.transaction.WorldTransaction := CallerOwnerView
 abbrev controller.lifecycle_inbox.model.Inbox :=

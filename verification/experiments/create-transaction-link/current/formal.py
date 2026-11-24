@@ -22,6 +22,7 @@ from tools.acceptance_receipts import native_case, sha, validate_native, write_j
 SCOPE = 'stage1-v3-transaction-source'
 LABEL = 'stage1-create-transaction-link'
 CALLER = Path('verification/aeneas/actual-record/SandproofActualRecord')
+UNLOAD_SCOPE = 'controller.lifecycle_inbox.recording.unload_branch_scope'
 
 
 def load(name, path):
@@ -34,6 +35,13 @@ def load(name, path):
 def require(condition, message):
     if not condition:
         raise ValueError(message)
+
+
+def unload_scope_definition(path):
+    pattern = r'^def ' + re.escape(UNLOAD_SCOPE) + r'\b.*?(?=\n\n|\Z)'
+    definitions = re.findall(pattern, path.read_text(), re.M | re.S)
+    require(len(definitions) == 1, 'expected one original Unload scope definition')
+    return ' '.join(definitions[0].split())
 
 
 def run(output, lock, lock_fd, scope=SCOPE):
@@ -54,8 +62,10 @@ def run(output, lock, lock_fd, scope=SCOPE):
     data = json.loads((HERE/'materialization.json').read_text())
     binding = json.loads((HERE/'rust-source-binding.json').read_text())
     overrides = binding['current_file_overrides']
+    added = binding['additional_current_files']
     require(overrides.keys() <= binding['files'].keys(), 'current binding must retain the original inputs')
-    bound_files = binding['files'] | overrides
+    require(added.keys().isdisjoint(binding['files']), 'additional bindings must name new dependencies')
+    bound_files = binding['files'] | overrides | added
     profile = json.loads((HERE/'caller-profile.json').read_text())
     archive = load('transaction_formal_archive', STAGE1/'archive.py')
     registry = load('transaction_formal_registered', STAGE1/'registered.py')
@@ -82,6 +92,30 @@ def run(output, lock, lock_fd, scope=SCOPE):
             exit_code=child.returncode, log=str(log), log_sha256=sha(log)))
         require(child.returncode == 0, 'first actual tool failure: '+label)
 
+    def extract(name, capture_profile, subdir):
+        prefix = name+'-' if name else ''
+        raw = artifacts/((name or 'actual-record')+'.llbc')
+        argv = [charon, 'cargo', '--preset=aeneas', '--error-on-warnings', '--sysroot', 'default']
+        for flag, key in (('--include', 'include'), ('--opaque', 'opaque'),
+                          ('--exclude', 'exclude'), ('--start-from', 'roots')):
+            for value in capture_profile[key]:
+                argv += [flag, value]
+        command(prefix+'charon', [*argv, '--dest-file', raw, '--', '--manifest-path',
+            'controller-service/Cargo.toml', '--lib', '--locked', '--offline', '--target', fixed['target']])
+        require(raw.stat().st_size <= 64*2**20, 'original capture size guard')
+        ir = json.loads(raw.read_text())
+        options = ir['translated']['options']
+        require(not ir['has_errors'] and options['start_from'] == capture_profile['roots']
+                and all(options[key] == capture_profile[key] for key in ('include','opaque','exclude'))
+                and not any(options[key] for key in ('skip_borrowck','no_typecheck','monomorphize')),
+                'actual scope, typing or borrow mode changed')
+        generated = artifacts/(prefix+'generated')
+        generated.mkdir()
+        command(prefix+'aeneas', [aeneas, '-backend', 'lean', '-abort-on-error', '-warnings-as-errors',
+            '-split-files', '-emit-json', '-namespace', 'SandproofActualRecordRust',
+            '-subdir', subdir, '-dest', generated, raw])
+        return raw, generated/subdir
+
     try:
         lock_stream = lock.open('r+') if lock_fd is None else os.fdopen(os.dup(lock_fd), 'r+')
         with lock_stream:
@@ -94,6 +128,8 @@ def run(output, lock, lock_fd, scope=SCOPE):
                     'formal source archive identity differs')
             for name, digest in bound_files.items():
                 require(source['files'][name]['sha256'] == digest, 'current Rust source link differs: '+name)
+            for name, digest in profile['source_inputs'].items():
+                require(source['files'][name]['sha256'] == digest, 'caller profile Rust source differs: '+name)
             require(all(sha(path) == digest for path, digest in tools.items()), 'original extraction tools differ')
             with tarfile.open(output/'source.tar') as tar:
                 tar.extractall(project, filter='data')
@@ -121,34 +157,24 @@ def run(output, lock, lock_fd, scope=SCOPE):
             original = root.read_bytes()
             anchor = HERE/'caller-root.rs.in'
             require(sha(anchor) == profile['append_only']['sha256'], 'actual capture root differs')
-            raw = artifacts/'actual-record.llbc'
-            argv = [charon, 'cargo', '--preset=aeneas', '--error-on-warnings', '--sysroot', 'default']
-            for flag, key in (('--include', 'include'), ('--opaque', 'opaque'),
-                              ('--exclude', 'exclude'), ('--start-from', 'roots')):
-                for value in profile[key]:
-                    argv += [flag, value]
             try:
                 root.write_bytes(original+anchor.read_bytes())
-                command('charon', [*argv, '--dest-file', raw, '--', '--manifest-path',
-                    'controller-service/Cargo.toml', '--lib', '--locked', '--offline', '--target', fixed['target']])
+                raw, generated = extract('', profile, 'SandproofActualRecord')
             finally:
                 root.write_bytes(original)
-            require(raw.stat().st_size <= 64*2**20, 'original capture size guard')
-            ir = json.loads(raw.read_text())
-            options = ir['translated']['options']
-            require(not ir['has_errors'] and options['start_from'] == profile['roots']
-                    and all(options[key] == profile[key] for key in ('include','opaque','exclude'))
-                    and not any(options[key] for key in ('skip_borrowck','no_typecheck','monomorphize')),
-                    'actual scope, typing or borrow mode changed')
-            generated = artifacts/'generated'
-            generated.mkdir()
-            command('aeneas', [aeneas, '-backend', 'lean', '-abort-on-error', '-warnings-as-errors',
-                '-split-files', '-emit-json', '-namespace', 'SandproofActualRecordRust',
-                '-subdir', 'SandproofActualRecord', '-dest', generated, raw])
             for name in ('Types.lean', 'Funs.lean'):
-                actual = generated/'SandproofActualRecord'/name
+                actual = generated/name
                 require(sha(actual) == all_files[str(CALLER/name)],
                         'current actual generated file differs: '+name)
+            classifier_profile = profile['unload_branch_scope']
+            classifier_raw, classifier_generated = extract(
+                'unload-branch-scope', classifier_profile, 'SandproofUnloadBranchScope')
+            classifier_files = {name: sha(classifier_generated/name) for name in ('Funs.lean', 'Types.lean')}
+            require(classifier_files == classifier_profile['generated_files'],
+                    'actual Unload branch scope generated files differ')
+            classifier = classifier_generated/'Funs.lean'
+            require(unload_scope_definition(classifier) == unload_scope_definition(project/CALLER/'OwnerLink.lean'),
+                    'actual Unload branch scope differs from the linked owner definition')
             seed_paths = [data['modules'][name]['path'] for name in data['roots']]
             require(batch.closure(project, seed_paths, active_view='lakefile.toml') == all_files,
                     'actual current import closure differs')
@@ -178,6 +204,7 @@ def run(output, lock, lock_fd, scope=SCOPE):
                 original_source_restored=True, source_head=source['commit'], source_tree=source['tree'],
                 source_archive_sha256=source['archive_sha256'], native_key=native['key'],
                 checked_project=str(project), llbc_sha256=sha(raw), all_files=all_files,
+                unload_branch_scope=dict(llbc_sha256=sha(classifier_raw), generated=classifier_files),
                 current_caller_generated_matched=True)
     except Exception as error:
         result['error'] = repr(error)

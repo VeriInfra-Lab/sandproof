@@ -67,8 +67,10 @@ theorem actual_create_root_commits_saved_owner
     ⟨owner, namespaceName, codec⟩ afterLoad afterSave intent context
     inbox appended session entry value binding incarnation create loaded accepted notFound
     appendedReply saved stateReturned
+  have allowed := actual_standard_record_create_bypasses_unload_gate
+    codecEffects afterSave intent binding incarnation create
   exact actual_root_saved_owner_commits retirement terminal renewal unload graphic codecEffects crash
-    intent context owner namespaceName codec afterSave value crashes afterBefore afterAfter recorded beforeCommit afterCommit raw world actualObserved
+    intent context owner namespaceName codec afterSave value crashes afterBefore afterAfter recorded allowed beforeCommit afterCommit raw world actualObserved
     live present checks committedAvailable candidateAvailable returned physical
 
 theorem actual_create_root_uncertain_on_saved_owner
@@ -117,8 +119,10 @@ theorem actual_create_root_uncertain_on_saved_owner
     ⟨owner, namespaceName, codec⟩ afterLoad afterSave intent context
     inbox appended session entry value binding incarnation create loaded accepted notFound
     appendedReply saved stateReturned
+  have allowed := actual_standard_record_create_bypasses_unload_gate
+    codecEffects afterSave intent binding incarnation create
   exact actual_root_saved_owner_commit_uncertain retirement terminal renewal unload graphic codecEffects crash
-    intent context owner namespaceName codec afterSave value crashes afterBefore recorded beforeCommit raw world error actualObserved
+    intent context owner namespaceName codec afterSave value crashes afterBefore recorded allowed beforeCommit raw world error actualObserved
     live present checks committedAvailable returned physical
 
 end

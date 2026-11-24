@@ -7,6 +7,15 @@
 - BEGIN、SQLite 自身实现、自动析构派发、服务外层与完整 V3 均有独立验收范围。
 - ning 端保留原 Codec 输入、调用顺序和 D 状态断言。交换原提交中两个单元格引用的隔离错误版须被同一个缓存一致性断言拒绝，随后恢复对照须通过。这个反例检验实际单元格接线。
 
+新 Unload 的分支准入检查发生在原鉴权、同键重放与暂存写入之后，仍持有同一 `StandardRecord` 和世界事务。独立抽取
+`unload_branch_scope` 并对照生成类型、函数和链接定义，检查只有 Unload 才会把原请求绑定和源代交给分支账本。
+原写入错误和重放因此优先返回。分支检查拒绝时不会调用显式提交，未提交写入的撤回依赖原事务的正常 Drop 合同。
+新建 Create 的原定理仍适用。普通 Unload 在兼有热分支的宿主上也检查对应账本；该账本损坏时会拒绝新的暂停。
+
+原生对照保留交换提交单元格的反例，并实际编译一份将分支检查移到鉴权前的错误版，用同一 SQLite 回归确认它被拒绝。
+Lean 连接调用次序、原事务所有者、检查结果和已建立的回滚边界。对分支 SQL 扫描的返回使用明确的同事务观察合同；
+账本的并发预留、终局额度结算、跨进程路由和来宾隔离分别需要实现对应证据。
+
 在 ning 的原 native 环境中，使用 `bash scripts/python-entry.sh tools/proof_native_suite.py run --scope stage1-v3-transaction-source --output <new-native-evidence>`。该固定范围包含完整普通功能检查、实际事务断言和实际来源行断言。按原证明机入口传入同一提交的 native seal 后，在 MSRA 运行 `bash scripts/verify-v3-transaction-source.sh <new-formal-evidence>`。普通测试和形式化检查分别在相应机器执行。原始 proof 运行和当前公共验收的执行身份分别保留。
 
 依赖接口的完整条件见 [V3 事务录入与来源行的边界](../../../../docs/formal/v3-transaction-source-boundaries.md)。
