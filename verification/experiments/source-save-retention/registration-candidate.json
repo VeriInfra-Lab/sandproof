@@ -20,5 +20,6 @@
   ],
   "public_registration_complete": false,
   "public_acceptance": false,
-  "coverage_candidate": "verification/experiments/source-save-retention/coverage-candidate.patch"
+  "coverage_candidate": "verification/experiments/source-save-retention/coverage-candidate.patch",
+  "native_workspace": "existing ci_retention allocate payload; evidence outside; original executor confirms cleanup before finish"
 }

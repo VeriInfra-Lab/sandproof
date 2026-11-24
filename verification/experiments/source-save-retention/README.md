@@ -57,12 +57,20 @@ bash scripts/python-entry.sh "$entry/check.py" --captures "$capture_root" \
 从本 PR 的干净精确提交运行以下入口。三份源码和 Cargo target 相互独立，实际测试程序
 必须本次重新编译同 crate 的业务源码。原版和组合版执行完整原 source-work 测试组及两个
 原 SQLite 断言；错误版必须编译成功，并命中完整工作检查的原断言。源码、完整日志和
-二进制记录留在 Ning 的私有证据目录；本包不自动清理已记录的原始证据。
+二进制摘要留在 Ning 的独立私有证据目录。源码和目标放到既有回收工具分配的空 payload；
+不得将原始证据放进该目录。可执行文件是可重建临时产物，不作为长期原始证据保留。
 
 ```bash
 SANDPROOF_ACCEPTANCE_ROLE=native bash scripts/python-entry.sh \
-    verification/experiments/source-save-retention/native.py --output "$native_output"
+    verification/experiments/source-save-retention/native.py --output "$native_output" \
+    --work "$allocated_payload"
 ```
+
+开始前按 [CI 临时产物规则](../../../docs/ci.md#显式退休的临时产物)由原执行账号运行
+`allocate --kind acceptance --candidate <本PR精确提交>`，将返回的空 payload 传给 `--work`。
+结果原样记录工作目录身份，不据测试退出码伪造资源收尾。成功、失败或取消后，先独立
+保留原报告、精确输入、日志和二进制摘要；原执行者确认所有自有进程/挂载/资源结束，
+再按原结果提供真实收尾收据并调用既有 `finish`。未知或在途时保留原位，不自动删除。
 
 主控同批协调完整普通入口、`proof_native_suite`、`scripts/verify-controller.sh`、公共根、
 Stage1 登记及覆盖记录，不单独重复共享整套验收。采用候选见 `registration-candidate.json`。
