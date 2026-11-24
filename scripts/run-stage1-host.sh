@@ -10,6 +10,7 @@ fi
 mode=$1
 checkout=$(realpath -e -- "$2")
 expected=$3
+[[ $(id -u) -ne 0 ]]
 : "${SANDPROOF_STAGE1_STORAGE_ROOT:?set the private Stage1 data-disk root}"
 : "${SANDPROOF_STAGE1_NATIVE_ROOT:?set its trusted short bind-mounted path}"
 : "${SANDPROOF_STAGE1_XFS_ROOT:?set the trusted private XFS mount path}"
@@ -29,12 +30,14 @@ cd -- "$checkout"
 [[ $(git rev-parse HEAD) == "$expected" && -z $(git status --porcelain) ]]
 
 # The proof environment is sourced at its physical checkout name.
-formal_workers=${SANDPROOF_STAGE1_JOBS:-8}
+formal_workers=${SANDPROOF_STAGE1_JOBS:-64}
 source "$SANDPROOF_STAGE1_NATIVE_ENV"
 cd -- "$native/${checkout#"$storage"/}"
 [[ $PWD -ef "$checkout" ]]
 export SANDPROOF_STAGE1_NATIVE_JOBS="${SANDPROOF_STAGE1_NATIVE_JOBS:-16}"
 export SANDPROOF_STAGE1_LIGHT_JOBS="${SANDPROOF_STAGE1_LIGHT_JOBS:-64}"
+export SANDPROOF_STAGE1_CPUSET="$("$SANDPROOF_PYTHON" -I -c \
+    'import os; print(",".join(map(str, sorted(os.sched_getaffinity(0))[:64])))')"
 export SANDPROOF_ACCEPTANCE_ROLE=native TMPDIR="$xfs"
 clean_environment=(env -u PYTHONPATH -u PYTHONOPTIMIZE)
 if [[ $mode == formal ]]; then
@@ -68,6 +71,7 @@ preserve=(PATH TMPDIR CARGO_HOME RUSTUP_HOME CARGO_NET_OFFLINE CARGO_INCREMENTAL
           SANDPROOF_PYTHON SANDPROOF_REDIS_SERVER SANDPROOF_STAGE1_REDIS_SHA256
           SANDPROOF_ACCEPTANCE_ROLE
           SANDPROOF_STAGE1_NATIVE_JOBS SANDPROOF_STAGE1_LIGHT_JOBS SANDPROOF_STAGE1_JOBS
+          SANDPROOF_STAGE1_CPUSET
           SANDPROOF_NATIVE_EVIDENCE SANDPROOF_FORMAL_CACHE SANDPROOF_STAGE1_RESUME_FROM SANDPROOF_PROOF_RECOMPUTE
           SANDPROOF_PROOF_RUNTIME_ROOT SANDPROOF_PROOF_TOOL_ROOT SANDPROOF_FORMAL_PACKAGES
           SANDPROOF_STAGE1_SOURCE_SAVE_RESULT ELAN_HOME ELAN_TOOLCHAIN LEAN_NUM_THREADS LEAN_STACK_SIZE_KB
@@ -81,7 +85,8 @@ for name in "${preserve[@]}"; do
         env_options+=("--setenv=$name=${!name}")
     fi
 done
-exec systemd-run --user --wait --pipe --collect --quiet --unit="$unit" \
+exec sudo -n -- /usr/bin/systemd-run --wait --pipe --collect --quiet --unit="$unit" \
+    --uid="$(id -u)" --gid="$(id -g)" --property="AllowedCPUs=$SANDPROOF_STAGE1_CPUSET" \
     --property=MemoryAccounting=yes --property=MemoryHigh=128G \
     --property=MemoryMax=160G --property=MemorySwapMax=0 \
     --property=OOMPolicy=continue --property=KillMode=control-group \

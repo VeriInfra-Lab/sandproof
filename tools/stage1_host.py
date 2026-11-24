@@ -21,6 +21,7 @@ MIN_STORAGE_FREE = 256 * GIB
 MIN_XFS_FREE = 48 * GIB
 MIN_AVAILABLE_MEMORY = 176 * GIB
 MEMORY_LIMIT = 160 * GIB
+CPU_LIMIT = 64
 SAMPLE_INTERVAL = 60
 ARCHIVE_SHA256 = {
     "SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE":
@@ -36,6 +37,14 @@ ARCHIVE_SHA256 = {
 }
 
 
+def cpuset(value):
+    cpus = set()
+    for field in value.strip().split(","):
+        first, separator, last = field.partition("-")
+        cpus.update(range(int(first), int(last) + 1) if separator else (int(first),))
+    return sorted(cpus)
+
+
 def admit(commit, xfs, mode):
     root = Path.cwd()
     proof_native_suite.trusted_checkout(root)
@@ -45,10 +54,17 @@ def admit(commit, xfs, mode):
     setting = "SANDPROOF_STAGE1_JOBS" if mode == "formal" else "SANDPROOF_STAGE1_NATIVE_JOBS"
     workers = int(os.environ[setting])
     light_jobs = int(os.environ["SANDPROOF_STAGE1_LIGHT_JOBS"])
-    cpus = sorted(os.sched_getaffinity(0))
-    worker_limit = 8 if mode == "formal" else 16
-    if not 1 <= workers <= worker_limit or not 1 <= light_jobs <= 64 or len(cpus) < max(4*workers, light_jobs if mode != "formal" else 0):
-        raise ValueError("CPU affinity is too small for the requested native and lightweight parallelism")
+    cpus = cpuset(os.environ["SANDPROOF_STAGE1_CPUSET"])
+    native = mode != "formal"
+    worker_limit = 16 if native else CPU_LIMIT
+    required_cpus = max(4 * workers, light_jobs) if native else workers
+    if (not 1 <= workers <= worker_limit or not 1 <= light_jobs <= CPU_LIMIT
+            or not required_cpus <= len(cpus) <= CPU_LIMIT or not set(cpus) <= os.sched_getaffinity(0)):
+        raise ValueError("the requested worker count exceeds the 64-CPU budget or actual CPU affinity")
+    if mode == "formal":
+        registration = proof_native_suite.load("stage1_host_registration", root /
+            "verification/experiments/stage1-protocol/registered.py")
+        registration._execution_options(jobs=workers)
     memory = Path("/proc/meminfo").read_text().split("MemAvailable:", 1)[1].split()[0]
     if (int(memory) * 1024 < MIN_AVAILABLE_MEMORY or shutil.disk_usage(root).free < MIN_STORAGE_FREE
             or shutil.disk_usage(xfs).free < MIN_XFS_FREE):
@@ -59,14 +75,17 @@ def admit(commit, xfs, mode):
         raise ValueError("native Redis differs from the pinned local build")
     if acceptance_receipts.source_archive_inputs() != ARCHIVE_SHA256:
         raise ValueError("the five registered native source archives are required")
-    if mode != "formal":
+    if native:
         subprocess.run(["cargo", "metadata", "--offline", "--locked", "--format-version", "1"],
                        stdout=subprocess.DEVNULL, check=True)
     proof_native_suite.stage1_source_admission("stage1-protocol")
-    runtime = proof_native_suite.runtime(temporary_parent=xfs) if mode != "formal" else None
+    compiler = subprocess.check_output(["rustc", "-vV"], text=True).splitlines()[0]
+    frozen = json.loads((root / "verification/first-chain-linux-environment.json").read_text())
+    if compiler != frozen["production_compiler"]:
+        raise ValueError("native compiler differs from the frozen production compiler")
     return dict(commit=commit, mode=mode, cpu_affinity=cpus, workers=workers, light_jobs=light_jobs,
                 data_disk_free_bytes=shutil.disk_usage(root).free, xfs_free_bytes=shutil.disk_usage(xfs).free,
-                redis=material, source_archives=ARCHIVE_SHA256, runtime=runtime)
+                redis=material, source_archives=ARCHIVE_SHA256, rustc=compiler, python=sys.version)
 
 
 def cgroup(mode):
@@ -74,7 +93,11 @@ def cgroup(mode):
     path = Path("/sys/fs/cgroup") / line.removeprefix("0::/")
     if (not path.name.startswith(f"sandproof-stage1-{mode}-")
             or int((path / "memory.max").read_text()) != MEMORY_LIMIT):
-        raise ValueError("run native acceptance in its dedicated bounded systemd unit")
+        raise ValueError("run Stage1 acceptance in its dedicated bounded systemd unit")
+    expected = cpuset(os.environ["SANDPROOF_STAGE1_CPUSET"])
+    effective = cpuset((path / "cpuset.cpus.effective").read_text())
+    if effective != expected or sorted(os.sched_getaffinity(0)) != expected or len(expected) > CPU_LIMIT:
+        raise ValueError("the Stage1 CPU limit is not enforced by the dedicated cgroup")
     return path
 
 
@@ -86,14 +109,12 @@ def record_sample(run, xfs, group, started, history, log_errors):
                cgroup_memory_peak_bytes=int((group / "memory.peak").read_text()))
     # Cargo and Lean can remove a file between du's directory read and stat.
     # Its partial total would hide rather than measure a possible peak.
-    measurement = subprocess.run(["nice", "-n", "10", "du", "-sxB1", "--", str(run)],
-                                 capture_output=True, text=True, check=False)
     try:
-        row["private_run_allocated_bytes"] = int(measurement.stdout.split()[0]) if measurement.returncode == 0 else None
-    except (IndexError, ValueError):
-        row["private_run_allocated_bytes"] = None
-    if row["private_run_allocated_bytes"] is None:
-        row["private_run_disk_sample_error"] = measurement.stderr.strip()[:1000] or "du returned no usable total"
+        measurement = subprocess.run(["ionice", "-c3", "nice", "-n", "10", "du", "-sxB1", "--", str(run)],
+                                     capture_output=True, text=True, check=True, timeout=SAMPLE_INTERVAL // 4)
+        row["private_run_allocated_bytes"] = int(measurement.stdout.split()[0])
+    except (subprocess.SubprocessError, OSError, IndexError, ValueError) as error:
+        row.update(private_run_allocated_bytes=None, private_run_disk_sample_error=str(error)[:1000])
     history.append(row)
     try:
         with (run / "resource-samples.jsonl").open("a") as samples:
@@ -221,6 +242,7 @@ def execute(mode, commit, xfs, run, lock):
             acceptance_receipts.write_json(run / "resources.json", dict(
                 commit=commit, mode=mode, child_returncode=status,
                 elapsed_seconds=round(time.monotonic() - started, 3),
+                cpu_affinity=cpuset((group / "cpuset.cpus.effective").read_text()),
                 cgroup_memory_peak_bytes=int((group / "memory.peak").read_text()), memory_events=events,
                 private_run_sampled_disk_peak_bytes=peak, samples=len(history), sample_log_errors=log_errors,
                 private_run_disk_samples_missing=sum(row["private_run_allocated_bytes"] is None for row in history),
