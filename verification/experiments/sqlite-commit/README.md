@@ -36,6 +36,11 @@ bash scripts/python-entry.sh verification/experiments/sqlite-commit/prepare.py \
 
 将实际新生成的 LLBC 交给同一固定 Aeneas Lean 后端。生成 Types/Funs 不手改；逐次来源、完整 LLBC、外部/析构清单和产物一致性是正式交付前必须接通的准入。独立 `lake-sqlite.toml` 只增加本库视图，原主库配置不变。完整原证明/基础入口、实际服务、真实错误版及其内核反例须分别报告，不能以本步骤取代。
 
+热分支候选 `3629e4fa` 增加了 `controller/mod.rs` 的模块声明和类型导出。同一次固定 Linux 工具复验重抽了
+历史登记树 `3bb50958` 和热分支候选的 SQLite core、wrapper。历史结果与旧登记完全一致。沿用原
+`short_names` 排序后，两份候选 LLBC 只改变所内嵌的该文件源码文本。声明、调用、异常和析构位置、
+生成的 Types/Funs 及翻译登记逐字一致。当前准入固定两份新 LLBC 的完整摘要，完整公开验收仍使用原入口。
+
 ## 一次完整的接口复验
 
 在原工具/后端及 Lean 服务就绪的同一受控 Linux 环境执行：

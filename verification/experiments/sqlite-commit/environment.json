@@ -11,7 +11,7 @@
     "Option/Result/ControlFlow/tuple": "plain payloads or transaction/callback disposal under the stated A4/B2/B4 frame; original pure backend erasure remains explicit"
   },
   "core": {
-    "llbc_digest": "7edd58b4962fd5d556ed26f705f345a55982fb38112a5b797126ec0dccc9b5a8",
+    "llbc_digest": "b79344ff41664b7004f61984b0abfe68fc1f179c7e0e5bb5bc35a0a40ec79666",
     "charon_options": {
       "ullbc": false,
       "precise_drops": false,
@@ -3227,7 +3227,7 @@
     }
   },
   "wrapper": {
-    "llbc_digest": "1663d2eacf1de325956f3deec5a064a50c1e7bd0669dfe85a073f7a238078cf1",
+    "llbc_digest": "53be22ff71ea7f0ce1057201210552141d51c260dbd0f41a65b0b882e1017efb",
     "charon_options": {
       "ullbc": false,
       "precise_drops": false,
