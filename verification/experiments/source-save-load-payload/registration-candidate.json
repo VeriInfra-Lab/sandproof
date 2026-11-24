@@ -1,0 +1,19 @@
+{
+  "issue": 635,
+  "id": "source-save-load-payload",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "c44f460e0b5bb60863662749c66eba8bd2ab8f92",
+  "capture_entry": "verification/experiments/source-save-load-payload/payload_capture.py",
+  "formal_entry": "verification/experiments/source-save-load-payload/payload_check.py",
+  "native_entry": "verification/experiments/source-save-load-payload/payload_native.py",
+  "root": "SaveLoadReserveWitness",
+  "guard": "SandboxModel.Stage1Protocol.SaveLoadCapacity.original_load_uses_exact_metadata_reserve",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveLoadPayload.actual_success_retains_full_configuration",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveLoadReserveWitness.inflated_reserve_breaks_same_contract",
+  "remaining": [
+    "Ning exact candidate ordinary and native acceptance",
+    "shared registration and proof coverage adoption",
+    "real JSON/SHA, typed native row provider and V5 physical durability"
+  ],
+  "public_acceptance": false
+}
