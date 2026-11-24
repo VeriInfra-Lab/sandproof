@@ -331,6 +331,9 @@ class CreateDelivery(OriginalReadPlanFixture):
         with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS='8'):
             self.assertEqual(registered._execution_options()['workers'], 8)
         self.assertEqual(registered._execution_options(8)['workers'], 8)
+        self.assertEqual(registered._execution_options(64)['workers'], 64)
+        with self.assertRaises(ValueError):
+            registered._execution_options(64, profile='create-delivery')
         with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS='12'):
             with self.assertRaises(ValueError):
                 registered._execution_options()
@@ -638,6 +641,33 @@ class Registration(OriginalReadPlanFixture):
             self.assertCountEqual([call.kwargs for call in launch.call_args_list], [
                 {'cpu_affinity': (0, 1, 2, 3)}, {'cpu_affinity': (4, 5, 6, 7)}])
 
+    def test_full_cpu_budget_preserves_required_four_cpu_drivers_and_exhausts_sixty_four_slots(self):
+        plan = registered.formal_plan(Path('/unused'))
+        self.assertEqual([registered._formal_cpu_width(job) for job in plan].count(1), 126)
+        self.assertEqual([registered._formal_cpu_width(job) for job in plan].count(4), 42)
+        four = [job for job in plan if registered.requires_formal_cpu_slot(job)]
+        self.assertEqual(len(four), 42)
+        self.assertTrue(all(registered._formal_cpu_width(job) == 4 for job in four))
+        unknown = dict(name='untested', driver='unreviewed.py')
+        self.assertEqual(registered._formal_cpu_width(unknown), 4)
+        allowed = list(range(32, 96))
+        with patch.object(registered.os,'sched_getaffinity',return_value=set(allowed),create=True) as affinity:
+            self.assertEqual(registered._formal_cpu_budget(), allowed)
+            for wrong in (allowed[:-1], allowed+[96]):
+                affinity.return_value = set(wrong)
+                with self.assertRaisesRegex(ValueError, 'requires exactly 64 admitted CPUs'):
+                    registered._formal_cpu_budget()
+        pending = list(plan)
+        free = allowed.copy()
+        for wanted in allowed:
+            index, slot = registered._take_formal_slot(pending, free, budgeted=True)
+            self.assertEqual(slot, (wanted,))
+            pending.pop(index)
+            free.pop(0)
+        self.assertIsNone(registered._take_formal_slot(pending, free, budgeted=True))
+        single = next(job for job in pending if registered._formal_cpu_width(job) == 1)
+        self.assertEqual(registered._take_formal_slot([four[0], single], [60], budgeted=True), (1, (60,)))
+
     def test_unload_parent_requires_each_actual_page_for_repeated_audits(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -737,7 +767,7 @@ class Registration(OriginalReadPlanFixture):
             self.assertEqual(options['sources']['workers'],'SANDPROOF_STAGE1_JOBS')
             self.assertEqual(registered._execution_options(4,Path('/explicit.json'))['workers'],4)
         with patch.dict(os.environ,SANDPROOF_STAGE1_JOBS='3'):
-            with self.assertRaisesRegex(ValueError,'must be 1, 2, 4 or 8'):
+            with self.assertRaisesRegex(ValueError,'must be 1, 2, 4, 8 or 64'):
                 registered._execution_options()
             self.assertEqual(registered._execution_options(1)['workers'],1)
         with patch.dict(os.environ,SANDPROOF_STAGE1_RESUME_FROM='relative.json'):
@@ -1375,7 +1405,8 @@ class CheckpointExecution(unittest.TestCase):
                      output=str(output/name), native=[], cases=['correct'], actual_files=True)
                 for name in names]
 
-    def invoke(self, root, driver, args, env=None, *, log=None):
+    def invoke(self, root, driver, args, env=None, *, log=None, cpu_affinity=None,
+               cpu_admission=None, cpu_width=registered.CREATE_CPUS_PER_JOB):
         output = Path(args[args.index('--output')+1])
         name = output.name
         with self.mutex:
@@ -1383,6 +1414,10 @@ class CheckpointExecution(unittest.TestCase):
             self.environments[name] = dict(env)
         if self.hook is not None:
             self.hook(name)
+        if cpu_affinity is not None:
+            kind = 'stage1-single-cpu-admission' if cpu_width == 1 else 'stage1-create-four-cpu-admission'
+            cpu_admission.write_text(json.dumps(dict(kind=kind, actual=list(cpu_affinity),
+                requested=list(cpu_affinity), parent_allowed=sorted(os.sched_getaffinity(0)), pid=123)))
         output.mkdir(mode=0o700)
         project = output/'source'
         (project/'artifacts').mkdir(parents=True)
@@ -1731,6 +1766,49 @@ class CheckpointExecution(unittest.TestCase):
         self.assertFalse(failures)
         self.assertEqual(len(rows),4)
         self.assertEqual(len(set(row['result_path'] for row in rows)),4)
+
+    def test_budgeted_failure_stops_new_work_and_keeps_other_original_checkpoints(self):
+        output = self.directory/'sixty-four'
+        output.mkdir()
+        early = [f'fixture-wide-{i}' for i in range(15)] + [f'fixture-single-{i}' for i in range(3)]
+        waiting, refill = 'fixture-waits-for-four', 'fixture-refills-one'
+        plan = self.plan(output, names=[*early, waiting, refill])
+        for job in plan:
+            if job['name'] in (*early[-3:], refill):
+                job['driver'] = 'fixture-single.py'
+        running = threading.Barrier(19, timeout=15)
+        observed_failure = threading.Event()
+
+        def hook(name):
+            running.wait()
+            if name == early[0]:
+                raise ValueError('controlled original driver failure')
+            self.assertTrue(observed_failure.wait(timeout=15))
+
+        def progress(rows, failures, misses):
+            if failures:
+                observed_failure.set()
+
+        self.hook = hook
+        allowed = set(range(64))
+        with (patch.object(registered, 'formal_plan', return_value=plan),
+              patch.object(registered, '_invoke', side_effect=self.invoke),
+              patch.object(registered, 'FORMAL_SINGLE_CPU_DRIVERS', {'fixture-single.py'}),
+              patch.object(registered.os,'sched_getaffinity',return_value=allowed,create=True)):
+            rows, failures = registered.execute_formal_jobs(registered.ROOT, output, plan,
+                self.context, {}, jobs=64, progress=progress)
+            self.assertEqual(set(self.called), {*early, refill})
+            self.assertEqual([row['name'] for row in rows], [*early[1:], refill])
+            self.assertEqual(set(failures), {early[0]})
+            used = [cpu for row in rows for cpu in row['cpu_admission']['actual']]
+            self.assertEqual(len(used), len(set(used)))
+            self.assertEqual(set(used), allowed - {0, 1, 2, 3})
+            for job, row in zip([*plan[1:-2], plan[-1]], rows, strict=True):
+                checkpoint = registered._read(Path(row['checkpoint_path']))
+                self.assertEqual(checkpoint['evidence'][row['cpu_admission_path']], row['cpu_admission_sha256'])
+                reused, reason = registered._reuse_job(self.helper, job, self.context, row)
+                self.assertIsNone(reason)
+                self.assertEqual(reused['use'], 'REUSE')
 
     def test_verified_parent_runtime_metadata_seeds_private_caches_without_rewriting_it(self):
         seed = self.directory/'runtime-file-hashes.json'
