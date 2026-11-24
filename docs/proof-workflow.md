@@ -143,7 +143,7 @@ GitHub CI 在 ning 的隔离 runner 上执行。手动原生验收和形式证�
 核对 Rust 捕获、Charon/Aeneas 抽取、Lean 内核检查和服务审计。
 
 手动 Stage1 完整批次设置 `SANDPROOF_STAGE1_NATIVE_JOBS=16` 和
-`SANDPROOF_STAGE1_LIGHT_JOBS=32`。前者适用于有独立源码副本和构建目录的原生模块；
+`SANDPROOF_STAGE1_LIGHT_JOBS=64`。前者适用于有独立源码副本和构建目录的原生模块；
 后者在 Linux 工具测试阶段并行运行列入清单的轻量模块。每个模块保留全部原测试和
 unittest 夹具，其余用例按原顺序在单进程执行。这两个阶段依次运行。共享归档、
 可写缓存、端口和资源锁仍按原条件准入。完整证明阶段单独设置

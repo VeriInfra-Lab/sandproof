@@ -134,9 +134,9 @@ def main(argv=None):
     try:
         preflight(args.mode)
         workers = int(os.environ.pop('SANDPROOF_STAGE1_LIGHT_JOBS', '1'))
-        if not 1 <= workers <= 32 or (workers > 1 and (
+        if not 1 <= workers <= 64 or (workers > 1 and (
                 args.mode != 'linux' or workers > len(os.sched_getaffinity(0)))):
-            raise ValueError('light workers require 1..32 available Linux CPUs')
+            raise ValueError('light workers require 1..64 available Linux CPUs')
     except ValueError as error:
         parser.error(str(error))
     if args.preflight_only:

@@ -47,7 +47,7 @@ def admit(commit, xfs, mode):
     light_jobs = int(os.environ["SANDPROOF_STAGE1_LIGHT_JOBS"])
     cpus = sorted(os.sched_getaffinity(0))
     worker_limit = 8 if mode == "formal" else 16
-    if not 1 <= workers <= worker_limit or not 1 <= light_jobs <= 32 or len(cpus) < max(4*workers, light_jobs):
+    if not 1 <= workers <= worker_limit or not 1 <= light_jobs <= 64 or len(cpus) < max(4*workers, light_jobs if mode != "formal" else 0):
         raise ValueError("CPU affinity is too small for the requested native and lightweight parallelism")
     memory = Path("/proc/meminfo").read_text().split("MemAvailable:", 1)[1].split()[0]
     if (int(memory) * 1024 < MIN_AVAILABLE_MEMORY or shutil.disk_usage(root).free < MIN_STORAGE_FREE

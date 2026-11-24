@@ -34,7 +34,7 @@ source "$SANDPROOF_STAGE1_NATIVE_ENV"
 cd -- "$native/${checkout#"$storage"/}"
 [[ $PWD -ef "$checkout" ]]
 export SANDPROOF_STAGE1_NATIVE_JOBS="${SANDPROOF_STAGE1_NATIVE_JOBS:-16}"
-export SANDPROOF_STAGE1_LIGHT_JOBS="${SANDPROOF_STAGE1_LIGHT_JOBS:-32}"
+export SANDPROOF_STAGE1_LIGHT_JOBS="${SANDPROOF_STAGE1_LIGHT_JOBS:-64}"
 export SANDPROOF_ACCEPTANCE_ROLE=native TMPDIR="$xfs"
 clean_environment=(env -u PYTHONPATH -u PYTHONOPTIMIZE)
 if [[ $mode == formal ]]; then
