@@ -26,7 +26,7 @@ import time
 import uuid
 
 ROOT = Path('/var/lib/sandproof-ci')
-ROLES = {'rust': (4096, 4, 32), 'sdk': (3072, 4, 32),
+ROLES = {'rust': (4096, 4, 32), 'sdk': (6144, 8, 32),
          'harbor': (2048, 2, 32), 'title': (768, 1, 32),
          'policy': (768, 1, 32), 'bootstrap': (4096, 4, 32),
          'preheat': (4096, 4, 32)}
@@ -211,10 +211,11 @@ if __name__ == '__main__':
 
 
 def cloud_config(role, jit='', pins=None, dependency_bundle=None, completion_nonce=None):
+    cargo_jobs = 4 if role == 'sdk' else 2
     env = ('http_proxy=' + PROXY + '\nhttps_proxy=' + PROXY + '\n'
            'HTTP_PROXY=' + PROXY + '\nHTTPS_PROXY=' + PROXY + '\n'
            'no_proxy=localhost,127.0.0.1\nNO_PROXY=localhost,127.0.0.1\n'
-           'CARGO_BUILD_JOBS=2\nRUST_TEST_THREADS=2\n'
+           f'CARGO_BUILD_JOBS={cargo_jobs}\nRUST_TEST_THREADS=2\n'
            'PATH=/home/runner/.cargo/bin:/home/runner/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n')
     result = {'hostname': 'sandproof-ci-' + role, 'ssh_pwauth': False,
               'disable_root': True,

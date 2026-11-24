@@ -308,8 +308,9 @@ class Supervisor:
             if runners.get(lease['name'], {}).get('busy') is not True)
         # Offer every role its first slot before filling second slots. Count all
         # durable leases in resource admission, including cleanup-unknown ones.
+        roles = sorted(JOBS.values(), key=lambda role: role not in ('title', 'policy'))
         for index in range(1, MAX_ROLE_WORKERS + 1):
-            for role in JOBS.values():
+            for role in roles:
                 slot = role if index == 1 else role + '-' + str(index)
                 if (slot in self.state.leases or counts[role] <= unassigned[role]
                         or not self.runtime.admission(role, self.state.leases)):

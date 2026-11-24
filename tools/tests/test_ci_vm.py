@@ -62,6 +62,11 @@ class CowScratchTests(unittest.TestCase):
                 config = ci_vm.cloud_config(role, jit)
                 files = {item['path']: item for item in config['write_files']}
                 shell = config['runcmd'][-1][-1]
+                cargo_jobs = 4 if role == 'sdk' else 2
+                self.assertIn(f'CARGO_BUILD_JOBS={cargo_jobs}\nRUST_TEST_THREADS=2\n',
+                              files['/etc/sandproof-ci.env']['content'])
+                if role == 'sdk':
+                    self.assertEqual(ci_vm.ROLES[role], (6144, 8, 32))
                 if role in {'rust', 'sdk'}:
                     self.assertIn('TMPDIR=/var/lib/sandproof-ci-cow/mount/tmp\n',
                                   files['/etc/sandproof-ci.env']['content'])

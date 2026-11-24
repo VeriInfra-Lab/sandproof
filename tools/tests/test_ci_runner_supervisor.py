@@ -122,6 +122,7 @@ class SupervisorTests(unittest.TestCase):
         self.service.tick()
         self.service.tick()
         self.assertEqual(set(self.state.leases), roles)
+        self.assertEqual(set(list(self.state.leases)[:2]), {'title', 'policy'})
         self.assertEqual(len(self.api.posts), 4)
         self.assertEqual(len(self.runtime.starts), 4)
 
