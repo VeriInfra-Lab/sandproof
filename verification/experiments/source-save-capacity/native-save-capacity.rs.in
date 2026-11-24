@@ -1,0 +1,25 @@
+#[test]
+fn proof_source_save_rejects_capacity_before_duplicate_encoding() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let record = prepare(&mut journal);
+    let connection = &journal.journal.connection;
+    let maintenance = crate::controller::checkpoint::config(connection)
+        .unwrap()
+        .unwrap();
+    maintenance.validate().unwrap();
+    let mut sources = codec::load(connection).unwrap().unwrap();
+    let sessions = sources.max_sessions;
+    let original_limit =
+        u64::from(sessions) * (maintenance.max_operations_per_sandbox - 2);
+    sources
+        .records
+        .resize(usize::try_from(original_limit + 1).unwrap(), record);
+    let transaction = connection.unchecked_transaction().unwrap();
+    let result = codec::save(&transaction, &sources, sessions);
+    transaction.rollback().unwrap();
+    assert!(
+        matches!(&result, Err(JournalError::MaintenanceCapacity)),
+        "source save must reject the exact over-capacity input before encoding duplicates: {result:?}"
+    );
+}

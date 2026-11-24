@@ -1,0 +1,21 @@
+{
+  "issue": 635,
+  "id": "source-save-capacity",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "encoder_parent": "dd82c2cdf2921bfdc04f11d032a2fcddd5771132",
+  "count_provider": "405b2e346669af18a00f1aeeadea7f54081e6306",
+  "capture_entry": "verification/experiments/source-save-capacity/capacity_capture.py",
+  "formal_entry": "verification/experiments/source-save-capacity/capacity_check.py",
+  "native_entry": "verification/experiments/source-save-capacity/capacity_native.py",
+  "roots": {"correct": "CapacityCorrect", "keep-one-position": "CapacityWrong"},
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveCapacity.save_consumes_exact_policy_capacity",
+  "first_error_theorem": "SandboxModel.Stage1Protocol.SaveCapacity.actual_rejects_excess_before_encoding",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveCapacity.Witness.wrong_save_refutes_same_capacity_contract",
+  "remaining": [
+    "Ning exact candidate native and ordinary acceptance",
+    "public Stage1 wiring, registration and coverage adoption",
+    "real checkpoint policy reader and validation, actual source read, full key collection and JSON/SHA byte providers",
+    "V5 physical row state, rollback and durability, V6 material state"
+  ],
+  "public_acceptance": false
+}
