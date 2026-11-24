@@ -12,6 +12,7 @@ import multiprocessing
 import os
 from pathlib import Path
 import sys
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -108,17 +109,21 @@ def run_parallel_linux(chosen, workers):
     passed = True
     if modules:
         # Each module runs with its own interpreter state and unittest fixtures.
+        started = time.monotonic()
         with ProcessPoolExecutor(max_workers=min(workers, len(modules)),
                                  mp_context=multiprocessing.get_context('spawn')) as pool:
             for count, success, log in pool.map(light_module, modules.items()):
                 sys.stderr.write(log)
                 ran += count
                 passed = passed and success
-    result = unittest.TextTestRunner(verbosity=2).run(serial)
-    ran += result.testsRun
+        print(f'Independent modules: {ran} tests in {time.monotonic()-started:.3f}s', file=sys.stderr)
+    if serial.countTestCases():
+        result = unittest.TextTestRunner(verbosity=2).run(serial)
+        ran += result.testsRun
+        passed = passed and result.wasSuccessful() and not result.skipped
     print(f'Linux tool tests: ran {ran}/{total}; independent modules={len(modules)}, '
           f'worker limit={workers}', file=sys.stderr)
-    return 0 if passed and result.wasSuccessful() and not result.skipped and ran == total else 1
+    return 0 if passed and ran == total else 1
 
 
 def main(argv=None):
