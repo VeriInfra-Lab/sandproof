@@ -233,6 +233,7 @@ def execute(mode, commit, xfs, run, lock):
         log_errors = []
         status = None
         cleanup_error = None
+        redis_tests = None
 
         def sample():
             try:
@@ -250,6 +251,11 @@ def execute(mode, commit, xfs, run, lock):
                     admission["independent_result"] = independent
                 command = ["bash", "scripts/verify-stage1-protocol.sh"]
             else:
+                # Preserve real fsync without sharing the loop-backed XFS scratch.
+                redis_tests = run / "redis-tests"
+                redis_tests.mkdir(mode=0o700)
+                env.update(RUST_TEST_THREADS="2", SANDPROOF_REDIS_TEST_TMPDIR=str(redis_tests))
+                admission.update(workspace_rust_test_threads=2, redis_test_tmpdir=str(redis_tests))
                 command = ["bash", "scripts/python-entry.sh", "tools/proof_native_suite.py", "run",
                            "--scope", "stage1-protocol", "--output", str(native)]
             acceptance_receipts.write_json(run / "admission.json", admission)
@@ -270,6 +276,8 @@ def execute(mode, commit, xfs, run, lock):
             if mode == "native" and status == 0 and not remaining and not events["oom_kill"]:
                 try:
                     tidy_ephemeral(native, xfs)
+                    if redis_tests is not None:
+                        redis_tests.rmdir()
                     cleanup = "private temporary files removed"
                 except (OSError, ValueError) as error:
                     cleanup_error = str(error)
