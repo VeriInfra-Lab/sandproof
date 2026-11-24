@@ -1,4 +1,6 @@
 import subprocess
+import contextlib
+import io
 import os
 import tempfile
 from pathlib import Path
@@ -10,6 +12,29 @@ from tools import check_function_tests as entry
 
 
 class SelectionTests(unittest.TestCase):
+    def test_parallel_module_must_match_full_discovery(self):
+        with self.assertRaisesRegex(ValueError, 'differs from discovered tests'):
+            entry.light_module(('test_task_contract', []))
+
+    @unittest.skipUnless(sys.platform == 'linux', 'Linux parallel tool entry')
+    def test_parallel_linux_includes_serial_skips_and_failures(self):
+        loader = unittest.TestLoader()
+        for method in ('test_success', 'test_skip', 'test_failure'):
+            class SerialCase(unittest.TestCase):
+                def test_success(self):
+                    pass
+
+                def test_skip(self):
+                    self.skipTest('required fixture')
+
+                def test_failure(self):
+                    self.fail('expected fixture failure')
+
+            suite = unittest.TestSuite([loader.loadTestsFromName('test_task_contract'),
+                                       SerialCase(method)])
+            with self.subTest(method=method), contextlib.redirect_stderr(io.StringIO()):
+                self.assertEqual(entry.run_parallel_linux(suite, 2), int(method != 'test_success'))
+
     def case(self, identity):
         result = unittest.FunctionTestCase(lambda: None)
         result.id = lambda: identity
