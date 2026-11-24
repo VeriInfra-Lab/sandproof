@@ -806,6 +806,106 @@ class Registration(OriginalReadPlanFixture):
             with self.assertRaisesRegex(ValueError, 'crate test inventory'):
                 registered._crate_native(registered.ROOT, Path(temporary)/'output', 'envelope-schema')
 
+    def test_native_batches_keep_shared_work_serial_and_admit_short_last_group(self):
+        drivers = registered.NATIVE_DRIVERS
+        batches = list(registered._native_batches(drivers, 16))
+        self.assertEqual([row for batch in batches for row in batch], list(drivers))
+        private = [batch for batch in batches if len(batch) > 1]
+        self.assertEqual([len(batch) for batch in private], [16, 8])
+        for batch in private:
+            for label, path, archive in batch:
+                name = Path(path).parent.name
+                self.assertFalse(archive)
+                self.assertEqual(path, str(registered.HERE/name/'native.py'))
+                self.assertEqual(label, 'stage1-' + name)
+                self.assertNotIn(name, registered.CONVERGENCE.LOCKED_NATIVE)
+        self.assertEqual({Path(path).parent.name for batch in private for _, path, _ in batch},
+                         registered._PRIVATE_NATIVE_COMPONENTS)
+        self.assertEqual(list(registered._native_batches(drivers, 1)), [[row] for row in drivers])
+
+    def test_native_worker_limit_requires_actual_disjoint_affinity(self):
+        actual = set(range(32, 96))
+        with patch.dict(os.environ, SANDPROOF_STAGE1_NATIVE_JOBS='16'), \
+                patch.object(registered.os, 'sched_getaffinity', return_value=actual, create=True) as host:
+            slots = registered._native_worker_slots('full')
+            self.assertEqual(len(slots), 16)
+            self.assertEqual([cpu for slot in slots for cpu in slot], sorted(actual))
+            self.assertEqual(registered._native_worker_slots('create-delivery'), ())
+            self.assertEqual(registered._native_worker_slots(registered.CONVERGENCE.PROFILE), ())
+            host.assert_called_once_with(0)
+            host.return_value = actual - {95}
+            with self.assertRaisesRegex(ValueError, '16 native workers require 64 admitted CPUs'):
+                registered._native_worker_slots('full')
+        with patch.dict(os.environ, SANDPROOF_STAGE1_NATIVE_JOBS='17'):
+            with self.assertRaisesRegex(ValueError, 'integer from 1 to 16'):
+                registered._native_worker_slots('full')
+
+    def test_native_parallel_receipts_cover_short_group_and_reject_bad_driver_or_affinity(self):
+        private = [row for batch in registered._native_batches(registered.NATIVE_DRIVERS, 16)
+                   if len(batch) > 1 for row in batch]
+        drivers = tuple(private[:19])
+        labels = [row[0] for row in drivers]
+        first_batch, last_batch = labels[:16], labels[16:]
+        for failure in (None, 'driver', 'affinity'):
+            barriers = (threading.Barrier(16, timeout=15), threading.Barrier(3, timeout=15))
+            invoked = {}
+            completed = {}
+
+            def invoke(root, driver, args, *, pass_fds, cpu_affinity, cpu_admission):
+                output = args[1]
+                label = output.name
+                self.assertEqual(pass_fds, ())
+                self.assertEqual(cpu_admission.name, label + '-cpu-admission.json')
+                invoked[label] = tuple(cpu_affinity)
+                output.mkdir()
+                result = {'complete': not (failure == 'driver' and label == labels[0])}
+                (output/'result.json').write_text(json.dumps(result))
+                observed = sorted(cpu_affinity)
+                if failure == 'affinity' and label == labels[0]:
+                    observed = [60, 61, 62, 63]
+                cpu_admission.write_text(json.dumps(dict(kind='stage1-create-four-cpu-admission',
+                    actual=observed, requested=observed, parent_allowed=list(range(64)), pid=42)))
+                barriers[int(label in last_batch)].wait()
+
+            def native_case(label, root, output, action, *, scope):
+                self.assertEqual(scope, 'stage1-protocol')
+                files = {}
+                if label != 'stage1-protocol':
+                    action()
+                    for name in ('result.json', 'cpu-admission.json'):
+                        files['evidence/' + name] = registered._sha(output/name)
+                    completed[label] = files
+                return {'output': output, 'files': files}
+
+            def original_file(receipt, relative):
+                return receipt['output']/relative
+
+            with (self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp,
+                  patch.dict(os.environ, SANDPROOF_STAGE1_NATIVE_JOBS='16',
+                             SANDPROOF_ACCEPTANCE_ROLE='native', CARGO_TARGET_DIR=tmp),
+                  patch.object(registered.os, 'sched_getaffinity', return_value=set(range(64)), create=True),
+                  patch.object(registered, 'validate_registration'),
+                  patch.object(registered, 'check_create_sources'),
+                  patch.object(registered, 'NATIVE_DRIVERS', drivers),
+                  patch.object(registered, 'CRATE_CASES', ()),
+                  patch.object(registered, '_shared', return_value=SimpleNamespace(native_case=native_case)),
+                  patch.object(registered, '_original_file', side_effect=original_file),
+                  patch.object(registered, '_invoke', side_effect=invoke)):
+                if failure is None:
+                    actual = registered.run_native(registered.ROOT, Path(tmp))
+                    self.assertEqual(list(actual), labels)
+                    self.assertEqual(set(completed), set(labels))
+                    self.assertEqual([cpu for label in last_batch for cpu in invoked[label]], list(range(12)))
+                    self.assertEqual(completed, {label: row['files'] for label, row in actual.items()})
+                else:
+                    message = ('original native driver did not complete' if failure == 'driver'
+                               else 'missing or changed original four-CPU child admission')
+                    with self.assertRaisesRegex(ValueError, message):
+                        registered.run_native(registered.ROOT, Path(tmp))
+                    self.assertEqual(set(invoked), set(first_batch))
+                    self.assertEqual(set(completed), set(first_batch[1:]))
+                self.assertEqual([cpu for label in first_batch for cpu in invoked[label]], list(range(64)))
+
     def test_full_native_accepted_parser_inherits_lock_and_four_cpus(self):
         label = 'stage1-accepted-json-parser'
         driver, = [row for row in registered.NATIVE_DRIVERS if row[0] == label]
@@ -814,7 +914,7 @@ class Registration(OriginalReadPlanFixture):
             self.assertEqual(scope, 'stage1-protocol')
             if name == label:
                 action()
-            return {}
+            return {'files': {}}
 
         with tempfile.TemporaryDirectory() as temporary, \
                 patch.object(registered, 'validate_registration'), \
@@ -830,6 +930,7 @@ class Registration(OriginalReadPlanFixture):
             lock = root/'existing.lock'
             with lock.open('w+') as inherited, patch.dict(os.environ, {
                     'SANDPROOF_ACCEPTANCE_ROLE': 'native', 'CARGO_TARGET_DIR': temporary,
+                    'SANDPROOF_STAGE1_NATIVE_JOBS': '1',
                     'SANDPROOF_PROOF_HEAVY_LOCK': str(lock),
                     'SANDPROOF_PROOF_HEAVY_LOCK_FD': str(inherited.fileno())}):
                 registered.run_native(registered.ROOT, root)

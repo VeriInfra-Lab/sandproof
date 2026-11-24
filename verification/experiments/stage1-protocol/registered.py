@@ -1,13 +1,15 @@
 """Finite V3 wiring around the original drivers and shared native receipts.
 
 The existing retained component and all original V0 targets remain separate.
+Full native runs can set SANDPROOF_STAGE1_NATIVE_JOBS to 1–16 (default 1).
+Only drivers with private builds run together, each on four exclusive CPUs.
 This module neither implements a proof nor issues a shared native seal.
 """
 import argparse
 import ast
 import copy
 import fcntl
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, FIRST_EXCEPTION, ThreadPoolExecutor, wait
 import hashlib
 import importlib.util
 import json
@@ -650,10 +652,80 @@ def validate_registration(root=ROOT, *, profile='full'):
     validate_metadata_inputs(root, profile=profile)
 
 
+# Each of these original drivers builds every variant under its own output
+# directory. Keep shared-target, locked and producer-dependent work in order.
+_PRIVATE_NATIVE_COMPONENTS = frozenset("""
+    inbox-lookup inbox-admission inbox-record inbox-append inbox-state inbox-position
+    inbox-lineage inbox-retained inbox-lifetimes inbox-renewal-session inbox-unload-resolution
+    inbox-entry-validation inbox-retired-identities inbox-origin-selection inbox-config
+    inbox-config-validation terminal-binding retention-lane native-retirement session-shape
+    inbox-validation inbox-save inbox-record-validation inbox-load
+""".split())
+
+
+def _native_worker_slots(profile):
+    setting = os.environ.get('SANDPROOF_STAGE1_NATIVE_JOBS', '1')
+    if not re.fullmatch(r'[1-9]|1[0-6]', setting):
+        raise ValueError('SANDPROOF_STAGE1_NATIVE_JOBS must be an integer from 1 to 16')
+    workers = int(setting)
+    if workers == 1 or profile != 'full':
+        return ()
+    allowed = sorted(os.sched_getaffinity(0))
+    needed = workers * CREATE_CPUS_PER_JOB
+    if len(allowed) < needed:
+        raise ValueError(f'{workers} native workers require {needed} admitted CPUs')
+    return _cpu_slots(profile, workers, allowed)
+
+
+def _native_batches(drivers, workers):
+    batch = []
+    for row in drivers:
+        label, driver, needs_archive = row
+        component = Path(driver).parent.name
+        if (workers == 1 or needs_archive or component not in _PRIVATE_NATIVE_COMPONENTS
+                or component in CONVERGENCE.LOCKED_NATIVE or component in CONVERGENCE.CASES
+                or label != 'stage1-' + component or Path(driver) != HERE/component/'native.py'):
+            if batch:
+                yield batch
+                batch = []
+            yield [row]
+            continue
+        batch.append(row)
+        if len(batch) == workers:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
+def _run_native_drivers(drivers, slots, run_driver):
+    receipts = {}
+    workers = len(slots) or 1
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for batch in _native_batches(drivers, workers):
+            if len(batch) == 1:
+                label, receipt = run_driver(batch[0])
+                receipts[label] = receipt
+                continue
+            futures = [pool.submit(run_driver, row, slot)
+                       for row, slot in zip(batch, slots[:len(batch)], strict=True)]
+            done, pending = wait(futures, return_when=FIRST_EXCEPTION)
+            for future in futures:
+                if future in done and future.exception() is not None:
+                    for remaining in pending:
+                        remaining.cancel()
+                    # Wait for running siblings on exit while propagating the
+                    # original failure. No later batch reaches submission.
+                    future.result()
+            receipts.update(future.result() for future in futures)
+    return receipts
+
+
 def run_native(root, work, *, profile='full', scope=None):
-    """Call after the retained stage1 case, inside the original ning suite."""
+    """Call after the retained Stage1 case, inside the original native suite."""
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'native':
         raise ValueError('native registration must execute on the native host')
+    slots = _native_worker_slots(profile)
     validate_registration(root, profile=profile)
     check_create_sources(root)
     scope = native_scope(profile) if scope is None else scope
@@ -670,10 +742,11 @@ def run_native(root, work, *, profile='full', scope=None):
             _invoke(root, HERE/'component.py', ['--native-only', '--output', work/'retained']), scope=scope)
         archive = _original_file(retained, 'source.tar')
     target = Path(os.environ['CARGO_TARGET_DIR'])/'stage1-protocol'
-    receipts = {}
     drivers = (CREATE_NATIVE_DRIVERS if profile == 'create-delivery' else
                CONVERGENCE.NATIVE_DRIVERS if profile == CONVERGENCE.PROFILE else NATIVE_DRIVERS)
-    for label, driver, needs_archive in drivers:
+
+    def run_driver(row, slot=None):
+        label, driver, needs_archive = row
         output = work/label
         args = ['--output', output]
         if label in ('stage1-sqlite-commit', 'source-live', *CPU_PINNED_UNLOAD_JOBS):
@@ -698,8 +771,8 @@ def run_native(root, work, *, profile='full', scope=None):
                          if accepted_parser else 'complete')
         def action(driver=Path(driver), args=args, output=output, pass_fds=native_pass_fds,
                    success_field=success_field, accepted_parser=accepted_parser):
-            affinity = None
-            admission = None
+            affinity = slot
+            admission = work/(output.name+'-cpu-admission.json') if slot is not None else None
             if accepted_parser or profile == CONVERGENCE.PROFILE or driver.parent.name in CONVERGENCE.CASES:
                 allowed = sorted(os.sched_getaffinity(0))
                 if len(allowed) < CREATE_CPUS_PER_JOB:
@@ -711,6 +784,10 @@ def run_native(root, work, *, profile='full', scope=None):
             result = _read(output/'result.json')
             if result.get(success_field) is not True:
                 raise ValueError('original native driver did not complete: ' + str(driver))
+            if slot is not None:
+                _check_cpu_admission(admission, expected=slot)
+                (output/'cpu-admission.json').hardlink_to(admission)
+                admission.unlink()
             if str(driver) in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
                 _check_create_native_result(root, Path(driver).parent.name, output, result)
             if driver == HERE/'sqlite_convergence.py':
@@ -718,6 +795,8 @@ def run_native(root, work, *, profile='full', scope=None):
 
         receipt = shared.native_case(label, root, output, action, scope=scope)
         original = _original_file(receipt, 'result.json')
+        if 'evidence/cpu-admission.json' in receipt['files']:
+            _check_cpu_admission(_original_file(receipt, 'cpu-admission.json'))
         if driver in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
             name = Path(driver).parent.name
             admitted = ({'native_receipt': receipt} if profile == CONVERGENCE.PROFILE
@@ -725,7 +804,9 @@ def run_native(root, work, *, profile='full', scope=None):
             _check_create_native_result(root, name, original.parent, _read(original), **admitted)
         if label == 'stage1-sqlite-commit':
             CONVERGENCE.extra(root, 'sqlite-commit').check_native(_read(original), root, original.parent)
-        receipts[label] = receipt
+        return label, receipt
+
+    receipts = _run_native_drivers(drivers, slots, run_driver)
     for name in CRATE_CASES if profile == 'full' else ():
         label = 'stage1-protocol-'+name
         output = work/label
