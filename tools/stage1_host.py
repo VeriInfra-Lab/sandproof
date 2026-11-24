@@ -3,7 +3,6 @@ import argparse
 import fcntl
 import json
 import os
-import runpy
 from pathlib import Path
 import shutil
 import subprocess
@@ -200,7 +199,10 @@ def independent_reference():
     path = Path(value).resolve(strict=True)
     result = json.loads(path.read_text())
     package = Path("verification/experiments/source-save-order/unload-parent-link")
-    original = runpy.run_path(str(package / "verify.py"))["candidate"]()
+    # The verifier resolves its sibling helpers from its script directory.
+    original = json.loads(subprocess.check_output(
+        [sys.executable, "-B", "-c", "import json; from verify import candidate; print(json.dumps(candidate()))"],
+        cwd=package, text=True))
     keys = ("source_commit", "source_tree", "source_archive_sha256", "fixture_sha256", "entry_sha256")
     if (result.get("kind") != "source-save-order-formal" or result.get("complete") is not True
             or any(result.get(key) != original[key] for key in keys)

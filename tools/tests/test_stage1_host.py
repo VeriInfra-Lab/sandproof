@@ -1,11 +1,44 @@
-"""Check local Rust source admission without executing rustup or a compiler."""
+"""Check the Stage1 host's input admission without running a compiler."""
+from contextlib import chdir
 import hashlib
 import json
+import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from tools import stage1_host
+
+
+class IndependentReferenceTests(unittest.TestCase):
+    def test_resolves_sibling_helper_and_checks_original_inputs(self):
+        with tempfile.TemporaryDirectory() as temporary, chdir(temporary):
+            package = Path('verification/experiments/source-save-order/unload-parent-link')
+            package.mkdir(parents=True)
+            inputs = dict(source_commit='fixed-commit', source_tree='fixed-tree',
+                          source_archive_sha256='archive', fixture_sha256='fixture',
+                          entry_sha256='entry')
+            (package / 'prepare_source_save_order.py').write_text(f'INPUTS = {inputs!r}\n')
+            (package / 'verify.py').write_text(
+                'from prepare_source_save_order import INPUTS\n\ndef candidate():\n    return INPUTS\n')
+            subprocess.run(['git', 'init', '-q'], check=True)
+            subprocess.run(['git', 'add', 'verification'], check=True)
+            subprocess.run(['git', '-c', 'user.name=Test', '-c', 'user.email=test@example.test',
+                            '-c', 'commit.gpgsign=false', 'commit', '-qm', 'proof fixture'], check=True)
+            head, tree = subprocess.check_output(['git', 'rev-parse', 'HEAD', 'HEAD^{tree}'],
+                                                 text=True).splitlines()
+            result = Path('result.json').resolve()
+            record = dict(inputs, kind='source-save-order-formal', complete=True,
+                          views=['factored', 'reordered'], review_commit=head, review_tree=tree)
+            with patch.dict(os.environ, {'SANDPROOF_STAGE1_SOURCE_SAVE_RESULT': str(result)}):
+                result.write_text(json.dumps(record))
+                self.assertEqual(stage1_host.independent_reference()['review_commit'], head)
+                record['source_tree'] = 'unrelated-tree'
+                result.write_text(json.dumps(record))
+                with self.assertRaisesRegex(ValueError, 'uses different inputs'):
+                    stage1_host.independent_reference()
 
 
 class RustSourceAdmissionTests(unittest.TestCase):
