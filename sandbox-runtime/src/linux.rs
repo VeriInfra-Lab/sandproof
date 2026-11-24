@@ -650,7 +650,7 @@ impl Runtime {
         }
         plan.configure(|path, body| self.put(id, path, body))?;
         if plan.uses_hot_fanout() {
-            plan.check_full_configuration(&self.api(id, "GET", "/vm/config", None)?)?;
+            plan.check_full_configuration(&self.api(id, "GET", "/vm/config", None)?, false)?;
         }
         self.configure_access_metadata(id)?;
         self.put(id, "/actions", &json!({ "action_type": "InstanceStart" }))?;
@@ -1480,7 +1480,7 @@ impl Runtime {
             crate::hot_fanout_wire::time_left(deadline)?.min(Duration::from_secs(2)),
         )?;
         boot_plan::BootPlan::for_hot_fanout(&self.config)
-            .check_full_configuration(&configuration)?;
+            .check_full_configuration(&configuration, false)?;
         let path = self.root_path(id).join(HOT_FANOUT_VSOCK);
         let metadata = fs::symlink_metadata(&path)?;
         if !metadata.file_type().is_socket()
