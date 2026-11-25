@@ -17,6 +17,7 @@ from pathlib import Path
 import stat
 import time
 
+from _center_host_services import role_facts
 from _runtime_services import RuntimeServices
 from hot_fanout_host import SDK_COMMIT
 from hot_fanout_product import (
@@ -47,6 +48,13 @@ class CombinedRuntime(UnloadRuntime):
 
     def _prepare(self):
         native = self.inputs['native']
+        material = self.captures[0]['material_project']
+        project = {key: material[key] for key in ('project_id', 'hard_bytes', 'hard_inodes')}
+        coordination = Path(native['bounded_host']['physical_storage']['coordination_file'])
+        if (coordination.parent.stat().st_dev != self.quota['filesystem_device']
+                or self.quota['projects'] != [project]
+                or any(self.quota[key] is not True for key in ('accounting', 'enforcement', 'actual_readback_verified'))):
+            raise ValueError('independently read back original kernel hard quota required')
         self.services = RuntimeServices.prepare(
             self.args, self.root, [native], [self.inputs['catalog']], self.owner_key,
             '127.0.0.1:' + str(free_loopback_port()), self.args.service_cgroup_record, 2,
@@ -55,6 +63,11 @@ class CombinedRuntime(UnloadRuntime):
             activation_ceiling_bytes=self.inputs['activation_ceiling_bytes'],
             hot_fanout=self.hot_receipt,
         )
+        self.configs = self.role_configuration_facts()
+
+    def role_configuration_facts(self):
+        return {name: role_facts(Path(role['config']).parent, role['config'], uid=role['uid'], gid=role['gid'])
+                for name, role in self.services.processes.bindings.items()}
 
 
 def approved_json(path, expected, limit):
@@ -113,17 +126,15 @@ def prepare_combined(args):
     mount = Path(quota['mount'])
     control = private_path(quota['deployment_control'], directory=True)
     staging = trusted_path(args.service_staging_parent)
-    coordination = Path(native['bounded_host']['physical_storage']['coordination_file'])
     project_device = quota['filesystem_device']
     if (not mount.is_mount() or control != args.quota_receipt.parent or root == mount
             or not root.is_relative_to(mount) or not control.is_relative_to(mount)
-            or staging == mount or not staging.is_relative_to(mount)
+            or not staging.is_relative_to(mount)
             or any(path.stat().st_dev != project_device for path in (root, control, staging))
             or Path(native['database']) != root / 'db/controller.db'
             or Path(native['node_state_dir']) != root / 'state'
             or Path(captures[0]['layout_parent']) != root / 'p'
-            or Path(native['chroot_base']) != root / 'p/v'
-            or coordination.parent.stat().st_dev != project_device):
+            or Path(native['chroot_base']) != root / 'p/v'):
         raise ValueError('runtime must belong to the approved XFS installation and exact run paths')
     for name, expected in quota['raw_output_sha256'].items():
         if bytes(checked_file(control / (name + '.txt'), 65536)['sha256']).hex() != expected:
@@ -142,10 +153,16 @@ def prepare_combined(args):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if not lease.exclusive():
             raise ValueError('original exclusive HostLease no longer has an idle host')
+        pid = os.getpid()
+        start_ticks = process_start_ticks(pid)
+        boot_id = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
         write_once(control / 'scenario-starting.json', dict(identity=lease.identity,
-            boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
-            pid=os.getpid(), start_time_ticks=process_start_ticks(os.getpid())))
-        return CombinedRuntime(args, fixture, root, captures, quota, lease, lock, hot_receipt)
+            boot_id=boot_id, pid=pid, start_time_ticks=start_ticks))
+        runtime = CombinedRuntime(args, fixture, root, captures, quota, lease, lock, hot_receipt)
+        write_once(root / 'lifecycle-unload-admission.json', dict(identity=lease.identity,
+            boot_id=boot_id, operator_pid=pid, operator_start_time_ticks=start_ticks,
+            quota_receipt_sha256=args.quota_receipt_sha256))
+        return runtime
     except BaseException:
         os.close(lock)
         raise
@@ -239,6 +256,9 @@ def run(args):
     clients = []
     try:
         report['measurement_identity'] = runtime.measurement_identity()
+        report['measurement_identity']['workload'] = (
+            f'original hot branch scenario: {args.only_hot_case}' if args.only_hot_case
+            else 'hot SDK branch witnesses and ordinary fixed RAM, disk and Full/Diff lifecycle')
         registration = check_center_configuration(runtime.services, runtime.owner_key, runtime.foreign_key)
         deployment = registration['deployment']
         report['registration'] = registration
@@ -264,6 +284,9 @@ def run(args):
             exercise_ordinary(runtime, ordinary, report.setdefault('ordinary', {}))
         report['phase'] = 'settlement'
         report['settlement'] = runtime.settlement_evidence(deadline)
+        if runtime.role_configuration_facts() != runtime.configs:
+            raise ValueError('sealed role configurations differ after scenario and settlement')
+        report['sealed_role_configurations_preserved'] = True
         report['complete'] = True
     except Exception as error:
         report['failure'] = dict(error=type(error).__name__, **failure_details(
