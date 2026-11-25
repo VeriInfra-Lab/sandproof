@@ -1,0 +1,49 @@
+#[test]
+fn proof_source_save_preserves_first_invalid_cursor_column() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let original = prepare(&mut journal);
+    let key = original.work.requirement.work_binding.as_bytes();
+    let connection = &journal.journal.connection;
+    let sources = codec::load(connection).unwrap().unwrap();
+    assert_eq!(sources.records, vec![original.clone()]);
+
+    for (assignments, expected) in [
+        (
+            "state_json='null',sha256=printf('%032d',0),work_key=printf('%032d',0)",
+            (0, "state_json"),
+        ),
+        (
+            "sha256=printf('%032d',0),work_key=printf('%032d',0)",
+            (1, "sha256"),
+        ),
+        ("work_key=printf('%032d',0)", (2, "work_key")),
+    ] {
+        let tx = connection.unchecked_transaction().unwrap();
+        codec::save(&tx, &sources, sources.max_sessions).unwrap();
+        assert_eq!(
+            tx.execute(
+                &format!(
+                    "UPDATE controller_source_work_records SET {assignments} WHERE work_key=?1"
+                ),
+                [key.as_slice()],
+            )
+            .unwrap(),
+            1
+        );
+        let outcome = codec::save(&tx, &sources, sources.max_sessions);
+        tx.rollback().unwrap();
+        assert_eq!(
+            codec::load(connection).unwrap().unwrap().records,
+            vec![original.clone()]
+        );
+        assert!(
+            matches!(
+                &outcome,
+                Err(JournalError::Sqlite(rusqlite::Error::InvalidColumnType(index, name, storage)))
+                    if (*index, name.as_str()) == expected && storage == &rusqlite::types::Type::Text
+            ),
+            "source save must preserve first invalid cursor column: {expected:?}, got {outcome:?}"
+        );
+    }
+}
