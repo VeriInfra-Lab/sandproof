@@ -1,0 +1,20 @@
+{
+  "issue": 635,
+  "id": "source-serde-ports",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "f7462e126a6e50a7beec8ab38e4b77cce5324211",
+  "capture_entry": "verification/experiments/source-serde-ports/serde_capture.py",
+  "formal_entry": "verification/experiments/source-serde-ports/serde_check.py",
+  "native_entry": "verification/experiments/source-serde-ports/serde_native.py",
+  "root": "SourceSerdeRequiredProof",
+  "field_contract": "SandboxModel.Stage1Protocol.SourceSerdeRequiredProof.original_required_option_forwards_full_value",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SourceSerdeDecodeProof.actual_typed_decoder_roundtrips_complete_records",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SourceSerdeRequiredProof.wrong_refutes_same_complete_required_option_contract",
+  "writer_scope": "actual B4 source admission only, fixed serializer trait cycle prevents full generated Lean",
+  "remaining": [
+    "Ning exact ordinary and native acceptance",
+    "main coordinator shared registration/coverage/dependency adoption",
+    "nested concrete Serde writtenObject/field law, actual writer library refinement and physical transactions"
+  ],
+  "public_acceptance": false
+}
