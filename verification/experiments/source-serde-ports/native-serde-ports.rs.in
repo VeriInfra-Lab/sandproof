@@ -1,0 +1,69 @@
+#[test]
+fn proof_source_required_option_and_original_serde_schema() {
+    let mut some = serde_json::Deserializer::from_slice(b"7");
+    assert_eq!(
+        required_option::<_, u64>(&mut some).unwrap(),
+        Some(7),
+        "required_option must preserve the complete present value"
+    );
+    some.end().unwrap();
+    let mut none = serde_json::Deserializer::from_slice(b"null");
+    assert_eq!(required_option::<_, u64>(&mut none).unwrap(), None);
+    none.end().unwrap();
+    let mut invalid = serde_json::Deserializer::from_slice(b"false");
+    assert!(required_option::<_, u64>(&mut invalid).is_err());
+
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let record = prepare(&mut journal);
+    let encoded = serde_json::to_vec(&record).unwrap();
+    assert_eq!(serde_json::to_vec(&Some(&record)).unwrap(), encoded);
+    assert_eq!(
+        serde_json::from_slice::<Option<SourceWorkRecord>>(&encoded).unwrap(),
+        Some(record.clone())
+    );
+    let document = serde_json::to_value(&record).unwrap();
+    for required in ["capture", "restore", "retirement", "material_release"] {
+        let mut missing = document.clone();
+        assert!(missing.as_object_mut().unwrap().remove(required).is_some());
+        assert!(
+            serde_json::from_slice::<SourceWorkRecord>(&serde_json::to_vec(&missing).unwrap())
+                .is_err()
+        );
+    }
+    let mut missing_anchor = document.clone();
+    assert!(
+        missing_anchor["work"]["anchor"]
+            .as_object_mut()
+            .unwrap()
+            .remove("continued_from")
+            .is_some()
+    );
+    assert!(
+        serde_json::from_slice::<SourceWorkRecord>(&serde_json::to_vec(&missing_anchor).unwrap())
+            .is_err()
+    );
+
+    assert!(record.observation.is_none());
+    let mut optional = document.clone();
+    assert!(
+        optional
+            .as_object_mut()
+            .unwrap()
+            .remove("observation")
+            .is_some()
+    );
+    assert_eq!(
+        serde_json::from_slice::<SourceWorkRecord>(&serde_json::to_vec(&optional).unwrap())
+            .unwrap(),
+        record
+    );
+    let mut unknown = document;
+    unknown
+        .as_object_mut()
+        .unwrap()
+        .insert("unknown_source_field".to_owned(), serde_json::Value::Null);
+    assert!(
+        serde_json::from_slice::<SourceWorkRecord>(&serde_json::to_vec(&unknown).unwrap()).is_err()
+    );
+}

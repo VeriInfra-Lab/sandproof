@@ -1,0 +1,13 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -1064,3 +1064,10 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+ 
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++
++[来源记录实际 Serde 使用点](../../verification/experiments/source-serde-ports/README.md)：
++明确 `Option<T>::deserialize/serialize`、`Serializer::serialize_some`、同一 compact
++`to_writer/to_vec`、`from_slice`/`OptionVisitor`/文档 `end` 及具体 `deserialize_with`
++缺字段规则的 A6/B4 原库源；真实内层 `SourceWorkRecord` 具体字段状态律 (`writtenObject`)
++仍由提供者提交。实际 writer 仅源准入，不能声称整个库机器证明。
