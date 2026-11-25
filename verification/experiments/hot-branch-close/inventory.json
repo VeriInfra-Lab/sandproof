@@ -188,7 +188,7 @@
     ]
   },
   "operation_key_bytes": {
-    "sha256": "dbc43810575760507ee47e2352516cf65c8f0508e2a8670de7fcd92f1df4cf7f",
+    "sha256": "921aec32d7afa250305abefb5dcbf706cb6b1f418bf575caa8aea982cfe1229e",
     "generated": false,
     "audits": [
       "SandproofBranchBatch.OperationKeyBytes.column_zero_keeps_vector_bytes",

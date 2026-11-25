@@ -14,24 +14,26 @@ theorem column_zero_keeps_vector_bytes (raw : Row) (value : BranchRow)
     (columns : FiveColumns raw value) (stored : alloc.vec.Vec U8)
     (read : rowGet index blobColumn raw 0#usize = .ok (.Ok stored)) :
     alloc.vec.Vec.deref stored = value.operation := by
-  have inside : (0#usize : Usize).val < raw.statement.columns.val := by
+  have inside : 0 < raw.statement.columns.val := by
     rw [columns.columnCount]
     decide
+  have locate : index 0#usize raw.statement = .ok (.Ok 0#usize) := by
+    simp [index, inside]
   have original : rowGet index blobColumn raw 0#usize = .ok (.Ok ⟨value.operation⟩) := by
-    simp [rowGet, index, inside, blobColumn, columns.operation, bind_tc_ok]
+    simp [rowGet, locate, blobColumn, columns.operation, bind_tc_ok]
   rw [read] at original
   have same : stored = ⟨value.operation⟩ := by simpa using original
-  exact congrArg alloc.vec.Vec.deref same
+  simpa [alloc.vec.Vec.deref, alloc.vec.Vec.val] using congrArg alloc.vec.Vec.slice same
 
 theorem stored_first_slice_comparison (stored : alloc.vec.Vec U8) (digest : Array U8 32#usize) :
     core.cmp.impls.PartialEqShared.ne
-      (Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8)
+      (SandproofStage1RequestRust.Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8)
       (alloc.vec.Vec.deref stored) (Array.to_slice digest) =
     core.cmp.impls.PartialEqShared.ne
-      (Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8)
+      (SandproofStage1RequestRust.Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8)
       (Array.to_slice digest) (alloc.vec.Vec.deref stored) := by
   have storedFirst : core.cmp.impls.PartialEqShared.ne
-      (Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8)
+      (SandproofStage1RequestRust.Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8)
       (alloc.vec.Vec.deref stored) (Array.to_slice digest) =
       .ok (decide (stored.val ≠ digest.val)) := by
     simp [core.cmp.impls.PartialEqShared.ne, core.cmp.PartialEq.ne.default,
@@ -48,7 +50,7 @@ theorem false_operation_guard_keeps_original_blob (raw : Row) (value : BranchRow
     (read : rowGet index blobColumn raw 0#usize = .ok (.Ok stored))
     (digest : Array U8 32#usize) (answer : Result Bool)
     (dictionary : answer = core.cmp.impls.PartialEqShared.ne
-      (Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8)
+      (SandproofStage1RequestRust.Slice.Insts.CoreCmpPartialEqSlice core.cmp.PartialEqU8)
       (alloc.vec.Vec.deref stored) (Array.to_slice digest))
     (continues : answer = .ok false) :
     raw.column 0#usize = .Blob (Array.to_slice digest) := by
@@ -57,7 +59,8 @@ theorem false_operation_guard_keeps_original_blob (raw : Row) (value : BranchRow
   have same : digest.val = stored.val := by
     by_contra different
     simp [different] at continues
-  have sameSlice : Array.to_slice digest = alloc.vec.Vec.deref stored := Slice.eq_iff.mpr same
+  have sameSlice : Array.to_slice digest = alloc.vec.Vec.deref stored := by
+    simpa [Slice.eq_iff, Array.to_slice, alloc.vec.Vec.deref] using same
   rw [sameSlice, column_zero_keeps_vector_bytes raw value columns stored read]
   exact columns.operation
 
