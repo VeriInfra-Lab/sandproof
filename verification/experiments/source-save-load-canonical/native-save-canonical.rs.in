@@ -1,0 +1,52 @@
+#[test]
+fn proof_source_load_requires_canonical_record_bytes() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let original = prepare(&mut journal);
+    let connection = &journal.journal.connection;
+    let sources = codec::load(connection).unwrap().unwrap();
+    assert_eq!(sources.records, vec![original.clone()]);
+    let tx = connection.unchecked_transaction().unwrap();
+    codec::save(&tx, &sources, sources.max_sessions).unwrap();
+
+    let key = original.work.requirement.work_binding.as_bytes();
+    let (canonical, reserve): (Vec<u8>, i64) = tx
+        .query_row(
+            "SELECT state_json,reserve_bytes FROM controller_source_work_records WHERE work_key=?1",
+            [key.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap();
+    assert_eq!(canonical, serde_json::to_vec(&Some(&original)).unwrap());
+    let mut alternate = vec![b' '];
+    alternate.extend_from_slice(&canonical);
+    assert!(i64::try_from(alternate.len()).unwrap() <= reserve);
+    assert_eq!(
+        serde_json::from_slice::<Option<SourceWorkRecord>>(&alternate).unwrap(),
+        Some(original.clone())
+    );
+    assert_ne!(alternate, canonical);
+    let checksum = super::super::sha256::digest(&alternate);
+    assert_eq!(
+        tx.execute(
+            "UPDATE controller_source_work_records SET state_json=?1,sha256=?2 WHERE work_key=?3",
+            rusqlite::params![alternate, checksum.as_slice(), key.as_slice()],
+        )
+        .unwrap(),
+        1
+    );
+
+    let result = codec::load(&tx);
+    tx.rollback().unwrap();
+    assert_eq!(
+        codec::load(connection).unwrap().unwrap().records,
+        vec![original.clone()]
+    );
+    match result {
+        Err(JournalError::CorruptStore) => (),
+        Ok(Some(loaded)) if loaded.records == vec![original] => {
+            panic!("source loader accepted noncanonical record bytes")
+        }
+        _ => panic!("source loader returned a different outcome for the canonical byte assertion"),
+    }
+}
