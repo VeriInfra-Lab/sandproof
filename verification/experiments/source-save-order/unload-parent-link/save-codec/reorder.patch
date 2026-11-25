@@ -1,0 +1,7 @@
+--- a/controller-service/src/controller/lifecycle_inbox/source_work/codec.rs
++++ b/controller-service/src/controller/lifecycle_inbox/source_work/codec.rs
+@@ -189,0 +190 @@
++    write_candidate_records(connection, encoded)?;
+@@ -193 +194 @@
+-    write_candidate_records(connection, encoded)
++    Ok(())
