@@ -4,6 +4,7 @@ use super::{
     ReceiveError, Request, Response, StatusCode, ValidationReceiver, json_response, response,
 };
 use crate::lifecycle::{CREATE_OBSERVATION_BODY_BYTES, CenterPeerRegistration, REQUEST_BODY_BYTES};
+use http_body_util::Collected;
 use sandproof_controller_service::application::branching::{
     BRANCH_CONTROL_BODY_BYTES, BranchControlRequest,
 };
@@ -58,18 +59,18 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
         Err(status) => return response(status, Bytes::new()),
     };
     if matches!(call, Call::BranchControl) {
-        return branch_command(&body, context, handler).await;
+        return branch_command(&body.to_bytes(), context, handler).await;
     }
     if matches!(call, Call::Validation) {
-        return super::validation_evidence(&body, context, handler).await;
+        return super::validation_evidence(&body.to_bytes(), context, handler).await;
     }
     if matches!(call, Call::RenewalConfirm) {
-        return renewal_command(&body, context, handler).await;
+        return renewal_command(&body.to_bytes(), context, handler).await;
     }
     if matches!(call, Call::Confirm | Call::Close) {
-        return terminal_command(&body, context, handler, call).await;
+        return terminal_command(&body.to_bytes(), context, handler, call).await;
     }
-    let intent = match crate::lifecycle::decode_accepted_with(&body, &context, |input| {
+    let intent = match crate::lifecycle::decode_accepted_with(&body.to_bytes(), &context, |input| {
         serde_json::from_slice::<AcceptedLifecycleIntent>(input)
     }) {
         Ok(intent) => intent,
@@ -116,7 +117,10 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     }
 }
 
-async fn read_command(request: Request<Incoming>, limit: usize) -> Result<Bytes, StatusCode> {
+async fn read_command(
+    request: Request<Incoming>,
+    limit: usize,
+) -> Result<Collected<Bytes>, StatusCode> {
     if request
         .headers()
         .get(hyper::header::CONTENT_TYPE)
@@ -140,7 +144,6 @@ async fn read_command(request: Request<Incoming>, limit: usize) -> Result<Bytes,
     Limited::new(request.into_body(), limit)
         .collect()
         .await
-        .map(http_body_util::Collected::to_bytes)
         .map_err(|_| StatusCode::BAD_REQUEST)
 }
 
