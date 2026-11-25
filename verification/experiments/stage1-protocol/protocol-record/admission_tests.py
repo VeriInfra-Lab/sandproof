@@ -10,11 +10,13 @@ import unittest
 HERE=Path(__file__).resolve().parent
 spec=importlib.util.spec_from_file_location('inbox_admission_formal',HERE/'formal.py')
 formal=importlib.util.module_from_spec(spec);spec.loader.exec_module(formal)
+evidence=formal.module('protocol_record_capture_evidence', HERE/'evidence.py')
 
 
 class Admission(unittest.TestCase):
     raw=None
     translation=None
+    generated_files=None
     variant='correct'
 
     def ir(self,raw):
@@ -28,6 +30,27 @@ class Admission(unittest.TestCase):
 
     def test_actual_metadata(self):
         self.ir(self.raw);self.generated(self.translation)
+
+    def test_physical_capture_requires_raw_generated_bytes(self):
+        label = 'primitive' if self.variant == 'primitive' else 'request'
+        view, namespace = evidence.GENERATED_VIEWS[label]
+        base = f'verification/aeneas/stage1-protocol/{view}'
+        original = self.generated_files
+        physical = {f'{base}/{namespace}/{name}': original[f'{namespace}/{name}']
+                    for name in ('Types.lean', 'Funs.lean')}
+        evidence.check_generated_capture(label, original, physical)
+        for name in original:
+            with self.subTest(missing=name):
+                incomplete = dict(original)
+                del incomplete[name]
+                with self.assertRaisesRegex(ValueError, 'incomplete raw'):
+                    evidence.check_generated_capture(label, incomplete, physical)
+        for name in ('Types.lean', 'Funs.lean'):
+            with self.subTest(changed=name):
+                changed = dict(physical)
+                changed[f'{base}/{namespace}/{name}'] = '0'*64
+                with self.assertRaisesRegex(ValueError, 'physical generated source differs'):
+                    evidence.check_generated_capture(label, original, changed)
 
     def test_every_generated_body_is_required(self):
         # Each leaf/loop is part of the reviewed complete view, including branches unused by witnesses.
@@ -189,6 +212,8 @@ if __name__=='__main__':
     args=parser.parse_args()
     Admission.raw=json.loads(args.llbc.read_text())
     Admission.translation=json.loads((args.generated/'translation.json').read_text())
+    Admission.generated_files={str(path.relative_to(args.generated)):formal.sha(path)
+                               for path in args.generated.rglob('*') if path.is_file()}
     Admission.variant=args.variant
     result=unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromTestCase(Admission))
     raise SystemExit(not result.wasSuccessful())
