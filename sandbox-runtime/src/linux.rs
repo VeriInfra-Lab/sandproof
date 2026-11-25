@@ -8,6 +8,8 @@ use std::ffi::OsStr;
 use std::fmt::{self, Display};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
+#[path = "json_file.rs"]
+mod json_file;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -886,7 +888,7 @@ impl Runtime {
             .join(".claims")
             .join(id)
             .join("network.json");
-        let network: NetworkRecord = serde_json::from_reader(File::open(path)?)?;
+        let network: NetworkRecord = json_file::from_reader(File::open(path)?)?;
         if network.resource_id != id || network.namespace_inode == 0 {
             return Err(RuntimeError::IdentityMismatch("network record fields"));
         }
@@ -1322,7 +1324,7 @@ impl Runtime {
             }
         })?;
         File::open(self.config.chroot_base.join(".claims").join(id))?.sync_all()?;
-        let record: ProcessRecord = serde_json::from_reader(file)?;
+        let record: ProcessRecord = json_file::from_reader(file)?;
         if record.resource_id != id || record.pid == 0 || record.start_time_ticks == 0 {
             return Err(RuntimeError::IdentityMismatch("record fields"));
         }
@@ -1626,7 +1628,7 @@ pub(crate) fn read_trusted_record<T: DeserializeOwned>(path: &Path) -> Result<T,
     // Recovery may see a published target whose writer died before syncing
     // the rename. Stabilize its directory before treating it as authority.
     File::open(path.parent().ok_or(RuntimeError::InvalidId)?)?.sync_all()?;
-    Ok(serde_json::from_reader(File::open(path)?)?)
+    Ok(json_file::from_reader(File::open(path)?)?)
 }
 
 #[cfg(test)]

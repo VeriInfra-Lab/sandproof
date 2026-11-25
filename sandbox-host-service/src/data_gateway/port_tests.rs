@@ -23,6 +23,9 @@ use lifecycle::fixture as local;
 #[path = "port_tests/unload.rs"]
 mod unload;
 
+#[path = "port_tests/disconnect.rs"]
+mod disconnect;
+
 struct Permit {
     revocation: watch::Receiver<bool>,
     drain: DataLease,
