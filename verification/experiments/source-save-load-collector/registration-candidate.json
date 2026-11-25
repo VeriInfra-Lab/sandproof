@@ -1,0 +1,21 @@
+{
+  "issue": 635,
+  "id": "source-save-load-collector",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "ff98242ffb0e9cb6fc3c63c336981cfcc15135dc",
+  "collector_provider": "c0e7fe698ce1ade6e752bcac8af73e3d9b7a55fc",
+  "capture_entry": "verification/experiments/source-save-load-collector/collector_capture.py",
+  "formal_entry": "verification/experiments/source-save-load-collector/collector_check.py",
+  "native_entry": "verification/experiments/source-save-load-collector/collector_native.py",
+  "root": "SaveLoadCollectorWitness",
+  "field_contract": "SandboxModel.Stage1Protocol.SaveLoadCollectorProof.original_decode_enforces_full_stored_key",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveLoadCollectorComposition.original_load_returns_exact_collected_records",
+  "first_error_theorem": "SandboxModel.Stage1Protocol.SaveLoadCollectorComposition.original_save_preserves_actual_first_collector_error",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveLoadCollectorWitness.length_only_violates_same_full_key_contract",
+  "remaining": [
+    "Ning exact ordinary and native acceptance",
+    "main coordinator shared registration and coverage adoption",
+    "canonical JSON/anchor encoding/SHA, physical cursor and transaction proof"
+  ],
+  "public_acceptance": false
+}
