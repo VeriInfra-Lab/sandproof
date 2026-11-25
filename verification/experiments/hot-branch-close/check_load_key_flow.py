@@ -6,8 +6,124 @@ from pathlib import Path
 
 from check_retirement_flow import (
     CONTROL_FLOW, DIGEST, LOAD_BATCH, RESULT, RESULT_BRANCH, RESULT_RESIDUAL,
-    check, enum_variant, name, representations, require, unpack,
+    check, enum_variant, name, representations, require, statements, unpack,
 )
+
+
+OPERATION_KEY = ('sandproof_protocol', 'lifecycle', 'identity', 'OperationKey')
+SERIALIZE = ('serde_core', 'ser', 'Serialize')
+PARTIAL_EQ = ('core', 'cmp', 'PartialEq')
+VEC = ('alloc', 'vec', 'Vec')
+GLOBAL = ('alloc', 'alloc', 'Global')
+VEC_DEREF = ('alloc', 'vec', 'deref')
+VEC_ARRAY_NE = ('alloc', 'vec', 'partial_eq', 'ne')
+STD_VEC_EQ = '/rustc/library/alloc/src/vec/partial_eq.rs'
+OPERATION_KEY_SOURCE = 'sandbox-protocol/src/lifecycle/identity.rs'
+
+
+def key_dispatch(translated, functions, type_decls, types, integers, trait_refs):
+    trait_decls = {entry['def_id']: entry for entry in translated['trait_decls'] if entry}
+    trait_impls = {entry['def_id']: entry for entry in translated['trait_impls'] if entry}
+    sources = {entry['id']: entry['name'] for entry in translated['files'] if entry}
+    u8 = 'U8'
+    vector = (VEC, (u8,))
+    array32 = ('array', u8, ('Usize', 32))
+    operation = (OPERATION_KEY, ())
+
+    def uint(encoded):
+        kind, value = unpack(encoded, integers)[0]['Integer']['Unsigned']
+        return kind, int(value)
+
+    def shape(encoded):
+        ty = unpack(encoded, types)
+        if 'Scalar' in ty:
+            return ty['Scalar']['Integer']['Unsigned']
+        if 'Adt' in ty:
+            adt = ty['Adt']
+            return name(type_decls[adt['id']]), generic_types(adt['generics'])
+        if 'Ref' in ty:
+            _, inner, kind = ty['Ref']
+            return 'ref', kind, shape(inner)
+        if 'Array' in ty:
+            inner, length, _ = ty['Array']
+            return 'array', shape(inner), uint(length)
+        if 'Slice' in ty:
+            return 'slice', shape(ty['Slice'][0])
+        raise ValueError('unexpected type in the operation-key dispatch')
+
+    def generic_types(generic):
+        return tuple(shape(encoded) for encoded in generic['types'])
+
+    def argument_types(call):
+        return tuple(shape(next(iter(argument.values()))['ty']) for argument in call['args'])
+
+    def source(entry):
+        span = entry['item_meta']['span']['Untagged']['data']
+        return sources[span['file_id']], span['beg']['line']
+
+    def method(implementation, trait_id, slot):
+        entry, = (item for item in implementation['methods']
+                  if item['kind'] == {'TraitMethod': [trait_id, slot]})
+        return entry['skip_binder']['id']
+
+    def ground_dictionary(generic, trait, wanted_types):
+        encoded, = generic['trait_refs']
+        bound = unpack(encoded, trait_refs)
+        declared = bound['trait_decl_ref']['skip_binder']
+        actual = bound['kind']['TraitImpl']
+        chosen = trait_impls[actual['id']]
+        require(name(trait_decls[declared['id']]) == trait
+                and generic_types(declared['generics']) == wanted_types
+                and not any(actual['generics'].values())
+                and chosen['impl_trait'] == declared,
+                'wrong concrete dictionary: ' + '::'.join(trait))
+        return declared['id'], chosen
+
+    def digest_application(call):
+        regular = call['func']['Regular']
+        target = regular['kind']['Fun']
+        generic = regular['generics']
+        require(name(functions[target]) == DIGEST and generic_types(generic) == (operation,)
+                and not generic['const_generics']
+                and argument_types(call) == (('ref', 'Shared', operation),),
+                'operation digest did not receive the original shared OperationKey')
+        trait_id, implementation = ground_dictionary(generic, SERIALIZE, (operation,))
+        serialize = method(implementation, trait_id, 0)
+        require(source(implementation)[0] == {'Local': OPERATION_KEY_SOURCE}
+                and {'Builtin': 'AutomaticallyDerived'} in
+                    implementation['item_meta']['attr_info']['attributes']
+                and name(functions[serialize])[-1] == 'serialize'
+                and functions[serialize]['item_meta']['name'][-2] ==
+                    {'Impl': {'Trait': implementation['def_id']}},
+                'operation digest lost the original derived Serialize dictionary')
+        return target, implementation['def_id'], serialize
+
+    def vec_array_comparison(call):
+        regular = call['func']['Regular']
+        target = regular['kind']['Fun']
+        selected = functions[target]
+        generic = regular['generics']
+        require(name(selected) == VEC_ARRAY_NE
+                and generic_types(generic) == (u8, u8, (GLOBAL, ()))
+                and [uint(value) for value in generic['const_generics']] == [('Usize', 32)]
+                and argument_types(call) == (('ref', 'Shared', vector), ('ref', 'Shared', array32)),
+                'key comparison must be the actual stored-first Vec<u8>/[u8;32] method')
+        trait_id, byte_impl = ground_dictionary(generic, PARTIAL_EQ, (u8, u8))
+        implementation = trait_impls[selected['item_meta']['name'][-2]['Impl']['Trait']]
+        require(implementation['impl_trait']['id'] == trait_id
+                and method(implementation, trait_id, 1) == target
+                and name(functions[method(byte_impl, trait_id, 1)]) == ('core', 'cmp', 'impls', 'ne')
+                and source(selected) == ({'Local': STD_VEC_EQ}, 17)
+                and source(implementation)[0] == {'Local': STD_VEC_EQ},
+                'key comparison changed the original Vec/Array or u8 PartialEq selection')
+        return selected['item_meta']['opacity']
+
+    def vec_deref(call):
+        require(argument_types(call) == (('ref', 'Shared', vector),)
+                and shape(call['dest']['ty']) == ('ref', 'Shared', ('slice', u8)),
+                'record decode must borrow the complete original Vec<u8> as a slice')
+
+    return digest_application, vec_array_comparison, vec_deref
 
 
 def check_load(capture):
@@ -15,8 +131,19 @@ def check_load(capture):
     translated = json.loads(capture.read_bytes())['translated']
     functions = {entry['def_id']: entry for entry in translated['fun_decls'] if entry}
     type_decls = {entry['def_id']: entry for entry in translated['type_decls'] if entry}
-    switches = {}
-    representations(translated, switch_values=switches)
+    switches, trait_refs = {}, {}
+    types, integers = representations(translated, trait_refs=trait_refs, switch_values=switches)
+    digest_application, vec_array_comparison, vec_deref = key_dispatch(
+        translated, functions, type_decls, types, integers, trait_refs,
+    )
+    retirement, = (entry for entry in functions.values()
+                   if name(entry) == (*DIGEST[:-1], 'retire_closed_parent'))
+    retirement_calls = (data['call'] for tag, data, _
+                        in statements(retirement['body']['Structured']['body']) if tag == 'Call')
+    delete_digest, = (call for call in retirement_calls
+                      if name(functions[call['func']['Regular']['kind']['Fun']]) == DIGEST)
+    delete_application = digest_application(delete_digest)
+    comparison_opacities = set()
     root, = (entry for entry in functions.values()
              if name(entry) == LOAD_BATCH and 'Ident' in entry['item_meta']['name'][-1])
     require(root['item_meta']['opacity'] == 'Transparent',
@@ -74,7 +201,8 @@ def check_load(capture):
         path = name(functions[target])
         arguments = [operand(arg, values) for arg in call['args']]
         first = arguments[0] if arguments else None
-        if path[-1] in ('deref', 'as_slice') and path[0] in ('alloc', 'core'):
+        if path == VEC_DEREF and first == ('stored-column', 3):
+            vec_deref(call)
             return first
         if path[0] == 'serde_json' and path[-1] == 'from_slice':
             require(first == ('stored-column', 3), 'branch record decoded from a different stored column')
@@ -83,6 +211,8 @@ def check_load(capture):
             return first
         if path == DIGEST:
             if first == ('decoded-field', (0, 0)):
+                require(digest_application(call) == delete_application,
+                        'load and DELETE did not select the same operation digest and Serialize dictionary')
                 return ('raw-result', ('loaded-operation-digest',))
             return ('raw-result', None)
         if path == RESULT_BRANCH:
@@ -94,6 +224,8 @@ def check_load(capture):
         if path[-1] == 'ne' and path[0] in ('core', 'alloc'):
             exact = [('stored-column', 0), ('loaded-operation-digest',)]
             if arguments == exact or arguments == exact[::-1]:
+                require(arguments == exact, 'key comparison changed the original argument order')
+                comparison_opacities.add(vec_array_comparison(call))
                 return ('original-key-mismatch',)
         return None
 
@@ -181,10 +313,16 @@ def check_load(capture):
             'load can return a decoded batch without matching its original operation column')
     require(any(guard is True for guard, _ in endings),
             'missing original mismatched operation-key path')
+    opacity, = comparison_opacities
     report['load_operation_key'] = dict(
         stored_column=0, record_column=3, decoded_field='key.operation',
         comparison='full Vec<u8> against original digest',
         normal_return_requires_match=True,
+        digest_application='digest::<OperationKey> with the same derived Serialize method',
+        digest_body_opacity=functions[delete_application[0]]['item_meta']['opacity'],
+        comparison_dispatch=dict(method='::'.join(VEC_ARRAY_NE), left='Vec<u8>', right='[u8;32]',
+                                 allocator='::'.join(GLOBAL), element='PartialEq<u8> for u8',
+                                 source=STD_VEC_EQ, source_line=17, body_opacity=opacity),
     )
     return report
 

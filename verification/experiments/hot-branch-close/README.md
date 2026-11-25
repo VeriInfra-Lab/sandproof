@@ -20,7 +20,9 @@
 
 用下节原局部入口加 `--with-branch-scan` 重建和检查此页。限定的 SQLite 提供方仍须绑定物理事务和同一次原整数查询。原 Rust `load` 对解码操作键摘要等于第零列的检查、按确切父机筛出所有键、实际闭包到库视图、窗口更新值到两 BLOB 以及受保护重开均有单列义务。
 
-用原入口加 `--with-load-key` 另行抽取透明的原 `branching::load`。源检查器从原五列元组的第零列及第 3 列记录开始，沿原 JSON 解码结果、操作键字段、摘要比较和正常返回追踪。检查器要求成功返回同一解码记录，且经过原键不匹配条件的否分支。这项检查与原 DELETE 的全长摘要实参检查同用一份 LLBC。`OperationKeyBytes` 从原第 0 列的 BLOB 转换推出 `Vec<u8>` 的完整值，用已审计的 `InboxLoadLibrary.digest_ne` 消去完整字节比较。给定选中的字典已归约为原参数顺序的切片比较，守卫返回 `false` 就推出摘要切片等于原列 BLOB。复验入口同时登记这三条 Lean 定理。原 Rust 字典到该切片调用的对应，以及实际 JSON/SHA 到后续 DELETE 摘要计算的对应，各自仍待接入。
+用原入口加 `--with-load-key` 另行抽取透明的原 `branching::load`。源检查器从原五列元组的第零列及第 3 列记录开始，沿原 JSON 解码结果、操作键字段、摘要比较和正常返回追踪。检查器要求成功返回同一解码记录，且经过原键不匹配条件的否分支。这项检查与原 DELETE 的全长摘要实参检查同用一份 LLBC。`OperationKeyBytes` 从原第 0 列的 BLOB 转换推出 `Vec<u8>` 的完整值，用已审计的 `InboxLoadLibrary.digest_ne` 消去完整字节比较。给定选中的字典已归约为原参数顺序的切片比较，守卫返回 `false` 就推出摘要切片等于原列 BLOB。复验入口同时登记这三条 Lean 定理。原 LLBC 检查核对守卫实际选中的 `Vec<u8>` 对 `[u8; 32]` 的 `PartialEq::ne` 实现和字节字典，并核对守卫与 DELETE 调用同一个 `digest::<OperationKey>` 和同一个派生 `Serialize` 方法。两次调用使用同一解码操作键。比较的方法正文在抽取中是 `Foreign`，摘要正文是 `Opaque`。
+
+固定 Rust 抽取前端 `8fa1c96cf` 的标准库 `alloc/src/vec/partial_eq.rs` 审查源摘要为 `74c7ddee7e0c94800dfa0728a621e94a5b674affa812feb95125d2b28a4cf630`。该 Vec/Array 方法用 `self[..] != other[..]` 比较完整切片。原抽取报告核对方法来源和字典，切片归约及相同纯摘要调用的正常库语义仍按 A6 外部条件使用。该报告保留源码、逻辑值和物理 SQLite 三处界限。
 
 `--with-load-key` 从原 V3 固定清单安装 `InboxLoadValueLibrary` 和 `InboxLoadDigestLibrary` 的导入闭包，包含 `ReplayEquality`、配置预算和固定的 Stage1 生成视图。入口按原 InboxLoad 库存核对两页的安装路径、摘要和七条审计，再把这两页送入逐文件 Lean 内核和注册服务检查。结果记录把原库存、V3 物料清单及两页绑定到这次运行。
 
