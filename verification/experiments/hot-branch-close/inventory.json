@@ -171,7 +171,7 @@
     ]
   },
   "normal_branch_scan": {
-    "sha256": "3b6830899f9f709720aa50f99b3972381af30a1f58314540ad59d4958c036785",
+    "sha256": "b590f35a4f50dae47ac6cd627a63f802837a1bea5ddc4b94275a9812548ba2da",
     "generated": false,
     "audits": [
       "SandproofBranchBatch.NormalBranchScan.original_retirement_row_and_key_observation",

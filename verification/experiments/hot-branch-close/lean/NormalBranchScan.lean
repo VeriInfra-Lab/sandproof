@@ -138,7 +138,7 @@ theorem five_columns_keep_original_values (raw : Row) (value : BranchRow)
     withBlob_preserves_bytes raw _ _ at1 columns.parent,
     withBlob_preserves_bytes raw _ _ at2 columns.execution,
     withBlob_preserves_bytes raw _ _ at3 columns.record,
-    withBlob_preserves_bytes raw _ _ at4 columns.digest] <;> cases value <;> rfl
+    withBlob_preserves_bytes raw _ _ at4 columns.digest]
 
 theorem successful_row_preserves_the_stored_operation (raw : Row) (value : BranchRow)
     (columns : FiveColumns raw value) :
@@ -196,8 +196,10 @@ theorem normal_end_keeps_the_original_cursor (owner : Owner) (before after : Liv
     let n := (order.take (maxBatches + 1)).length
     nextBranch (issuedAt before.sql.current limit bound n) =
       .ok (none, issuedAt before.sql.current limit bound (n + 1)) := by
-  simp [nextBranch, issuedAt, issuedStatement, mappedNext, cursorNext,
-    scan.ends, bind_tc_ok]
+  have ended : (before.sql.current.issueScan statementSql bound [.Integer limit]).observe
+      (min (maxBatches + 1) order.length) = .ok (.Ok none) := by
+    simpa only [List.length_take] using scan.ends
+  simp [nextBranch, issuedAt, issuedStatement, mappedNext, cursorNext, ended, bind_tc_ok]
 
 theorem raw_cursor_error_bypasses_the_row_callback (view : ReadView) (limit : I64)
     (bound : RowStatement) (n : Nat) (err : SqlError)
