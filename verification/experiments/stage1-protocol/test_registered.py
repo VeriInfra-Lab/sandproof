@@ -500,6 +500,21 @@ class CreateDelivery(OriginalReadPlanFixture):
 
 
 class Registration(OriginalReadPlanFixture):
+    def test_sqlite_fault_uid_uses_the_current_native_batch_and_preserves_the_archive(self):
+        adapter = registered.CONVERGENCE.extra(registered.ROOT, 'sqlite-commit')
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, SANDPROOF_NATIVE_EVIDENCE=directory):
+            stamp = Path(directory)/'runtime.json'
+            stamp.write_text('{"uid":1002}')
+            adapter._check_native_fault_uid({'uid':1002}, True)
+            adapter._check_native_fault_uid({'uid':1000}, False)
+            for uid, current in ((1000, True), (1002, False), (0, True), (None, True)):
+                with self.subTest(uid=uid, current=current), self.assertRaisesRegex(ValueError, 'receipt UID'):
+                    adapter._check_native_fault_uid({'uid':uid}, current)
+            stamp.write_text('{"uid":0}')
+            with self.assertRaisesRegex(ValueError, 'receipt UID'):
+                adapter._check_native_fault_uid({'uid':0}, True)
+
     def test_original_read_fixture_rejects_a_changed_private_source(self):
         adapter = registered.CONVERGENCE.extra(registered.ROOT, 'standard-record-read')
         # current() is the unmodified production source/mode validator. Only
