@@ -1,0 +1,12 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2708,3 +2708,9 @@
+ 所列读取、配置、节点、会话、容量、编码和旧责任核对结果。首次完整匹配、真实逐行 SQL、
+ JSON/SHA 及事务持久性沿各自接口继续验证。适用版本、三份原生收据、实际抽取、物理文件
+ 和审计结果以该批 PR 的验收记录为准。
++
++
++[来源保存完整可空槽与真实读回首错](../verification/experiments/source-save-load-decision/README.md)
++固定生产 `60aad8af23e317f5b1ba913518603d1fda015f4c`。原解码完整 nullable/键、规范字节、
++anchor 编码/摘要短路决策及原有序读回全 Result 等式接入原 load/save；真实键长度错版违反
++同一完整合同。具名库原语、物理同一事务及业务事实仍由各提供者分开验收。

@@ -1,0 +1,73 @@
+#[test]
+fn proof_source_load_nullable_slots_and_full_key() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let original = prepare(&mut journal);
+    let connection = &journal.journal.connection;
+    let sources = codec::load(connection).unwrap().unwrap();
+    assert_eq!(sources.records, vec![original.clone()]);
+    let key = original.work.requirement.work_binding.as_bytes();
+    let mut foreign = *key;
+    foreign[0] ^= 1;
+    let vacancy: i64 = connection.query_row(
+        "SELECT id FROM controller_source_work_records WHERE work_key IS NULL AND state_json=?1 ORDER BY id LIMIT 1",
+        [b"null".as_slice()], |row| row.get(0),
+    ).unwrap();
+    let occupied: i64 = connection
+        .query_row(
+            "SELECT id FROM controller_source_work_records WHERE work_key=?1",
+            [key.as_slice()],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    let tx = connection.unchecked_transaction().unwrap();
+    assert_eq!(
+        tx.execute(
+            "UPDATE controller_source_work_records SET work_key=?1 WHERE id=?2",
+            rusqlite::params![foreign.as_slice(), vacancy]
+        )
+        .unwrap(),
+        1
+    );
+    assert!(
+        matches!(codec::load(&tx), Err(JournalError::CorruptStore)),
+        "a vacant row with any present key must be rejected"
+    );
+    tx.rollback().unwrap();
+    let tx = connection.unchecked_transaction().unwrap();
+    assert_eq!(
+        tx.execute(
+            "UPDATE controller_source_work_records SET work_key=NULL WHERE id=?1",
+            [occupied]
+        )
+        .unwrap(),
+        1
+    );
+    assert!(
+        matches!(codec::load(&tx), Err(JournalError::CorruptStore)),
+        "an occupied row requires a stored key"
+    );
+    tx.rollback().unwrap();
+    assert_eq!(codec::load(connection).unwrap().unwrap(), sources);
+
+    let tx = connection.unchecked_transaction().unwrap();
+    assert_eq!(
+        tx.execute(
+            "UPDATE controller_source_work_records SET work_key=?1 WHERE id=?2",
+            rusqlite::params![foreign.as_slice(), occupied]
+        )
+        .unwrap(),
+        1
+    );
+    let result = codec::load(&tx);
+    tx.rollback().unwrap();
+    assert_eq!(codec::load(connection).unwrap().unwrap(), sources);
+    match result {
+        Err(JournalError::CorruptStore) => (),
+        Ok(Some(loaded)) if loaded.records == vec![original] => {
+            panic!("source loader accepted the original record under a foreign 32-byte stored key")
+        }
+        _ => panic!("source loader returned a different outcome for the full nullable decision"),
+    }
+}
