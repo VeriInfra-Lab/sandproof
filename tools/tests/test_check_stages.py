@@ -293,6 +293,7 @@ if sys.argv[1] == 'tree':
                 ('ordinary', '32', '32'),
                 ('managed_port', '32', '2'),
                 ('business_authority', '32', '2'),
+                ('durable_https', '32', '2'),
                 ('redis_https_application', '32', '2'),
                 ('redis_ledger', '32', '2'),
                 ('business_authority', '1', '1'),

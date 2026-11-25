@@ -5,7 +5,7 @@ suite=${1##*/}
 suite=${suite%-*}
 threads=$SANDPROOF_CHECK_RUST_THREADS
 case "$suite" in
-  managed_port|business_authority|redis_https_application|redis_ledger)
+  managed_port|business_authority|durable_https|redis_https_application|redis_ledger)
     # These suites wait for real durable I/O under application deadlines.
     if [[ $threads != 1 && $threads != 2 ]]; then
       threads=2

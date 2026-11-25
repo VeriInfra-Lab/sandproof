@@ -30,8 +30,9 @@ Python 产物指纹与模板暂存哈希在 Linux 上按文件系统报告的数
 
 手动验收宿主可在统一启动环境设置 `SANDPROOF_CHECK_RUST_THREADS=32`。Cargo 继续按原工作区
 和特性选择测试。工作区各测试二进制以及 `contention-diagnostics` 通常使用设置的线程预算。
-工作区的 `managed_port`、`business_authority`、`redis_https_application` 和 `redis_ledger`
-使用真实持久写入和应用回复期限，最多使用两路。入口记录总预算，受限套件另记录实际值。
+工作区的 `managed_port`、`business_authority`、`durable_https`、`redis_https_application`
+和 `redis_ledger` 使用真实持久写入和应用回复期限，最多使用两路。入口记录总预算，
+受限套件另记录实际值。
 接受正整数。未配置时使用原 Cargo 测试命令及其环境。托管启动器应把这项变量传给子进程，
 使普通验收及 Stage1 调用的普通验收共用这项设置。Cargo 编译并行和证明任务各有独立配置。
 
