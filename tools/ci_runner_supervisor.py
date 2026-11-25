@@ -5,8 +5,9 @@ The queue is a demand signal, not a job-to-runner binding. GitHub assigns jobs
 by labels; only Actions owns check conclusions. This service never writes them.
 """
 import argparse
-from collections import Counter
+from collections import Counter, defaultdict
 from contextlib import contextmanager
+from dataclasses import asdict
 import fcntl
 import json
 import os
@@ -20,10 +21,12 @@ import time
 import uuid
 
 if __package__:
+    from . import ci_source_cache
     from .ci_github_app import APIError, GitHubApp, REPOSITORY, Transport
     from .ci_vm import (MAX_ROLE_WORKERS, ROOT, ROLES, RUNNER_JOBS, RUNNER_JOB_SECONDS,
                         RUNNER_UNIT_SECONDS, cleanup_work, valid_run_id, valid_slot)
 else:
+    import ci_source_cache
     from ci_github_app import APIError, GitHubApp, REPOSITORY, Transport
     from ci_vm import (MAX_ROLE_WORKERS, ROOT, ROLES, RUNNER_JOBS, RUNNER_JOB_SECONDS,
                        RUNNER_UNIT_SECONDS, cleanup_work, valid_run_id, valid_slot)
@@ -152,6 +155,8 @@ class Runtime:
             '--slot', valid_slot(lease['role'], lease.get('slot', lease['role'])),
             '--run-id', identity, '--timeout', str(RUNNER_JOB_SECONDS[lease['role']]),
             '--jit-file', '/run/credentials/' + unit + '/jit']
+        if 'source_request' in lease and ci_source_cache.SETTINGS.is_file():
+            command += ['--source-request',json.dumps(lease['source_request'])]
         subprocess.run(command, check=True, capture_output=True, timeout=30)
 
     def cleanup(self, identity):
@@ -194,6 +199,7 @@ class Supervisor:
         self.runtime = runtime
         self.workflow_id = workflow_id
         self.clock = clock
+        self.queued_sources = defaultdict(list)
 
     def inventory(self):
         runners = []
@@ -242,6 +248,7 @@ class Supervisor:
         return runners
 
     def queued_counts(self):
+        self.queued_sources.clear()
         # The owner moved full Rust checks off PRs into a separate push/manual
         # workflow. Discover only that exact trusted filename; absent until its
         # first deployment is normal, not a reason to block existing PR checks.
@@ -290,6 +297,7 @@ class Supervisor:
                             if identity not in seen:
                                 counts[role] += 1
                                 seen.add(identity)
+                                self.queued_sources[role].append(ci_source_cache.from_run(run))
                         if len(jobs) < 100:
                             break
                     else:
@@ -318,13 +326,17 @@ class Supervisor:
                 # pause-after-admission race without interrupting live workers.
                 with self.runtime.admission_guard():
                     if self.runtime.admission(role, self.state.leases):
-                        self.start_worker(role, slot)
+                        choices=self.queued_sources[role]
+                        source=choices[unassigned[role]] if unassigned[role]<len(choices) else None
+                        self.start_worker(role, slot, source)
                         unassigned[role] += 1
 
-    def start_worker(self, role, slot):
+    def start_worker(self, role, slot, source=None):
         identity = uuid.uuid4().hex
         lease = {'id': identity, 'role': role, 'slot': valid_slot(role, slot),
                  'name': runner_name(role, identity), 'created': self.clock(), 'phase': 'registering'}
+        if source:
+            lease['source_request']=asdict(source)
         self.state.leases[slot] = lease
         self.state.save()
         result = self.api.request('POST', PREFIX + 'runners/generate-jitconfig',
@@ -382,6 +394,11 @@ def main():
         try:
             supervisor.tick()
             prune_diagnostics(ROOT / 'runs', {v['id'] for v in supervisor.state.leases.values()})
+            if ci_source_cache.SETTINGS.is_file():
+                try:
+                    ci_source_cache.SourceCache().collect()
+                except (ValueError,OSError) as error:
+                    print('CI PR source cleanup deferred: '+type(error).__name__,flush=True)
             delay = 15
         except (APIError, ValueError, OSError, subprocess.SubprocessError) as error:
             # No exception detail/response body: transport errors can contain
