@@ -20,6 +20,10 @@ SQLITE_ROW_GET = ('rusqlite', 'row', 'get')
 FN_MUT = ('core', 'ops', 'function', 'FnMut')
 BYTE_VEC = ('alloc', 'vec', 'Vec')
 RESULT_BRANCH = ('core', 'result', 'branch')
+RESULT_RESIDUAL = ('core', 'result', 'from_residual')
+RESULT = ('core', 'result', 'Result')
+CONTROL_FLOW = ('core', 'ops', 'control_flow', 'ControlFlow')
+IDENTITY_CONVERT = ('core', 'convert', 'From')
 READ_LIMITS = (*BRANCH, 'read_limits')
 LOAD_BATCH = (*BRANCH, 'load')
 DIGEST = (*BRANCH, 'digest')
@@ -81,7 +85,7 @@ def statements(block, loop_depth=0):
             yield kind, value, loop_depth
 
 
-def representations(root, *, trait_refs=None):
+def representations(root, *, trait_refs=None, discriminants=None):
     types, integers = {}, {}
     pending = [root]
     while pending:
@@ -104,6 +108,9 @@ def representations(root, *, trait_refs=None):
             elif (trait_refs is not None and isinstance(data, dict)
                   and data.keys() == {'kind', 'trait_decl_ref'}):
                 table = trait_refs
+            elif (discriminants is not None and isinstance(data, list) and len(data) == 2
+                  and isinstance(data[0], dict) and 'Discriminant' in data[0]):
+                table = discriminants
             else:
                 continue
             require(table.setdefault(index, data) == data, 'conflicting LLBC parameter representation')
@@ -198,9 +205,162 @@ def check_row_columns(translated, body, functions, types, integers):
     return columns
 
 
+def check_row_returns(translated, body, functions, types, integers, trait_refs, discriminants):
+    """Enumerate normal returns of the original captureless row callback."""
+    type_decls = {entry['def_id']: entry for entry in translated['type_decls'] if entry}
+    trait_names = {entry['def_id']: name(entry) for entry in translated['trait_decls'] if entry}
+    returns = []
+
+    def variant(adt, index, enum):
+        decl = type_decls[adt['id']]
+        require(name(decl) == enum, 'unexpected enum in the retirement row callback')
+        return decl['kind']['Enum'][index]['name']
+
+    def origin(place, values):
+        kind = place['kind']
+        if 'Local' in kind:
+            return values.get(kind['Local'])
+        base, projection = kind['Projection']
+        incoming = origin(base, values)
+        if (incoming is not None and incoming[0] == 'guarded'
+                and projection == {'Field': [incoming[3], 0]}):
+            return ('value' if incoming[2] == 'Continue' else 'residual', incoming[1])
+        return None
+
+    def operand(arg, values):
+        place = arg.get('Move', arg.get('Copy'))
+        return origin(place, values) if place is not None else None
+
+    def assignment(source, values):
+        if 'Use' in source:
+            return operand(source['Use'][0], values)
+        if 'Ref' in source:
+            # The separate column checker binds each shared borrow to the Row argument.
+            return None
+        aggregate, inputs = source['Aggregate']
+        adt, index, _ = aggregate['Adt']
+        fields = tuple(operand(arg, values) for arg in inputs)
+        if adt['builtin'] == 'Tuple':
+            require(index is None, 'retirement Stored tuple must have no variant')
+            return ('tuple', fields)
+        require(variant(adt, index, RESULT) == 'Ok' and len(fields) == 1,
+                'retirement row success must construct the original Result::Ok')
+        return ('ok', fields[0])
+
+    def execute_call(call, values, events):
+        regular = call['func']['Regular']
+        callee = name(functions[regular['kind']['Fun']])
+        if callee == SQLITE_ROW_GET:
+            _, index = call['args']
+            bits = unpack(index['Const'], integers)[0]['Integer']['Unsigned']
+            column = int(bits[1])
+            event, result = 'get', ('read', column)
+        else:
+            arg, = call['args']
+            incoming = operand(arg, values)
+            if callee == RESULT_BRANCH:
+                require(incoming is not None and incoming[0] == 'read',
+                        'retirement row branches on a different get result')
+                event, result = 'branch', ('control', incoming[1])
+            else:
+                require(callee == RESULT_RESIDUAL and incoming is not None
+                        and incoming[0] == 'residual',
+                        'retirement row must propagate the first original get error')
+                reference, = regular['generics']['trait_refs']
+                binding = unpack(reference, trait_refs)
+                dictionary = binding['trait_decl_ref']['skip_binder']
+                source, target = (unpack(ty, types)['Adt']
+                                  for ty in dictionary['generics']['types'])
+                require(trait_names[dictionary['id']] == IDENTITY_CONVERT and source == target
+                        and name(type_decls[source['id']]) == ('rusqlite', 'error', 'Error')
+                        and 'TraitImpl' in binding['kind'],
+                        'retirement row replaced the original error conversion')
+                event, result = 'from-residual', ('error', incoming[1])
+        values[call['dest']['kind']['Local']] = result
+        return (*events, (event, result[1]))
+
+    def arms(switch, values):
+        selector = switch['data']
+        place = selector['scrutinee']['Discriminant']
+        control = origin(place, values)
+        require(control is not None and control[0] == 'control' and selector['fallback'] is None,
+                'retirement row must match the corresponding get ControlFlow')
+        found = {}
+        for encoded, position in selector['branches']:
+            value, _ = unpack(encoded, discriminants)
+            adt, index = value['Discriminant']
+            tag = variant(adt, index, CONTROL_FLOW)
+            require(tag not in found, 'retirement row duplicates a ControlFlow variant')
+            found[tag] = (index, position)
+        require(len(switch['branches']) == 2 and set(found) == {'Continue', 'Break'}
+                and {position for _, position in found.values()} == {0, 1},
+                'retirement row needs distinct Continue and Break arms')
+        for tag, (index, position) in found.items():
+            guarded = dict(values)
+            guarded[place['kind']['Local']] = ('guarded', control[1], tag, index)
+            yield switch['branches'][position], guarded, (tag, control[1])
+
+    def walk(block, values, events):
+        active = [(values, events)]
+        for statement in block['statements']:
+            flow = []
+            effect = statement['kind']
+            for state, history in active:
+                if effect == 'Return':
+                    returns.append((history, state.get(0)))
+                    continue
+                require(isinstance(effect, dict), 'unexpected terminal instruction in retirement row')
+                ((kind, data),) = effect.items()
+                if kind == 'Switch':
+                    for arm, guarded, outcome in arms(data, state):
+                        flow.extend(walk(arm, guarded, (*history, outcome)))
+                    continue
+                if kind == 'Assign':
+                    destination, source = data
+                    state[destination['kind']['Local']] = assignment(source, state)
+                elif kind == 'Call':
+                    history = execute_call(data['call'], state, history)
+                elif kind == 'StorageDead':
+                    state.pop(data, None)
+                else:
+                    require(kind in ('StorageLive', 'Borrowck', 'PlaceMention', 'Drop'),
+                            'unexpected effect in retirement row callback: ' + kind)
+                flow.append((state, history))
+            active = flow
+        return active
+
+    require(not walk(body['body'], {}, ()), 'retirement row has a path without a Rust return')
+    expected = []
+    prefix = ()
+    for index in range(5):
+        prefix = (*prefix, ('get', index), ('branch', index))
+        expected.append(((*prefix, ('Break', index), ('from-residual', index)), ('error', index)))
+        prefix = (*prefix, ('Continue', index))
+    failures = [path for path in returns if path[1] is not None and path[1][0] == 'error']
+    require(len(failures) == 5 and set(failures) == set(expected),
+            'retirement row must preserve five exact first errors without reading later columns')
+    success = (prefix, ('ok', ('tuple', tuple(('value', index) for index in range(5)))))
+    require([path for path in returns if path not in failures] == [success],
+            'retirement row success must return the original five values in Stored order')
+
+    def columns_read(events):
+        return [value for tag, value in events if tag == 'get']
+
+    failures.sort(key=lambda path: path[1][1])
+    outcomes = [dict(read=columns_read(events), error_from=index)
+                for events, (_, index) in failures]
+    events, result = success
+    outcomes.append(dict(read=columns_read(events),
+                         stored_columns=[column for _, column in result[1][1]]))
+    return outcomes
+
+
 def check_sql_parameters(translated, definitions, calls, functions):
     trait_refs = {}
-    types, integers = representations(translated, trait_refs=trait_refs)
+    discriminants = {}
+    types, integers = representations(
+        translated, trait_refs=trait_refs, discriminants=discriminants,
+    )
 
     def uint(encoded):
         data = unpack(encoded, integers)
@@ -331,11 +491,15 @@ def check_sql_parameters(translated, definitions, calls, functions):
     )
     callback = mapped_callback(translated, definitions, query_call, functions, types, trait_refs)
     columns = check_row_columns(translated, callback, functions, types, integers)
+    row_outcomes = check_row_returns(
+        translated, callback, functions, types, integers, trait_refs, discriminants,
+    )
     return dict(
         select_parameter=dict(slot=1, rust_type='u32', source='HostBranchLimits.max_batches', add=1),
         delete_parameter=dict(slot=1, rust_type='&[u8]', source='digest(loaded_record.key.operation)',
                               bytes=32, through='original retirement vector'),
         row_callback_columns=columns,
+        row_callback_outcomes=row_outcomes,
     )
 
 
