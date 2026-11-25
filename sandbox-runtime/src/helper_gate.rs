@@ -426,6 +426,46 @@ impl RuntimeHelperGuard {
         self.file
     }
 
+    /// Verify that the same guard retaining the locked open description still
+    /// protects the exact capture worker and canonical gate. This check never
+    /// reacquires a lock and cannot start a fresh handoff after process death.
+    /// # Errors
+    /// A shared, changed or foreign guard cannot carry live observations.
+    pub fn require_live_capture_protection(
+        &self,
+        worker: &RuntimeProcessIdentity,
+    ) -> Result<(), RuntimeError> {
+        let active = self.active.borrow();
+        let original = active
+            .as_ref()
+            .filter(|marker| self.exclusive && &marker.record.process == worker)
+            .ok_or(RuntimeError::IdentityMismatch(
+                "original exclusive capture guard",
+            ))?;
+        let (path, _) = self.gate.inflight_paths()?;
+        let current = self
+            .read_cell(&path, None)?
+            .ok_or(RuntimeError::IdentityMismatch(
+                "original capture worker marker missing",
+            ))?;
+        let metadata = fs::symlink_metadata(&self.gate.path)?;
+        if current.record != original.record
+            || current.device != original.device
+            || current.inode != original.inode
+            || !metadata.is_file()
+            || metadata.dev() != self.gate.device
+            || metadata.ino() != self.gate.inode
+            || metadata.uid() != self.owner
+            || metadata.mode() & 0o077 != 0
+            || metadata.nlink() != 1
+        {
+            return Err(RuntimeError::IdentityMismatch(
+                "capture worker marker or exclusive gate changed during handoff",
+            ));
+        }
+        Ok(())
+    }
+
     fn read_cell(
         &self,
         path: &Path,
@@ -1214,6 +1254,38 @@ mod tests {
         drop(exclusive);
         let shared = acquire(&context, true).unwrap();
         assert!(shared.require_exclusive_context(&context).is_err());
+    }
+
+    #[test]
+    fn live_capture_reply_requires_continuously_held_original_protection() {
+        let _serial = super::super::PROCESS_TEST_LOCK.lock().unwrap();
+        let (_root, context) = fixture(2);
+        let gate = acquire(&context, false).unwrap();
+        let mut child = paused(&gate, &context, false);
+        let process = RuntimeProcessIdentity::capture(child.id()).unwrap();
+        child.kill().unwrap();
+        child.wait().unwrap();
+        gate.require_live_capture_protection(&process).unwrap();
+        assert!(acquire(&context, false).is_err());
+
+        let old_path = context.helper_gate.path.with_extension("original");
+        fs::rename(&context.helper_gate.path, &old_path).unwrap();
+        fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .mode(0o600)
+            .open(&context.helper_gate.path)
+            .unwrap();
+        assert!(gate.require_live_capture_protection(&process).is_err());
+        fs::rename(&old_path, &context.helper_gate.path).unwrap();
+
+        drop(gate);
+        let replacement = acquire(&context, false).unwrap();
+        assert!(
+            replacement
+                .require_live_capture_protection(&process)
+                .is_err()
+        );
     }
 
     fn stopped_cleanup_fixture(root: &Path, context: &RuntimeHostSlot) -> (Runtime, String) {

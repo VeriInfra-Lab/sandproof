@@ -3,7 +3,7 @@ use super::{ExpectedFullCapture, SealResult, capture_directory_key, manifest_fro
 use sandbox_runtime::snapshot_store::SnapshotFileMeasurement;
 use sandbox_runtime::{
     SnapshotLayout,
-    snapshot_store::{BundleReadLimits, SnapshotBundle},
+    snapshot_store::{BundleReadLimits, LiveCaptureHandoff, SnapshotBundle},
 };
 use sandproof_protocol::lifecycle::SnapshotManifest;
 use sandproof_protocol::lifecycle::{CaptureBinding, VmCompatibility};
@@ -43,6 +43,29 @@ pub fn observe_stored_capture(
     limits: BundleReadLimits,
 ) -> SealResult<CheckedStoredCapture> {
     let bundle = layout.open_capture_bundle(capture_directory_key(expected.binding)?, limits)?;
+    check_stored_capture(bundle, expected, expected_manifest_sha256)
+}
+
+pub(crate) fn observe_after_capture_worker(
+    layout: &SnapshotLayout,
+    expected: &ExpectedFullCapture<'_>,
+    expected_manifest_sha256: [u8; 32],
+    limits: BundleReadLimits,
+    handoff: Option<&LiveCaptureHandoff>,
+) -> SealResult<CheckedStoredCapture> {
+    let bundle = layout.open_capture_bundle_after_worker(
+        capture_directory_key(expected.binding)?,
+        limits,
+        handoff,
+    )?;
+    check_stored_capture(bundle, expected, Some(expected_manifest_sha256))
+}
+
+fn check_stored_capture(
+    bundle: SnapshotBundle,
+    expected: &ExpectedFullCapture<'_>,
+    expected_manifest_sha256: Option<[u8; 32]>,
+) -> SealResult<CheckedStoredCapture> {
     let manifest = checked_manifest_from_bytes(
         bundle.manifest_bytes(),
         expected.binding,

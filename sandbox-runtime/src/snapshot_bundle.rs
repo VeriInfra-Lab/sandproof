@@ -13,6 +13,26 @@ use std::{
     os::unix::fs::{MetadataExt, PermissionsExt},
 };
 
+/// Measurements carried once by the exact live capture worker over its bound
+/// pipe. They are not recovered from disk and convey no publication authority.
+#[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct LiveCaptureHandoff {
+    directory_key: [u8; 32],
+    directory: FileStamp,
+    manifest: FileStamp,
+    manifest_sha256: [u8; 32],
+    // The existing bundle format fixes the order as state, RAM, disk zero.
+    files: [(FileStamp, [u8; 32]); 3],
+}
+
+#[derive(Clone, Copy)]
+enum Measurements<'a> {
+    Cache,
+    Fresh,
+    Live(&'a LiveCaptureHandoff),
+}
+
 const NAMES: [&str; 4] = ["manifest.json", "state.bin", "memory.bin", "disk-0.img"];
 
 /// Upper bounds come from the original work and fixed physical profile.
@@ -105,6 +125,29 @@ pub(super) fn original_file(
     Ok(file)
 }
 
+fn read_manifest(directory: &File, owner: u32) -> Result<(File, FileStamp, Vec<u8>), RuntimeError> {
+    let mut manifest_file = original_file(
+        directory,
+        "manifest.json",
+        owner,
+        super::MAX_MANIFEST_BYTES as u64,
+    )?;
+    let manifest_stamp = FileStamp::from_metadata(&manifest_file.metadata()?);
+    let mut manifest = Vec::new();
+    manifest
+        .try_reserve_exact(
+            usize::try_from(manifest_stamp.length).map_err(|_| invalid("manifest length"))?,
+        )
+        .map_err(|_| invalid("manifest allocation"))?;
+    Read::by_ref(&mut manifest_file)
+        .take(super::MAX_MANIFEST_BYTES as u64 + 1)
+        .read_to_end(&mut manifest)?;
+    if manifest.len() as u64 != manifest_stamp.length {
+        return Err(invalid("manifest changed during read"));
+    }
+    Ok((manifest_file, manifest_stamp, manifest))
+}
+
 fn measure(
     file: &mut File,
     artifact: SnapshotArtifact,
@@ -149,13 +192,50 @@ impl SnapshotStore {
         directory_key: [u8; 32],
         limits: BundleReadLimits,
     ) -> Result<SnapshotBundle, RuntimeError> {
-        self.open_bundle_measuring(directory_key, limits, measure)
+        self.open_bundle_measuring(directory_key, limits, Measurements::Cache, measure)
+    }
+
+    pub(crate) fn open_bundle_after_capture(
+        &self,
+        directory_key: [u8; 32],
+        limits: BundleReadLimits,
+        handoff: Option<&LiveCaptureHandoff>,
+    ) -> Result<SnapshotBundle, RuntimeError> {
+        self.open_bundle_after_capture_measuring(directory_key, limits, handoff, measure)
+    }
+
+    fn open_bundle_after_capture_measuring(
+        &self,
+        directory_key: [u8; 32],
+        limits: BundleReadLimits,
+        handoff: Option<&LiveCaptureHandoff>,
+        mut measure_file: impl FnMut(
+            &mut File,
+            SnapshotArtifact,
+        )
+            -> Result<(SnapshotFileMeasurement, FileStamp), RuntimeError>,
+    ) -> Result<SnapshotBundle, RuntimeError> {
+        if let Some(handoff) = handoff
+            && let Ok(bundle) = self.open_bundle_measuring(
+                directory_key,
+                limits,
+                Measurements::Live(handoff),
+                &mut measure_file,
+            )
+        {
+            return Ok(bundle);
+        }
+        // The caller still checks these measurements against the original
+        // completion and manifest. Do not reuse any process-local measurements
+        // when a live handoff was unavailable or failed an identity check.
+        self.open_bundle_measuring(directory_key, limits, Measurements::Fresh, measure_file)
     }
 
     fn open_bundle_measuring(
         &self,
         directory_key: [u8; 32],
         limits: BundleReadLimits,
+        source: Measurements<'_>,
         mut measure_file: impl FnMut(
             &mut File,
             SnapshotArtifact,
@@ -170,9 +250,9 @@ impl SnapshotStore {
             .verified_bundle
             .lock()
             .map_err(|_| invalid("bundle verification cache unavailable"))?;
-        let cached = cache
-            .take()
-            .filter(|cached| cached.directory_key == directory_key);
+        let cached = cache.take().filter(|cached| {
+            matches!(source, Measurements::Cache) && cached.directory_key == directory_key
+        });
         let name = key_name("capture-", &directory_key);
         let directory = File::from(
             fs::openat(
@@ -189,24 +269,14 @@ impl SnapshotStore {
         }
         matches_entry(&self.directory, OsStr::new(&name), &directory)?;
         names_only(&directory)?;
-        let mut manifest_file = original_file(
-            &directory,
-            "manifest.json",
-            self.owner,
-            super::MAX_MANIFEST_BYTES as u64,
-        )?;
-        let manifest_stamp = FileStamp::from_metadata(&manifest_file.metadata()?);
-        let mut manifest = Vec::new();
-        manifest
-            .try_reserve_exact(
-                usize::try_from(manifest_stamp.length).map_err(|_| invalid("manifest length"))?,
-            )
-            .map_err(|_| invalid("manifest allocation"))?;
-        Read::by_ref(&mut manifest_file)
-            .take(super::MAX_MANIFEST_BYTES as u64 + 1)
-            .read_to_end(&mut manifest)?;
-        if manifest.len() as u64 != manifest_stamp.length {
-            return Err(invalid("manifest changed during read"));
+        let (manifest_file, manifest_stamp, manifest) = read_manifest(&directory, self.owner)?;
+        if let Measurements::Live(handoff) = source
+            && (handoff.directory_key != directory_key
+                || handoff.directory != FileStamp::from_metadata(&metadata)
+                || handoff.manifest != manifest_stamp
+                || handoff.manifest_sha256 != <[u8; 32]>::from(Sha256::digest(&manifest)))
+        {
+            return Err(invalid("live capture directory or manifest changed"));
         }
         let mut files = Vec::new();
         for (artifact, limit) in [
@@ -216,10 +286,27 @@ impl SnapshotStore {
         ] {
             let mut file = original_file(&directory, &artifact.relative_path(), self.owner, limit)?;
             let stamp = FileStamp::from_metadata(&file.metadata()?);
-            let (measurement, stamp) = match cached.as_ref().and_then(|c| c.find(artifact, &stamp))
-            {
-                Some(measurement) => (measurement, stamp),
-                None => measure_file(&mut file, artifact)?,
+            let (measurement, stamp) = if let Measurements::Live(handoff) = source {
+                let (original, sha256) = &handoff.files[files.len()];
+                if *original != stamp {
+                    return Err(invalid("live capture material file changed"));
+                }
+                (
+                    SnapshotFileMeasurement {
+                        artifact,
+                        length: stamp.length,
+                        sha256: *sha256,
+                    },
+                    stamp,
+                )
+            } else {
+                match cached
+                    .as_ref()
+                    .and_then(|entry| entry.find(artifact, &stamp))
+                {
+                    Some(measurement) => (measurement, stamp),
+                    None => measure_file(&mut file, artifact)?,
+                }
             };
             files.push(OriginalFile {
                 file,
@@ -238,6 +325,11 @@ impl SnapshotStore {
             files,
         };
         opened.verify_unchanged()?;
+        if let Measurements::Live(handoff) = source
+            && handoff.directory != FileStamp::from_metadata(&opened.directory.metadata()?)
+        {
+            return Err(invalid("live capture directory changed during open"));
+        }
         *cache = Some(BundleMeasurements {
             directory_key,
             files: opened
@@ -251,6 +343,29 @@ impl SnapshotStore {
 }
 
 impl SnapshotBundle {
+    /// Export measured identities for the private live capture reply.
+    /// # Errors
+    /// Refuses changed entries or material files outside the fixed bundle format.
+    pub fn live_capture_handoff(&self) -> Result<LiveCaptureHandoff, RuntimeError> {
+        let directory = FileStamp::from_metadata(&self.directory.metadata()?);
+        self.verify_unchanged()?;
+        let [state, ram, disk] = self.files.as_slice() else {
+            return Err(invalid("unexpected live capture file count"));
+        };
+        if directory != FileStamp::from_metadata(&self.directory.metadata()?) {
+            return Err(invalid(
+                "live capture directory changed while generating reply",
+            ));
+        }
+        Ok(LiveCaptureHandoff {
+            directory_key: self.directory_key,
+            directory,
+            manifest: self.manifest_stamp.clone(),
+            manifest_sha256: self.manifest_sha256(),
+            files: [state, ram, disk].map(|file| (file.stamp.clone(), file.measurement.sha256)),
+        })
+    }
+
     #[must_use]
     pub fn manifest_bytes(&self) -> &[u8] {
         &self.manifest
