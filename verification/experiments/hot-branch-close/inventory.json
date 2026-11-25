@@ -171,7 +171,7 @@
     ]
   },
   "normal_branch_scan": {
-    "sha256": "b590f35a4f50dae47ac6cd627a63f802837a1bea5ddc4b94275a9812548ba2da",
+    "sha256": "f1abf0e24580e6aeeac1079d3edbb46724a7a3f38d6abbc16cfc8e5e9f903468",
     "generated": false,
     "audits": [
       "SandproofBranchBatch.NormalBranchScan.original_retirement_row_and_key_observation",
@@ -188,7 +188,7 @@
     ]
   },
   "operation_key_bytes": {
-    "sha256": "1574088d8bec311613b2587e9e1646d868d42ff2470707d447707545cdd3f4c3",
+    "sha256": "dbc43810575760507ee47e2352516cf65c8f0508e2a8670de7fcd92f1df4cf7f",
     "generated": false,
     "audits": [
       "SandproofBranchBatch.OperationKeyBytes.column_zero_keeps_vector_bytes",

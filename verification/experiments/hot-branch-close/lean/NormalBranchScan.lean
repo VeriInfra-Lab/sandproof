@@ -158,7 +158,7 @@ def nextBranch (cursor : IssuedMappedCursor Unit) :
     SQLite image. Exclusivity, bounded row observations and the frame are
     supplied at the engine boundary. No Rust row filter, retirement key or
     inbox mutation is assumed here. -/
-structure NormalBranchScan (owner : Owner) (before after : Live owner)
+structure ScanWitness (owner : Owner) (before after : Live owner)
     (maxBatches : Nat) (limit : I64) (bound : RowStatement) (order : List BranchRow) : Prop where
   originalLimit : limit.val = Int.ofNat (maxBatches + selectLimitOffset)
   issue : IntegerIssue before.sql.current limit bound
@@ -175,13 +175,13 @@ structure NormalBranchScan (owner : Owner) (before after : Live owner)
 
 theorem issued_limit_is_one_past_configured_bound (owner : Owner) (before after : Live owner)
     (maxBatches : Nat) (limit : I64) (bound : RowStatement) (order : List BranchRow)
-    (scan : NormalBranchScan owner before after maxBatches limit bound order) :
+    (scan : ScanWitness owner before after maxBatches limit bound order) :
     limit.val = Int.ofNat (maxBatches + 1) := by
   simpa [selectLimitOffset] using scan.originalLimit
 
 theorem normal_next_preserves_the_five_values (owner : Owner) (before after : Live owner)
     (maxBatches : Nat) (limit : I64) (bound : RowStatement) (order : List BranchRow)
-    (scan : NormalBranchScan owner before after maxBatches limit bound order)
+    (scan : ScanWitness owner before after maxBatches limit bound order)
     (n : Nat) (expected : BranchRow)
     (atIndex : (order.take (maxBatches + 1))[n]? = some expected) :
     nextBranch (issuedAt before.sql.current limit bound n) =
@@ -192,7 +192,7 @@ theorem normal_next_preserves_the_five_values (owner : Owner) (before after : Li
 
 theorem normal_end_keeps_the_original_cursor (owner : Owner) (before after : Live owner)
     (maxBatches : Nat) (limit : I64) (bound : RowStatement) (order : List BranchRow)
-    (scan : NormalBranchScan owner before after maxBatches limit bound order) :
+    (scan : ScanWitness owner before after maxBatches limit bound order) :
     let n := (order.take (maxBatches + 1)).length
     nextBranch (issuedAt before.sql.current limit bound n) =
       .ok (none, issuedAt before.sql.current limit bound (n + 1)) := by
@@ -210,7 +210,7 @@ theorem raw_cursor_error_bypasses_the_row_callback (view : ReadView) (limit : I6
 
 theorem observed_image_supplies_the_existing_select (owner : Owner) (before after : Live owner)
     (maxBatches : Nat) (limit : I64) (bound : RowStatement) (order : List BranchRow)
-    (scan : NormalBranchScan owner before after maxBatches limit bound order) :
+    (scan : ScanWitness owner before after maxBatches limit bound order) :
     Select owner before selectSql (maxBatches + 1) (order.take (maxBatches + 1)) after :=
   ⟨rfl, ⟨order, scan.rowOrder, rfl⟩, scan.primaryKey, scan.readFrame⟩
 

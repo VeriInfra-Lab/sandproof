@@ -21,7 +21,7 @@ theorem column_zero_keeps_vector_bytes (raw : Row) (value : BranchRow)
     simp [rowGet, index, inside, blobColumn, columns.operation, bind_tc_ok]
   rw [read] at original
   have same : stored = ⟨value.operation⟩ := by simpa using original
-  rw [same] <;> rfl
+  exact congrArg alloc.vec.Vec.deref same
 
 theorem stored_first_slice_comparison (stored : alloc.vec.Vec U8) (digest : Array U8 32#usize) :
     core.cmp.impls.PartialEqShared.ne
