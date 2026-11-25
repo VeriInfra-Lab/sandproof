@@ -46,6 +46,8 @@ pub(super) struct NativeSettings {
     pub(super) vcpu_count: u8,
     pub(super) memory_mib: u32,
     #[serde(default)]
+    pub(super) enable_memory_diff: bool,
+    #[serde(default)]
     pub(super) host_resources: Option<sandbox_runtime::HostResources>,
     pub(super) file_policy_digest: u64,
     pub(super) max_active_global: u64,
@@ -178,6 +180,7 @@ pub(super) fn node_configuration(
         bounded_host,
         vcpu_count: config.vcpu_count,
         memory_mib: config.memory_mib,
+        enable_memory_diff: config.enable_memory_diff,
         host_resources: config.host_resources.clone(),
         file_policy_digest: core::PolicyDigest(config.file_policy_digest),
         hot_fanout_template: config.hot_fanout.as_ref().map(|hot| hot.template.clone()),

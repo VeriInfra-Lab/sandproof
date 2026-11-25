@@ -129,6 +129,10 @@ pub struct NodeConfig {
     /// Operator approval of one local immutable template descriptor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hot_fanout_template: Option<HotFanoutTemplate>,
+    /// Opt in to dirty tracking for new snapshot restores. Cold boots and
+    /// restores without this setting continue to use Full.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub enable_memory_diff: bool,
 }
 
 impl NodeConfig {

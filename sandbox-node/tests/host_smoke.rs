@@ -48,6 +48,7 @@ fn test_config() -> NodeConfig {
         host_resources: env::var("SANDPROOF_TEST_HOST_RESOURCES")
             .ok()
             .map(|value| serde_json::from_str(&value).expect("valid host resource configuration")),
+        enable_memory_diff: false,
         file_policy_digest: core::PolicyDigest(1),
         hot_fanout_template: None,
     }
