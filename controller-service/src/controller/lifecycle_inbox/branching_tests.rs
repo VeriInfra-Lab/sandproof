@@ -744,8 +744,14 @@ fn close_window_rejects_branch_ledger_above_configured_limit() {
 
     drop(journal);
     let mut journal = fixture::open(&path);
-    assert!(read_ledger(&journal) == ledger, "retirement changed branch records");
-    assert!(read_inbox(&journal) == inbox, "retirement changed the inbox");
+    assert!(
+        read_ledger(&journal) == ledger,
+        "retirement changed branch records"
+    );
+    assert!(
+        read_inbox(&journal) == inbox,
+        "retirement changed the inbox"
+    );
     fixture::refresh_epoch(&mut journal);
     must_retain_quota(&mut journal);
 }

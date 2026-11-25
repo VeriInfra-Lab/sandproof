@@ -1253,7 +1253,7 @@
     "controller-service/src/application/branching.rs": "f0fd28c534d0b81ebe95c9fb2ec48758d6224124f1d9d5b17080ebc32016927b",
     "controller-service/src/application/coordinator/branching.rs": "86c656d0898d95fe89d697a4dfa0fa287c311403d791669c2acdd368ab7fd6a9",
     "controller-service/src/controller/branching.rs": "74df2ce73bc26fe6484788fecc3b309d69e45df64d550a56ca2b40cf8a681ac3",
-    "controller-service/src/controller/lifecycle_inbox/branching_tests.rs": "39d23760855a67abf27924426bb9baa69b1d232032df5e6c599807bd44b4c654",
+    "controller-service/src/controller/lifecycle_inbox/branching_tests.rs": "6e3e5baf1cbdf6aa46656ee41d5ec3ebf5c1a2d36287435fdc0758041be15d16",
     "controller-service/tests/branching_contract.rs": "0c7b645460c539239b5189496e6d1444e75b9e6563c55141b79ea6d8e071d58b",
     "controller-service/tests/lifecycle_application/branching.rs": "a00f6a792a5e3f8bb57b921e16ae4aa99704ffc3f13204498b4e49ef1a630e3c"
   },
