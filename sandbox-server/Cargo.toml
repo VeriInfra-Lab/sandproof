@@ -13,6 +13,9 @@ path = "src/main.rs"
 # Compiles only the test harness; never exposes an unauthenticated server mode.
 sdk-contract-tests = ["sandproof-host-service/sdk-contract-tests"]
 
+[dependencies]
+sandproof-protocol = { path = "../sandbox-protocol" }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 sandproof-host-service = { path = "../sandbox-host-service" }
 sandproof-internal = { path = "../sandbox-internal" }
@@ -24,7 +27,6 @@ sandbox-controller-core = { path = "../controller-core", features = ["serde"] }
 sandproof-api = { path = "../sandbox-api" }
 sandproof-controller-service = { path = "../controller-service" }
 sandproof-node = { path = "../sandbox-node" }
-sandproof-protocol = { path = "../sandbox-protocol" }
 sandbox-runtime = { path = "../sandbox-runtime" }
 axum = { version = "=0.8.9", features = ["tokio", "http1"] }
 serde = { version = "=1.0.228", features = ["derive"] }

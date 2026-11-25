@@ -11,6 +11,14 @@ impl LinuxWorker {
         allowed_cpus: &[u32],
     ) -> NodeResult<RawSourceObservation> {
         let context = self.original_source_context(&requirement.resource)?;
+        if self.config.hot_fanout_template.is_some()
+            && self
+                .secret(context.binding.sandbox, context.binding.generation)?
+                .hot_fanout
+                .is_some()
+        {
+            return Err("persistent unload is not enabled for hot fan-out parents".into());
+        }
         let expected = crate::source_observation::expected_source(requirement)?;
         let limits = crate::source_observation::runtime_limits(&requirement.limits)?;
         crate::source_observation::checked_context(

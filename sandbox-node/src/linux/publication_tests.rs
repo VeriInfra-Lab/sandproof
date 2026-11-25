@@ -24,6 +24,7 @@ fn worker(path: &Path) -> LinuxWorker {
         memory_mib: 128,
         host_resources: None,
         file_policy_digest: core::PolicyDigest(1),
+        hot_fanout_template: None,
         bounded_host: BoundedHostConfig {
             physical_storage: Some(super::test_support::physical_profile(
                 "0123456789abcdef",

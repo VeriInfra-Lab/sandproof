@@ -35,6 +35,7 @@ pub async fn bind<T: TemplateProvider>(
     private: Option<PrivateBuildBoundary>,
     admission: Arc<RequestAdmission>,
     limits: TransferLimits,
+    branching: bool,
 ) -> Result<Boundaries, &'static str> {
     sandproof_api::validate_credentials(&credentials)
         .map_err(|_| "public center credentials rejected")?;
@@ -62,12 +63,22 @@ pub async fn bind<T: TemplateProvider>(
     .map_err(|_| "public center boundary rejected")?
     .merge(
         sandproof_api::lifecycle::router_with_admission(
-            port,
+            Arc::clone(&port),
             credentials.clone(),
             Arc::clone(&admission),
         )
         .map_err(|_| "public lifecycle boundary rejected")?,
     );
+    if branching {
+        public = public.merge(
+            sandproof_api::branching::router_with_admission(
+                port,
+                credentials.clone(),
+                Arc::clone(&admission),
+            )
+            .map_err(|_| "public branching boundary rejected")?,
+        );
+    }
     let private = if let Some(private) = private {
         let router = sandproof_api::private_build_router_with_admission(
             Arc::new(CenterBuildPort::new(app)),

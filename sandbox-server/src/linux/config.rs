@@ -1,12 +1,12 @@
 //! Parsed deployment settings and pure configuration obligations.
 
 use sandbox_controller_core as core;
-use sandproof_controller_service::application::ApplicationConfig;
+use sandproof_controller_service::application::{ApplicationConfig, HostBranchLimits};
 use sandproof_controller_service::{
     AdmissionLimits, BoundedHostConfig, MaintenanceConfig, templates::TemplateCatalog,
 };
 use sandproof_data_transport::TransferLimits;
-use sandproof_node::NodeConfig;
+use sandproof_node::{HotFanoutTemplate, NodeConfig};
 use serde::Deserialize;
 use std::{error::Error, path::PathBuf};
 
@@ -69,6 +69,33 @@ pub(super) struct NativeSettings {
     /// Explicit opt-in: trusted prebuilt descriptors, not a build service.
     #[serde(default)]
     pub(super) templates: Option<TemplateCatalog>,
+    /// Approved local immutable image and original native ledger budgets.
+    #[serde(default)]
+    pub(super) hot_fanout: Option<HotFanoutSettings>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct HotFanoutSettings {
+    template: HotFanoutTemplate,
+    max_batches: u16,
+    max_branches_per_vm: u16,
+}
+
+impl HotFanoutSettings {
+    fn limits(&self) -> Result<HostBranchLimits, Box<dyn Error>> {
+        let limits = HostBranchLimits {
+            max_batches: self.max_batches,
+            max_branches_per_vm: self.max_branches_per_vm,
+        };
+        if !limits.is_valid()
+            || !self.template.is_valid()
+            || limits.max_branches_per_vm != u16::from(self.template.max_branches)
+        {
+            return Err("host branching budget differs from the approved hot template".into());
+        }
+        Ok(limits)
+    }
 }
 
 fn default_timeout_secs() -> u64 {
@@ -86,6 +113,7 @@ pub(super) struct DeploymentContract {
     pub(super) bounded: BoundedHostConfig,
     pub(super) maintenance: MaintenanceConfig,
     pub(super) transfers: TransferLimits,
+    pub(super) hot_branch_limits: Option<HostBranchLimits>,
 }
 
 impl DeploymentContract {
@@ -126,6 +154,11 @@ impl DeploymentContract {
             bounded,
             maintenance,
             transfers,
+            hot_branch_limits: config
+                .hot_fanout
+                .as_ref()
+                .map(HotFanoutSettings::limits)
+                .transpose()?,
         })
     }
 }
@@ -147,6 +180,7 @@ pub(super) fn node_configuration(
         memory_mib: config.memory_mib,
         host_resources: config.host_resources.clone(),
         file_policy_digest: core::PolicyDigest(config.file_policy_digest),
+        hot_fanout_template: config.hot_fanout.as_ref().map(|hot| hot.template.clone()),
     }
 }
 

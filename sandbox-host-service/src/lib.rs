@@ -16,6 +16,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+mod branching;
 pub mod data_gateway;
 mod driver;
 mod facade;

@@ -22,6 +22,7 @@ use sandproof_protocol::lifecycle::{
 };
 use sandproof_protocol::{ResourceId, SandboxId, TenantId, internal::NodeIdentity};
 use std::sync::{Arc, Mutex};
+mod branching;
 mod lifecycle;
 
 type Envelope = BusinessEnvelope<RegistryMetadata>;
@@ -528,6 +529,14 @@ pub(super) fn to_authority(error: PortError) -> AuthorityError {
     }
 }
 impl AuthorityPort for SharedBusinessAuthority {
+    fn revoke_training_branch(
+        &mut self,
+        owner: &TenantId,
+        sandbox: &SandboxId,
+    ) -> Result<(), PortError> {
+        self.revoke_branch(owner, sandbox)
+    }
+
     fn accept_lifecycle_resume_observation(
         &mut self,
         observation: &sandproof_protocol::lifecycle::ResumeObservation,
@@ -648,6 +657,10 @@ impl AuthorityPort for SharedBusinessAuthority {
             .projection_templates()
             .map_err(to_authority)?;
         Ok(crate::PublicSnapshot {
+            branch_routes: value.metadata.branch_batches.as_ref().map_or_else(
+                Vec::new,
+                crate::branch_batch::BranchBatchLedger::active_routes,
+            ),
             state: value.center,
             hidden_sandboxes,
             templates,

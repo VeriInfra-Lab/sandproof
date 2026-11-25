@@ -179,7 +179,8 @@ class RuntimeServices:
     """One owned process assembly; every restart uses its original configuration."""
     @classmethod
     def prepare(cls,args,root,native_pools,registered_catalogs,key,public_address,record,
-                retained_sessions,private_builds=None,registry_config=None,extra_credentials=None,activation_ceiling_bytes=None):
+                retained_sessions,private_builds=None,registry_config=None,extra_credentials=None,
+                activation_ceiling_bytes=None,hot_fanout=None):
         redis_operation_timeout_ms=validate_redis_operation_timeout_ms(args.redis_operation_timeout_ms)
         if os.geteuid()!=0 or not 1<=len(native_pools)<=2 or len(native_pools)!=len(registered_catalogs):
             raise ValueError('explicit isolated root host cohort required')
@@ -312,6 +313,9 @@ class RuntimeServices:
             password=password,key=key,retained_sessions=retained_sessions,registry=registry,versions=versions,
             capture_settings=captures,private_builds=private_builds,private_build_boundary=private_boundary,extra_credentials=extra_credentials,
             redis_operation_timeout_ms=redis_operation_timeout_ms)
+        if hot_fanout is not None:
+            from _hot_fanout_config import protected_configs
+            protected_configs(center,host_configs,hot_fanout)
         center['redis']['writer_root']=str(layout['writer'])
         write_role(layout['center_control']/'token.key',secrets.token_bytes(32),uid=ids['center'][0],gid=ids['center'][1])
         center_path=layout['center_control']/'center.json'

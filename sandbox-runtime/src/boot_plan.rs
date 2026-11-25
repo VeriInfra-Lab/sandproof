@@ -1,6 +1,6 @@
 //! One source for actual startup configuration and source-profile checks.
 //! Mutable credentials and `InstanceStart` are deliberately separate effects.
-use super::{RuntimeConfig, RuntimeError};
+use super::{HOT_FANOUT_VSOCK, RuntimeConfig, RuntimeError};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -15,6 +15,8 @@ pub(super) struct BootPlan {
     root_drive: RootDrive,
     network: Option<Network>,
     mmds: Option<Mmds>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    vsock: Option<Vsock>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +57,13 @@ struct Mmds {
     network_interfaces: Vec<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Vsock {
+    guest_cid: u32,
+    uds_path: String,
+}
+
 impl BootPlan {
     pub(super) fn for_runtime(config: &RuntimeConfig) -> Self {
         let networked = config.access_token_hash.is_some();
@@ -82,7 +91,21 @@ impl BootPlan {
                 version: "V2".into(),
                 network_interfaces: vec!["eth0".into()],
             }),
+            vsock: None,
         }
+    }
+
+    pub(super) fn for_hot_fanout(config: &RuntimeConfig) -> Self {
+        let mut plan = Self::for_runtime(config);
+        plan.vsock = Some(Vsock {
+            guest_cid: 3,
+            uds_path: format!("/{HOT_FANOUT_VSOCK}"),
+        });
+        plan
+    }
+
+    pub(super) fn uses_hot_fanout(&self) -> bool {
+        self.vsock.is_some()
     }
 
     pub(super) fn digest(&self) -> Result<[u8; 32], RuntimeError> {
@@ -104,6 +127,9 @@ impl BootPlan {
         }
         if let Some(mmds) = &self.mmds {
             put("/mmds/config", &serde_json::to_value(mmds)?)?;
+        }
+        if let Some(vsock) = &self.vsock {
+            put("/vsock", &serde_json::to_value(vsock)?)?;
         }
         Ok(())
     }

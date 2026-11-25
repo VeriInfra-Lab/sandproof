@@ -10,7 +10,7 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, FileTypeExt, OpenOptionsExt, PermissionsExt};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -73,6 +73,7 @@ pub use staging::{CLAIM_RECORD_NAMES, MAX_CLAIM_RECORD_BYTES};
 // asserting immediate last-owner flock release; production stays fail-closed.
 pub(crate) static PROCESS_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+const HOT_FANOUT_VSOCK: &str = "fanout.vsock";
 const API_SOCKET: &str = "api.socket";
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 const STOP_TIMEOUT: Duration = Duration::from_secs(5);
@@ -421,6 +422,46 @@ impl Runtime {
         id: &str,
         verify_template: impl FnOnce(&File) -> Result<(), RuntimeError>,
     ) -> Result<Observation, RuntimeError> {
+        self.launch_profiled(
+            id,
+            verify_template,
+            &boot_plan::BootPlan::for_runtime(&self.config),
+        )
+    }
+
+    /// Launch an operator-selected, registered immutable fan-out template.
+    ///
+    /// The caller must verify the capability and digest of the exact opened
+    /// template image in its protected registry. No public route supplies this
+    /// profile and ordinary restore continues to require the ordinary device set.
+    /// # Errors
+    /// Rejects unavailable template verification, missing private networking,
+    /// mismatched device configuration or a failed launch.
+    pub fn launch_hot_fanout_verified(
+        &self,
+        id: &str,
+        verify_template: impl FnOnce(&File) -> Result<(), RuntimeError>,
+    ) -> Result<Observation, RuntimeError> {
+        if self.config.private_netns.is_none() {
+            return Err(RuntimeError::InvalidConfiguration(
+                "hot fan-out requires an original private VM network",
+            ));
+        }
+        validate_id(id)?;
+        validate_socket_path(&self.root_path(id).join(HOT_FANOUT_VSOCK))?;
+        self.launch_profiled(
+            id,
+            verify_template,
+            &boot_plan::BootPlan::for_hot_fanout(&self.config),
+        )
+    }
+
+    fn launch_profiled(
+        &self,
+        id: &str,
+        verify_template: impl FnOnce(&File) -> Result<(), RuntimeError>,
+        plan: &boot_plan::BootPlan,
+    ) -> Result<Observation, RuntimeError> {
         Self::validate_images(&self.config)?;
         let disk = File::from(
             open(
@@ -453,7 +494,7 @@ impl Runtime {
         verify_template(&disk)?;
         let source_stamp = FileStamp::from_metadata(&source);
         let record = self.claim_and_spawn(id)?;
-        self.stage_and_boot(id, record.pid, &disk, &source_stamp)?;
+        self.stage_and_boot(id, record.pid, &disk, &source_stamp, plan)?;
         let observation = self.observe(id)?;
         if observation.state != VmState::VmmRunning {
             return Err(RuntimeError::Protocol("VM did not enter Running"));
@@ -595,6 +636,7 @@ impl Runtime {
         pid: u32,
         disk: &File,
         source_stamp: &FileStamp,
+        plan: &boot_plan::BootPlan,
     ) -> Result<(), RuntimeError> {
         self.require_launch_jail(id, 0)?;
         self.wait_api_socket(id, pid)?;
@@ -604,8 +646,10 @@ impl Runtime {
                 "original cold template changed",
             ));
         }
-        boot_plan::BootPlan::for_runtime(&self.config)
-            .configure(|path, body| self.put(id, path, body))?;
+        plan.configure(|path, body| self.put(id, path, body))?;
+        if plan.uses_hot_fanout() {
+            plan.check_full_configuration(&self.api(id, "GET", "/vm/config", None)?)?;
+        }
         self.configure_access_metadata(id)?;
         self.put(id, "/actions", &json!({ "action_type": "InstanceStart" }))?;
         Ok(())
@@ -1365,6 +1409,111 @@ impl Runtime {
         body: Option<&[u8]>,
     ) -> Result<Vec<u8>, RuntimeError> {
         self.api_with_timeout(id, method, path, body, Duration::from_secs(2))
+    }
+
+    /// Exchange one bounded guest request on the original control connection.
+    /// The caller supplies accepted work and its serialized request, and
+    /// checks the reply with the original operation identity. Unknown
+    /// outcomes require an observation of that operation.
+    /// # Errors
+    /// Rejects malformed or oversized frames, expired deadlines, and any
+    /// original VM identity or connection mismatch.
+    pub fn exchange_hot_fanout_control(
+        &self,
+        id: &str,
+        expected: &RuntimeProcessIdentity,
+        request: &[u8],
+        timeout: Duration,
+    ) -> Result<Vec<u8>, RuntimeError> {
+        crate::hot_fanout_wire::request_length(request)?;
+        let deadline =
+            Instant::now()
+                .checked_add(timeout)
+                .ok_or(RuntimeError::InvalidConfiguration(
+                    "hot fan-out deadline overflow",
+                ))?;
+        let mut stream = self.connect_hot_fanout_before(id, expected, deadline)?;
+        Ok(crate::hot_fanout_wire::exchange(
+            &mut stream,
+            request,
+            deadline,
+        )?)
+    }
+
+    /// Connect to the protected control socket of this exact opted-in VMM.
+    ///
+    /// The caller holds the original runtime's helper gate and accepted work.
+    /// The returned stream still needs the Firecracker CONNECT handshake.
+    /// # Errors
+    /// Rejects an ordinary or replaced runtime, mismatched socket peer, or
+    /// indeterminate Firecracker configuration.
+    pub fn connect_hot_fanout_control(
+        &self,
+        id: &str,
+        expected: &RuntimeProcessIdentity,
+        timeout: Duration,
+    ) -> Result<UnixStream, RuntimeError> {
+        let deadline =
+            Instant::now()
+                .checked_add(timeout)
+                .ok_or(RuntimeError::InvalidConfiguration(
+                    "hot fan-out deadline overflow",
+                ))?;
+        self.connect_hot_fanout_before(id, expected, deadline)
+    }
+
+    fn connect_hot_fanout_before(
+        &self,
+        id: &str,
+        expected: &RuntimeProcessIdentity,
+        deadline: Instant,
+    ) -> Result<UnixStream, RuntimeError> {
+        crate::hot_fanout_wire::time_left(deadline)?;
+        let original = self.open_original_source(id, expected)?;
+        let configuration = self.api_with_timeout(
+            id,
+            "GET",
+            "/vm/config",
+            None,
+            crate::hot_fanout_wire::time_left(deadline)?.min(Duration::from_secs(2)),
+        )?;
+        boot_plan::BootPlan::for_hot_fanout(&self.config)
+            .check_full_configuration(&configuration)?;
+        let path = self.root_path(id).join(HOT_FANOUT_VSOCK);
+        let metadata = fs::symlink_metadata(&path)?;
+        if !metadata.file_type().is_socket()
+            || metadata.uid() != self.config.vm_uid
+            || metadata.gid() != self.config.vm_gid
+        {
+            return Err(RuntimeError::IdentityMismatch(
+                "hot fan-out socket type or owner",
+            ));
+        }
+        let socket = rustix::net::socket_with(
+            rustix::net::AddressFamily::UNIX,
+            rustix::net::SocketType::STREAM,
+            rustix::net::SocketFlags::CLOEXEC | rustix::net::SocketFlags::NONBLOCK,
+            None,
+        )
+        .map_err(errno_to_io)?;
+        let address = rustix::net::SocketAddrUnix::new(path).map_err(errno_to_io)?;
+        rustix::net::connect(&socket, &address).map_err(errno_to_io)?;
+        let stream = UnixStream::from(socket);
+        stream.set_nonblocking(false)?;
+        let peer = rustix::net::sockopt::socket_peercred(&stream).map_err(errno_to_io)?;
+        if u32::try_from(peer.pid.as_raw_nonzero().get()).ok() != Some(expected.pid)
+            || peer.uid.as_raw() != self.config.vm_uid
+            || peer.gid.as_raw() != self.config.vm_gid
+        {
+            return Err(RuntimeError::IdentityMismatch(
+                "hot fan-out socket peer differs from original VMM",
+            ));
+        }
+        self.verify_original_source(&original, false)?;
+        let remaining = crate::hot_fanout_wire::time_left(deadline)?;
+        stream.set_read_timeout(Some(remaining))?;
+        stream.set_write_timeout(Some(remaining))?;
+        Ok(stream)
     }
 
     fn api_stream(&self, id: &str, timeout: Duration) -> Result<UnixStream, RuntimeError> {

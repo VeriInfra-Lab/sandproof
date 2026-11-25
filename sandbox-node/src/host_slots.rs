@@ -9,6 +9,7 @@ use sandbox_controller_core::maintenance::slots::{
     HostBinding, HostSlotId, HostSlotPhase, HostSlotRecord, SlotInput, reduce_slot,
 };
 use sandbox_runtime::RetirementManifest;
+use sandproof_controller_service::application::branching::BranchRelayPort;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::os::unix::{
@@ -1393,6 +1394,34 @@ impl LinuxWorker {
         control: bool,
         executable: &Path,
     ) -> NodeResult<std::process::Child> {
+        self.spawn_data_relay_to(sandbox, vm, generation, None, control, executable)
+    }
+
+    /// Start a branch-specific relay under the exact parent's current gate.
+    /// The native application has already resolved the planned branch port.
+    /// # Errors
+    /// Refuses stale parent bindings, untrusted programs and exhausted slots.
+    pub fn spawn_branch_data_relay(
+        &self,
+        sandbox: core::SandboxId,
+        vm: core::VmId,
+        generation: core::Generation,
+        port: BranchRelayPort,
+        control: bool,
+        executable: &Path,
+    ) -> NodeResult<std::process::Child> {
+        self.spawn_data_relay_to(sandbox, vm, generation, Some(port), control, executable)
+    }
+
+    fn spawn_data_relay_to(
+        &self,
+        sandbox: core::SandboxId,
+        vm: core::VmId,
+        generation: core::Generation,
+        branch: Option<BranchRelayPort>,
+        control: bool,
+        executable: &Path,
+    ) -> NodeResult<std::process::Child> {
         check_trusted_path(executable)?;
         if !executable.is_file() {
             return Err("data relay executable is not a trusted file".into());
@@ -1417,16 +1446,61 @@ impl LinuxWorker {
         let executable = executable
             .to_str()
             .ok_or("relay executable path is not UTF-8")?;
-        let child = guard.spawn_route(
-            &context,
-            control,
-            "/usr/bin/ip",
-            &["netns", "exec", &name, executable, "relay"],
-        )?;
+        let child = match branch {
+            Some(port) => {
+                let port_number = port.get();
+                guard.spawn_branch_route(
+                    &context,
+                    control,
+                    port.nonzero(),
+                    "/usr/bin/ip",
+                    &[
+                        "netns",
+                        "exec",
+                        &name,
+                        executable,
+                        "relay-branch",
+                        &port_number.to_string(),
+                    ],
+                )?
+            }
+            None => guard.spawn_route(
+                &context,
+                control,
+                "/usr/bin/ip",
+                &["netns", "exec", &name, executable, "relay"],
+            )?,
+        };
         // The durable route cell survives even if the child closes inherited
         // descriptors. Only exact observation under the management lock may
         // retire it; a late asynchronous waiter cannot erase a successor.
         Ok(child)
+    }
+
+    /// Observe the original branch scope in the shared durable route cells.
+    /// The caller must have fenced that branch and holds the management lock.
+    /// # Errors
+    /// Refuses changed parent bindings and unverifiable markers.
+    pub fn branch_data_gate_drained(
+        &self,
+        sandbox: core::SandboxId,
+        vm: core::VmId,
+        generation: core::Generation,
+        port: BranchRelayPort,
+    ) -> NodeResult<bool> {
+        let rows = self.read_host_positions()?;
+        let row = rows
+            .iter()
+            .find(|row| row.context.binding.vm == vm)
+            .ok_or("branch relay VM not bound")?;
+        if row.context.binding.sandbox != sandbox || row.context.binding.generation != generation {
+            return Err("branch relay incarnation mismatch".into());
+        }
+        row.require_occupied(row.context.binding)?;
+        let context = self.runtime_host_slot(row.context.position, vm)?;
+        Ok(context
+            .helper_gate
+            .branch_route_drained(&context, port.nonzero())?)
     }
 
     /// Observe the durable gate only after local routes have drained. This

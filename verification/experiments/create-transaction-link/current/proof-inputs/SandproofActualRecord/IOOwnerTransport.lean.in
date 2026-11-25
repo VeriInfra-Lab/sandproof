@@ -38,7 +38,7 @@ def returnedOwner (before : CallerOwnerView) (after : SourceOwner) :
     | none, _ => .ok none
     | some source, some original => .ok (some (returnedRaw original source))
     | some _, none => .fail .panic
-  .ok {
+  .ok { before with
     parent := {
       transaction := transaction
       committed := {
@@ -48,7 +48,6 @@ def returnedOwner (before : CallerOwnerView) (after : SourceOwner) :
       candidate := after.candidate
       input_start := after.input_start
     }
-    terminate := before.terminate
   }
 
 def returnedHolder {D : Type} (before : Holder D) (after : OldHolder D) :

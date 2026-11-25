@@ -21,10 +21,11 @@ sandproof-internal = { path = "../sandbox-internal" }
 sandproof-protocol = { path = "../sandbox-protocol" }
 tokio = { version = "=1.49.0", features = ["rt-multi-thread", "sync", "macros", "time", "process", "io-std", "io-util"] }
 
-[dev-dependencies]
-rusqlite = { version = "=0.40.2", features = ["bundled"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.142"
+
+[dev-dependencies]
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
 tempfile = "=3.23.0"
 rcgen = { version = "=0.14.10", default-features = false, features = ["ring"] }
 rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std"] }

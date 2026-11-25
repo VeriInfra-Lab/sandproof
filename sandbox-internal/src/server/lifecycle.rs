@@ -4,6 +4,9 @@ use super::{
     ReceiveError, Request, Response, StatusCode, ValidationReceiver, json_response, response,
 };
 use crate::lifecycle::{CREATE_OBSERVATION_BODY_BYTES, CenterPeerRegistration, REQUEST_BODY_BYTES};
+use sandproof_controller_service::application::branching::{
+    BRANCH_CONTROL_BODY_BYTES, BranchControlRequest,
+};
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, RecordedLifecycleIntent};
 
 #[derive(Clone, Copy)]
@@ -17,6 +20,7 @@ pub(super) enum Call {
     Close,
     Validation,
     RenewalConfirm,
+    BranchControl,
 }
 
 pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
@@ -38,7 +42,9 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     if request.method() != Method::POST {
         return response(StatusCode::METHOD_NOT_ALLOWED, Bytes::new());
     }
-    let limit = if matches!(call, Call::Validation) {
+    let limit = if matches!(call, Call::BranchControl) {
+        BRANCH_CONTROL_BODY_BYTES
+    } else if matches!(call, Call::Validation) {
         crate::template::VALIDATION_REQUEST_BODY_BYTES
     } else if matches!(call, Call::RenewalConfirm) {
         sandproof_protocol::lifecycle::RENEWAL_CONFIRMATION_BODY_BYTES
@@ -47,39 +53,23 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
     } else {
         REQUEST_BODY_BYTES
     };
-    if request
-        .headers()
-        .get(hyper::header::CONTENT_TYPE)
-        .map(hyper::header::HeaderValue::as_bytes)
-        != Some(b"application/json")
-        || request
-            .headers()
-            .contains_key(hyper::header::CONTENT_ENCODING)
-    {
-        return response(StatusCode::UNSUPPORTED_MEDIA_TYPE, Bytes::new());
-    }
-    if request
-        .headers()
-        .get(hyper::header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.parse::<u64>().ok())
-        .is_some_and(|length| length > limit as u64)
-    {
-        return response(StatusCode::PAYLOAD_TOO_LARGE, Bytes::new());
-    }
-    let Ok(body) = Limited::new(request.into_body(), limit).collect().await else {
-        return response(StatusCode::BAD_REQUEST, Bytes::new());
+    let body = match read_command(request, limit).await {
+        Ok(body) => body,
+        Err(status) => return response(status, Bytes::new()),
     };
+    if matches!(call, Call::BranchControl) {
+        return branch_command(&body, context, handler).await;
+    }
     if matches!(call, Call::Validation) {
-        return super::validation_evidence(&body.to_bytes(), context, handler).await;
+        return super::validation_evidence(&body, context, handler).await;
     }
     if matches!(call, Call::RenewalConfirm) {
-        return renewal_command(&body.to_bytes(), context, handler).await;
+        return renewal_command(&body, context, handler).await;
     }
     if matches!(call, Call::Confirm | Call::Close) {
-        return terminal_command(&body.to_bytes(), context, handler, call).await;
+        return terminal_command(&body, context, handler, call).await;
     }
-    let intent = match crate::lifecycle::decode_accepted_with(&body.to_bytes(), &context, |input| {
+    let intent = match crate::lifecycle::decode_accepted_with(&body, &context, |input| {
         serde_json::from_slice::<AcceptedLifecycleIntent>(input)
     }) {
         Ok(intent) => intent,
@@ -121,6 +111,54 @@ pub(super) async fn respond<H: LifecycleReceiver + ValidationReceiver>(
         Ok(recorded) => json_response(&recorded, REQUEST_BODY_BYTES),
         Err(RecordReplyError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
         Err(RecordReplyError::Unavailable) => {
+            response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
+        }
+    }
+}
+
+async fn read_command(request: Request<Incoming>, limit: usize) -> Result<Bytes, StatusCode> {
+    if request
+        .headers()
+        .get(hyper::header::CONTENT_TYPE)
+        .map(hyper::header::HeaderValue::as_bytes)
+        != Some(b"application/json")
+        || request
+            .headers()
+            .contains_key(hyper::header::CONTENT_ENCODING)
+    {
+        return Err(StatusCode::UNSUPPORTED_MEDIA_TYPE);
+    }
+    if request
+        .headers()
+        .get(hyper::header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .is_some_and(|length| length > limit as u64)
+    {
+        return Err(StatusCode::PAYLOAD_TOO_LARGE);
+    }
+    Limited::new(request.into_body(), limit)
+        .collect()
+        .await
+        .map(http_body_util::Collected::to_bytes)
+        .map_err(|_| StatusCode::BAD_REQUEST)
+}
+
+async fn branch_command<H: LifecycleReceiver>(
+    body: &[u8],
+    context: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    handler: &H,
+) -> Response<Full<Bytes>> {
+    let Ok(command) = serde_json::from_slice::<BranchControlRequest>(body) else {
+        return response(StatusCode::BAD_REQUEST, Bytes::new());
+    };
+    if !command.valid_for(&context) {
+        return response(StatusCode::CONFLICT, Bytes::new());
+    }
+    match handler.branch_control(command.clone(), context).await {
+        Ok(reply) if reply.matches(&command) => json_response(&reply, BRANCH_CONTROL_BODY_BYTES),
+        Err(ReceiveError::Conflict) => response(StatusCode::CONFLICT, Bytes::new()),
+        Ok(_) | Err(ReceiveError::Capacity | ReceiveError::Unavailable) => {
             response(StatusCode::SERVICE_UNAVAILABLE, Bytes::new())
         }
     }

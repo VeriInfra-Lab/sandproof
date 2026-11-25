@@ -200,3 +200,37 @@ fn malformed_truncated_and_missing_required_reply_fields_are_refused() {
         );
     }
 }
+
+#[test]
+fn hot_fanout_visible_get_requires_the_exact_reserved_cid_and_socket_path() {
+    let config = config(true);
+    let hot = BootPlan::for_hot_fanout(&config);
+    let mut report = wire(true);
+    assert!(
+        hot.check_full_configuration(&serde_json::to_vec(&report).unwrap())
+            .is_err()
+    );
+    report["vsock"] = json!({"guest_cid": 3, "uds_path": "/fanout.vsock"});
+    assert!(
+        hot.check_full_configuration(&serde_json::to_vec(&report).unwrap())
+            .is_ok()
+    );
+    assert!(check(&config, &report).is_err());
+    for candidate in [
+        json!({"guest_cid": 4, "uds_path": "/fanout.vsock"}),
+        json!({"guest_cid": 3, "uds_path": "/not-fanout.vsock"}),
+        json!({"guest_cid": 3, "uds_path": "/fanout.vsock", "vsock_id": null}),
+    ] {
+        report["vsock"] = candidate;
+        assert!(
+            hot.check_full_configuration(&serde_json::to_vec(&report).unwrap())
+                .is_err()
+        );
+    }
+    report.as_object_mut().unwrap().remove("vsock");
+    assert!(
+        hot.check_full_configuration(&serde_json::to_vec(&report).unwrap())
+            .is_err()
+    );
+    assert!(check(&config, &report).is_err());
+}

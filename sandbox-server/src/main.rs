@@ -39,6 +39,9 @@ async fn run(command: cli::Command) -> Result<(), Box<dyn std::error::Error>> {
         Command::Audit(path) => linux::host_entry::audit(&path),
         Command::ObserveCenter(path) => linux::host_entry::observe_center(&path).await,
         Command::Relay => sandproof_host_service::data_gateway::relay().await,
+        Command::RelayBranch(port) => {
+            sandproof_host_service::data_gateway::relay_branch(port).await
+        }
         Command::ContractVersions => {
             use std::io::Write;
             let mut output = std::io::stdout().lock();

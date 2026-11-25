@@ -1,4 +1,6 @@
 //! One production role; no legacy public server alias or implicit mode.
+#[cfg(target_os = "linux")]
+use sandproof_controller_service::application::branching::BranchRelayPort;
 use std::{ffi::OsString, path::PathBuf};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -10,6 +12,8 @@ pub(crate) enum Command {
     Audit(PathBuf),
     ObserveCenter(PathBuf),
     Relay,
+    #[cfg(target_os = "linux")]
+    RelayBranch(BranchRelayPort),
     ContractVersions,
     CaptureWorker(String),
 }
@@ -21,6 +25,18 @@ pub(crate) fn parse(
     let command = arguments.next().ok_or("a host command is required")?;
     let result = match command.to_str() {
         Some("relay") => Command::Relay,
+        #[cfg(target_os = "linux")]
+        Some("relay-branch") => {
+            let raw = arguments.next().ok_or("branch relay port missing")?;
+            let raw = raw.to_str().ok_or("branch relay port is not ASCII")?;
+            let port = raw
+                .parse::<u16>()
+                .ok()
+                .filter(|_| raw.len() == 5 && raw.bytes().all(|byte| byte.is_ascii_digit()))
+                .and_then(BranchRelayPort::new)
+                .ok_or("branch relay requires a reserved numeric port")?;
+            Command::RelayBranch(port)
+        }
         Some("contract-versions") => Command::ContractVersions,
         Some("capture-worker") => {
             let digest = arguments.next().ok_or("capture job digest missing")?;
@@ -103,6 +119,32 @@ mod tests {
         ] {
             assert!(parse(arguments(values)).is_err());
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn branch_relay_accepts_only_the_reserved_namespace_local_ports() {
+        for port in [BranchRelayPort::FIRST, BranchRelayPort::LAST] {
+            assert_eq!(
+                parse(arguments(&["relay-branch", &port.to_string()])),
+                Ok(Command::RelayBranch(BranchRelayPort::new(port).unwrap()))
+            );
+        }
+        for target in [
+            "3100",
+            "30999",
+            "31100",
+            "49983",
+            "+31000",
+            "031000",
+            "localhost:31000",
+            "172.16.0.2:31000",
+            "/tmp/sock",
+        ] {
+            assert!(parse(arguments(&["relay-branch", target])).is_err());
+        }
+        assert!(parse(arguments(&["relay-branch"])).is_err());
+        assert!(parse(arguments(&["relay-branch", "31000", "extra"])).is_err());
     }
 
     #[test]

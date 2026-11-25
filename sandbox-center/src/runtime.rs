@@ -74,6 +74,7 @@ pub async fn serve(inputs: CenterAssemblyInputs) -> Result<(), &'static str> {
         inputs.private_build_boundary,
         Arc::clone(&inputs.admission),
         inputs.transfers.clone(),
+        inputs.branching_enabled,
     )
     .await?;
     let artifact_listener = prepared.service.listen().await?;
@@ -109,6 +110,7 @@ pub async fn serve(inputs: CenterAssemblyInputs) -> Result<(), &'static str> {
             admission: inputs.admission,
             deadline: material_deadline,
             interval: inputs.expiry_scan_interval,
+            branching: inputs.branching_enabled,
         },
         observation,
         &shutdown,
@@ -123,6 +125,7 @@ struct BackgroundWork {
     admission: Arc<RequestAdmission>,
     deadline: Duration,
     interval: Duration,
+    branching: bool,
 }
 
 fn spawn_backgrounds(
@@ -131,6 +134,14 @@ fn spawn_backgrounds(
     observation: ObservationWork,
     shutdown: &watch::Sender<bool>,
 ) {
+    if work.branching {
+        tasks.spawn(coordinate_branches(
+            Arc::clone(&work.application),
+            Arc::clone(&work.admission),
+            work.interval,
+            shutdown.subscribe(),
+        ));
+    }
     let mut background_shutdown = shutdown.subscribe();
     let mut material_shutdown = shutdown.subscribe();
     let material_application = Arc::clone(&work.application);
@@ -157,6 +168,27 @@ fn spawn_backgrounds(
         )
         .await
     });
+}
+
+async fn coordinate_branches(
+    application: Arc<Application>,
+    admission: Arc<RequestAdmission>,
+    interval: Duration,
+    mut shutdown: watch::Receiver<bool>,
+) -> Result<(), &'static str> {
+    let mut cursor = 0;
+    while !*shutdown.borrow() {
+        let deadline = tokio::time::Instant::now() + interval;
+        // The ledger owns unknown work until the next confirmed round.
+        let _ = application
+            .branch_background_round(&admission, &mut cursor)
+            .await;
+        tokio::select! {
+            () = wait_shutdown(&mut shutdown) => break,
+            () = tokio::time::sleep_until(deadline) => {}
+        }
+    }
+    Ok(())
 }
 
 async fn supervise(

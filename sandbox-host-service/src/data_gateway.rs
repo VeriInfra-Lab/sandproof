@@ -16,10 +16,11 @@ use axum::{
 use hyper::client::conn::http1;
 use hyper_util::rt::TokioIo;
 use sandproof_api::admission::{RequestAdmission, RequestClass, RequestLease};
+use sandproof_controller_service::application::branching::BranchAccessIdentity;
 use sandproof_controller_service::application::fault::{FaultContext, FaultRecord, FaultStage};
 use sandproof_controller_service::application::{
     ApplicationError as PortError, ControllerApplication, ControllerHost, DataAccessPort,
-    DataAuthorization, DataKind, DataPermit,
+    DataAuthorization, DataKind, DataPermit, HostBranchPermit, TrackedRelayChild,
 };
 use sandproof_protocol::lifecycle::{AuthenticatedCenterContext, LifecycleAccessIdentity};
 use tokio::{
@@ -46,9 +47,19 @@ use sandproof_data_transport::{
 use sandproof_data_transport::{FILE_REQUEST_LIMIT, RESPONSE_LIMIT};
 pub use sandproof_data_transport::{GatewayListener, TransferLimits};
 #[cfg(target_os = "linux")]
-use {sandproof_data_transport::tunnel, std::error::Error};
+use {
+    sandproof_controller_service::application::branching::BranchRelayPort,
+    sandproof_data_transport::tunnel,
+    std::{
+        error::Error,
+        net::{Ipv4Addr, SocketAddr, SocketAddrV4},
+    },
+};
 
-const ENVD_ADDRESS: &str = "172.16.0.2:49983";
+#[cfg(target_os = "linux")]
+const ENVD_ADDRESS: SocketAddrV4 = SocketAddrV4::new(GUEST_ADDRESS, 49_983);
+#[cfg(target_os = "linux")]
+const GUEST_ADDRESS: Ipv4Addr = Ipv4Addr::new(172, 16, 0, 2);
 
 struct StdioTunnel {
     read: ChildStdout,
@@ -98,11 +109,17 @@ pub async fn handle<P: DataAccessPort>(
         Err(status) => return response(status),
     };
     let authorization_port = Arc::clone(&port);
-    handle_prepared(port, gateway, request, (kind, file_request), move |kind| {
-        authorization_port
-            .data_permit(&token, kind)
-            .map(|permit| (permit, None))
-    })
+    handle_prepared(
+        move |permit, control| port.spawn_data_relay(permit, control),
+        gateway,
+        request,
+        (kind, file_request),
+        move |kind| {
+            authorization_port
+                .data_permit(&token, kind)
+                .map(|permit| (permit, None))
+        },
+    )
     .await
 }
 
@@ -140,7 +157,7 @@ pub async fn handle_internal<H: ControllerHost + Send + 'static>(
         context,
     };
     handle_prepared(
-        application,
+        move |permit, control| application.spawn_data_relay(permit, control),
         Some(gateway),
         request,
         selection,
@@ -149,15 +166,42 @@ pub async fn handle_internal<H: ControllerHost + Send + 'static>(
     .await
 }
 
-async fn handle_prepared<P: DataAccessPort>(
-    port: Arc<P>,
+/// Native branch requests have their own closed authorization path. Both
+/// kinds of data still share the same host transfer and relay ownership.
+pub(crate) async fn handle_internal_branch<H: ControllerHost + Send + 'static>(
+    application: Arc<ControllerApplication<H>>,
+    gateway: Arc<Gateway>,
+    identity: BranchAccessIdentity,
+    context: AuthenticatedCenterContext,
+    request: Request<Body>,
+) -> Response<Body> {
+    let selection = match request_kind(&request) {
+        Ok(kind) => kind,
+        Err(status) => return response(status),
+    };
+    let authorization = Arc::clone(&application);
+    handle_prepared(
+        move |permit: &HostBranchPermit, control| {
+            application.spawn_host_branch_data_relay(permit, control)
+        },
+        Some(gateway),
+        request,
+        selection,
+        move |kind| {
+            authorization
+                .lifecycle_branch_data_authorization(&identity, &context, kind)
+                .map(|(permit, token)| (permit, Some(token)))
+        },
+    )
+    .await
+}
+
+async fn handle_prepared<P: DataAuthorization>(
+    launch: impl Fn(&P, bool) -> Result<TrackedRelayChild, PortError> + Send + Sync + 'static,
     gateway: Option<Arc<Gateway>>,
     mut request: Request<Body>,
     (kind, file_request): (DataKind, bool),
-    authorize: impl Fn(DataKind) -> Result<(P::Permit, Option<String>), PortError>
-    + Send
-    + Sync
-    + 'static,
+    authorize: impl Fn(DataKind) -> Result<(P, Option<String>), PortError> + Send + Sync + 'static,
 ) -> Response<Body> {
     let control = control_request(&request);
     let request_lease = match admit_request(gateway.as_deref(), control) {
@@ -206,7 +250,7 @@ async fn handle_prepared<P: DataAccessPort>(
         None => return response(StatusCode::UNAUTHORIZED),
     };
     let (permit, child) = match launch_authorized(
-        &port,
+        &Arc::new(launch),
         permit,
         (kind, control, guest_credential.as_deref()),
         &request_lease,
@@ -315,6 +359,21 @@ fn admit_request(
 /// Fails when envd is unreachable or the caller disconnects.
 #[cfg(target_os = "linux")]
 pub async fn relay() -> Result<(), Box<dyn Error>> {
+    relay_to(ENVD_ADDRESS).await
+}
+
+/// The trusted relay worker connects only to a reserved branch listener in
+/// the already chosen VM namespace. Native admission must independently
+/// select that namespace and bind this port to the ready branch.
+/// # Errors
+/// Fails when the planned listener or client is unavailable.
+#[cfg(target_os = "linux")]
+pub async fn relay_branch(port: BranchRelayPort) -> Result<(), Box<dyn Error>> {
+    relay_to(SocketAddrV4::new(GUEST_ADDRESS, port.get())).await
+}
+
+#[cfg(target_os = "linux")]
+async fn relay_to(address: SocketAddrV4) -> Result<(), Box<dyn Error>> {
     use std::os::fd::AsFd;
     // Tokio's generic stdin starts a non-cancelable blocking read. Dropping
     // that future after guest EOF would still block runtime shutdown and keep
@@ -324,7 +383,7 @@ pub async fn relay() -> Result<(), Box<dyn Error>> {
         std::io::stdin().as_fd().try_clone_to_owned()?,
         std::io::stdout().as_fd().try_clone_to_owned()?,
     )?;
-    let stream = tokio::net::TcpStream::connect(ENVD_ADDRESS).await?;
+    let stream = tokio::net::TcpStream::connect(SocketAddr::from(address)).await?;
     let (reader, writer) = stream.into_split();
     tunnel::relay(input, output, reader, writer).await?;
     Ok(())

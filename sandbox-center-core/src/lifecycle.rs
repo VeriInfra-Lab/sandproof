@@ -577,6 +577,11 @@ impl CenterState {
             })
             .collect()
     }
+    #[must_use]
+    pub fn has_lifecycle_key(&self, key: &OperationKey) -> bool {
+        self.find_lifecycle_operation(key).is_some()
+    }
+
     fn find_lifecycle_operation(&self, key: &OperationKey) -> Option<&LifecycleOperationRecord> {
         for record in &self.sandboxes {
             if let Some(operation) = record.find_operation(key) {

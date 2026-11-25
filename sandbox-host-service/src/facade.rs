@@ -9,6 +9,7 @@ use axum::{
     http::{Request, Response},
 };
 use sandproof_api::admission::RequestAdmission;
+use sandproof_controller_service::application::branching::BranchAccessIdentity;
 use sandproof_controller_service::application::{ControllerApplication, ControllerHost};
 use sandproof_internal::template::{ValidationEvidence, ValidationReceiver, ValidationRequest};
 use sandproof_internal::{DataReceiver, LifecycleReceiver, ReceiveError};
@@ -122,6 +123,22 @@ impl<H: ControllerHost + Send + 'static> DataReceiver for HostFacade<H> {
         request: Request<Body>,
     ) -> Response<Body> {
         data_gateway::handle_internal(
+            Arc::clone(&self.application),
+            Arc::clone(&self.gateway),
+            identity,
+            context,
+            request,
+        )
+        .await
+    }
+
+    async fn receive_branch_data(
+        &self,
+        identity: BranchAccessIdentity,
+        context: AuthenticatedCenterContext,
+        request: Request<Body>,
+    ) -> Response<Body> {
+        data_gateway::handle_internal_branch(
             Arc::clone(&self.application),
             Arc::clone(&self.gateway),
             identity,

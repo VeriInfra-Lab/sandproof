@@ -66,7 +66,7 @@ class DataDrainRouteSchemaTests(unittest.TestCase):
             self.assertEqual(native, before)
 
     @contextmanager
-    def route_cell(self, maximum=5):
+    def route_cell(self, maximum=5, *, process=None):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             directory = root / 'helper-gates'
@@ -83,9 +83,10 @@ class DataDrainRouteSchemaTests(unittest.TestCase):
                 uplink_index=native['bounded_host']['uplink_base'],
                 helper_gate=dict(path=str(path), device=actual.st_dev, inode=actual.st_ino,
                     max_data_routes_per_slot=maximum))
-            fields = Path(f'/proc/{os.getpid()}/stat').read_text().rsplit(')', 1)[1].split()
-            process = dict(pid=os.getpid(), start_time_ticks=int(fields[19]),
-                boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip())
+            if process is None:
+                fields = Path(f'/proc/{os.getpid()}/stat').read_text().rsplit(')', 1)[1].split()
+                process = dict(pid=os.getpid(), start_time_ticks=int(fields[19]),
+                    boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip())
             record = dict(version=1, context=context, process=process,
                 command_digest=[1]*32, route_index=maximum-1, control=False)
             marker = directory / f'0.lock.route-{maximum-1}.json'
@@ -122,6 +123,25 @@ class DataDrainRouteSchemaTests(unittest.TestCase):
                 marker.write_text(json.dumps(record))
                 with self.assertRaises(ValueError):
                     drain._live_routes(native, running)
+
+    def test_branch_route_census_checks_the_exact_port_without_changing_the_parent_census(self):
+        process = dict(pid=91, start_time_ticks=42, boot_id="test")
+        with self.route_cell(process=process) as (native, running, marker, record), \
+                patch.object(drain, '_alive', return_value=True):
+            key = drain._route_key(process)
+            self.assertEqual(drain._live_routes(native, running), {key: (marker, record)})
+            self.assertEqual(drain._live_routes(native, running, branch_port=31000), {})
+            record['branch_port'] = 31000
+            marker.write_text(json.dumps(record))
+            self.assertEqual(drain._live_routes(native, running), {})
+            self.assertEqual(drain._live_routes(native, running, branch_port=31001), {})
+            self.assertEqual(drain._live_routes(native, running, branch_port=31000),
+                             {key: (marker, record)})
+            for invalid in (None, True, 49983):
+                with self.subTest(invalid=invalid), self.assertRaises(ValueError):
+                    record['branch_port'] = invalid
+                    marker.write_text(json.dumps(record))
+                    drain._live_routes(native, running, branch_port=31000)
 
     def test_control_or_unobserved_process_is_not_an_inflight_data_route(self):
         with self.route_cell() as (native, running, marker, record):

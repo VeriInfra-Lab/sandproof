@@ -1,0 +1,10 @@
+
+#[allow(dead_code)]
+fn proof_actual_branch_close(record: &mut BatchRecord, close: HostBranchClose<'_>) -> Result<(), JournalError> {
+    record.close(close)
+}
+
+#[allow(dead_code)]
+fn proof_actual_branch_holds_any(record: &BatchRecord) -> bool {
+    record.holds_any()
+}

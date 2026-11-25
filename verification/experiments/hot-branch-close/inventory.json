@@ -1,0 +1,203 @@
+{
+  "source_commit": "c2c6f90c74702de55a7f5b494863196a81ef0726",
+  "source_tree": "75d66aaa6aa3438d091b4c3687b49e9238b08623",
+  "source_inputs": {
+    "controller-service/src/controller/branching.rs": "74df2ce73bc26fe6484788fecc3b309d69e45df64d550a56ca2b40cf8a681ac3",
+    "controller-service/src/controller/lifecycle_inbox/window.rs": "68c4b7b1865cc6b3b71f0c6fee687d3b45965122e0c89b85c2c88fb125ac145e",
+    "controller-service/src/application/branching.rs": "f0fd28c534d0b81ebe95c9fb2ec48758d6224124f1d9d5b17080ebc32016927b",
+    "controller-service/src/controller/transaction.rs": "100391ccee63bd0e481ac7828971c2ac8eb97e781330fc6eb92a399c9d5f6bde",
+    "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
+    "verification/experiments/create-transaction-link/current/materialization.json": "8e8356d98252b1fd0b2124f04c0f6ac4a671dba9acc1ab1a10c12db3acaa01d9",
+    "controller-service/src/controller/lifecycle_inbox/branching_tests.rs": "566dbed1ba7b778424a2dde7a28a5dbc2e10b1817c189499643532c9957ac138",
+    "controller-service/src/controller/lifecycle_inbox/codec.rs": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
+    "verification/experiments/create-transaction-link/current/proof-inputs/SandproofStage1Request/Funs.lean.in": "2f5a0d9e7de7deebd9237a0663cc3cadc25989f1b836d0b4087462227301b3f7"
+  },
+  "toolchain": {
+    "rust_target": "aarch64-apple-darwin",
+    "lean": "leanprover/lean4:v4.31.0",
+    "charon": "ea69c1c90e3fc2ca3420cb1303e0f2bb2b1c617fc97794d103746afe34308b40",
+    "aeneas": "88e658a0876bb0911477f3743db148fc7e3c0db5840dde393876bd1767790466"
+  },
+  "append_only": {
+    "controller-service/src/controller/branching.rs": "a8caba0067d4299d42b1d42540aed5f079a14ed43d9747ff4759aeac38582bd8"
+  },
+  "lean_files": {
+    "Funs.lean": {
+      "sha256": "8eab20474a32a43826ea835ea84f480680832b1f3bab745d26d50099db17ef60",
+      "generated": true,
+      "audits": []
+    },
+    "Types.lean": {
+      "sha256": "fa3ecbe946f9f6e0c5a8d9a4415ff27129ab71494fdc3fdad5d8797325edbce2",
+      "generated": true,
+      "audits": []
+    },
+    "CloseProof.lean": {
+      "sha256": "4f8453b625bd07b49c3850b4a1aa2f1359c6fab3f607f566b5edbe27ae889f37",
+      "generated": false,
+      "audits": [
+        "SandproofBranchBatch.CloseProof.actual_parent_exit_refuses_guest_close",
+        "SandproofBranchBatch.CloseProof.actual_pending_batch_refuses_single_close",
+        "SandproofBranchBatch.CloseProof.actual_ready_batch_refuses_unfenced_whole_confirmation",
+        "SandproofBranchBatch.CloseProof.actual_ready_confirm_active_leaves_record",
+        "SandproofBranchBatch.CloseProof.actual_ready_confirm_releases_only_closing_target"
+      ]
+    },
+    "FunsExternal.lean": {
+      "sha256": "8bfd04dee3c0d5847085301bc29667af2899b4ffa1c73424a9d2f8b76b394302",
+      "generated": false,
+      "audits": []
+    },
+    "HeldProof.lean": {
+      "sha256": "c55158d1d54f83b02319f47c5f351fc366ea8c89d0f097fd38d9bb745e576268",
+      "generated": false,
+      "audits": [
+        "SandproofBranchBatch.HeldProof.actual_phase_callback",
+        "SandproofBranchBatch.HeldProof.actual_held_credentials",
+        "SandproofBranchBatch.HeldProof.actual_closing_credential_still_held",
+        "SandproofBranchBatch.HeldProof.actual_no_held_credential_iff_all_released"
+      ]
+    },
+    "TypesExternal.lean": {
+      "sha256": "9e56153624b7fd57433f924e5ad1f43df947407bfb60a17d9a355bd99788561c",
+      "generated": false,
+      "audits": []
+    }
+  },
+  "batch": {
+    "--start-from": [
+      "sandproof_controller_service::controller::branching::proof_actual_branch_close",
+      "sandproof_controller_service::controller::branching::proof_actual_branch_holds_any"
+    ],
+    "--include": [
+      "sandproof_controller_service::JournalError",
+      "sandproof_controller_service::controller::branching::proof_actual_branch_close",
+      "sandproof_controller_service::controller::branching::proof_actual_branch_holds_any",
+      "sandproof_controller_service::controller::branching::*::close",
+      "sandproof_controller_service::controller::branching::*::holds_any",
+      "sandproof_controller_service::controller::branching::*::eq",
+      "sandproof_controller_service::controller::branching::BatchRecord",
+      "sandproof_controller_service::controller::branching::BranchCredential",
+      "sandproof_controller_service::controller::branching::BranchPhase",
+      "sandproof_controller_service::controller::branching::HostBranchBatchPhase",
+      "sandproof_controller_service::controller::branching::HostBranchClose",
+      "sandproof_controller_service::controller::branching::HostBranchLimits",
+      "sandproof_controller_service::controller::branching::HostBranchParent",
+      "sandproof_controller_service::controller::branching::HostBranchBatchKey",
+      "sandproof_controller_service::application::branching::BranchBatchIdentity",
+      "sandproof_controller_service::application::branching::BranchTarget",
+      "sandproof_controller_service::application::branching::BranchRelayPort",
+      "sandproof_protocol::lifecycle::identity::OperationKey",
+      "sandproof_protocol::internal::NodeIdentity",
+      "sandproof_controller_service::controller::branching::*::branch_index"
+    ],
+    "--opaque": [
+      "sandproof_controller_service",
+      "sandproof_protocol",
+      "rusqlite",
+      "serde_json"
+    ]
+  },
+  "window": {
+    "--start-from": [
+      "sandproof_controller_service::controller::ControllerJournal::close_lifecycle_window"
+    ],
+    "--start-from-if-exists": [
+      "sandproof_controller_service::controller::lifecycle_inbox::window::*::close_lifecycle_window"
+    ],
+    "--include": [
+      "sandproof_controller_service::JournalError",
+      "sandproof_controller_service::controller::lifecycle_inbox::window::*::close_lifecycle_window",
+      "sandproof_controller_service::controller::ControllerJournal",
+      "sandproof_controller_service::controller::lifecycle_inbox::model::Inbox",
+      "sandproof_controller_service::controller::lifecycle_inbox::model::LifecycleRetentionLane",
+      "sandproof_controller_service::controller::lifecycle_inbox::model::Session",
+      "sandproof_controller_service::controller::lifecycle_inbox::model::LifecycleWorkState",
+      "sandproof_controller_service::controller::lifecycle_inbox::model::Owner",
+      "sandproof_controller_service::CrashPoint",
+      "sandproof_controller_service::CrashInjector",
+      "sandproof_protocol::lifecycle::confirmation::LifecycleWindowClose",
+      "sandproof_protocol::lifecycle::confirmation::ClosedLifecycleWindow",
+      "sandproof_protocol::lifecycle::terminal::TerminalLifecycleObservation",
+      "sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent",
+      "sandproof_protocol::lifecycle::identity::RetentionBinding",
+      "sandproof_controller_service::controller::internal_inbox::model::InternalLocalBinding"
+    ],
+    "--opaque": [
+      "sandproof_controller_service",
+      "sandproof_protocol",
+      "rusqlite",
+      "serde_json"
+    ]
+  },
+  "retire": {
+    "--start-from": [
+      "sandproof_controller_service::controller::branching::retire_closed_parent"
+    ],
+    "--include": [
+      "sandproof_controller_service::JournalError",
+      "sandproof_controller_service::controller::branching::retire_closed_parent",
+      "sandproof_controller_service::controller::branching::HostBranchLimits",
+      "sandproof_controller_service::controller::branching::BatchRecord",
+      "sandproof_controller_service::controller::branching::HostBranchParent",
+      "sandproof_controller_service::controller::branching::HostBranchBatchKey",
+      "sandproof_controller_service::application::branching::BranchBatchIdentity",
+      "sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent",
+      "sandproof_protocol::lifecycle::request::LifecycleRequest",
+      "sandproof_protocol::lifecycle::identity::OperationBinding",
+      "sandproof_protocol::lifecycle::identity::OperationKey",
+      "sandproof_controller_service::controller::internal_inbox::model::InternalLocalBinding"
+    ],
+    "--opaque": [
+      "sandproof_controller_service",
+      "sandproof_protocol",
+      "rusqlite",
+      "serde_json"
+    ]
+  },
+  "close_sql": {
+    "sha256": "1513900ac9d9c3d1d1b32d04e9e96c2dc570c5be6fee8bf40b1d1405dd21aed7",
+    "generated": false,
+    "audits": [
+      "SandproofBranchBatch.CloseSql.complete_original_scan",
+      "SandproofBranchBatch.CloseSql.exact_delete_frame",
+      "SandproofBranchBatch.CloseSql.actual_window_path",
+      "SandproofBranchBatch.CloseSql.actual_retirement_statements",
+      "SandproofBranchBatch.CloseSql.exact_joint_outcome",
+      "SandproofBranchBatch.CloseSql.joint_image_retires_only_original_parent",
+      "SandproofBranchBatch.CloseSql.unknown_reply_excludes_split_retirement"
+    ]
+  },
+  "linux_merge": {
+    "integration": "fe2b7b519732a702721245457bf64d9b395aeebd",
+    "tree": "48c22f24580a7e88daa48338af94ca0d6f704706",
+    "environment_sha256": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+    "combined_commit": "1388de447126e025c9080557261d41baca48bbb4",
+    "combined_tree": "a4818a3d71f3848018bf46d17611b401edff39d1",
+    "combined_changed_path": "sandbox-host-service/tests/durable_https/branch_control.rs"
+  },
+  "blob_bridge": {
+    "provider_inventory_sha256": "e0cffa778cad70bc1a84da1e15e7800ddaaf4b17b7ecdcd1e381a0d4ee6695a0",
+    "lean_files": {
+      "BlobInvocation.lean": {
+        "sha256": "82f44cdc0fd9e8d06ec43d9dcd3f442b833a377232e004163af76c69d19e27d9",
+        "generated": false,
+        "audits": []
+      },
+      "CloseSqlBlobProducer.lean": {
+        "sha256": "169f555c581676f158806a4539e66c7bdc3cb7def0a387c9d798f591d1fe0189",
+        "generated": false,
+        "audits": [
+          "SandproofBranchBatch.BlobInvocation.actual_supplies_normal_blob_reply"
+        ]
+      },
+      "CloseSqlBlobConsumer.lean": {
+        "sha256": "375bdbca5d80a7273a63e8317b86db51126314f016d6b1255ceef387482081eb",
+        "generated": false,
+        "audits": [
+          "SandproofBranchBatch.CloseSql.normal_blob_reply_gives_close_update"
+        ]
+      }
+    }
+  }
+}

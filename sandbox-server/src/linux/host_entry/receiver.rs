@@ -4,6 +4,9 @@ use axum::{
     body::Body,
     http::{Request, Response},
 };
+use sandproof_controller_service::application::branching::{
+    BranchAccessIdentity, BranchControlReply, BranchControlRequest,
+};
 use sandproof_controller_service::templates::ComputeLimits;
 use sandproof_host_service::HostFacade;
 use sandproof_internal::{
@@ -12,7 +15,7 @@ use sandproof_internal::{
     status::{HostStatus, StatusReceiver, StatusRequest},
     template::{ValidationEvidence, ValidationRequest},
 };
-use sandproof_node::NodeHost;
+use sandproof_node::{NativeBranchControl, NodeHost};
 use sandproof_protocol::{
     internal::NodeIdentity,
     lifecycle::{
@@ -30,6 +33,32 @@ pub(super) struct RegisteredHost {
     pub(super) retention_slots: u16,
 }
 impl LifecycleReceiver for RegisteredHost {
+    async fn branch_control(
+        &self,
+        request: BranchControlRequest,
+        context: AuthenticatedCenterContext,
+    ) -> Result<BranchControlReply, ReceiveError> {
+        let checkpoint = request.batch.checkpoint.clone();
+        let count = request.targets.len();
+        self.facade
+            .lifecycle()
+            .drive_branch_control(
+                request,
+                context,
+                move |host, parent| {
+                    host.prepare_branch_control(
+                        parent.sandbox(),
+                        parent.vm(),
+                        parent.generation(),
+                        &checkpoint,
+                        count,
+                    )
+                },
+                NativeBranchControl::exchange,
+            )
+            .await
+    }
+
     async fn observe_resume(
         &self,
         intent: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
@@ -96,6 +125,17 @@ impl DataReceiver for RegisteredHost {
         request: Request<Body>,
     ) -> Response<Body> {
         self.facade.receive_data(identity, context, request).await
+    }
+
+    async fn receive_branch_data(
+        &self,
+        identity: BranchAccessIdentity,
+        context: AuthenticatedCenterContext,
+        request: Request<Body>,
+    ) -> Response<Body> {
+        self.facade
+            .receive_branch_data(identity, context, request)
+            .await
     }
 }
 impl ValidationReceiver for RegisteredHost {

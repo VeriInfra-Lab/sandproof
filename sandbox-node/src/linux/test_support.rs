@@ -102,6 +102,7 @@ pub(super) fn root_layout_fixture() -> (tempfile::TempDir, super::NodeConfig) {
         memory_mib: 128,
         host_resources: None,
         file_policy_digest: core::PolicyDigest(1),
+        hot_fanout_template: None,
     };
     (dir, config)
 }

@@ -1,8 +1,8 @@
 //! Mutations and their adjacent original physical preconditions.
 use super::{
-    Duration, ENVD_URL, Fence, File, HostObservation, Instant, LinuxWorker, NodeResult,
-    Observation, ObservedResult, RuntimeError, SlotBinding, Stdio, UnknownReason, VmState,
-    WorkAction, WorkOutcome, WorkReceipt, WorkerTransportError, check_trusted_path, core,
+    Duration, ENVD_URL, Fence, File, HostObservation, HotFanoutTemplate, Instant, LinuxWorker,
+    NodeResult, Observation, ObservedResult, RuntimeError, SlotBinding, Stdio, UnknownReason,
+    VmState, WorkAction, WorkOutcome, WorkReceipt, WorkerTransportError, check_trusted_path, core,
     decisions, fence_can_advance, fs, node_staging, thread,
 };
 
@@ -12,6 +12,22 @@ use super::{
 pub struct ExecutionReport {
     pub receipt: WorkReceipt<HostObservation>,
     pub diagnostic: Option<sandproof_controller_service::application::fault::FaultRecord>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct HotCheckpointReply {
+    status: String,
+    checkpoint_id: String,
+    max_branches: u8,
+}
+
+fn hot_checkpoint_matches(reply: &[u8], pin: &HotFanoutTemplate) -> bool {
+    serde_json::from_slice::<HotCheckpointReply>(reply).is_ok_and(|checkpoint| {
+        checkpoint.status == "checkpoint_ready"
+            && checkpoint.checkpoint_id == pin.checkpoint_id
+            && checkpoint.max_branches == pin.max_branches
+    })
 }
 
 impl LinuxWorker {
@@ -107,8 +123,10 @@ impl LinuxWorker {
                 if source.is_some() {
                     return Err("snapshot restore is outside V1".into());
                 }
-                let template = self.secret(*sandbox, *generation)?.template;
-                if let Some(template) = &template {
+                let secret = self.secret(*sandbox, *generation)?;
+                let hot_parent = self.require_hot_fanout_pin(&secret)?;
+                let template = secret.template.as_ref();
+                if let Some(template) = template {
                     self.validate_template(template)?;
                 }
                 self.vm_uid(*vm)?;
@@ -121,12 +139,19 @@ impl LinuxWorker {
                     slot: *slot,
                 };
                 self.write_node_json(&self.slot_path(*slot), &binding)?;
-                let observation =
-                    self.runtime(*sandbox, *vm)?
-                        .launch_verified(&self.vm_name(*vm), |disk| match &template {
-                            Some(template) => self.verify_cold_rootfs(&template.rootfs, disk),
-                            None => Ok(()),
-                        })?;
+                let runtime = self.runtime(*sandbox, *vm)?;
+                let name = self.vm_name(*vm);
+                let observation = if hot_parent.is_some() {
+                    let template = template.ok_or("missing sealed hot fan-out template")?;
+                    runtime.launch_hot_fanout_verified(&name, |disk| {
+                        self.verify_cold_rootfs(&template.rootfs, disk)
+                    })?
+                } else {
+                    runtime.launch_verified(&name, |disk| match template {
+                        Some(template) => self.verify_cold_rootfs(&template.rootfs, disk),
+                        None => Ok(()),
+                    })?
+                };
                 if observation.state != VmState::VmmRunning
                     || observation.pid == 0
                     || observation.start_time_ticks == 0
@@ -280,7 +305,23 @@ impl LinuxWorker {
     ) -> NodeResult<()> {
         let name = self.vm_name(vm);
         let secret = self.secret_for_vm(sandbox, vm)?;
-        self.initialize_guest_authorization(&name, &secret)
+        self.initialize_guest_authorization(&name, &secret)?;
+        if let Some(pin) = self.require_hot_fanout_pin(&secret)? {
+            let runtime = self.runtime(sandbox, vm)?;
+            let identity = runtime.source_process_identity(&name)?;
+            let reply = runtime.exchange_hot_fanout_control(
+                &name,
+                &identity,
+                br#"{"operation":"probe"}"#,
+                Duration::from_secs(2),
+            )?;
+            if !hot_checkpoint_matches(&reply, pin) {
+                return Err(
+                    "hot fan-out checkpoint is not ready with its approved identity".into(),
+                );
+            }
+        }
+        Ok(())
     }
 
     // Both callers obtain this exact immutable generation record from the
@@ -437,5 +478,31 @@ impl LinuxWorker {
         // exact child cannot orphan a supervisor's separate descendant.
         gate.finish_tracked()?;
         crate::startup::read_started(std::io::Cursor::new(output.stdout))
+    }
+}
+
+#[cfg(test)]
+mod hot_checkpoint_tests {
+    use super::*;
+
+    #[test]
+    fn positive_guest_probe_binds_exact_checkpoint_and_capacity() {
+        let pin = HotFanoutTemplate {
+            descriptor_digest: [1; 32],
+            checkpoint_id: "warm-1".into(),
+            max_branches: 8,
+        };
+        assert!(hot_checkpoint_matches(
+            br#"{"status":"checkpoint_ready","checkpoint_id":"warm-1","max_branches":8}"#,
+            &pin,
+        ));
+        for reply in [
+            br#"{"status":"unavailable","checkpoint_id":"warm-1","max_branches":8}"#.as_slice(),
+            br#"{"status":"checkpoint_ready","checkpoint_id":"warm-0","max_branches":8}"#,
+            br#"{"status":"checkpoint_ready","checkpoint_id":"warm-1","max_branches":7}"#,
+            br#"{"status":"checkpoint_ready","checkpoint_id":"warm-1","max_branches":8,"extra":1}"#,
+        ] {
+            assert!(!hot_checkpoint_matches(reply, &pin));
+        }
     }
 }

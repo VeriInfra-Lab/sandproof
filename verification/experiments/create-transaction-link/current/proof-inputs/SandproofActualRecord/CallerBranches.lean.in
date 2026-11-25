@@ -15,7 +15,25 @@ open recording
 abbrev Intent := sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
 abbrev Context := sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
 
--- The real extracted parent returns here before either crash point or commit.
+theorem actual_record_error_precedes_gate
+    {R T N U B E C : Type}
+    (retirement : native_retirement.RetirementEncoding R)
+    (terminal : model.TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (graphic : capture.GraphicBytes B)
+    (effects : RecordTransaction E) (crash : CrashInjector C)
+    (before after : E) (intent : Intent) (context : Context) (crashes : C)
+    (error : JournalError)
+    (recorded : record_using retirement terminal renewal unload graphic
+      effects.RecordEffectsInst before intent context = .ok (.Err error, after)) :
+    record_transaction_using retirement terminal renewal unload graphic
+      effects crash before intent context crashes = .ok (.Err error, crashes) := by
+  simp [record_transaction_using, recorded,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+-- The real extracted parent returns here before the gate, crash points and commit.
 -- The separate old-body composition supplies this Replay observation from the
 -- complete authenticated request lookup, rather than an output label.
 theorem actual_replay_return
@@ -35,6 +53,25 @@ theorem actual_replay_return
   simp [record_transaction_using, recorded,
     core.result.Result.Insts.CoreOpsTry.branch]
 
+theorem actual_gate_error_precedes_commit
+    {R T N U B E C : Type}
+    (retirement : native_retirement.RetirementEncoding R)
+    (terminal : model.TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (graphic : capture.GraphicBytes B)
+    (effects : RecordTransaction E) (crash : CrashInjector C)
+    (before afterSave afterGate : E) (intent : Intent) (context : Context) (crashes : C)
+    (value : model.LifecycleWorkState) (error : JournalError)
+    (recorded : record_using retirement terminal renewal unload graphic
+      effects.RecordEffectsInst before intent context = .ok (.Ok (.Recorded value), afterSave))
+    (rejected : effects.check_before_commit afterSave intent = .ok (.Err error, afterGate)) :
+    record_transaction_using retirement terminal renewal unload graphic
+      effects crash before intent context crashes = .ok (.Err error, crashes) := by
+  simp [record_transaction_using, recorded, rejected,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
 theorem actual_recorded_success
     {R T N U B E C : Type}
     (retirement : native_retirement.RetirementEncoding R)
@@ -43,16 +80,17 @@ theorem actual_recorded_success
     (unload : unload_resolution.UnloadEncoding U)
     (graphic : capture.GraphicBytes B)
     (effects : RecordTransaction E) (crash : CrashInjector C)
-    (before after : E) (intent : Intent) (context : Context)
+    (before afterSave afterGate : E) (intent : Intent) (context : Context)
     (crashes afterBefore afterAfter : C) (value : model.LifecycleWorkState)
     (recorded : record_using retirement terminal renewal unload graphic
-      effects.RecordEffectsInst before intent context = .ok (.Ok (.Recorded value), after))
+      effects.RecordEffectsInst before intent context = .ok (.Ok (.Recorded value), afterSave))
+    (allowed : effects.check_before_commit afterSave intent = .ok (.Ok (), afterGate))
     (beforeCommit : crash.hit crashes .BeforeCommit = .ok (.Ok (), afterBefore))
-    (committed : effects.commit after = .ok (.Ok ()))
+    (committed : effects.commit afterGate = .ok (.Ok ()))
     (afterCommit : crash.hit afterBefore .AfterCommit = .ok (.Ok (), afterAfter)) :
     record_transaction_using retirement terminal renewal unload graphic
       effects crash before intent context crashes = .ok (.Ok value, afterAfter) := by
-  simp [record_transaction_using, recorded, beforeCommit, committed, afterCommit,
+  simp [record_transaction_using, recorded, allowed, beforeCommit, committed, afterCommit,
     core.result.Result.Insts.CoreOpsTry.branch]
 
 theorem actual_recorded_commit_error
@@ -63,20 +101,56 @@ theorem actual_recorded_commit_error
     (unload : unload_resolution.UnloadEncoding U)
     (graphic : capture.GraphicBytes B)
     (effects : RecordTransaction E) (crash : CrashInjector C)
-    (before after : E) (intent : Intent) (context : Context)
+    (before afterSave afterGate : E) (intent : Intent) (context : Context)
     (crashes afterBefore : C) (value : model.LifecycleWorkState) (error : JournalError)
     (recorded : record_using retirement terminal renewal unload graphic
-      effects.RecordEffectsInst before intent context = .ok (.Ok (.Recorded value), after))
+      effects.RecordEffectsInst before intent context = .ok (.Ok (.Recorded value), afterSave))
+    (allowed : effects.check_before_commit afterSave intent = .ok (.Ok (), afterGate))
     (beforeCommit : crash.hit crashes .BeforeCommit = .ok (.Ok (), afterBefore))
-    (committed : effects.commit after = .ok (.Err error)) :
+    (committed : effects.commit afterGate = .ok (.Err error)) :
     record_transaction_using retirement terminal renewal unload graphic
       effects crash before intent context crashes = .ok (.Err error, afterBefore) := by
-  simp [record_transaction_using, recorded, beforeCommit, committed,
+  simp [record_transaction_using, recorded, allowed, beforeCommit, committed,
     core.result.Result.Insts.CoreOpsTry.branch,
     core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
 
 abbrev actualEffects {D : Type} (codec : RecordCodec D) : RecordTransaction (StandardRecord D) :=
   StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordTransaction codec
+
+theorem actual_standard_record_create_bypasses_unload_gate {D : Type}
+    (codec : RecordCodec D) (state : StandardRecord D) (intent : Intent)
+    (binding : SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding)
+    (incarnation : sandproof_protocol.lifecycle.identity.IncarnationId)
+    (create : intent.request.operation = .Create binding incarnation) :
+    (actualEffects codec).check_before_commit state intent = .ok (.Ok (), state) := by
+  simp [StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordTransaction.check_before_commit,
+    unload_branch_scope, create]
+
+theorem actual_standard_record_unload_uses_original_gate_scope {D : Type}
+    (codec : RecordCodec D) (state : StandardRecord D) (intent : Intent)
+    (source : sandproof_protocol.lifecycle.identity.IncarnationId)
+    (captureId : SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.CaptureId)
+    (unload : intent.request.operation = .Unload source captureId)
+    (answer : core.result.Result Unit JournalError)
+    (observed : state.tx.checkParentUnload state.tx.parent intent.request.binding source =
+      .ok answer) :
+    (actualEffects codec).check_before_commit state intent = .ok (answer, state) := by
+  simp [StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordTransaction.check_before_commit,
+    unload_branch_scope, controller.branching.check_parent_unload, unload, observed]
+
+-- This connects the same owner to its original destructor, conditional on
+-- normal Drop dispatch and the SQLite rollback response.
+theorem actual_original_owner_drop_uses_live_rollback
+    (owner : ParentOwner) (raw : SandproofParentCommitRust.ActualCalls.Raw)
+    (live : owner.transaction = some raw)
+    (rolledBack : SandproofParentCommitRust.rusqlite.transaction.Transaction.rollback raw =
+      .ok (.Ok ())) :
+    SandproofParentCommitRust.controller.transaction.WorldTransaction.Insts.CoreOpsDropDrop.drop
+      owner = .ok { owner with transaction := none } := by
+  simp [SandproofParentCommitRust.controller.transaction.WorldTransaction.Insts.CoreOpsDropDrop.drop,
+    SandproofParentCommitRust.controller.transaction.memo.rollback_if_live,
+    SandproofParentCommitRust.controller.transaction.DropWorldTransaction.drop.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError.call_once,
+    SandproofParentCommitRust.core.result.Result.is_err, live, rolledBack]
 
 theorem actual_standard_record_uses_original_commit {D : Type}
     (codec : RecordCodec D) (state : StandardRecord D) :
@@ -103,8 +177,13 @@ theorem extraction_root_uses_real_constructor_and_dictionary
 end
 end SandproofActualRecordRust.CallerBranches
 
+#audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_record_error_precedes_gate
 #audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_replay_return
+#audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_gate_error_precedes_commit
 #audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_recorded_success
+#audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_standard_record_create_bypasses_unload_gate
+#audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_standard_record_unload_uses_original_gate_scope
+#audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_original_owner_drop_uses_live_rollback
 #audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_standard_record_uses_original_commit
 #audit_controller_proof SandproofActualRecordRust.CallerBranches.extraction_root_uses_real_constructor_and_dictionary
 #audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_recorded_commit_error

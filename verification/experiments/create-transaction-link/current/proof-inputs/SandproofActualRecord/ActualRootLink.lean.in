@@ -47,6 +47,26 @@ theorem actual_root_replays_full_authenticated_request
   exact actual_replay_return retirement terminal renewal unload graphic (actualEffects codecEffects)
     crash ⟨owner, namespaceName, codec⟩ afterLoad intent context crashes replay recorded
 
+theorem actual_root_propagates_unload_gate_rejection_before_commit
+    (owner : CallerOwnerView) (namespaceName : Str) (codec : D) (crashes : C)
+    (afterSave : StandardRecord D) (value : model.LifecycleWorkState)
+    (source : sandproof_protocol.lifecycle.identity.IncarnationId)
+    (captureId : SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.CaptureId)
+    (isUnload : intent.request.operation = .Unload source captureId) (error : JournalError)
+    (recorded : record_using retirement terminal renewal unload graphic
+      (actualEffects codecEffects).RecordEffectsInst ⟨owner, namespaceName, codec⟩ intent context =
+      .ok (.Ok (.Recorded value), afterSave))
+    (observed : afterSave.tx.checkParentUnload afterSave.tx.parent intent.request.binding source =
+      .ok (.Err error)) :
+    proof_record_actual_parent retirement terminal renewal unload graphic codecEffects crash
+      owner namespaceName codec intent context crashes = .ok (.Err error, crashes) := by
+  rw [extraction_root_uses_real_constructor_and_dictionary]
+  have rejected := actual_standard_record_unload_uses_original_gate_scope
+    codecEffects afterSave intent source captureId isUnload (.Err error) observed
+  exact actual_gate_error_precedes_commit retirement terminal renewal unload graphic
+    (actualEffects codecEffects) crash ⟨owner, namespaceName, codec⟩ afterSave afterSave
+    intent context crashes value error recorded rejected
+
 theorem actual_root_saved_owner_commits
     (owner : CallerOwnerView) (namespaceName : Str) (codec : D)
     (afterSave : StandardRecord D) (value : model.LifecycleWorkState)
@@ -54,6 +74,8 @@ theorem actual_root_saved_owner_commits
     (recorded : record_using retirement terminal renewal unload graphic
       (actualEffects codecEffects).RecordEffectsInst ⟨owner, namespaceName, codec⟩ intent context =
       .ok (.Ok (.Recorded value), afterSave))
+    (allowed : (actualEffects codecEffects).check_before_commit afterSave intent =
+      .ok (.Ok (), afterSave))
     (beforeCommit : crash.hit crashes .BeforeCommit = .ok (.Ok (), afterBefore))
     (afterCommit : crash.hit afterBefore .AfterCommit = .ok (.Ok (), afterAfter))
     (raw : SandproofParentCommitRust.ActualCalls.Raw) (world : SandproofParentCommitRust.World)
@@ -78,8 +100,8 @@ theorem actual_root_saved_owner_commits
     have commits : (actualEffects codecEffects).commit afterSave = .ok (.Ok ()) :=
       (actual_standard_record_uses_original_commit codecEffects afterSave).trans result.1
     exact actual_recorded_success retirement terminal renewal unload graphic (actualEffects codecEffects)
-      crash ⟨owner, namespaceName, codec⟩ afterSave intent context crashes afterBefore afterAfter
-      value recorded beforeCommit commits afterCommit
+      crash ⟨owner, namespaceName, codec⟩ afterSave afterSave intent context crashes afterBefore
+      afterAfter value recorded allowed beforeCommit commits afterCommit
   · exact result.2
 
 theorem actual_root_saved_owner_commit_uncertain
@@ -89,6 +111,8 @@ theorem actual_root_saved_owner_commit_uncertain
     (recorded : record_using retirement terminal renewal unload graphic
       (actualEffects codecEffects).RecordEffectsInst ⟨owner, namespaceName, codec⟩ intent context =
       .ok (.Ok (.Recorded value), afterSave))
+    (allowed : (actualEffects codecEffects).check_before_commit afterSave intent =
+      .ok (.Ok (), afterSave))
     (beforeCommit : crash.hit crashes .BeforeCommit = .ok (.Ok (), afterBefore))
     (raw : SandproofParentCommitRust.ActualCalls.Raw) (world : SandproofParentCommitRust.World)
     (error : SandproofParentCommitRust.rusqlite.error.Error)
@@ -111,8 +135,8 @@ theorem actual_root_saved_owner_commit_uncertain
     have commits : (actualEffects codecEffects).commit afterSave = .ok (.Err (.CommitUncertain error)) :=
       (actual_standard_record_uses_original_commit codecEffects afterSave).trans result.1
     exact actual_recorded_commit_error retirement terminal renewal unload graphic (actualEffects codecEffects)
-      crash ⟨owner, namespaceName, codec⟩ afterSave intent context crashes afterBefore value
-      (.CommitUncertain error) recorded beforeCommit commits
+      crash ⟨owner, namespaceName, codec⟩ afterSave afterSave intent context crashes afterBefore
+      value (.CommitUncertain error) recorded allowed beforeCommit commits
   · exact result.2
 
 end
@@ -120,5 +144,6 @@ end
 end SandproofActualRecordRust.ActualRootLink
 
 #audit_controller_proof SandproofActualRecordRust.ActualRootLink.actual_root_replays_full_authenticated_request
+#audit_controller_proof SandproofActualRecordRust.ActualRootLink.actual_root_propagates_unload_gate_rejection_before_commit
 #audit_controller_proof SandproofActualRecordRust.ActualRootLink.actual_root_saved_owner_commits
 #audit_controller_proof SandproofActualRecordRust.ActualRootLink.actual_root_saved_owner_commit_uncertain
