@@ -1,6 +1,7 @@
 use super::*;
 use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
 
+const COMPLETED: &str = "SANDPROOF_HTTP_PIPE_ASSERTIONS_PASSED";
 const MARKER: &str = "SANDPROOF_PIPE_HTTP_CHILD";
 
 #[tokio::test]
@@ -33,6 +34,12 @@ async fn isolated(mode: &str) {
         "{}{}",
         String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&result.stderr)
+            .lines()
+            .any(|line| line == COMPLETED),
+        "HTTP pipe child did not complete its assertions"
     );
 }
 
@@ -141,4 +148,5 @@ async fn isolated_http_pipe_failure() {
             "{}"
         );
     }
+    eprintln!("{COMPLETED}");
 }

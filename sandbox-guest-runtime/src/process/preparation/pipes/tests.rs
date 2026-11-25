@@ -2,18 +2,24 @@ use super::*;
 use crate::{CommandPreparation, LaunchSpec, ProcessLimits};
 use std::time::Duration;
 
+const COMPLETED: &str = "SANDPROOF_PIPE_ASSERTIONS_PASSED";
 const MARKER: &str = "SANDPROOF_PIPE_FAILURE_CHILD";
 
 #[tokio::test]
 async fn actual_pipe_and_pty_failures_preserve_stage_and_release_preparation_descriptors() {
+    run_pipe_child("process::preparation::pipes::tests::isolated_pipe_failures").await;
+}
+
+#[tokio::test]
+#[should_panic(expected = "pipe child did not complete its assertions")]
+async fn unmatched_pipe_child_fails_the_parent_check() {
+    run_pipe_child("nonexistent::isolated_pipe_failures").await;
+}
+
+async fn run_pipe_child(name: &str) {
     let mut child = Command::new(std::env::current_exe().unwrap());
     child
-        .args([
-            "--exact",
-            "process::preparation::pipes::tests::isolated_pipe_failures",
-            "--ignored",
-            "--nocapture",
-        ])
+        .args(["--exact", name, "--ignored", "--nocapture"])
         .env(MARKER, "1")
         .kill_on_drop(true);
     let result = tokio::time::timeout(Duration::from_secs(10), child.output())
@@ -25,6 +31,12 @@ async fn actual_pipe_and_pty_failures_preserve_stage_and_release_preparation_des
         "{}{}",
         String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&result.stderr)
+            .lines()
+            .any(|line| line == COMPLETED),
+        "pipe child did not complete its assertions"
     );
 }
 
@@ -132,6 +144,7 @@ fn isolated_pipe_failures() {
     assert_eq!(fact, None);
     assert_eq!(descriptors(), baseline);
     assert_eq!(std::fs::read_dir(root.path()).unwrap().count(), 0);
+    eprintln!("{COMPLETED}");
 }
 
 fn check_pty_failures(
