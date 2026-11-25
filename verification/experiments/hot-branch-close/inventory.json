@@ -185,6 +185,15 @@
       "SandproofBranchBatch.NormalBranchScan.observed_image_supplies_the_existing_select"
     ]
   },
+  "operation_key_bytes": {
+    "sha256": "1574088d8bec311613b2587e9e1646d868d42ff2470707d447707545cdd3f4c3",
+    "generated": false,
+    "audits": [
+      "SandproofBranchBatch.OperationKeyBytes.column_zero_keeps_vector_bytes",
+      "SandproofBranchBatch.OperationKeyBytes.stored_first_slice_comparison",
+      "SandproofBranchBatch.OperationKeyBytes.false_operation_guard_keeps_original_blob"
+    ]
+  },
   "linux_merge": {
     "integration": "fe2b7b519732a702721245457bf64d9b395aeebd",
     "tree": "48c22f24580a7e88daa48338af94ca0d6f704706",

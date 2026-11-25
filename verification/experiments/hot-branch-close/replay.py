@@ -165,8 +165,10 @@ def replay(args):
             generated_data[evidence.name] = evidence
             lean_entries[evidence.name] = dict(sha256=digest(evidence), generated=True, audits=[])
             lean_entries['CloseSql.lean'] = inventory['close_sql']
-            if args.with_branch_scan:
+            if args.with_branch_scan or args.with_load_key:
                 lean_entries['NormalBranchScan.lean'] = inventory['normal_branch_scan']
+            if args.with_load_key:
+                lean_entries['OperationKeyBytes.lean'] = inventory['operation_key_bytes']
 
         (rust_relative, fixture_hash), = inventory['append_only'].items()
         fixture = HERE / 'roots.rs.in'
@@ -248,8 +250,10 @@ def replay(args):
         targets = [LIB + '.CloseProof']
         if args.with_window:
             targets.append(LIB + '.CloseSql')
-        if args.with_branch_scan:
+        if args.with_branch_scan or args.with_load_key:
             targets.append(LIB + '.NormalBranchScan')
+        if args.with_load_key:
+            targets.append(LIB + '.OperationKeyBytes')
         if args.with_blob_bridge:
             targets.extend((LIB + '.CloseSqlBlobProducer', LIB + '.CloseSqlBlobConsumer'))
         command('lake-build', ['lake', 'build', *targets])
