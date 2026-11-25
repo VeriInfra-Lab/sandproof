@@ -243,6 +243,8 @@ def prepare_disk(settings,source,work):
     image.chmod(0o444)
     record=dict(source=asdict(source),merge=revision,tree=tree,bytes=image.stat().st_size,sha256=digest(image))
     (published/'manifest.json').write_text(json.dumps(record)+'\n')
+    # QEMU runs as the unprivileged VM account, outside the launcher's umask.
+    published.chmod(0o711)
     return published,record
 
 
@@ -355,6 +357,8 @@ class SourceCache:
                     disk=None
                 else:
                     path,record=candidate
+                    if not path.stat().st_mode & stat.S_IXOTH:
+                        raise ValueError('cached PR source directory is inaccessible to the VM account')
                     name=path/'source.iso'
                     image=name.open('rb')
                     fcntl.flock(image,fcntl.LOCK_SH)

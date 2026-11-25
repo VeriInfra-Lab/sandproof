@@ -28,6 +28,7 @@ class CacheTests(unittest.TestCase):
         self.prepares.append(source)
         path=work/'publication'
         path.mkdir()
+        path.chmod(0o711)
         image=path/'source.iso'
         image.write_bytes(b'immutable test disk')
         image.chmod(0o444)
@@ -35,6 +36,26 @@ class CacheTests(unittest.TestCase):
         record=dict(source=asdict(source),merge=merge,tree=TREE,bytes=image.stat().st_size,sha256=cache.digest(image))
         (path/'manifest.json').write_text(json.dumps(record)+'\n')
         return path,record
+
+    def test_publication_is_traversable_under_private_launcher_umask(self):
+        work=self.cache.root
+        pack=work/'source.pack'
+        pack.write_bytes(b'pack fixture')
+
+        def make_iso(argv,**_kwargs):
+            Path(argv[argv.index('-o')+1]).write_bytes(b'immutable test disk')
+
+        previous_umask=os.umask(0o077)
+        try:
+            with (patch.object(cache,'download',return_value=(MERGE,pack)), patch.object(cache,'git'),
+                  patch.object(cache,'verify_repo',return_value=TREE),
+                  patch.object(cache.subprocess,'run',side_effect=make_iso)):
+                published,_=cache.prepare_disk({},SOURCE,work)
+        finally:
+            os.umask(previous_umask)
+        self.assertEqual(published.stat().st_mode & 0o777,0o711)
+        self.assertEqual((published/'source.iso').stat().st_mode & 0o777,0o444)
+        self.assertEqual((published/'manifest.json').stat().st_mode & 0o777,0o600)
 
     def test_concurrent_workers_share_one_publication_and_keep_it_leased(self):
         gate=threading.Barrier(3)
@@ -80,6 +101,15 @@ class CacheTests(unittest.TestCase):
                 self.assertIsNone(disk)
             self.assertEqual(prepare.call_count,1)
             self.assertEqual(self.cache.entries(),[])
+
+    def test_inaccessible_existing_cache_is_not_attached(self):
+        with patch.object(cache,'prepare_disk',side_effect=self.prepare):
+            with self.cache.acquire(SOURCE,{}):
+                pass
+            (self.cache.root/MERGE).chmod(0o700)
+            with self.assertRaisesRegex(ValueError,'inaccessible to the VM account'):
+                with self.cache.acquire(SOURCE,{}):
+                    self.fail('an unreadable disk must not be attached')
 
 
 class IdentityTests(unittest.TestCase):
