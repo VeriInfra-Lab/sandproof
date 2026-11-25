@@ -1,0 +1,20 @@
+{
+  "issue": 635,
+  "id": "source-save-load-canonical",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "cd6f6b3c8365e1dd05fe350443f0ff848e33c557",
+  "capture_entry": "verification/experiments/source-save-load-canonical/canonical_capture.py",
+  "formal_entry": "verification/experiments/source-save-load-canonical/canonical_check.py",
+  "native_entry": "verification/experiments/source-save-load-canonical/canonical_native.py",
+  "root": "SaveLoadCanonicalWitness",
+  "field_contract": "SandboxModel.Stage1Protocol.SaveLoadCanonicalProof.original_full_canonical_contract",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveLoadCanonicalComposition.original_load_keeps_canonical_row_evidence",
+  "first_error_theorem": "SandboxModel.Stage1Protocol.SaveLoadCanonicalComposition.original_save_keeps_first_canonical_row_error",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveLoadCanonicalWitness.missing_comparison_violates_same_canonical_contract",
+  "remaining": [
+    "Ning exact ordinary and native acceptance",
+    "main coordinator shared registration and coverage adoption",
+    "named concrete Serde value/bytes and actual SHA library conformance, physical transaction"
+  ],
+  "public_acceptance": false
+}
