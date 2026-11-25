@@ -294,16 +294,9 @@ mod sqlite_activity {
             Settlement::UnknownCommitted => crate::controller::transaction::fail_next_commit(true),
             _ => {}
         }
-        SQL.with_borrow_mut(Vec::clear);
-        journal.journal.connection.trace_v2(
-            TraceEventCodes::SQLITE_TRACE_STMT | TraceEventCodes::SQLITE_TRACE_ROW,
-            Some(observe_statement),
-        );
-        journal.journal.connection.update_hook(Some(observe_row)).unwrap();
-        let result = journal.close_lifecycle_window(&close, &context, &mut witness);
-        journal.journal.connection.trace_v2(TraceEventCodes::empty(), None);
-        journal.journal.connection.update_hook(None::<fn(Action, &str, &str, i64)>).unwrap();
-        let history = SQL.with_borrow_mut(std::mem::take);
+        let (result, history) = capture_activity(&mut journal, |journal| {
+            journal.close_lifecycle_window(&close, &context, &mut witness)
+        });
         assert!(journal.journal.connection.is_autocommit());
         match settlement {
             Settlement::RollbackBeforeCommit => assert!(matches!(result, Err(JournalError::InjectedCrash(CrashPoint::BeforeCommit)))),
@@ -345,6 +338,87 @@ mod sqlite_activity {
         }
     }
 
+    fn capture_activity<T>(
+        journal: &mut ControllerJournal,
+        run: impl FnOnce(&mut ControllerJournal) -> T,
+    ) -> (T, Vec<Activity>) {
+        SQL.with_borrow_mut(Vec::clear);
+        journal.journal.connection.trace_v2(
+            TraceEventCodes::SQLITE_TRACE_STMT | TraceEventCodes::SQLITE_TRACE_ROW,
+            Some(observe_statement),
+        );
+        journal.journal.connection.update_hook(Some(observe_row)).unwrap();
+        let result = run(journal);
+        journal.journal.connection.trace_v2(TraceEventCodes::empty(), None);
+        journal
+            .journal
+            .connection
+            .update_hook(None::<fn(Action, &str, &str, i64)>)
+            .unwrap();
+        (result, SQL.with_borrow_mut(std::mem::take))
+    }
+
+    fn reject_only_the_replaced_operation_column() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("db");
+        let (mut journal, parent, context) = running(&path);
+        journal.configure_host_branching(LIMITS).unwrap();
+        let create = fixture::create("alpha", "session-a");
+        let local = journal.lifecycle_work_state(&create, &context).unwrap().local.unwrap();
+        let branch = key(&parent, "first", 10);
+        journal
+            .reserve_host_branch_batch(
+                &parent,
+                &context,
+                &branch,
+                &[target("original", 31_000)],
+                NOW,
+            )
+            .unwrap();
+        let close = confirm_terminal_branch_parent(&mut journal, &create, local, &context, |_| {});
+        let original = image(&journal.journal.connection);
+        let [(rowid, fields)] = original.batches.as_slice() else {
+            panic!("one native branch record is required");
+        };
+        let mut replacement = fields[0].clone();
+        assert_eq!(replacement.len(), 32);
+        replacement[0] ^= 1;
+        assert_eq!(
+            journal.journal.connection.execute(
+                "UPDATE controller_host_branch_batches SET operation=?1 WHERE rowid=?2",
+                rusqlite::params![replacement.as_slice(), *rowid],
+            ).unwrap(),
+            1
+        );
+        let mut expected = original;
+        expected.batches[0].1[0] = replacement;
+        assert!(image(&journal.journal.connection) == expected);
+        let inode = file_identity(&path);
+        let (result, history) = capture_activity(&mut journal, |journal| {
+            journal.close_lifecycle_window(&close, &context, &mut NeverCrash)
+        });
+        assert!(matches!(result, Err(JournalError::CorruptStore)));
+        assert!(
+            !history.iter().any(|entry| match entry {
+                Activity::Statement(sql) => {
+                    sql.starts_with("DELETE FROM ") || sql.starts_with("UPDATE ")
+                }
+                Activity::ScanRow => false,
+                _ => true,
+            }),
+            "retirement attempted DELETE or UPDATE before rejecting the mismatched operation key"
+        );
+        assert!(history.iter().any(|entry| matches!(entry, Activity::ScanRow)));
+        assert!(journal.journal.connection.is_autocommit());
+        assert!(image(&journal.journal.connection) == expected);
+        drop(journal);
+
+        let reopened =
+            Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        assert_eq!(file_identity(&path), inode);
+        assert!(image(&reopened) == expected);
+    }
+
     #[test]
     fn original_retirement_sqlite_activity_and_protected_reopen_are_joint() {
         for settlement in [
@@ -356,5 +430,6 @@ mod sqlite_activity {
         ] {
             check_settlement(settlement);
         }
+        reject_only_the_replaced_operation_column();
     }
 }

@@ -42,6 +42,8 @@ def replay(args):
             'the original BLOB provider was reviewed for the exact Linux inputs')
     require(not args.with_branch_scan or (args.approved_linux and args.with_window),
             'the branch scan view requires the validated Linux retirement capture')
+    require(not args.with_load_key or (args.approved_linux and args.with_window),
+            'the load-key view requires the validated Linux retirement capture')
     if args.approved_linux:
         require(args.with_window, 'the exact Linux replay requires the CloseWindow case')
         admission = linux_admission(output)
@@ -92,11 +94,12 @@ def replay(args):
         require(run.returncode == 0, f'{name} failed, see {log}')
         return log
 
-    def capture(name):
+    def capture(name, profile=None):
         ir = captures / (name + '.llbc')
+        profile = inventory[name] if profile is None else profile
         selectors = [
             argument
-            for flag, paths in inventory[name].items()
+            for flag, paths in profile.items()
             for item in paths
             for argument in (flag, item)
         ]
@@ -115,7 +118,7 @@ def replay(args):
         require({row['key'] for row in translated['target_information']} == {fixed['rust_target']},
                 f'{name} extraction target differs')
         require(all(options[flag[2:].replace('-', '_')] == paths
-                    for flag, paths in inventory[name].items()), f'{name} extraction scope differs')
+                    for flag, paths in profile.items()), f'{name} extraction scope differs')
         report[name + '_llbc_sha256'] = digest(ir)
         return ir
 
@@ -146,6 +149,15 @@ def replay(args):
                 sys.executable, HERE / 'check_retirement_flow.py', retire_ir,
             ], artifact=output / 'retire-owner-flow.json')
             report['retire_owner_flow'] = json.loads(retire.read_bytes())
+            if args.with_load_key:
+                profile = dict(inventory['retire'])
+                profile['--include'] = [*profile['--include'],
+                    'sandproof_controller_service::controller::branching::load']
+                load_ir = capture('retire-load-key', profile)
+                load = command('load-key-flow', [
+                    sys.executable, HERE / 'check_load_key_flow.py', load_ir,
+                ], artifact=output / 'load-key-flow.json')
+                report['load_key_flow'] = json.loads(load.read_bytes())
             evidence = command('window-evidence', [
                 sys.executable, HERE / 'window_evidence.py', window, retire,
                 window_ir, retire_ir, candidate,
@@ -283,8 +295,10 @@ def replay(args):
                     dict(name='hot-branch-close-linux-development', actual_files=True),
                     report, result, output / 'lake-build.log',
                 )
-                require(all(str(captures / (name + '.llbc')) in evidence
-                            for name in ('window', 'retire', 'batch')),
+                expected_captures = ['window', 'retire', 'batch']
+                if args.with_load_key:
+                    expected_captures.append('retire-load-key')
+                require(all(str(captures / (name + '.llbc')) in evidence for name in expected_captures),
                         'the original evidence reader omitted a current extraction')
             except Exception:
                 report['status'] = 'failed'
@@ -309,6 +323,7 @@ if __name__ == '__main__':
     parser.add_argument('--with-window', action='store_true')
     parser.add_argument('--with-blob-bridge', action='store_true')
     parser.add_argument('--with-branch-scan', action='store_true')
+    parser.add_argument('--with-load-key', action='store_true')
     parser.add_argument('--approved-linux', action='store_true')
     parser.add_argument('--candidate', help='the pinned combined Linux commit')
     replay(parser.parse_args())

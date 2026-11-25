@@ -16,6 +16,13 @@ from source_profile import linux_admission
 HERE = Path(__file__).resolve().parent
 TEST = ('controller::lifecycle_inbox::recording::branching_tests::sqlite_activity::'
         'original_retirement_sqlite_activity_and_protected_reopen_are_joint')
+LOAD_FIELDS = b'let (key, parent, execution, record, actual_digest) = row;'
+KEY_GUARD = b'if key != digest(&decoded.key.operation)?\n        || parent != digest(&decoded.parent)?'
+REJECTIONS = {
+    'split-commit': 'retirement published a partial image before commit',
+    'skip-operation-key-check':
+        'retirement attempted DELETE or UPDATE before rejecting the mismatched operation key',
+}
 
 
 def digest(path):
@@ -48,7 +55,7 @@ def run(args):
     report = dict(candidate=args.candidate, tree=tree, complete=False, linux_admission=admission,
                   archive_sha256=digest(archive), variants={})
     try:
-        for name in ('original', 'split-commit', 'restored'):
+        for name in ('original', *REJECTIONS, 'restored'):
             source = output / name
             source.mkdir(mode=0o700)
             target = output / (name + '-target')
@@ -64,6 +71,13 @@ def run(args):
             require(original.count(MUTATION_ANCHOR) == 1, 'split-commit mutation is ambiguous')
             if name == 'split-commit':
                 product.write_bytes(original.replace(MUTATION_ANCHOR, EARLY_COMMIT + MUTATION_ANCHOR))
+            elif name == 'skip-operation-key-check':
+                require(original.count(LOAD_FIELDS) == original.count(KEY_GUARD) == 1,
+                        'operation-key guard mutation is ambiguous')
+                product.write_bytes(
+                    original.replace(LOAD_FIELDS, LOAD_FIELDS.replace(b'(key,', b'(_key,'))
+                    .replace(KEY_GUARD, b'if parent != digest(&decoded.parent)?')
+                )
             environment = dict(os.environ, CARGO_TARGET_DIR=str(target), CARGO_NET_OFFLINE='true',
                                CARGO_INCREMENTAL='0', CARGO_BUILD_JOBS='4', CARGO_TERM_COLOR='never')
             for variable in ('RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS'):
@@ -98,11 +112,11 @@ def run(args):
                 result = subprocess.run(argv, cwd=source, env=environment, stdout=stream,
                                         stderr=subprocess.STDOUT, timeout=120, check=False)
             text = test_log.read_text()
-            if name == 'split-commit':
+            if name in REJECTIONS:
                 require(result.returncode == 101
-                        and 'retirement published a partial image before commit' in text
+                        and REJECTIONS[name] in text
                         and 'test result: FAILED. 0 passed; 1 failed;' in text,
-                        'split commit did not reach the original independent-reader assertion')
+                        'native variant did not reach its original bound assertion: ' + name)
             else:
                 require(result.returncode == 0 and f'test {TEST} ... ok' in text
                         and 'test result: ok. 1 passed; 0 failed;' in text,
