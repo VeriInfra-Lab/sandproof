@@ -1,0 +1,21 @@
+{
+  "issue": 635,
+  "id": "source-save-full",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "a1275a95df622bc4846fe01769acc21a28565553",
+  "roundtrip_parent": "2edc1a6c14c0b379dd7dc4977631adde488c97ca",
+  "formal_entry": "verification/experiments/source-save-full/full_check.py",
+  "root": "SourceSaveFullWitness",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SourceSaveFull.original_save_from_actual_precise_read_to_full_write_result",
+  "same_contract_positive_negative": "SandboxModel.Stage1Protocol.SourceSaveFull.original_and_wrong_share_full_row_evidence_contract",
+  "native_reuse": [
+    "verification/experiments/source-save-load-roundtrip/roundtrip_native.py",
+    "verification/experiments/source-serde-ports/serde_native.py"
+  ],
+  "remaining": [
+    "Ning exact ordinary and native acceptance for both retained inputs",
+    "main coordinator shared registration and coverage adoption",
+    "concrete field/writer library semantics, true SHA, V5 physical transaction, authorization and resources"
+  ],
+  "public_acceptance": false
+}
