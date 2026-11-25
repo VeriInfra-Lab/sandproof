@@ -58,7 +58,11 @@ def run(output, variant, data, prepare_only):
         project = output/'capture/source'
         generated = output/'capture/generated'
         expected = dict(captured['private_inputs'])
-        expected.update(support.install(project, variant, data, generated))
+        installed = support.install(project, variant, data, generated)
+        for name in ('Types.lean', 'Funs.lean'):
+            if installed[str(support.GEN/name)] != captured['generated']['SandproofStage1Request/'+name]:
+                raise ValueError('physical reply output differs from its current source capture: '+name)
+        expected.update(installed)
         recipe = data['variants'][variant]
         files, audits = support.proof_inventory(project, data['common_proofs']+recipe['proofs'])
         index = json.loads((ROOT/HERE/'generated-index.json').read_text())['variants'][variant]

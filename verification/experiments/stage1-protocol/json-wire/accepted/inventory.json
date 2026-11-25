@@ -10,7 +10,7 @@
   "candidate_patch_sha256": "14806193f0f1f37af670243b1ca7d82f394f4e674b66839d3a1cc38a3e0b9824",
   "candidate_sources": {
     "sandbox-internal/src/lifecycle.rs": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7",
-    "sandbox-internal/src/server/lifecycle.rs": "6fc17f26567697c601f3430891ed61436f64b426790977222e0212a33811c669"
+    "sandbox-internal/src/server/lifecycle.rs": "208b7246234c9cc0670d105ef46e52b7002cc3cf252b40d1e1bcc60c9b4717c9"
   },
   "proof_templates": [
     "AcceptedWireModel",
