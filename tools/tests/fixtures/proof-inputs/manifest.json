@@ -6503,6 +6503,7 @@
     "Cargo.lock",
     "Cargo.toml",
     "SandboxModel.lean",
+    "SandboxModel/Boundaries/DataDrain/Refinement.lean",
     "controller-core/Cargo.toml",
     "controller-core/src/auxiliary.rs",
     "controller-core/src/checkpoint.rs",
@@ -7500,10 +7501,13 @@
     "verification/aeneas/callback-state/translation.json",
     "verification/aeneas/child-observation/concrete/translation.json",
     "verification/aeneas/child-observation/translation.json",
+    "verification/aeneas/data-drain/SandproofDataDrain/Funs.lean",
+    "verification/aeneas/data-drain/SandproofDataDrain/Types.lean",
     "verification/aeneas/data-drain/translation.json",
     "verification/aeneas/first-chain/translation.json",
     "verification/aeneas/foundations/translation.json",
     "verification/aeneas/llbc/.gitkeep",
+    "verification/aeneas/llbc/sandproof_data_drain.llbc",
     "verification/aeneas/loop-callbacks/translation.json",
     "verification/aeneas/network/translation.json",
     "verification/aeneas/protected-directory/bypass-writes/translation.json",
@@ -7779,7 +7783,7 @@
     "verification/use-inventory/config.json",
     "verification/use-inventory/responsibilities.json"
   ],
-  "archive_sha256": "755a012f06686f707b89f77f079408486daabfac41858d725ce7aa88aafe0e6a",
+  "archive_sha256": "c2bc0e0449fd80d59066721d8b32d6b3623d60b05946dba109042cb78466a03f",
   "source_repository": "https://github.com/VeriInfra-Lab/sandproof",
   "selection": "Root verification/*inputs.sha256 closure plus real verification/aeneas artifacts, JSON registries and Lake configuration at source_commit. All non-LLBC/Lean reference inputs are self-contained original Git bytes; unchanged LLBC/Lean are reused only after exact SHA-256 verification. Test data only; current validators are imported from the checkout, and preflight explicitly overlays current executable tools before temporary resealing. SandboxModel.lean is archived at the same historical source version so adding current root imports does not change this fixture. The same original ProofAudit.lean is archived so current audit additions do not mutate this historical reference."
 }

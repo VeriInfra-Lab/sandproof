@@ -59,7 +59,7 @@ theorem source_read_safe : RustReadSafe SandproofDataDrainRust.read_drained := b
 
 /-- A representable normal case. Real Arc construction is tested separately. -/
 theorem source_eligible_accepted (object : Nat) :
-    SandproofDataDrainRust.read_drained ⟨⟨object, 1#usize, false⟩⟩ = .ok true := by
+    SandproofDataDrainRust.read_drained ⟨⟨object, 1#usize, false⟩, none⟩ = .ok true := by
   rw [source_read_drained_exact]
   rfl
 

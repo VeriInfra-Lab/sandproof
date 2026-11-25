@@ -1,6 +1,7 @@
 {
   "schema": 1,
-  "source_anchor": "4a5dfdafd4465fef8ec2832f89798f1f16dd09b2",
+  "source_anchor": "5cfa5d398881a15d03dd8e514a422da4c8f28929",
+  "data_lease_fields": ["unknown", "parent"],
   "source_identity": "verification/data-drain-inputs.sha256",
   "tool_environment": "verification/first-chain-linux-environment.json",
   "charon_options": {

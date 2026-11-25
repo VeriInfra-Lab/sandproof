@@ -133,6 +133,23 @@ def check(root, llbc, inventory):
     if (len(type_entries) != len(TYPES)
             or {t['rust_name'] for t in type_entries} != TYPES):
         raise ValueError('unreviewed type surface')
+    declarations_by_id = {t['def_id']: t for t in translated['type_decls'] if t}
+    lease = next(t for t in type_entries if t['rust_name'] == CRATE + '::data_drain::DataLease')
+    fields = declarations_by_id[lease['def_id']]['kind']['Struct']
+    expected_fields = environment.get('data_lease_fields', ['unknown'])
+    if (expected_fields not in (['unknown'], ['unknown', 'parent'])
+            or [field['name'] for field in fields] != expected_fields):
+        raise ValueError('unreviewed DataLease field layout')
+    if expected_fields == ['unknown', 'parent']:
+        unknown, parent = fields
+        option = parent['ty']['Value'][1]['Adt']
+        selected = declarations_by_id[option['id']]['item_meta']['name']
+        if (selected != [{'Ident': ['core', 0]}, {'Ident': ['option', 0]}, {'Ident': ['Option', 0]}]
+                or option['generics'] != {
+                    'regions': [], 'types': [{'Deduplicated': unknown['ty']['Value'][0]}],
+                    'const_generics': [], 'trait_refs': [],
+                }):
+            raise ValueError('the parent field must carry an optional pin of the original Arc type')
     ordering = next(t for t in type_entries if t['rust_name'] == 'core::sync::atomic::Ordering')
     enum = next(t for t in translated['type_decls'] if t and t['def_id'] == ordering['def_id'])
     acquire = next(v['id'] for v in enum['kind']['Enum'] if v['name'] == 'Acquire')
