@@ -39,7 +39,11 @@ theorem stored_first_slice_comparison (stored : alloc.vec.Vec U8) (digest : Arra
     simp [core.cmp.impls.PartialEqShared.ne, core.cmp.PartialEq.ne.default,
       SandboxModel.Stage1Protocol.InboxLoadLibrary.slice_eq, Slice.eq_iff,
       Array.to_slice, alloc.vec.Vec.deref]
-  rw [storedFirst, SandboxModel.Stage1Protocol.InboxLoadLibrary.digest_ne, ne_comm]
+  rw [storedFirst, SandboxModel.Stage1Protocol.InboxLoadLibrary.digest_ne]
+  by_cases same : stored.val = digest.val
+  · simp [same]
+  · have reverse : digest.val ≠ stored.val := fun equal => same equal.symm
+    simp [same, reverse]
 
 /-- The original Rust dictionary must separately be shown to reduce its
     Vec/Array `ne` to this stored-first slice call. A false result identifies
