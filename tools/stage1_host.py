@@ -76,6 +76,9 @@ def admit(commit, xfs, mode):
     if (subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip() != commit
             or subprocess.check_output(["git", "status", "--porcelain"])):
         raise ValueError("the exact clean source checkout is required")
+    registration = proof_native_suite.load("stage1_host_registration", root /
+        "verification/experiments/stage1-protocol/registered.py")
+    reviewed_inputs = registration.validate_metadata_inputs(root)
     setting = "SANDPROOF_STAGE1_JOBS" if mode == "formal" else "SANDPROOF_STAGE1_NATIVE_JOBS"
     workers = int(os.environ[setting])
     light_jobs = int(os.environ["SANDPROOF_STAGE1_LIGHT_JOBS"])
@@ -87,8 +90,6 @@ def admit(commit, xfs, mode):
             or not required_cpus <= len(cpus) <= CPU_LIMIT or not set(cpus) <= os.sched_getaffinity(0)):
         raise ValueError("the requested worker count exceeds the 64-CPU budget or actual CPU affinity")
     if mode == "formal":
-        registration = proof_native_suite.load("stage1_host_registration", root /
-            "verification/experiments/stage1-protocol/registered.py")
         registration._execution_options(jobs=workers)
     memory = Path("/proc/meminfo").read_text().split("MemAvailable:", 1)[1].split()[0]
     if (int(memory) * 1024 < MIN_AVAILABLE_MEMORY or shutil.disk_usage(root).free < MIN_STORAGE_FREE
@@ -119,6 +120,7 @@ def admit(commit, xfs, mode):
     return dict(commit=commit, mode=mode, cpu_affinity=cpus, workers=workers, light_jobs=light_jobs,
                 data_disk_free_bytes=shutil.disk_usage(root).free, xfs_free_bytes=shutil.disk_usage(xfs).free,
                 redis=material, source_archives=ARCHIVE_SHA256, rustc=compiler, rust_sources=rust_sources,
+                reviewed_input_entries=sum(reviewed_inputs.values()),
                 python=sys.version)
 
 

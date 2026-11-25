@@ -68,6 +68,7 @@ FORMAL_SINGLE_CPU_DRIVERS = frozenset(str(HERE/driver) for driver in (
 ROOT_PROVIDER_PACKAGES = (
     'digest-uses', 'record-reply', 'standard-blob', 'standard-digest', 'standard-save-digest',
 )
+SOURCE_GUARD_PACKAGES = frozenset(('lifetime-row', 'pause-request', 'source-origin', 'source-question'))
 
 
 def _original_reader(root=ROOT):
@@ -628,10 +629,18 @@ def validate_metadata_inputs(root=ROOT, *, profile='full'):
         fields = ('inputs', 'base_sources', 'production_inputs')
         if path.parent in {HERE/name for name in (*CREATE_CASES, *CONVERGENCE.CASES)}:
             fields += ('source_inputs',)
-        if path.name == 'inventory.json' and path.parent.parent == HERE and path.parent.name in ROOT_PROVIDER_PACKAGES:
-            if 'providers' not in data:
-                raise ValueError('missing reviewed providers in registered inventory: ' + name)
-            fields += ('providers',)
+        if path.name == 'inventory.json' and path.parent.parent == HERE:
+            package = path.parent.name
+            if package in ROOT_PROVIDER_PACKAGES or package in SOURCE_GUARD_PACKAGES:
+                if 'providers' not in data:
+                    raise ValueError('missing reviewed providers in registered inventory: ' + name)
+                fields += ('providers',)
+            if package in SOURCE_GUARD_PACKAGES:
+                # Match the active source guards in these four native drivers.
+                for field in ('inputs', 'templates', 'drivers'):
+                    if field not in data:
+                        raise ValueError('missing reviewed ' + field + ' in registered inventory: ' + name)
+                fields += ('templates', 'drivers')
         if path.name == 'frozen.json':
             fields += ('extraction_inputs', 'native_rust_inputs')
         for field in fields:

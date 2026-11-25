@@ -1182,6 +1182,29 @@ class Registration(OriginalReadPlanFixture):
                 with self.assertRaisesRegex(ValueError, 'missing reviewed providers'):
                     registered.validate_metadata_inputs(root)
 
+    def test_source_guard_providers_are_checked_during_registration(self):
+        for component in ('lifetime-row', 'pause-request', 'source-origin', 'source-question'):
+            with self.subTest(component=component), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                package = registered.HERE/component
+                name = str(package/'inventory.json')
+                metadata = root/name
+                metadata.parent.mkdir(parents=True)
+                provider_name = 'docs/proof-workflow.md'
+                provider = root/provider_name
+                provider.parent.mkdir()
+                provider.write_text('reviewed workflow\n')
+                data = dict(inputs={}, providers={provider_name: registered._sha(provider)},
+                            templates={}, drivers={})
+                metadata.write_text(json.dumps(data))
+                with patch.object(registered, 'audit_template_paths', return_value=(str(package/'Audit.lean.in'),)), \
+                        patch.object(registered, 'formal_plan', return_value=[]), \
+                        patch.object(registered.subprocess, 'check_output', return_value=(name+'\0').encode()):
+                    self.assertEqual(registered.validate_metadata_inputs(root)[name+':providers'], 1)
+                    provider.write_text('changed workflow\n')
+                    with self.assertRaisesRegex(ValueError, f'{component}/inventory.json:providers:{provider_name}'):
+                        registered.validate_metadata_inputs(root)
+
     def retained_fixture(self, temporary, *, wrong=False):
         root = Path(temporary)/'root'
         inventory = root/registered.HERE/'retained-protocol.json'
