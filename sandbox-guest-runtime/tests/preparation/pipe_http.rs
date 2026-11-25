@@ -1,6 +1,7 @@
 use super::*;
 use rustix::process::{Resource, Rlimit, getrlimit, setrlimit};
 
+const COMPLETED: &str = "SANDPROOF_HTTP_PIPE_ASSERTIONS_PASSED";
 const MARKER: &str = "SANDPROOF_PIPE_HTTP_CHILD";
 
 #[tokio::test]
@@ -34,18 +35,18 @@ async fn isolated(mode: &str) {
         String::from_utf8_lossy(&result.stdout),
         String::from_utf8_lossy(&result.stderr)
     );
+    assert!(
+        String::from_utf8_lossy(&result.stderr)
+            .lines()
+            .any(|line| line == COMPLETED),
+        "HTTP pipe child did not complete its assertions"
+    );
 }
 
 #[tokio::test]
 #[ignore = "isolated HTTP subprocess; lowers only its own descriptor limit"]
 async fn isolated_http_pipe_failure() {
-    let (pty, missing_cwd) = match std::env::var(MARKER).unwrap().as_str() {
-        "pty" => (true, false),
-        "pipe" => (false, false),
-        "cwd-pty" => (true, true),
-        "cwd-pipe" => (false, true),
-        _ => panic!("private child mode required"),
-    };
+    let (pty, missing_cwd) = pipe_failure_mode();
     let fixture = fixture().await;
     let registry = registry();
     let ordinary = requests(1);
@@ -140,5 +141,16 @@ async fn isolated_http_pipe_failure() {
             .await,
             "{}"
         );
+    }
+    eprintln!("{COMPLETED}");
+}
+
+fn pipe_failure_mode() -> (bool, bool) {
+    match std::env::var(MARKER).unwrap().as_str() {
+        "pty" => (true, false),
+        "pipe" => (false, false),
+        "cwd-pty" => (true, true),
+        "cwd-pipe" => (false, true),
+        _ => panic!("private child mode required"),
     }
 }

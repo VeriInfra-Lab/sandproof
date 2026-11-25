@@ -1,5 +1,7 @@
 //! The actual adapter receipt cut in separate processes, without a VM.
 use super::*;
+
+const COMPLETED: &str = "SANDPROOF_RESTORE_RECEIPT_ASSERTIONS_PASSED";
 fn action() -> WorkAction<core::EffectId> {
     use sandproof_protocol::{
         ActionIdentity, LogicalActionId, OperationId, PROTOCOL_VERSION, ResourceId, ResourceKind,
@@ -29,10 +31,9 @@ fn action() -> WorkAction<core::EffectId> {
     }
 }
 #[test]
+#[ignore = "subprocess entry for the receipt fault test"]
 fn receipt_cut_child() {
-    let Some(mode) = std::env::var_os("SANDPROOF_UNIT_RESTORE_RECEIPT_CHILD") else {
-        return;
-    };
+    let mode = std::env::var_os("SANDPROOF_UNIT_RESTORE_RECEIPT_CHILD").unwrap();
     let action = action();
     let observation = if mode == "unknown" {
         Err("synthetic physical observation unavailable".into())
@@ -56,12 +57,14 @@ fn receipt_cut_child() {
             sandproof_protocol::WorkOutcome::ObservedSuccess(_)
         ));
     }
+    eprintln!("{COMPLETED}");
 }
 #[test]
 fn restore_receipt_uses_exit86_only_for_debug_observed_success() {
     for mode in ["success", "unknown"] {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
+                "--ignored",
                 "--exact",
                 "adapter::restore_receipt_tests::receipt_cut_child",
                 "--nocapture",
@@ -82,5 +85,12 @@ fn restore_receipt_uses_exit86_only_for_debug_observed_success() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+        if expected == 0 {
+            assert!(
+                String::from_utf8_lossy(&output.stderr)
+                    .lines()
+                    .any(|line| line == COMPLETED)
+            );
+        }
     }
 }

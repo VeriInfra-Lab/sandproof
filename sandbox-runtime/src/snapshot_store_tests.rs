@@ -361,10 +361,9 @@ fn stage_drop_and_copy_error_keep_original_and_partial_materials() {
 }
 
 #[test]
+#[ignore = "subprocess entry with a private file size limit"]
 fn actual_clone_size_limit_error_child() {
-    let Some(root) = std::env::var_os("SANDPROOF_UNIT_CLONE_FSIZE_ROOT") else {
-        return;
-    };
+    let root = std::env::var_os("SANDPROOF_UNIT_CLONE_FSIZE_ROOT").unwrap();
     let root = std::path::PathBuf::from(root);
     let owner = rustix::process::geteuid().as_raw();
     let store = SnapshotStore::open_for_owner(&root.join("store"), owner).unwrap();
@@ -426,6 +425,7 @@ fn actual_clone_size_limit_failure_keeps_empty_target_and_original_source() {
         .arg(std::env::current_exe().unwrap())
         .args([
             "--exact",
+            "--ignored",
             "snapshot_store::tests::actual_clone_size_limit_error_child",
             "--nocapture",
         ])
