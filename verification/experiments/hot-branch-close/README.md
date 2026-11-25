@@ -22,6 +22,8 @@
 
 用原入口加 `--with-load-key` 另行抽取透明的原 `branching::load`。源检查器从原五列元组的第零列及第 3 列记录开始，沿原 JSON 解码结果、操作键字段、摘要比较和正常返回追踪。检查器要求成功返回同一解码记录，且经过原键不匹配条件的否分支。这项检查与原 DELETE 的全长摘要实参检查同用一份 LLBC。`OperationKeyBytes` 从原第 0 列的 BLOB 转换推出 `Vec<u8>` 的完整值，用已审计的 `InboxLoadLibrary.digest_ne` 消去完整字节比较。给定选中的字典已归约为原参数顺序的切片比较，守卫返回 `false` 就推出摘要切片等于原列 BLOB。复验入口同时登记这三条 Lean 定理。原 Rust 字典到该切片调用的对应，以及实际 JSON/SHA 到后续 DELETE 摘要计算的对应，各自仍待接入。
 
+`--with-load-key` 从原 V3 固定清单安装 `InboxLoadValueLibrary` 和 `InboxLoadDigestLibrary` 的导入闭包，包含 `ReplayEquality`、配置预算和固定的 Stage1 生成视图。入口按原 InboxLoad 库存核对两页的安装路径、摘要和七条审计，再把这两页送入逐文件 Lean 内核和注册服务检查。结果记录把原库存、V3 物料清单及两页绑定到这次运行。
+
 ## 活动 SQLite 原生对照
 
 `sqlite_activity_native.py` 把测试夹具追加到精确候选的私有源码归档。它在原控制器连接上登记固定 SQLite 的语句跟踪及行更新回调，记录一次 `BEGIN IMMEDIATE` 下的实参、游标行数、各自原键对应的 DELETE 行、收件箱两个有序 BLOB 及提交或回滚。提交前使用第二连接核对旧镜像可读、独占写入受阻和产品控制租约拒绝。通过产品打开原文件后，再核对库和租约身份、原 WAL/FULL 设置、整张相关旧或新镜像以及旧请求重放。

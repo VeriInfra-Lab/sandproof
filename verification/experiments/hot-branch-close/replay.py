@@ -19,6 +19,7 @@ from source_profile import linux_admission, source_profile
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
 CURRENT = Path('verification/experiments/create-transaction-link/current')
+INBOX_LOAD = Path('verification/experiments/stage1-protocol/inbox-load/inventory.json')
 VIEW = Path('verification/aeneas/hot-branch-close')
 LIB = 'SandproofBranchBatch'
 AUDIT = re.compile(r'^#audit_controller_proof (\S+)$', re.M)
@@ -228,15 +229,46 @@ def replay(args):
             installed = json.loads(install_log.read_bytes())
             require(installed['inventory_sha256'] == digest(blob_inventory),
                     'materialized a different two-BLOB provider')
-            provider_files = blob_view['files']
+            blob_files = blob_view['files']
             require(all(installed['changed'].get(name) == expected and
-                        digest(project / name) == expected for name, expected in provider_files.items()),
+                        digest(project / name) == expected for name, expected in blob_files.items()),
                     'the original two-BLOB proof or provider changed')
-            provider_audits = blob_view['audits']
-            require(sorted(provider_audits) == sorted(
-                audit for name in provider_files for audit in AUDIT.findall((project / name).read_text())
+            blob_audits = blob_view['audits']
+            require(sorted(blob_audits) == sorted(
+                audit for name in blob_files for audit in AUDIT.findall((project / name).read_text())
             ), 'the original two-BLOB audit inventory changed')
-            lean_files.extend(provider_files)
+            provider_files.update(blob_files)
+            provider_audits.extend(blob_audits)
+        if args.with_load_key:
+            # The V3 view above already installs the original import closure. Bind
+            # the two provider pages and their physical checks to the InboxLoad registry.
+            inbox_inventory = json.loads((project / INBOX_LOAD).read_bytes())
+            key_files = {}
+            key_audits = []
+            for page in ('InboxLoadValueLibrary', 'InboxLoadDigestLibrary'):
+                registered = inbox_inventory['providers'][page]
+                entry = existing['modules'][f'SandboxModel.Lifecycle.Protocol.{page}']
+                relative = f'SandboxModel/Lifecycle/Protocol/{page}.lean'
+                expected = registered['installed_sha256']
+                installed = project / relative
+                require(entry == dict(path=relative, source=registered['path'], sha256=expected)
+                        and not installed.is_symlink() and digest(installed) == expected,
+                        'the original InboxLoad provider differs: ' + page)
+                audits = inbox_inventory['audits'][page]
+                require(AUDIT.findall(installed.read_text()) == audits,
+                        'the original InboxLoad audit inventory changed: ' + page)
+                key_files[relative] = expected
+                key_audits.extend(audits)
+            require(not provider_files.keys() & key_files.keys(),
+                    'the original providers overlap')
+            provider_files.update(key_files)
+            provider_audits.extend(key_audits)
+            report['operation_key_provider'] = dict(
+                inventory_sha256=inventory['source_inputs'][str(INBOX_LOAD)],
+                materialization_sha256=inventory['source_inputs'][str(CURRENT / 'materialization.json')],
+                files=key_files, audits=key_audits,
+            )
+        lean_files.extend(provider_files)
         (project / '.lake').mkdir()
         (project / '.lake/packages').symlink_to(packages, target_is_directory=True)
         (project / '.tools').mkdir()
@@ -268,7 +300,7 @@ def replay(args):
         for name, entry in lean_entries.items():
             require(digest(package / name) == entry['sha256'], 'verified Lean bytes changed: ' + name)
         require(all(digest(project / name) == expected for name, expected in provider_files.items()),
-                'the verified two-BLOB provider bytes changed')
+                'the verified original provider bytes changed')
         (service_output,) = artifacts.glob('physical-service-*')
         physical = service_output.rename(artifacts / 'physical-files')
         actual = dict(

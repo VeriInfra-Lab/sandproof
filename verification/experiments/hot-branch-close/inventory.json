@@ -8,6 +8,8 @@
     "controller-service/src/controller/transaction.rs": "100391ccee63bd0e481ac7828971c2ac8eb97e781330fc6eb92a399c9d5f6bde",
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "verification/experiments/create-transaction-link/current/materialization.json": "8e8356d98252b1fd0b2124f04c0f6ac4a671dba9acc1ab1a10c12db3acaa01d9",
+    "verification/experiments/create-transaction-link/current/lakefile.toml.in": "6fbbf906378707c0e741e70ec47cdf3ff19ec2ba9d60c2b56b5d7d83f63056e6",
+    "verification/experiments/stage1-protocol/inbox-load/inventory.json": "09237889056447a50a089f38313ff165394898b112ae10fb2f3b6da74bf526b6",
     "controller-service/src/controller/lifecycle_inbox/branching_tests.rs": "566dbed1ba7b778424a2dde7a28a5dbc2e10b1817c189499643532c9957ac138",
     "controller-service/src/controller/lifecycle_inbox/codec.rs": "42210863535fe581265fedb8a7edd7333ee02dd9b41115c7354acf126530cca2",
     "verification/experiments/create-transaction-link/current/proof-inputs/SandproofStage1Request/Funs.lean.in": "2f5a0d9e7de7deebd9237a0663cc3cadc25989f1b836d0b4087462227301b3f7"
