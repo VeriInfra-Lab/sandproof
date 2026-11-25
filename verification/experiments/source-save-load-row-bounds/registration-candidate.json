@@ -1,0 +1,20 @@
+{
+  "issue": 635,
+  "id": "source-save-load-row-bounds",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "62b7bc39e7f26c23e88a00bcb08c95530907e598",
+  "record_bounds_provider": "e3e24a6fe7a7a3566b34c84aa27ac7001924474a",
+  "capture_entry": "verification/experiments/source-save-load-row-bounds/rows_capture.py",
+  "formal_entry": "verification/experiments/source-save-load-row-bounds/rows_check.py",
+  "native_entry": "verification/experiments/source-save-load-row-bounds/rows_native.py",
+  "root": "SaveLoadRowsNegative",
+  "first_error_theorem": "SandboxModel.Stage1Protocol.SaveLoadRowsComposition.original_save_rejects_invalid_record_bounds",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveLoadRowsComposition.original_load_returns_exact_scanned_records",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveLoadRowsNegative.deployment_cap_breaks_same_contract",
+  "remaining": [
+    "Ning exact candidate ordinary and native acceptance",
+    "shared registration and coverage adoption",
+    "typed ordered scan, real JSON/SHA and V5 physical transaction durability"
+  ],
+  "public_acceptance": false
+}
