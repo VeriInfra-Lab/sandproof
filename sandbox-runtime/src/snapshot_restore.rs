@@ -5,12 +5,17 @@ use super::{
     OriginalPauseObservation, Runtime, RuntimeConfig, RuntimeError, RuntimeProcessIdentity,
     SnapshotLayout, copy_private_kernel, read_trusted_record, validate_id, validate_socket_path,
 };
-use crate::snapshot_store::{SnapshotArtifact, SnapshotBundle};
+use crate::snapshot_store::{FileStamp, SnapshotArtifact, SnapshotBundle};
 use rustix::fs::{self, Mode, OFlags};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use std::{fs::File, os::unix::fs::PermissionsExt, time::Duration};
+use std::{
+    fs::File,
+    os::unix::fs::PermissionsExt,
+    path::{Path, PathBuf},
+    time::Duration,
+};
 
 /// Physical state of the same candidate. Exited does not permit replaying its
 /// source: the controller's irreversible execution marker decides state loss.
@@ -29,13 +34,15 @@ pub struct LoadedSnapshotObservation {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct RestoreIntent {
+pub(super) struct RestoreIntent {
     version: u32,
     resource_id: String,
-    config: RuntimeConfig,
+    pub(super) config: RuntimeConfig,
     directory_key: [u8; 32],
     manifest_sha256: [u8; 32],
     work_sha256: [u8; 32],
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    track_dirty_pages: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,19 +50,42 @@ struct RestoreIntent {
 struct LoadedRecord {
     intent_sha256: [u8; 32],
     process: RuntimeProcessIdentity,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    diff_parent: Option<FileStamp>,
+}
+
+#[derive(Clone, Copy)]
+pub struct SnapshotRestoreOptions {
+    pub timeout: Duration,
+    pub track_dirty_pages: bool,
 }
 
 fn invalid(message: &'static str) -> RuntimeError {
     RuntimeError::IdentityMismatch(message)
 }
 
-fn load_request() -> serde_json::Value {
+fn require_dirty_snapshot_version(response: &[u8]) -> Result<(), RuntimeError> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Version {
+        firecracker_version: String,
+    }
+    let version: Version = serde_json::from_slice(response)?;
+    if version.firecracker_version != "1.16.1" {
+        return Err(invalid(
+            "dirty capture requires the Firecracker 1.16.1 interface",
+        ));
+    }
+    Ok(())
+}
+
+fn load_request(track_dirty_pages: bool) -> serde_json::Value {
     // Fixed Firecracker 1.16.1 interface. No request-controlled file paths,
     // implicit auto-resume, UFFD handler or network remapping.
     json!({
         "snapshot_path": "/restore/restore-state.bin",
         "mem_backend": {"backend_type":"File", "backend_path":"/restore/restore-memory.bin"},
-        "track_dirty_pages": false,
+        "track_dirty_pages": track_dirty_pages,
         "resume_vm": false,
         "network_overrides": [],
         "clock_realtime": false,
@@ -107,6 +137,43 @@ impl RestoreIntent {
 }
 
 impl Runtime {
+    pub(super) fn tracked_restore(
+        &self,
+        id: &str,
+    ) -> Result<Option<(PathBuf, RestoreIntent)>, RuntimeError> {
+        validate_id(id)?;
+        let claim = self.config.chroot_base.join(".claims").join(id);
+        match read_trusted_record::<RestoreIntent>(&claim.join("restore-intent.json")) {
+            Ok(intent) if intent.version != 1 || intent.resource_id != id => {
+                Err(invalid("tracked restore intent differs"))
+            }
+            Ok(intent) => Ok(intent.track_dirty_pages.then_some((claim, intent))),
+            Err(RuntimeError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub(super) fn tracked_restore_parent(
+        claim: &Path,
+        intent: &RestoreIntent,
+        process: &RuntimeProcessIdentity,
+    ) -> Result<Option<FileStamp>, RuntimeError> {
+        match read_trusted_record::<LoadedRecord>(&claim.join("restore-loaded.json")) {
+            Ok(loaded)
+                if loaded.intent_sha256 == intent.digest()? && loaded.process == *process =>
+            {
+                Ok(loaded.diff_parent)
+            }
+            Ok(_) => Err(invalid("dirty capture loaded process or intent differs")),
+            Err(RuntimeError::Io(error)) if error.kind() == std::io::ErrorKind::NotFound => {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
     /// Issue the only load for a fresh candidate, with data access closed.
     /// The caller has durably acquired unique authority, source pin and space
     /// for private RAM/disk/state before entry. Existing claims are rejected;
@@ -122,8 +189,12 @@ impl Runtime {
         layout: &SnapshotLayout,
         manifest_sha256: [u8; 32],
         work_sha256: [u8; 32],
-        timeout: Duration,
+        options: SnapshotRestoreOptions,
     ) -> Result<LoadedSnapshotObservation, RuntimeError> {
+        let SnapshotRestoreOptions {
+            timeout,
+            track_dirty_pages,
+        } = options;
         if timeout < Duration::from_secs(1) || timeout > Duration::from_mins(5) {
             return Err(invalid("restore API timeout"));
         }
@@ -145,6 +216,7 @@ impl Runtime {
             directory_key: *bundle.directory_key(),
             manifest_sha256,
             work_sha256,
+            track_dirty_pages,
         };
         let claim = self.claim_resource(id)?;
         self.write_new_record(&claim.join("restore-intent.json"), &intent)?;
@@ -173,13 +245,67 @@ impl Runtime {
             self.config.vm_uid,
             self.config.vm_gid,
         )?;
+        let backing = self.stage_restore_backing(&root, layout, bundle)?;
+        let diff_parent = if track_dirty_pages {
+            Some(self.restored_memory_backing(&backing)?)
+        } else {
+            None
+        };
+        root.sync_all()?;
+        bundle.clone_for_restore(
+            &root,
+            SnapshotArtifact::Disk(0),
+            self.config.vm_uid,
+            self.config.vm_gid,
+        )?;
+        self.require_launch_jail(id, 0)?;
+        bundle.verify_unchanged()?;
+        if track_dirty_pages {
+            require_dirty_snapshot_version(&self.api(id, "GET", "/version", None)?)?;
+        }
+        self.api_with_timeout(
+            id,
+            "PUT",
+            "/snapshot/load",
+            Some(&serde_json::to_vec(&load_request(track_dirty_pages))?),
+            timeout,
+        )?;
+        let observed = self.observe_loaded_snapshot(id, manifest_sha256, work_sha256)?;
+        if observed.state != LoadedSnapshotState::Paused {
+            return Err(invalid("load did not leave exact candidate paused"));
+        }
+        if let Some((memory, stamp)) = &diff_parent {
+            use crate::snapshot_store::matches_entry;
+            matches_entry(&root, std::ffi::OsStr::new("restore"), &backing)?;
+            matches_entry(&backing, std::ffi::OsStr::new("restore-memory.bin"), memory)?;
+            if FileStamp::from_metadata(&memory.metadata()?) != *stamp {
+                return Err(invalid(
+                    "dirty restore backing changed during snapshot load",
+                ));
+            }
+        }
+        let loaded = LoadedRecord {
+            intent_sha256: intent.digest()?,
+            process: observed.process.clone(),
+            diff_parent: diff_parent.map(|(_, stamp)| stamp),
+        };
+        self.write_new_record(&claim.join("restore-loaded.json"), &loaded)?;
+        Ok(observed)
+    }
+
+    fn stage_restore_backing(
+        &self,
+        root: &File,
+        layout: &SnapshotLayout,
+        bundle: &SnapshotBundle,
+    ) -> Result<File, RuntimeError> {
         // Private File backing is charged to the same enforced material
         // project BEFORE RAM/state files acquire shared extents. The writable disk
         // remains in the separately reserved runtime position.
-        fs::mkdirat(&root, "restore", Mode::RWXU).map_err(std::io::Error::from)?;
+        fs::mkdirat(root, "restore", Mode::RWXU).map_err(std::io::Error::from)?;
         let backing = File::from(
             fs::openat(
-                &root,
+                root,
                 "restore",
                 OFlags::RDONLY | OFlags::DIRECTORY | OFlags::NOFOLLOW | OFlags::CLOEXEC,
                 Mode::empty(),
@@ -198,32 +324,7 @@ impl Runtime {
         .map_err(std::io::Error::from)?;
         backing.set_permissions(std::fs::Permissions::from_mode(0o500))?;
         backing.sync_all()?;
-        root.sync_all()?;
-        bundle.clone_for_restore(
-            &root,
-            SnapshotArtifact::Disk(0),
-            self.config.vm_uid,
-            self.config.vm_gid,
-        )?;
-        self.require_launch_jail(id, 0)?;
-        bundle.verify_unchanged()?;
-        self.api_with_timeout(
-            id,
-            "PUT",
-            "/snapshot/load",
-            Some(&serde_json::to_vec(&load_request())?),
-            timeout,
-        )?;
-        let observed = self.observe_loaded_snapshot(id, manifest_sha256, work_sha256)?;
-        if observed.state != LoadedSnapshotState::Paused {
-            return Err(invalid("load did not leave exact candidate paused"));
-        }
-        let loaded = LoadedRecord {
-            intent_sha256: intent.digest()?,
-            process: observed.process.clone(),
-        };
-        self.write_new_record(&claim.join("restore-loaded.json"), &loaded)?;
-        Ok(observed)
+        Ok(backing)
     }
 
     /// Read only the existing intent/process. No load, fallback, new VM, file
@@ -322,6 +423,39 @@ impl Runtime {
 }
 
 #[cfg(test)]
+pub(super) fn write_tracked_restore_fixture(
+    runtime: &Runtime,
+    resource_id: &str,
+    recorded: RuntimeProcessIdentity,
+    stamp: FileStamp,
+) {
+    let claim = runtime.config.chroot_base.join(".claims").join(resource_id);
+    std::fs::create_dir_all(&claim).unwrap();
+    let intent = RestoreIntent {
+        version: 1,
+        resource_id: resource_id.into(),
+        config: runtime.config.clone(),
+        directory_key: [42; 32],
+        manifest_sha256: [43; 32],
+        work_sha256: [44; 32],
+        track_dirty_pages: true,
+    };
+    runtime
+        .write_new_record(&claim.join("restore-intent.json"), &intent)
+        .unwrap();
+    runtime
+        .write_new_record(
+            &claim.join("restore-loaded.json"),
+            &LoadedRecord {
+                intent_sha256: intent.digest().unwrap(),
+                process: recorded,
+                diff_parent: Some(stamp),
+            },
+        )
+        .unwrap();
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use std::cell::Cell;
@@ -386,8 +520,15 @@ mod tests {
         );
     }
     #[test]
+    fn experimental_dirty_capture_is_bound_to_the_reviewed_firecracker_release() {
+        assert!(require_dirty_snapshot_version(br#"{"firecracker_version":"1.16.1"}"#).is_ok());
+        assert!(require_dirty_snapshot_version(br#"{"firecracker_version":"1.16.2"}"#).is_err());
+        assert!(require_dirty_snapshot_version(br#"{"version":"1.16.1"}"#).is_err());
+    }
+
+    #[test]
     fn fixed_load_request_cannot_auto_run_or_select_other_devices() {
-        let request = load_request();
+        let request = load_request(false);
         assert_eq!(request["resume_vm"], false);
         assert_eq!(request["mem_backend"]["backend_type"], "File");
         assert_eq!(
@@ -397,6 +538,7 @@ mod tests {
         assert_eq!(request["snapshot_path"], "/restore/restore-state.bin");
         assert_eq!(request["network_overrides"], json!([]));
         assert_eq!(request["track_dirty_pages"], false);
+        assert_eq!(load_request(true)["track_dirty_pages"], true);
         assert_eq!(request["clock_realtime"], false);
     }
 }

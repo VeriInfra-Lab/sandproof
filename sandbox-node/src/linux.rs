@@ -99,6 +99,10 @@ pub struct NodeConfig {
     /// V1 has one deployment-controlled managed-disk policy, not arbitrary
     /// user-supplied host paths or a directory ACL implementation.
     pub file_policy_digest: core::PolicyDigest,
+    /// Opt in to dirty tracking for new snapshot restores. Cold boots and
+    /// restores without this setting continue to use Full.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub enable_memory_diff: bool,
 }
 
 impl NodeConfig {

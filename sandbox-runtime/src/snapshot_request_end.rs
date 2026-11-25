@@ -39,14 +39,25 @@ pub enum FullCaptureRequestOutcome {
 fn invalid(message: &'static str) -> RuntimeError {
     RuntimeError::IdentityMismatch(message)
 }
-pub(super) fn full_capture_request(key: [u8; 32]) -> Result<Vec<u8>, RuntimeError> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(super) enum CaptureKind {
+    Full,
+    Diff,
+}
+
+pub(super) fn capture_request(key: [u8; 32], kind: CaptureKind) -> Result<Vec<u8>, RuntimeError> {
     use std::fmt::Write as _;
     let mut name = String::from("full-");
     for byte in key {
         write!(&mut name, "{byte:02x}").map_err(|_| invalid("Full key encoding"))?;
     }
+    let snapshot_type = match kind {
+        CaptureKind::Full => "Full",
+        CaptureKind::Diff => "Diff",
+    };
     Ok(serde_json::to_vec(
-        &serde_json::json!({"snapshot_type":"Full",
+        &serde_json::json!({"snapshot_type":snapshot_type,
         "snapshot_path":format!("/{name}/state.bin"),"mem_file_path":format!("/{name}/memory.bin")}),
     )?)
 }
@@ -57,9 +68,10 @@ impl FullCaptureRequestEnd {
         key: [u8; 32],
         context: FullCaptureApiContext,
         worker: RuntimeProcessIdentity,
-        status: u16,
-        response: &[u8],
+        reply: (u16, &[u8]),
+        kind: CaptureKind,
     ) -> Result<Self, RuntimeError> {
+        let (status, response) = reply;
         if !(200..600).contains(&status) {
             return Err(invalid("Full API did not return a final status"));
         }
@@ -72,7 +84,7 @@ impl FullCaptureRequestEnd {
             directory_key: key,
             context,
             worker,
-            request_sha256: Runtime::full_capture_request_sha256(key)?,
+            request_sha256: Sha256::digest(capture_request(key, kind)?).into(),
             outcome: FullCaptureRequestOutcome::Returned {
                 http_status: status,
                 response_sha256: Sha256::digest(response).into(),
@@ -150,7 +162,8 @@ impl FullCaptureRequestEnd {
             || self.context != context
             || self.worker != *worker
             || matches!(self.outcome, FullCaptureRequestOutcome::Returned { http_status, .. } if !(200..600).contains(&http_status))
-            || self.request_sha256 != Runtime::full_capture_request_sha256(key)?
+            || (self.request_sha256 != Runtime::full_capture_request_sha256(key)?
+                && !self.returned_diff(key)?)
         {
             return Err(invalid(
                 "Full request-end differs from original work/request/source/worker",
@@ -159,12 +172,22 @@ impl FullCaptureRequestEnd {
         Ok(())
     }
 }
+impl FullCaptureRequestEnd {
+    fn returned_diff(&self, key: [u8; 32]) -> Result<bool, RuntimeError> {
+        let diff_identity: [u8; 32] =
+            Sha256::digest(capture_request(key, CaptureKind::Diff)?).into();
+        Ok(
+            matches!(self.outcome, FullCaptureRequestOutcome::Returned { .. })
+                && self.request_sha256 == diff_identity,
+        )
+    }
+}
 impl Runtime {
     /// The exact canonical request sent by the fixed Full provider.
     /// # Errors
     /// Encoding failure supplies no request identity.
     pub fn full_capture_request_sha256(key: [u8; 32]) -> Result<[u8; 32], RuntimeError> {
-        Ok(Sha256::digest(full_capture_request(key)?).into())
+        Ok(Sha256::digest(capture_request(key, CaptureKind::Full)?).into())
     }
 }
 impl SnapshotLayout {
@@ -198,6 +221,7 @@ impl SnapshotLayout {
         value: &FullCaptureRequestEnd,
         source: &RuntimeProcessIdentity,
     ) -> Result<(), RuntimeError> {
+        self.require_recorded_capture_kind(value, value.directory_key)?;
         self.store_for_runtime(&self.runtime_root())?
             .publish_retained_request_end(value.directory_key, &serde_json::to_vec(value)?, || {
                 source.is_alive()
@@ -213,7 +237,35 @@ impl SnapshotLayout {
         let bytes = self
             .store_for_runtime(&self.runtime_root())?
             .read_request_end(key)?;
-        Ok(serde_json::from_slice(&bytes)?)
+        let record: FullCaptureRequestEnd = serde_json::from_slice(&bytes)?;
+        self.require_recorded_capture_kind(&record, key)?;
+        Ok(record)
+    }
+
+    fn require_recorded_capture_kind(
+        &self,
+        record: &FullCaptureRequestEnd,
+        key: [u8; 32],
+    ) -> Result<(), RuntimeError> {
+        super::super::validate_id(&record.resource_id)?;
+        let claim = self
+            .runtime_root()
+            .join(".claims")
+            .join(&record.resource_id);
+        if record.directory_key != key {
+            return Err(invalid("capture request end differs from its slot"));
+        }
+        let returned = if record.returned_diff(key)? {
+            Some(CaptureKind::Diff)
+        } else if record.request_sha256 == Runtime::full_capture_request_sha256(key)? {
+            match record.outcome {
+                FullCaptureRequestOutcome::NoRequest => None,
+                FullCaptureRequestOutcome::Returned { .. } => Some(CaptureKind::Full),
+            }
+        } else {
+            return Err(invalid("unrecognized original capture request hash"));
+        };
+        super::diff::require_capture_request_kind(&claim, &record.source, key, returned)
     }
 }
 
@@ -303,6 +355,55 @@ mod tests {
     }
 
     #[test]
+    fn diff_result_binds_the_canonical_diff_request_and_original_source() {
+        let key = [0xa3; 32];
+        let context = FullCaptureApiContext {
+            work_sha256: [1; 32],
+            job_sha256: [2; 32],
+            action_sha256: [3; 32],
+        };
+        let source = process(10);
+        let worker = process(11);
+        let request: serde_json::Value =
+            serde_json::from_slice(&capture_request(key, CaptureKind::Diff).unwrap()).unwrap();
+        assert_eq!(request["snapshot_type"], "Diff");
+        assert_eq!(
+            request["snapshot_path"],
+            format!("/full-{}/state.bin", "a3".repeat(32))
+        );
+        assert_eq!(
+            request["mem_file_path"],
+            format!("/full-{}/memory.bin", "a3".repeat(32))
+        );
+
+        let end = FullCaptureRequestEnd::returned(
+            "source-1",
+            &source,
+            key,
+            context,
+            worker.clone(),
+            (204, b""),
+            CaptureKind::Diff,
+        )
+        .unwrap();
+        assert!(end.returned_diff(key).unwrap());
+        end.require_original("source-1", &source, key, context, &worker)
+            .unwrap();
+        assert!(
+            end.require_original("source-1", &source, [1; 32], context, &worker)
+                .is_err()
+        );
+
+        let mut corrupt = end;
+        corrupt.outcome = FullCaptureRequestOutcome::NoRequest;
+        assert!(
+            corrupt
+                .require_original("source-1", &source, key, context, &worker)
+                .is_err()
+        );
+    }
+
+    #[test]
     fn only_original_final_reply_matches_all_saved_identities() {
         let context = FullCaptureApiContext {
             work_sha256: [1; 32],
@@ -318,8 +419,8 @@ mod tests {
                 [4; 32],
                 context,
                 worker.clone(),
-                status,
-                b"reply",
+                (status, b"reply"),
+                CaptureKind::Full,
             )
             .unwrap();
             let record: FullCaptureRequestEnd =
@@ -369,8 +470,8 @@ mod tests {
                     [4; 32],
                     context,
                     worker.clone(),
-                    status,
-                    b""
+                    (status, b""),
+                    CaptureKind::Full,
                 )
                 .is_err()
             );

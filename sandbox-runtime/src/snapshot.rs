@@ -11,7 +11,9 @@ use super::{
 pub(crate) mod full_wait;
 #[path = "snapshot_request_end.rs"]
 mod request_end;
-use request_end::full_capture_request;
+use request_end::{CaptureKind, capture_request};
+#[path = "snapshot_diff.rs"]
+pub(super) mod diff;
 pub use request_end::{FullCaptureApiContext, FullCaptureRequestEnd, FullCaptureRequestOutcome};
 
 use crate::snapshot_store::{
@@ -286,8 +288,9 @@ impl Runtime {
         Ok(())
     }
 
-    /// Produce Full RAM/state and clone the fixed profile's original private disk
-    /// into a separate protected store during the same frozen interval.
+    /// Produce standalone RAM/state and clone the fixed profile's original
+    /// private disk into a protected store during the same frozen interval.
+    /// A confirmed dirty-tracked restore can use Diff for its first capture.
     /// # Errors
     /// Preserves the original VMM and every partial source/store directory. The
     /// durable capture key remains responsible even after an API timeout.
@@ -347,6 +350,12 @@ impl Runtime {
         // fixed material project before ownership transfer or first VMM write.
         // Failure leaves the original paused VM and charged partial directory.
         layout.assign_new_capture_project(&directory)?;
+        let diff = self.prepare_capture_memory(&paused.original, &directory, directory_key)?;
+        let kind = if diff.is_some() {
+            CaptureKind::Diff
+        } else {
+            CaptureKind::Full
+        };
         fs::fchown(
             &directory,
             Some(Uid::from_raw(self.config.vm_uid)),
@@ -355,38 +364,14 @@ impl Runtime {
         .map_err(errno)?;
         directory.sync_all()?;
         paused.original.root.sync_all()?;
-        let request = full_capture_request(directory_key)?;
-        let worker = RuntimeProcessIdentity::capture(std::process::id())?;
-        let mut stream = full_wait::OriginalFullStream {
-            stream: self.api_stream(&paused.original.resource_id, limits.api_timeout)?,
-            source: &paused.original.identity,
-        };
-        write!(
-            stream,
-            "PUT /snapshot/create HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
-            request.len()
-        )?;
-        stream.write_all(&request)?;
-        let (status, response) = super::api_response::read_reply(&mut stream)?;
-        // Only a complete response on the checked original VMM connection can
-        // create this marker. Timeouts/short frames cannot reach this point.
-        let api_end = FullCaptureRequestEnd::returned(
-            &paused.original.resource_id,
-            &paused.original.identity,
-            directory_key,
-            limits.api_context,
-            worker,
-            status,
-            &response,
-        )?;
-        layout.publish_full_request_end(&api_end, &paused.original.identity)?;
-        if !(200..300).contains(&status) {
-            return Err(RuntimeError::Api {
-                status,
-                body: String::from_utf8_lossy(&response).into_owned(),
-            });
+        if let Some(diff) = &diff {
+            diff.require_unchanged_lineage(&paused.original.root, &directory)?;
         }
+        self.send_snapshot_request(paused, layout, directory_key, limits, kind)?;
         self.verify_original_capture(paused, true)?;
+        if let Some(diff) = &diff {
+            diff.require_unchanged_lineage(&paused.original.root, &directory)?;
+        }
         let mut state_file = source_at(&directory, "state.bin", self.config.vm_uid)?;
         let mut memory = source_at(&directory, "memory.bin", self.config.vm_uid)?;
         let memory_bytes = u64::from(self.config.memory_mib) * 1_048_576;
@@ -417,12 +402,57 @@ impl Runtime {
             limits.disk_bytes,
             observe,
         )?;
+        if let Some(diff) = &diff {
+            diff.require_unchanged_lineage(&paused.original.root, &directory)?;
+        }
         self.verify_original_capture(paused, true)?;
         Ok(CapturedFullSnapshot {
             resource_id: paused.original.resource_id.clone(),
             stage,
             source: paused.original.identity.clone(),
         })
+    }
+
+    fn send_snapshot_request(
+        &self,
+        paused: &PausedOriginalVm,
+        layout: &SnapshotLayout,
+        directory_key: [u8; 32],
+        limits: FullCaptureLimits,
+        kind: CaptureKind,
+    ) -> Result<(), RuntimeError> {
+        let request = capture_request(directory_key, kind)?;
+        let worker = RuntimeProcessIdentity::capture(std::process::id())?;
+        let mut stream = full_wait::OriginalFullStream {
+            stream: self.api_stream(&paused.original.resource_id, limits.api_timeout)?,
+            source: &paused.original.identity,
+        };
+        write!(
+            stream,
+            "PUT /snapshot/create HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
+            request.len()
+        )?;
+        stream.write_all(&request)?;
+        let (status, response) = super::api_response::read_reply(&mut stream)?;
+        // Only a complete response on the checked original VMM connection can
+        // create this marker. Timeouts/short frames cannot reach this point.
+        let api_end = FullCaptureRequestEnd::returned(
+            &paused.original.resource_id,
+            &paused.original.identity,
+            directory_key,
+            limits.api_context,
+            worker,
+            (status, &response),
+            kind,
+        )?;
+        layout.publish_full_request_end(&api_end, &paused.original.identity)?;
+        if !(200..300).contains(&status) {
+            return Err(RuntimeError::Api {
+                status,
+                body: String::from_utf8_lossy(&response).into_owned(),
+            });
+        }
+        Ok(())
     }
 }
 
