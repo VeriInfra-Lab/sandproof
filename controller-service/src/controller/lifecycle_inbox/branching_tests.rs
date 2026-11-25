@@ -615,3 +615,137 @@ fn confirm_terminal_branch_parent(
 
     close
 }
+
+#[test]
+fn close_window_rejects_branch_ledger_above_configured_limit() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("db");
+    let (mut journal, original, context) = running(&path);
+    journal.configure_host_branching(LIMITS).unwrap();
+    let create = fixture::create("alpha", "session-a");
+    let local = journal
+        .lifecycle_work_state(&create, &context)
+        .unwrap()
+        .local
+        .unwrap();
+
+    for (name, sequence, port) in [("first", 10, 31_000), ("second", 11, 31_001)] {
+        assert_eq!(
+            journal
+                .reserve_host_branch_batch(
+                    &original,
+                    &context,
+                    &key(&original, name, sequence),
+                    &[target(name, port)],
+                    NOW,
+                )
+                .unwrap(),
+            HostBranchBatchPhase::Pending
+        );
+    }
+    let (survivor, _) = admit_running(
+        &mut journal,
+        &fixture::create("bravo", "session-b"),
+        &context,
+    );
+    assert_eq!(
+        journal
+            .reserve_host_branch_batch(
+                &survivor,
+                &context,
+                &key(&survivor, "surviving", 12),
+                &[target("other", 31_000)],
+                NOW,
+            )
+            .unwrap(),
+        HostBranchBatchPhase::Pending
+    );
+    let successor = key(&survivor, "next", 13);
+    let successor_targets = [target("next", 31_002)];
+    let must_retain_quota = |journal: &mut ControllerJournal| {
+        assert!(matches!(
+            journal.reserve_host_branch_batch(
+                &survivor,
+                &context,
+                &successor,
+                &successor_targets,
+                NOW
+            ),
+            Err(JournalError::MaintenanceCapacity)
+        ));
+    };
+    let close =
+        confirm_terminal_branch_parent(&mut journal, &create, local, &context, must_retain_quota);
+
+    // All three records came from the native admission path. Lower just the
+    // fixture's global limit so the last existing record must be observed.
+    let max_batches = LIMITS.max_batches - 1;
+    assert_eq!(
+        journal
+            .journal
+            .connection
+            .execute(
+                "UPDATE controller_host_branch_config SET max_batches=?1 WHERE id=1",
+                [max_batches],
+            )
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        journal.registered_host_branching().unwrap(),
+        Some(HostBranchLimits {
+            max_batches,
+            ..LIMITS
+        })
+    );
+    let read_ledger = |journal: &ControllerJournal| -> Vec<[Vec<u8>; 5]> {
+        let mut statement = journal
+            .journal
+            .connection
+            .prepare(
+                "SELECT operation,parent,execution,record,sha256
+                 FROM controller_host_branch_batches ORDER BY operation",
+            )
+            .unwrap();
+        let rows = statement
+            .query_map([], |row| {
+                Ok([
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ])
+            })
+            .unwrap();
+        rows.collect::<rusqlite::Result<Vec<_>>>().unwrap()
+    };
+    let read_inbox = |journal: &ControllerJournal| -> (Vec<u8>, Vec<u8>, i64) {
+        journal
+            .journal
+            .connection
+            .query_row(
+                "SELECT state_json,sha256,reserve_bytes FROM controller_lifecycle_inbox WHERE id=1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap()
+    };
+    let ledger = read_ledger(&journal);
+    let inbox = read_inbox(&journal);
+    assert_eq!(ledger.len(), usize::from(max_batches) + 1);
+
+    let closed = journal.close_lifecycle_window(&close, &context, &mut NeverCrash);
+    assert!(
+        closed.is_err(),
+        "RETIREMENT_LIMIT_TRUNCATION: CloseWindow accepted an over-capacity branch ledger"
+    );
+    assert!(matches!(closed, Err(JournalError::CorruptStore)));
+
+    drop(journal);
+    let mut journal = fixture::open(&path);
+    assert!(read_ledger(&journal) == ledger, "retirement changed branch records");
+    assert!(read_inbox(&journal) == inbox, "retirement changed the inbox");
+    fixture::refresh_epoch(&mut journal);
+    must_retain_quota(&mut journal);
+}
