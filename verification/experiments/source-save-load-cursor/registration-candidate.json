@@ -1,0 +1,21 @@
+{
+  "issue": 635,
+  "id": "source-save-load-cursor",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "7b49ad7288b910d49deeb1ea80e56ce015c05800",
+  "cursor_provider": "b56b75ed1f866bfc01cba1cd242d692feebfa020",
+  "capture_entry": "verification/experiments/source-save-load-cursor/cursor_capture.py",
+  "formal_entry": "verification/experiments/source-save-load-cursor/cursor_check.py",
+  "native_entry": "verification/experiments/source-save-load-cursor/cursor_native.py",
+  "root": "SaveLoadCursorWitness",
+  "field_contract": "SandboxModel.Stage1Protocol.SaveLoadCursorProof.mapper_reads_three_columns_in_order",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveLoadCursorComposition.original_load_returns_same_ordered_collector",
+  "first_error_theorem": "SandboxModel.Stage1Protocol.SaveLoadCursorComposition.original_save_keeps_cursor_prepare_error",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveLoadCursorWitness.checksum_first_violates_same_column_contract",
+  "remaining": [
+    "Ning exact ordinary and native acceptance",
+    "main coordinator shared registration and coverage adoption",
+    "typed actual record collector, canonical JSON/SHA and physical transaction proof"
+  ],
+  "public_acceptance": false
+}
