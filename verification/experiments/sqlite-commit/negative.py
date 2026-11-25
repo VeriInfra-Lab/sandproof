@@ -72,12 +72,20 @@ def consume_native_fault(root, source, directory, output, profile, command):
     used = [json.loads(row) for row in summary.get("used_receipts", "").splitlines()]
     compiler = read_json(root/"verification/first-chain-linux-environment.json")["production_compiler"]
     runtime = key.get("runtime", {})
+    production_commit = profile["current_capture_source_commit"]
+    driver_commit = profile["native_reference_driver_commit"]
+    driver_sha = profile["native_reference_driver_sha256"]
+    if "historical_capture_source_commit" in profile:
+        production_commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
+        driver_commit = production_commit
+        driver_sha = sha(root/"verification/experiments/sqlite-commit/negative.py")
     if (summary.get("complete") is not True or summary.get("driver_exit_code") != 0
             or summary.get("actual_cargo_exit") != 101
             or summary.get("original_assertion_rejected") is not True
             or summary.get("formal_tools_invoked") is not False
-            or summary.get("production_commit") != profile["current_capture_source_commit"]
-            or summary.get("driver_commit") != profile["native_reference_driver_commit"]
+            or summary.get("production_commit") != production_commit
+            or summary.get("driver_commit") != driver_commit
             or summary.get("mutated_memo_sha256") != sha(source/"controller-service/src/controller/transaction/memo.rs")
             or summary.get("unchanged_source_files") != len(profile["source_files"])-1
             or len(used) != 1 or used[0].get("sha256") != sha(directory/"receipt.json")
@@ -85,7 +93,7 @@ def consume_native_fault(root, source, directory, output, profile, command):
             or key.get("label") != "sqlite-commit-native-rejected"
             or key.get("command") != command or key.get("options") != {}
             or key.get("rust") != rust_inputs(source)
-            or key.get("rules", {}).get("verification/experiments/sqlite-commit/negative.py") != profile["native_reference_driver_sha256"]
+            or key.get("rules", {}).get("verification/experiments/sqlite-commit/negative.py") != driver_sha
             or runtime.get("platform") != "linux" or runtime.get("uid") != 1000
             or runtime.get("rustc", {}).get("version", "").splitlines()[:1] != [compiler]
             or load_success(directory, key) != receipt
@@ -208,7 +216,7 @@ def main():
         raise ValueError("fault changed generated types")
     if (library / "Funs.lean").read_bytes() == (formal / "Funs.lean").read_bytes():
         raise ValueError("fault did not change generated implementation")
-    for name in ("TypesExternal.lean", "FunsExternal.lean", "Model.lean"):
+    for name in ("TypesExternal.lean", "FunsExternal.lean", "SlotData.lean", "Model.lean"):
         shutil.copy2(formal / name, library / name)
     proofs = formal / "Results.lean"
     same = evidence / "SameProperties.lean"

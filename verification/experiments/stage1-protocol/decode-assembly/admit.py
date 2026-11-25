@@ -4,10 +4,40 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tarfile
 import time
 import traceback
 import support
 from check import check
+
+REVIEWED_DECODER = '84a6a4663619c6fc9d9fed9d957bd83b47f2c206'
+
+
+def comparable_capture(output, root, frozen, current, history):
+    expected = frozen['byte_roots'][root]['llbc_canonical_sha256']
+    if current == expected:
+        return None
+    # LLBC also includes extraction environment data. Replaying an immutable
+    # reviewed source on this host still requires the original canonical AST
+    # equality and keeps the historical published digest and both raw captures.
+    inventory = support.HERE.parent/'envelope-bytes/inventory.json'
+    archived = json.loads(subprocess.check_output(
+        ['git', 'show', f'{REVIEWED_DECODER}:{inventory}'], cwd=support.ROOT))
+    if archived['byte_roots'][root]['llbc_canonical_sha256'] != expected:
+        raise ValueError('reviewed decoder replay does not own the frozen root: ' + root)
+    prior = output/'reviewed-decoder'
+    source, archive = prior/'source', prior/'source.tar'
+    if not source.exists():
+        source.mkdir(parents=True, mode=0o700)
+        with archive.open('xb') as stream:
+            subprocess.run(['git', 'archive', REVIEWED_DECODER], cwd=support.ROOT, stdout=stream, check=True)
+        with tarfile.open(archive) as stream:
+            stream.extractall(source, filter='data')
+    _, replay = support.capture(source, root, prior)
+    if replay['canonical_llbc_sha256'] != current:
+        raise ValueError('current decoder differs from the reviewed replay: ' + root)
+    history.update(commit=REVIEWED_DECODER, archive_sha256=support.base.sha(archive))
+    return dict(published_canonical_sha256=expected, replay=replay)
 
 
 def run(output):
@@ -24,10 +54,10 @@ def run(output):
             source_commit=subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=support.ROOT, text=True).strip())
         project = output / 'source'
         support.copy_source(project, inputs)
+        history = {}
         for root in ('accepted_decode', 'recorded_decode'):
             raw, evidence = support.capture(project, root, output)
-            if evidence['canonical_llbc_sha256'] != frozen['byte_roots'][root]['llbc_canonical_sha256']:
-                raise ValueError('original complete decoder changed: ' + root)
+            replay = comparable_capture(output, root, frozen, evidence['canonical_llbc_sha256'], history)
             data = check(raw, schema)
             report = output / (root + '-assembly.json')
             report.write_text(json.dumps(data, indent=2)+'\n')
@@ -35,6 +65,10 @@ def run(output):
                 assembly_checks=len(data['checked']), byte_key_matching_checked=data['byte_key_matching_checked'],
                 expected_session_dispatch_checked=data['expected_session_dispatch_checked'],
                 original_leaf_bodies=len(data['leaf_forwarding']['original_bodies']))
+            if replay is not None:
+                record['roots'][root]['reviewed_replay'] = replay
+        if history:
+            record['reviewed_decoder_source'] = history
         for name, wanted in inputs.items():
             if support.base.sha(project / name) != wanted:
                 raise ValueError('source copy changed during admission')

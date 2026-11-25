@@ -21,6 +21,7 @@ METHODS = ['releasing', 'current_operation']
 # In fixed Charon b104e24, * matches one name element (including an impl); the
 # pattern also selects descendants, so each method's own closures stay visible.
 INCLUDE = [
+    'sandproof_controller_service::controller::internal_inbox::model::InternalLocalBinding',
     'sandbox_controller_core',
     *ROOTS,
     # Retain the three original value carriers, including private fields.
@@ -37,4 +38,6 @@ INCLUDE = [
     # Preserve the original transaction value carrier, not SQL/commit methods.
     'rusqlite::transaction::Transaction',
 ]
-OPAQUE = ['rusqlite::error::Error']
+# Select only the transparent service methods above. The capture admission
+# checks that the translated closure exposes only the original six library calls.
+OPAQUE = ['sandproof_controller_service', 'rusqlite::error::Error']

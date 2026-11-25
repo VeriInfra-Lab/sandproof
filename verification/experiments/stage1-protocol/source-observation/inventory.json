@@ -8,7 +8,7 @@
     "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
     "controller-core/Cargo.toml": "bfe39b44a5bbcd38f44ec479443a7456c2c7d2cdf85b8678259f343f25865656",
     "controller-core/src/capture.rs": "cfe090e04654b40de4b26ee751aa83e1333806b0eaf9e0f2df656f4874c4fe54",
-    "controller-core/src/capture/continuation.rs": "1712667f5e6aef2748a7635035bb655f9903046bf8ac785547b1ee123c4585b6",
+    "controller-core/src/capture/continuation.rs": "540ca8a735690eae6a4334baca947e22fd7c564b2b92b13c66d2096ff60d5833",
     "controller-core/src/ids.rs": "18d0cb6ed56ac9fb4221f3a0a8d2b94b0f08bb9dd56e32dff761340cf4b5c697",
     "controller-core/src/lib.rs": "2a260eede2d65205ba650e745ec718450cd5f99b0a0a26e4d092206ea4f9950c",
     "controller-core/src/maintenance.rs": "3b4b60b60bce6a7203b6fcf5735ac58183841afe68811897a6201af131a17808",
@@ -24,7 +24,7 @@
     "controller-service/src/controller/checkpoint.rs": "f86709d33690765c3c283085387c146e69b515dcf02dd1206f9b09235640cede",
     "controller-service/src/controller/internal_inbox.rs": "8d5cd81b597add57f37cf129cca27c0c6ce2bbc29d2a9a1e9f405278d1a84a8e",
     "controller-service/src/controller/internal_inbox/model.rs": "4d6629825e1289b285851ae47eaf2b38172ffd59e66b20b1b9678fa8a1a1f649",
-    "controller-service/src/controller/lifecycle_inbox.rs": "8605160e36a8ff6dbaf537d95c0a1d6c3b4c0dc01575dbe138dec0de223b7b29",
+    "controller-service/src/controller/lifecycle_inbox.rs": "4d87f72906bb2ba5ec541b8969ecd90cf7caf74280dd42e5e6e6bbd0488888a8",
     "controller-service/src/controller/lifecycle_inbox/readiness.rs": "0f278a2c97a6a7c37a8d6c6e0fc4516a71775254845bcde5995a074d7f15ae6a",
     "controller-service/src/controller/lifecycle_inbox/source_work.rs": "61191bb746157427e97ba10b518a7afbb61f52e4515e5e53a20e832bb79a916a",
     "controller-service/src/controller/lifecycle_inbox/source_work/full.rs": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26",
@@ -33,9 +33,9 @@
     "controller-service/src/controller/lifecycle_inbox/source_work/restore.rs": "3bc21d0f6e354de0718a254ec0cf9dd73389d3afc7e906aeb1fb880d32f046be",
     "controller-service/src/controller/lifecycle_inbox/source_work/retirement.rs": "adae46047f72df39496e9d8e1f32619c7b74a85ae2b9a8a48a8407021457a3c3",
     "controller-service/src/controller/lifecycle_inbox/source_work/tests.rs": "77c06c23da0d136e07be206ea2df71a2182697490805a2b2b19cbef6cc28d0bb",
-    "controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement.rs": "82bc3ecec50fc8c2cd928d350bce1faade4101b2ed35ef538d722ebd098136d3",
+    "controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement.rs": "477516343515960273e5c6e56522a0231c5f0fb1bbaac13802c95ff5cb57bf5d",
     "controller-service/src/controller/mod.rs": "3108ade2ef3bc126f469094170db9d058f6a729fe4923c38cc7f414fa1f507ca",
-    "controller-service/src/host_contract.rs": "423dfff6ff8ab44056981898a5dcedd5f1e5dc069b011243f7f4ddc8648a3f0a",
+    "controller-service/src/host_contract.rs": "5b94f7e4b3e7e3bf140462e7f43462af7aec698e524a3c9e58eff13001bb2d5d",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",
     "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
@@ -54,9 +54,9 @@
     "verification/experiments/stage1-protocol/schema-leaves/formal.py": "f89e407b5623f3e50dc5eef1760f5ffd3889f4320032fd42acc1fe3a47f5b42d",
     "verification/experiments/stage1-protocol/envelope-writer/native.py": "9d3c4d2f10f201c625132d0fd24392ace0a24c825cec58b075685da291c995d0",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
-    "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
-    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
-    "tools/proof_batch.py": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869",
+    "verification/experiments/stage1-protocol/formal.py": "59878b437b00bf4e2e36c32b315482e87147cf4f9255bebffbcf4a726697cc6d",
+    "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",
+    "tools/proof_batch.py": "e8c5cab7e5c13ce7eef157ff23c37b761a90ad1f49a8bc43da2ea482cf36887c",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
     "scripts/lean-mcp-server.sh": "8969d229a831f7df24654c326c5ebb311b8d40bce466e278d3b0098092fd4d6f",
     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
@@ -315,5 +315,110 @@
         "current": "289e81be860cc33d051883133e77649a841c017fb0a7218889d570e43af50e26"
       }
     }
+  },
+  "current_source_recapture": {
+    "candidate": "13cdef0530f00483fff329b14e0312cd3c94d0e3",
+    "source_review_sha256": "e5b7d52d00d756616fbf734d7823c760baef3ed521ae5922451766629844e0e4",
+    "readback_sha256": "f20257bc73d0b32be19d1b705768883f5201a928683c0d6d40a0c405dc85fb4c",
+    "actual_capture_index_sha256": "e4d1887d7eba6e30be97e7352c00da3364fd3a855bf771185eda31bf2731a73b",
+    "views": {
+      "correct": {
+        "llbc_sha256": "4c8905f59856f76713140d2e0b88db949e4842a403a5b3f6e7070b89698d1671",
+        "compressed_sha256": "ce93e7f0ddc2b98ba508fdfee96955bf42e8e9a319f58c7e805cf0b39417044b",
+        "generated": {
+          "Types.lean": {
+            "old": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4",
+            "current": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4"
+          },
+          "Funs.lean": {
+            "old": "460a2c314843b87eeb638f6b710cdfc9be65dd06d8dbea92557ee4c9f82d165b",
+            "current": "460a2c314843b87eeb638f6b710cdfc9be65dd06d8dbea92557ee4c9f82d165b"
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "1b446dd5ab5896c70a5d57c442f3c60ec7e239e49af7a51ece414f7377685057"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "a6e9a7faa38f3fa171000de5b6a777f05d62b76bc6015267a6a5ead65c3cb67d"
+          }
+        }
+      },
+      "skip-binding": {
+        "llbc_sha256": "74ae8348516ff508e3de55e4d670fcdf433b3b1bf0378a7098bf5f8626e5c0cf",
+        "compressed_sha256": "192eb83417c25c36c87c90e6eb80422fc5b61d142cec988f79e85b1466c690b3",
+        "generated": {
+          "Types.lean": {
+            "old": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4",
+            "current": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4"
+          },
+          "Funs.lean": {
+            "old": "2aae05e2f0c83d67e5440a318d88f075de4d9ed636ba41c4140a72f02844ee65",
+            "current": "2aae05e2f0c83d67e5440a318d88f075de4d9ed636ba41c4140a72f02844ee65"
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "83ace153153d5dc8e8ac44c4bcdfbca82483652c8dc6ff72f814438f143f8c7d"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "d5e7a55478914295ac902ce30e78a6b7b769ec15dbdf38d54a2c0bddb40d813c"
+          }
+        }
+      },
+      "pid-only": {
+        "llbc_sha256": "0c2f0ebe5c36439659ca1ffed8512dd30115db6e9ce41bd0864e6c1a133f6456",
+        "compressed_sha256": "e8b64cb09bfd763633dceaa5c30908851b52afa42f3f4c55b66a4250cb3c44b3",
+        "generated": {
+          "Types.lean": {
+            "old": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4",
+            "current": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4"
+          },
+          "Funs.lean": {
+            "old": "0a72c46fe22c2860bfa71e249ec5bd74b419b48d0d138a72e6203960a076f4aa",
+            "current": "0a72c46fe22c2860bfa71e249ec5bd74b419b48d0d138a72e6203960a076f4aa"
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "61339ba0c72de45f22b5b070fa57b1856d65592753f2337e46abe4f150f74c77"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "e6f616ab7c3463ecefab80b576fbed15ea11be785a5493cb8d8ed64c32fddf07"
+          }
+        }
+      },
+      "oversize-config": {
+        "llbc_sha256": "335bb69af691546d5b0ddb6e4d8c2469b4f9991ec1f644b07b180487f8214f88",
+        "compressed_sha256": "5a909336cbe9a875334d1cb27171e205cf11185711bb479fc894ee1a77a9098a",
+        "generated": {
+          "Types.lean": {
+            "old": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4",
+            "current": "6d188f43876af5ef77e5c271ec79d8a22c43373e2d1e75f599e3ad4a12dab2a4"
+          },
+          "Funs.lean": {
+            "old": "8a865f83c97459a6066b5d459fb602a6c7673bf00cb68ba70dbac2bc367aeddd",
+            "current": "8a865f83c97459a6066b5d459fb602a6c7673bf00cb68ba70dbac2bc367aeddd"
+          }
+        },
+        "logs": {
+          "charon": {
+            "exit": 0,
+            "log_sha256": "fbc02d84f8a0b494229c9ec9d8a214f4664670ca6562db62c3eb0cb4a2adc533"
+          },
+          "aeneas": {
+            "exit": 0,
+            "log_sha256": "0f5f4126f89a9c7e4830503cc297fa05494f43a006cacb6d1cac39eba3e44a61"
+          }
+        }
+      }
+    },
+    "acceptance_pending": true
   }
 }

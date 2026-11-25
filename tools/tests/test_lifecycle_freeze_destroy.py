@@ -750,16 +750,18 @@ class OriginalUnixPauseTests(unittest.TestCase):
 
     def test_destroy_window_rejects_an_endpoint_replaced_after_the_paused_reply(self):
         for change in ('socket', 'jail'):
-            with self.subTest(change=change), self.endpoint() as (runner, prior, seen):
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory, ExitStack() as resources:
+                # Commit the fixture before the mock server starts its bounded accept.
+                f = fixture(Path(directory))
+                freeze_window_journal(f)
+                runner, prior, seen = resources.enter_context(self.endpoint())
                 native = runner.services.native_pools[0]
                 base = Path(native['chroot_base'])
                 jail = base / 'firecracker' / prior['source']['resource_id'] / 'root'
-                f = fixture(base)
                 p = f.probe
                 p.runtime.services.native_pools[0].update(native)
                 p.prior['source'] = prior['source']
                 p.prior['context']['position'] = prior['context']['position']
-                freeze_window_journal(f)
                 p.frozen = frozen.paused_source(p.runtime, p.prior, p.deadline)
 
                 with patch.object(capture, 'checked_source_records', return_value=f.rows), \

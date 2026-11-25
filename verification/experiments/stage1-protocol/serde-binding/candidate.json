@@ -9,7 +9,7 @@
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
     "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
-    "sandbox-protocol/src/internal.rs": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
     "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
     "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
     "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
@@ -289,5 +289,33 @@
     "actual route/B4 candidate adoption",
     "ning ordinary/native and shared complete acceptance",
     "durable inbox, GLOBAL-to-LOCAL, restart/commit unknown/retirement and full V3 composition"
-  ]
+  ],
+  "current_serde_source_readback": {
+    "candidate": "b5aaa7850eb0d9822886fcbb24dbc912cb2c962e",
+    "source_capture": "ce2136b917b3a1a38c747a5ff6b0ed9617f68dda",
+    "actual_capture_sha256": "7d65b6b9997b96d1502b358d26d5ed7c10204b8d3f5eef53290d662317251e97",
+    "current_binding_check_sha256": "ddfb095bf38c06f5198e8625d4e8b7177b860150080a5bcb2a24bcd7f3c1739e",
+    "original_roots": {
+      "accepted_encode": {
+        "raw_sha256": "8ecb9c16e00fef065d8a71083e7cc9e98b42060b8adadeab29b8208dc4560140",
+        "llbc_canonical_sha256": "5c42116aef03d64fd7d5f32acb8b33caf34c3589bf443ba0115261382cc925a0",
+        "checked_bodies": 25,
+        "source_checks": 30
+      },
+      "recorded_encode": {
+        "raw_sha256": "710735a5339698e3d6003e669e41f457c687bc5cb9a7801ab627bf5acf263d6c",
+        "llbc_canonical_sha256": "cace9dda167d89c4c272fb4d668a4269148a99790cedd77aa25014cb2a55b922",
+        "checked_bodies": 26,
+        "source_checks": 31
+      },
+      "writer": {
+        "raw_sha256": "5c91b55ef238cc3fa1c004a78f70c5c61f80b013bb3733d1b5d99a6ade4702ff",
+        "llbc_canonical_sha256": "3b3469c25e7e914ec2dbb3db89690ad1a0a9ed4c65523e2ac6c25039fc8ce924",
+        "checked_bodies": 26,
+        "source_checks": 31
+      }
+    },
+    "change": "Host storage format constant 23 to 24; serializer inputs and exact original call/body views match.",
+    "acceptance_pending": true
+  }
 }

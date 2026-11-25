@@ -1,0 +1,290 @@
+import SharedParentCarriers
+import ContinuedDriverCaller
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink
+open SandproofOriginalSourceRowsRust
+
+@[reducible] def continuedRepresentations [SandproofCreateOptionsEncoded.Representations]
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (continued : SandproofUnloadContinuedReady.Representations) : SandproofUnloadContinuedReady.Representations :=
+  { continued with
+    CrashPoint := CrashPoint
+    capture_HostEpochRegistration := @SandproofUnloadFirstObservation.capture.HostEpochRegistration
+      (parentRepresentations (startupParentBase base startup) options)
+    capture_source_SourceObservationConfig := SandproofUnloadFirstObservation.capture.source.SourceObservationConfig
+    controller_lifecycle_inbox_readiness_NativeCreateSnapshot :=
+      @SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot
+        (parentRepresentations (startupParentBase base startup) options)
+    sandbox_controller_core_controller_ControllerReject := sandbox_controller_core.controller.ControllerReject
+    sandbox_controller_core_ids_OperationId := sandbox_controller_core.ids.OperationId
+    sandbox_controller_core_ids_SandboxId := sandbox_controller_core.ids.SandboxId
+    sandbox_controller_core_ids_TenantId := sandbox_controller_core.ids.TenantId
+    sandbox_controller_core_ids_VmId := sandbox_controller_core.ids.VmId
+    sandbox_controller_core_model_Command :=
+      @SandproofUnloadStartupJoint.sandbox_controller_core.model.Command (startupRepresentations startup)
+    sandbox_controller_core_model_OperationKey := sandbox_controller_core.model.OperationKey
+    sandbox_controller_core_model_World := sandbox_controller_core.model.World
+    sandproof_protocol_ContractError := SandproofUnloadStartupJoint.sandproof_protocol.ContractError
+    sandproof_protocol_LogicalActionId := sandproof_protocol.LogicalActionId
+    sandproof_protocol_OperationId := sandproof_protocol.OperationId
+    sandproof_protocol_ResourceId := sandproof_protocol.ResourceId
+    sandproof_protocol_SandboxId := sandproof_protocol.SandboxId
+    sandproof_protocol_TenantId := sandproof_protocol.TenantId
+    sandproof_protocol_internal_NodeIdentity := base.sandproof_protocol_internal_NodeIdentity
+    sandproof_protocol_lifecycle_authority_AcceptedLifecycleIntent :=
+      @SandproofUnloadFirstObservation.sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+        (parentRepresentations (startupParentBase base startup) options)
+    sandproof_protocol_lifecycle_digest_ContentDigest := sandproof_protocol.lifecycle.digest.ContentDigest }
+
+@[reducible] def continuedParentBase [SandproofCreateOptionsEncoded.Representations]
+    (base : SandproofUnloadFirstObservation.Representations)
+    (options : SandproofUnloadOptionsRead.Representations)
+    (startup : SandproofUnloadStartupJoint.Representations)
+    (continued : SandproofUnloadContinuedReady.Representations) : SandproofUnloadFirstObservation.Representations :=
+  { startupParentBase base startup with
+    capture_continuation_OriginalContinueWorkRequest :=
+      @SandproofUnloadContinuedReady.capture.continuation.OriginalContinueWorkRequest
+        (continuedRepresentations base options startup continued) }
+
+section
+variable [SandproofCreateOptionsEncoded.Representations]
+variable (base : SandproofUnloadFirstObservation.Representations)
+variable (options : SandproofUnloadOptionsRead.Representations)
+variable (startup : SandproofUnloadStartupJoint.Representations)
+variable (continued : SandproofUnloadContinuedReady.Representations)
+
+def continuedResourceKind : SandproofUnloadContinuedReady.sandproof_protocol.ResourceKind →
+    SandproofUnloadStartupJoint.sandproof_protocol.ResourceKind
+  | .Sandbox => .Sandbox
+  | .Vm => .Vm
+  | .Workspace => .Workspace
+  | .Snapshot => .Snapshot
+  | .NetworkSlot => .NetworkSlot
+
+def continuedResource (resource :
+    @SandproofUnloadContinuedReady.sandproof_protocol.ResourceRef (continuedRepresentations base options startup continued)) :
+    SandproofUnloadStartupJoint.sandproof_protocol.ResourceRef :=
+  letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+  { kind := continuedResourceKind resource.kind, id := resource.id }
+
+def continuedAction (action :
+    @SandproofUnloadContinuedReady.sandproof_protocol.WorkAction (continuedRepresentations base options startup continued)
+      (@SandproofUnloadContinuedReady.sandbox_controller_core.model.EffectId (continuedRepresentations base options startup continued))) :
+    letI : SandproofUnloadFirstObservation.Representations :=
+      parentRepresentations (continuedParentBase base options startup continued) options
+    SandproofUnloadFirstObservation.sandproof_protocol.WorkAction SandproofUnloadFirstObservation.sandbox_controller_core.model.EffectId :=
+  letI : SandproofUnloadFirstObservation.Representations :=
+    parentRepresentations (continuedParentBase base options startup continued) options
+  letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+  { identity :=
+      { protocol_version := action.identity.protocol_version
+        owner := action.identity.owner, sandbox := action.identity.sandbox
+        operation := action.identity.operation, epoch := action.identity.epoch
+        generation := action.identity.generation, logical_action := action.identity.logical_action
+        attempt := action.identity.attempt, resource := continuedResource base options startup continued action.identity.resource }
+    command := { logical := { command := action.command.logical.command }, attempt := action.command.attempt } }
+
+def continuedNative :
+    @SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot
+      (parentRepresentations (continuedParentBase base options startup continued) options) →
+    @SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot
+      (parentRepresentations (startupParentBase base startup) options) :=
+  fun native =>
+  @SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.mk (parentRepresentations (startupParentBase base startup) options)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.owner (parentRepresentations (continuedParentBase base options startup continued) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.phase (parentRepresentations (continuedParentBase base options startup continued) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.terminal (parentRepresentations (continuedParentBase base options startup continued) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.epoch (parentRepresentations (continuedParentBase base options startup continued) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.generation (parentRepresentations (continuedParentBase base options startup continued) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.current_vm (parentRepresentations (continuedParentBase base options startup continued) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.current_operation (parentRepresentations (continuedParentBase base options startup continued) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.lifetime (parentRepresentations (continuedParentBase base options startup continued) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.uncertain_actions (parentRepresentations (continuedParentBase base options startup continued) options) native)
+
+def continuedRegistration (registration : @SandproofUnloadFirstObservation.capture.HostEpochRegistration (parentRepresentations (startupParentBase base startup) options)) :
+    @SandproofUnloadFirstObservation.capture.HostEpochRegistration (parentRepresentations (continuedParentBase base options startup continued) options) :=
+  @SandproofUnloadFirstObservation.capture.HostEpochRegistration.mk (parentRepresentations (continuedParentBase base options startup continued) options)
+    (@SandproofUnloadFirstObservation.capture.HostEpochRegistration.version (parentRepresentations (startupParentBase base startup) options) registration)
+    (@SandproofUnloadFirstObservation.capture.HostEpochRegistration.boot_id (parentRepresentations (startupParentBase base startup) options) registration)
+    (@SandproofUnloadFirstObservation.capture.HostEpochRegistration.policy (parentRepresentations (startupParentBase base startup) options) registration)
+
+def continuedError :
+    @SandproofUnloadContinuedReady.JournalError (continuedRepresentations base options startup continued) →
+    @SandproofUnloadFirstObservation.JournalError (parentRepresentations (continuedParentBase base options startup continued) options) :=
+  letI : SandproofUnloadFirstObservation.Representations :=
+    parentRepresentations (continuedParentBase base options startup continued) options
+  letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+  fun
+  | .Io error => .Io error
+  | .Sqlite error => .Sqlite error
+  | .CommitUncertain error => .CommitUncertain error
+  | .Json error => .Json error
+  | .Contract error => .Contract error
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .InjectedCrash error => .InjectedCrash error
+  | .ControllerRejected error => .ControllerRejected error
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+@[reducible] def bindContinued :
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (continuedParentBase base options startup continued) options
+    letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+    (parent : SandproofUnloadFirstObservation.ParentCalls) →
+    (ops : SandproofUnloadContinuedReady.Operations) →
+    ({E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E → SandproofUnloadContinuedReady.host_contract.HostEvidence E) →
+    ({E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → SandproofUnloadContinuedReady.serde_core.de.DeserializeOwned E) →
+    SandproofUnloadFirstObservation.ParentCalls :=
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (continuedParentBase base options startup continued) options
+  letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+  fun parent ops hostView serdeView =>
+  { parent with
+    readContinuedRecords := fun host serde connection world ns localValue native => do
+      let reply ← @SandproofUnloadContinuedReady.controller.lifecycle_inbox.source_work.full.continuation.ready_records
+        (continuedRepresentations base options startup continued) ops _ (hostView host) (serdeView serde)
+        connection world ns { sandbox := localValue.sandbox, owner := localValue.owner, operation := localValue.operation }
+        (continuedNative base options startup continued native)
+      match reply with
+      | .Ok item => .ok (.Ok (item.map (fun (work, action, receipt) =>
+          (work, continuedAction base options startup continued action, receipt))))
+      | .Err error => .ok (.Err (continuedError base options startup continued error))
+    continuedIdentity := fun work =>
+      let identity := @SandproofUnloadContinuedReady.capture.continuation.OriginalContinueWorkRequest.identity
+        (continuedRepresentations base options startup continued) work
+      .ok
+      { key := identity.key, epoch := identity.epoch
+        generation := identity.generation, vm := identity.vm }
+    continuedSource := fun work =>
+      let source := @SandproofUnloadContinuedReady.capture.continuation.OriginalContinueWorkRequest.source
+        (continuedRepresentations base options startup continued) work
+      .ok
+      { work_binding := source.work_binding, node := source.node
+        host_bootstrap := continuedRegistration base options startup continued source.host_bootstrap
+        resource := continuedResource base options startup continued source.resource
+        source :=
+          { pid := source.source.pid
+            start_time_ticks := source.source.start_time_ticks
+            boot_id := source.source.boot_id }
+        limits := source.limits } }
+
+def continuedResourceKindBack : SandproofUnloadStartupJoint.sandproof_protocol.ResourceKind →
+    SandproofUnloadContinuedReady.sandproof_protocol.ResourceKind
+  | .Sandbox => .Sandbox
+  | .Vm => .Vm
+  | .Workspace => .Workspace
+  | .Snapshot => .Snapshot
+  | .NetworkSlot => .NetworkSlot
+
+def continuedActionBack :
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (continuedParentBase base options startup continued) options
+    letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+    SandproofUnloadFirstObservation.sandproof_protocol.WorkAction SandproofUnloadFirstObservation.sandbox_controller_core.model.EffectId →
+    SandproofUnloadContinuedReady.sandproof_protocol.WorkAction SandproofUnloadContinuedReady.sandbox_controller_core.model.EffectId :=
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (continuedParentBase base options startup continued) options
+  letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+  letI : SandproofUnloadStartupJoint.Representations := startupRepresentations startup
+  fun action =>
+  { identity :=
+      { protocol_version := action.identity.protocol_version
+        owner := action.identity.owner, sandbox := action.identity.sandbox
+        operation := action.identity.operation, epoch := action.identity.epoch
+        generation := action.identity.generation, logical_action := action.identity.logical_action
+        attempt := action.identity.attempt
+        resource := { kind := continuedResourceKindBack action.identity.resource.kind, id := action.identity.resource.id } }
+    command := { logical := { command := action.command.logical.command }, attempt := action.command.attempt } }
+
+theorem continued_action_preserves_every_field :
+    letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+    ∀ action : SandproofUnloadContinuedReady.sandproof_protocol.WorkAction SandproofUnloadContinuedReady.sandbox_controller_core.model.EffectId,
+      continuedActionBack base options startup continued (continuedAction base options startup continued action) = action := by
+  letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+  intro action
+  rcases action with ⟨identity, effect⟩
+  rcases identity with ⟨protocol, owner, sandbox, operation, epoch, generation, logical, attempt, resource⟩
+  rcases resource with ⟨kind, identifier⟩
+  rcases effect with ⟨command, effectAttempt⟩
+  rcases command with ⟨command⟩
+  cases kind <;> rfl
+
+/-- Install #773 at its original parent call, including Err/None/Some. The
+connection, complete World, namespace, local triple and all native fields are
+those of this same call. Work and original receipt bytes are never rebuilt. -/
+theorem continued_parent_uses_actual_generated_reader :
+    letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (continuedParentBase base options startup continued) options
+    letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+    ∀ (parent : SandproofUnloadFirstObservation.ParentCalls) (ops : SandproofUnloadContinuedReady.Operations)
+      (hostView : {E : Type} → SandproofUnloadFirstObservation.host_contract.HostEvidence E → SandproofUnloadContinuedReady.host_contract.HostEvidence E)
+      (serdeView : {E : Type} → SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E → SandproofUnloadContinuedReady.serde_core.de.DeserializeOwned E)
+      {E : Type} (host : SandproofUnloadFirstObservation.host_contract.HostEvidence E)
+      (serde : SandproofUnloadFirstObservation.serde_core.de.DeserializeOwned E)
+      (connection : SandproofSqliteSession.Connection) (world : sandbox_controller_core.model.World) (ns : Str)
+      (localValue : SandproofUnloadFirstObservation.controller.internal_inbox.model.InternalLocalBinding)
+      (native : SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot)
+      (reply : core.result.Result
+        (Option (SandproofUnloadContinuedReady.capture.continuation.OriginalContinueWorkRequest ×
+          SandproofUnloadContinuedReady.sandproof_protocol.WorkAction SandproofUnloadContinuedReady.sandbox_controller_core.model.EffectId × alloc.vec.Vec U8))
+        SandproofUnloadContinuedReady.JournalError),
+      @SandproofUnloadContinuedReady.controller.lifecycle_inbox.source_work.full.continuation.ready_records
+        (continuedRepresentations base options startup continued) ops E (hostView host) (serdeView serde) connection world ns
+        { sandbox := localValue.sandbox, owner := localValue.owner, operation := localValue.operation }
+        (continuedNative base options startup continued native) = .ok reply →
+      @SandproofUnloadFirstObservation.ParentCalls.readContinuedRecords
+        (parentRepresentations (continuedParentBase base options startup continued) options)
+        (bindContinued base options startup continued parent ops hostView serdeView) E
+        host serde connection world ns localValue native = .ok
+          (match reply with
+          | .Ok item => .Ok (item.map (fun (work, action, receipt) =>
+              (work, continuedAction base options startup continued action, receipt)))
+          | .Err error => .Err (continuedError base options startup continued error)) := by
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations (continuedParentBase base options startup continued) options
+  letI : SandproofUnloadContinuedReady.Representations := continuedRepresentations base options startup continued
+  intro parent ops hostView serdeView E host serde connection world ns localValue native reply returned
+  change (@SandproofUnloadContinuedReady.controller.lifecycle_inbox.source_work.full.continuation.ready_records
+      (continuedRepresentations base options startup continued) ops E (hostView host) (serdeView serde)
+      connection world ns { sandbox := localValue.sandbox, owner := localValue.owner, operation := localValue.operation }
+      (continuedNative base options startup continued native) >>= _) = _
+  rw [returned]
+  simp only [bind_tc_ok]
+  cases reply <;> rfl
+
+
+def continuedNativeBack (native : @SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot (parentRepresentations (startupParentBase base startup) options)) :
+    @SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot (parentRepresentations (continuedParentBase base options startup continued) options) :=
+  @SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.mk (parentRepresentations (continuedParentBase base options startup continued) options)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.owner (parentRepresentations (startupParentBase base startup) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.phase (parentRepresentations (startupParentBase base startup) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.terminal (parentRepresentations (startupParentBase base startup) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.epoch (parentRepresentations (startupParentBase base startup) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.generation (parentRepresentations (startupParentBase base startup) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.current_vm (parentRepresentations (startupParentBase base startup) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.current_operation (parentRepresentations (startupParentBase base startup) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.lifetime (parentRepresentations (startupParentBase base startup) options) native)
+    (@SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot.uncertain_actions (parentRepresentations (startupParentBase base startup) options) native)
+
+theorem continued_native_preserves_every_field (native : @SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot (parentRepresentations (continuedParentBase base options startup continued) options)) :
+    continuedNativeBack base options startup continued (continuedNative base options startup continued native) = native := by
+  cases native
+  rfl
+
+end
+end SandboxModel.Stage1Protocol.UnloadParentLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.continued_action_preserves_every_field
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.continued_parent_uses_actual_generated_reader
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.continued_native_preserves_every_field

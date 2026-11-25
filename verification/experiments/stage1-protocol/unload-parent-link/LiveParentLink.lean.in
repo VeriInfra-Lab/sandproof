@@ -1,0 +1,69 @@
+import FirstParentReadback
+import SandboxModel.Lifecycle.Protocol.SourceLive.Core
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink
+
+def livePhase : SandproofOriginalSourceRowsRust.sandbox_controller_core.model.Phase →
+    SandproofSourceLiveRust.sandbox_controller_core.model.Phase
+  | .Starting => .Starting
+  | .Running => .Running
+  | .Pausing => .Pausing
+  | .Paused => .Paused
+  | .Revoking => .Revoking
+  | .Destroyed => .Destroyed
+
+section
+variable [SandproofCreateOptionsEncoded.Representations]
+variable (base : SandproofUnloadFirstObservation.Representations)
+variable (options : SandproofUnloadOptionsRead.Representations)
+
+/-- The #768 theorem already proves that current_operation and uncertain_actions
+are unread by live_native. This is its read-only field view, not a World model. -/
+def liveNative (native : @SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot
+    (parentRepresentations base options)) : SandboxModel.Stage1Protocol.SourceLive.Native :=
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+  { owner := native.owner, phase := livePhase native.phase, terminal := native.terminal
+    epoch := native.epoch, generation := native.generation, current_vm := native.current_vm
+    lifetime := native.lifetime, current_operation := none, uncertain_actions := .from [] (by simp) }
+
+def liveLocal (localValue : @SandproofUnloadFirstObservation.controller.internal_inbox.model.InternalLocalBinding
+    (parentRepresentations base options)) : SandboxModel.Stage1Protocol.SourceLive.Local :=
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+  { sandbox := localValue.sandbox, owner := localValue.owner, operation := localValue.operation }
+
+@[reducible] def bindLive (parent : @SandproofUnloadFirstObservation.ParentCalls (parentRepresentations base options)) :
+    @SandproofUnloadFirstObservation.ParentCalls (parentRepresentations base options) :=
+  letI : SandproofUnloadFirstObservation.Representations := parentRepresentations base options
+  { parent with
+    checkLiveNative := fun native localValue accepted current now =>
+      SandboxModel.Stage1Protocol.SourceLive.run
+        (liveNative base options native) (liveLocal base options localValue) accepted current now }
+
+theorem live_parent_preserves_full_acceptance (parent :
+    @SandproofUnloadFirstObservation.ParentCalls (parentRepresentations base options))
+    (native : @SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot (parentRepresentations base options))
+    (localValue : @SandproofUnloadFirstObservation.controller.internal_inbox.model.InternalLocalBinding (parentRepresentations base options))
+    (accepted current : U64) (now : I64) :
+    @SandproofUnloadFirstObservation.ParentCalls.checkLiveNative (parentRepresentations base options)
+      (bindLive base options parent) native localValue accepted current now = .ok true ↔
+    SandboxModel.Stage1Protocol.SourceLive.Accepts (liveNative base options native)
+      (liveLocal base options localValue) accepted current now :=
+  SandboxModel.Stage1Protocol.SourceLive.accepts_iff _ _ _ _ _
+
+theorem live_parent_preserves_full_rejection (parent :
+    @SandproofUnloadFirstObservation.ParentCalls (parentRepresentations base options))
+    (native : @SandproofUnloadFirstObservation.controller.lifecycle_inbox.readiness.NativeCreateSnapshot (parentRepresentations base options))
+    (localValue : @SandproofUnloadFirstObservation.controller.internal_inbox.model.InternalLocalBinding (parentRepresentations base options))
+    (accepted current : U64) (now : I64) :
+    @SandproofUnloadFirstObservation.ParentCalls.checkLiveNative (parentRepresentations base options)
+      (bindLive base options parent) native localValue accepted current now = .ok false ↔
+    ¬ SandboxModel.Stage1Protocol.SourceLive.Accepts (liveNative base options native)
+      (liveLocal base options localValue) accepted current now :=
+  SandboxModel.Stage1Protocol.SourceLive.rejects_iff _ _ _ _ _
+
+end
+end SandboxModel.Stage1Protocol.UnloadParentLink
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.live_parent_preserves_full_acceptance
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.live_parent_preserves_full_rejection

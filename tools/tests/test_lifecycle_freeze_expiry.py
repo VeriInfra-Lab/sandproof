@@ -1,6 +1,6 @@
 """Original audit DTO and inherited frozen consumers; no VM or clock changes."""
 import copy
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 import hashlib
 import json
 import os
@@ -72,6 +72,7 @@ def fixture(root):
     p.expiry_baseline = expiry.frozen_baseline(before,p.client.create_acceptance,intents,f.node,lifetime)
     p.automatic_acceptance = None
     p._source_state = Mock(return_value='T')
+    p.observe_destroy_window = Mock(return_value={'freeze_sql_receipt_pending': True})
     center = Mock();center.poll.return_value = None
     processes = Mock();processes.children = {'center':center}
     processes.bindings = p.runtime.services.processes.bindings
@@ -439,6 +440,56 @@ class FrozenExpiryObservationTests(unittest.TestCase):
             result=p.observe_expiry(p.deadline)
             self.assertEqual(result['center_audits'],2);sleep.assert_called_once()
             self.assertEqual(f.processes.start.call_count,2)
+            p.observe_destroy_window.assert_called_once_with(p.deadline)
+
+    def test_expiry_audit_rechecks_the_original_unacknowledged_freeze_before_host_reopens(self):
+        for save_receipt in (False, True):
+            with self.subTest(save_receipt=save_receipt), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+                f = fixture(Path(directory))
+                p = f.probe
+                del p.observe_destroy_window  # Exercise the original observer and real SQLite reads.
+                database = original.freeze_window_journal(f)
+                f.processes.children['host-0'] = p.host
+                endpoint = stack.enter_context(patch.object(p, '_observe_destroy_endpoint', return_value={}))
+                stack.enter_context(patch.object(original.capture, 'checked_source_records', return_value=f.rows))
+                stack.enter_context(patch.object(expiry, 'now_ms', side_effect=[999, 1000, 1000, 1000]))
+
+                def audit(_):
+                    if save_receipt:
+                        source = p.prior['source']
+                        receipt = f.receipt(f.freeze, 'Frozen', dict(pid=source['pid'],
+                            start_ticks=source['start_time_ticks'], boot_id=source['boot_id']))
+                        with closing(sqlite3.connect(database)) as conn, conn:
+                            conn.execute("UPDATE outbox SET dispatch_state='receipted',receipt_json=? WHERE id=1",
+                                         (json.dumps(receipt).encode(),))
+                    return f.after
+
+                f.processes.audit.side_effect = audit
+                if save_receipt:
+                    with self.assertRaisesRegex(ValueError, 'one exact dispatched action with no SQL receipt'):
+                        p.observe_expiry(p.deadline)
+                    failure = p.terminal_failure_state()
+                    self.assertEqual(failure['observed_automatic_acceptance'], f.accepted)
+                    self.assertNotIn('freeze_after_expiry_acceptance', failure)
+                    self.assertFalse(failure['source_os_continue_sent'])
+                    self.assertFalse(failure['stop_gate_release_sent'])
+                    with self.assertRaisesRegex(ValueError, 'only the audited automatic terminal acceptance'):
+                        p.recover_after_expiry(f.accepted, p.deadline, observe_peer=Mock())
+                    endpoint.assert_not_called()
+                else:
+                    result = p.observe_expiry(p.deadline)
+                    window = result['freeze_after_expiry_acceptance']
+                    self.assertIs(window['freeze_sql_receipt_pending'], True)
+                    self.assertIs(window['original_pin_and_positive_charge_retained'], True)
+                    self.assertEqual(window['freeze_identity'], f.freeze['identity'])
+                    self.assertEqual(window['host_nonterminal_pause'], original.pending_pause(f)['current_operation'])
+                    endpoint.assert_called_once_with(p.deadline)
+                    p._bind_destroy(f.accepted)
+                self.assertEqual(p.client.current_acceptance, f.accepted)
+                f.processes.audit.assert_called_once_with('center')
+                f.processes.start.assert_called_once_with('center')
+                p.client.query.assert_not_called()
+                p.client.destroy.assert_not_called()
 
     def test_explicit_destroy_early_expiry_or_dead_center_cannot_certify_autonomous_expiry(self):
         for fault in ('destroy','early','center','host','source','changed-current'):
@@ -470,6 +521,7 @@ class FrozenExpiryObservationTests(unittest.TestCase):
                 f=fixture(Path(directory));p=f.probe
                 if fault!='unobserved':p.automatic_acceptance=copy.deepcopy(f.accepted)
                 p.client.current_acceptance=copy.deepcopy(f.accepted)
+                p.freeze_after_expiry_acceptance = {'freeze_sql_receipt_pending': True}
                 if fault=='destroy':p.client.destroy_request={}
                 value=copy.deepcopy(f.accepted)
                 if fault=='key':value['key']['sequence']+=1

@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -22,6 +23,13 @@ HERE = Path('verification/experiments/sqlite-commit')
 LIB = Path('verification/aeneas/sqlite/SandproofSqlite')
 MEMO = 'controller-service/src/controller/transaction/memo.rs'
 SOURCE_COMMIT = '8fc694185a4ccbe2ea181564ba860b14bea9f6e1'
+# #1000's tested candidate contains this capture in its Git history. Its
+# squash commit on integration has the same verified tree, with new parents.
+SQUASHED_CAPTURE = (
+    '912edc5043eeae9c05fcf25d109eb35409b6d149',
+    '3bb50958d9b9b8693b4ce03e3f10af5212b3099a',
+    '2941c6b1bdc61f5a183cf9a9019f6ae1d9984f4b',
+)
 INPUTS_ENV = 'SANDPROOF_SQLITE_CONVERGENCE_INPUTS'
 FILES = [str(LIB/(name+'.lean')) for name in (
     'Audit', 'Examples', 'Funs', 'FunsExternal', 'Model', 'Results', 'Types', 'TypesExternal')]
@@ -83,37 +91,70 @@ def original(root):
     return module('sqlite_convergence_original_negative', root/HERE/'negative.py')
 
 
+def head(root):
+    return subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=root, text=True).strip()
+
+
+def capture_reaches(root, capture, revision):
+    def git(*args):
+        return subprocess.run(['git', *args], cwd=root, text=True, capture_output=True)
+
+    if git('merge-base', '--is-ancestor', capture, revision).returncode == 0:
+        return True
+    original, integrated, expected_tree = SQUASHED_CAPTURE
+    if capture != original:
+        return False
+    tree = git('rev-parse', '--verify', integrated+'^{tree}')
+    return (tree.returncode == 0 and tree.stdout.strip() == expected_tree
+            and git('merge-base', '--is-ancestor', integrated, revision).returncode == 0)
+
+
 def inventory(root):
     profile = read(root/HERE/'candidate.json')
-    if profile.get('production_adopted') is not True or profile['current_capture_source_commit'] != SOURCE_COMMIT:
+    if profile.get('production_adopted') is not True:
         raise ValueError('this finite adapter requires its reviewed adopted source')
+    capture = profile['current_capture_source_commit']
+    if capture != SOURCE_COMMIT:
+        if (profile.get('historical_capture_source_commit') != SOURCE_COMMIT
+                or re.fullmatch('[a-f0-9]{40}', capture) is None):
+            raise ValueError('current SQLite capture lacks its historical source anchor')
+        if not capture_reaches(root, capture, head(root)):
+            raise ValueError('current SQLite capture is outside its original or reviewed integration history')
     for name, digest in profile['source_files'].items():
         if sha(root/name) != digest:
             raise ValueError('current SQLite source closure changed: '+name)
     return profile
 
 
+def using_current(profile):
+    return profile['current_capture_source_commit'] != SOURCE_COMMIT
+
+
 def plan(root=ROOT):
     audits = re.findall(r'^#audit_controller_proof (\S+)$', (root/LIB/'Audit.lean').read_text(), re.M)
     if len(audits) != 18 or len(set(audits)) != 18:
         raise ValueError('expected the complete original eighteen SQLite audits')
-    return {'views': {'correct': {'files': FILES, 'audits': audits},
+    profile = read(root/HERE/'candidate.json')
+    files = [*FILES, str(LIB/'SlotData.lean')] if using_current(profile) else FILES
+    return {'views': {'correct': {'files': files, 'audits': audits},
                       'skip-first-clear': {'files': ['Counterexample.lean'], 'audits': COUNTERS}}}
 
 
-def _packet(folder):
+def _packet(folder, expected):
     base = folder/'native-packet'
-    for name, digest in PACKET.items():
+    if set(expected) != set(PACKET):
+        raise ValueError('missing or extra SQLite native packet file')
+    for name, digest in expected.items():
         path = base/name
         if not path.resolve(strict=True).is_relative_to(base.resolve()) or sha(path) != digest:
             raise ValueError('original portable Ning packet differs: '+name)
     return base
 
 
-def _native_readback(folder, root):
+def _native_readback(folder, root, expected_packet, source_commit, current):
     from tools.acceptance_receipts import digest, load_success, rust_inputs
     profile = inventory(root)
-    packet = _packet(folder)
+    packet = _packet(folder, expected_packet)
     correct = read(packet/'correct/result.json')
     stages = [
         ('format', ['cargo', 'fmt', '--all', '--', '--check']),
@@ -121,7 +162,7 @@ def _native_readback(folder, root):
                     '--locked', '--offline', '--', '-D', 'warnings']),
         ('cache-tests', ['cargo', 'test', '-p', 'sandproof-controller-service', '--locked', '--offline',
                         '--lib', 'controller::cache_tests', '--', '--test-threads=1'])]
-    if (correct.get('base') != SOURCE_COMMIT or correct.get('exit_code') != 0
+    if (correct.get('base') != source_commit or correct.get('exit_code') != 0
             or correct.get('source_unchanged') is not True or correct.get('tests') != 16
             or correct.get('ignored') != 0 or correct.get('patch_sha256') != profile['patch_sha256']
             or [(x['stage'], x['command']) for x in correct['stages']] != stages
@@ -139,9 +180,17 @@ def _native_readback(folder, root):
     expected[MEMO] = mutant
     used = [json.loads(row) for row in summary.get('used_receipts', '').splitlines()]
     compiler = read(root/'verification/first-chain-linux-environment.json')['production_compiler']
+    driver_commit = source_commit if current else profile['native_reference_driver_commit']
+    driver_sha = sha(root/HERE/'negative.py') if current else profile['native_reference_driver_sha256']
+    if current:
+        from tools.acceptance_receipts import contract_inputs, rules, source_archive_inputs
+        if (key.get('rules') != rules(root)
+                or key.get('contracts') != dict(review=contract_inputs(root), source=contract_inputs(root))
+                or key.get('source_archives') != source_archive_inputs()):
+            raise ValueError('current SQLite native fault rules, contracts or source archives differ')
     if (summary.get('complete') is not True or summary.get('driver_exit_code') != 0
-            or summary.get('production_commit') != SOURCE_COMMIT
-            or summary.get('driver_commit') != profile['native_reference_driver_commit']
+            or summary.get('production_commit') != source_commit
+            or summary.get('driver_commit') != driver_commit
             or summary.get('actual_cargo_exit') != 101 or summary.get('original_assertion_rejected') is not True
             or summary.get('formal_tools_invoked') is not False or summary.get('mutated_memo_sha256') != mutant
             or summary.get('unchanged_source_files') != len(profile['source_files'])-1
@@ -150,7 +199,7 @@ def _native_readback(folder, root):
             or used[0].get('sha256') != sha(packet/'fault/receipt.json')
             or key.get('label') != 'sqlite-commit-native-rejected' or key.get('command') != NATIVE_COMMAND
             or key.get('options') != {} or key.get('rust') != expected
-            or key.get('rules', {}).get(str(HERE/'negative.py')) != profile['native_reference_driver_sha256']
+            or key.get('rules', {}).get(str(HERE/'negative.py')) != driver_sha
             or key.get('runtime', {}).get('platform') != 'linux' or key['runtime'].get('uid') != 1000
             or key['runtime'].get('rustc', {}).get('version', '').splitlines()[:1] != [compiler]
             or load_success(packet/'fault', key) != receipt or receipt.get('actual_exit') != 101
@@ -166,12 +215,16 @@ def _native_readback(folder, root):
 def check_native(result, root=ROOT, folder=None):
     if folder is None:
         raise ValueError('portable native evidence requires its actual containing folder')
+    root = Path(root)
+    current = using_current(inventory(root))
+    source_commit = head(root) if current else SOURCE_COMMIT
+    packet = result.get('packet') if current else PACKET
     if (result.get('convergence_entry') != 'sqlite-commit' or result.get('mode') != 'native'
             or result.get('complete') is not True or result.get('actuals') != []
-            or result.get('source_commit') != SOURCE_COMMIT or result.get('native_executed_here') is not False
-            or result.get('packet') != PACKET):
+            or result.get('source_commit') != source_commit or result.get('native_executed_here') is not current
+            or not isinstance(packet, dict) or result.get('packet') != packet):
         raise ValueError('different finite SQLite native component result')
-    return _native_readback(Path(folder), Path(root))
+    return _native_readback(Path(folder), root, packet, source_commit, current)
 
 
 def native(output, config, root=ROOT):
@@ -202,7 +255,68 @@ def native(output, config, root=ROOT):
     return result
 
 
+def current_native(output, root):
+    """Run the original tests and save a fresh seven-file packet."""
+    from tools.acceptance_receipts import digest, load_success, rust_inputs
+    profile = inventory(root)
+    revision = head(root)
+    packet = output/'native-packet'
+    (packet/'correct').mkdir(parents=True)
+    (packet/'fault').mkdir()
+    work = Path(tempfile.mkdtemp(prefix='native-work-', dir=output))
+    cache = work/'receipt-cache'
+    cache.mkdir()
+    parent_cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
+    shutil.copyfile(parent_cache/'runtime.json', cache/'runtime.json')
+    used = cache/'used.jsonl'
+    environment = dict(os.environ, SANDPROOF_NATIVE_EVIDENCE=str(cache),
+                       SANDPROOF_NATIVE_USED=str(used))
+    correct, fault = work/'correct', work/'fault'
+    for label, entry, destination, args in (
+            ('native-correct', 'native.py', correct, []),
+            ('native-fault', 'negative.py', fault, ['--native-only',
+                '--correct-replay', work/'unused', '--tool-root', '/unused-in-native-mode'])):
+        with (output/(label+'.log')).open('xb') as log:
+            subprocess.run([sys.executable, root/HERE/entry, '--source-base', root,
+                '--destination', destination, *args], cwd=root, env=environment,
+                stdout=log, stderr=subprocess.STDOUT, check=True)
+    if head(correct/'source') != revision or head(fault/'source') != revision:
+        raise ValueError('native SQLite test checkout changed')
+    if rust_inputs(correct/'source') != rust_inputs(root):
+        raise ValueError('current correct SQLite Rust closure differs')
+    used_lines = used.read_text()
+    used_entry, = map(json.loads, used_lines.splitlines())
+    entry = cache/'commands'/used_entry['identity']
+    receipt = read(entry/'receipt.json')
+    if (used_entry['reused'] is not False or digest(receipt['key']) != entry.name
+            or load_success(entry, receipt['key']) != receipt
+            or receipt['key']['runtime'] != read(parent_cache/'runtime.json')
+            or receipt['key']['rust'] != rust_inputs(fault/'source')
+            or sha(entry/'receipt.json') != used_entry['sha256']
+            or (entry/'command.log').read_bytes() !=
+                (fault/'evidence/native-rejected.log').read_bytes()):
+        raise ValueError('current SQLite native fault command receipt differs')
+    for name in PACKET:
+        if name.startswith('correct/'):
+            shutil.copy2(correct/'evidence'/Path(name).name, packet/name)
+    for name in ('receipt.json', 'command.log'):
+        shutil.copy2(entry/name, packet/'fault'/name)
+    write(packet/'fault/summary.json', dict(complete=True, driver_exit_code=0,
+        production_commit=revision, driver_commit=revision, actual_cargo_exit=receipt['actual_exit'],
+        original_assertion_rejected=True, formal_tools_invoked=False,
+        mutated_memo_sha256=sha(fault/'source'/MEMO), unchanged_source_files=len(profile['source_files'])-1,
+        used_receipts=used_lines, log_sha256=sha(packet/'fault/command.log')))
+    result = dict(convergence_entry='sqlite-commit', complete=True, mode='native',
+        source_commit=revision, native_executed_here=True, actuals=[],
+        packet={name:sha(packet/name) for name in PACKET})
+    result['reuse_evidence'] = check_native(result, root, output)
+    shutil.rmtree(work)
+    return result
+
+
 def _correct(config, root):
+    if using_current(inventory(root)):
+        return _current_correct(config, root)
     project = Path(config['correct_project']).resolve(strict=True)
     parent_path = Path(config['correct_parent_result']).resolve(strict=True)
     service_path = Path(config['correct_service_result']).resolve(strict=True)
@@ -249,6 +363,48 @@ def _correct(config, root):
     return project, actual, commands, evidence, physical, service
 
 
+def _current_correct(config, root):
+    from tools.check_sqlite_extraction import proof_sources_digest
+    project = Path(config['correct_project']).resolve(strict=True)
+    result_path = Path(config['current_correct_result']).resolve(strict=True)
+    folder = result_path.parent
+    result = read(result_path)
+    view = plan(root)['views']['correct']
+    files = {name: sha(root/name) for name in view['files']}
+    if (head(project) != head(root) or result.get('source_commit') != head(root)
+            or result.get('complete') is not True or result['actual']['files'] != files
+            or result['actual']['audits'] != view['audits']
+            or proof_sources_digest(project) != proof_sources_digest(root)):
+        raise ValueError('current correct SQLite physical view differs')
+    for name in ('lean-toolchain', 'lake-manifest.json', 'tools/lean_session.py',
+                 'tools/proof_services.py', 'scripts/lean-mcp-server.sh'):
+        if sha(project/name) != sha(root/name):
+            raise ValueError('current correct SQLite tool or import differs: '+name)
+    if (sha(project/'lakefile.toml') != sha(root/'lake-sqlite.toml')
+            or not (project/'.lake/packages').samefile(root/'.lake/packages')
+            or not (project/'.tools').samefile(root/'.tools')):
+        raise ValueError('current correct SQLite Lake view or fixed tools differ')
+    labels = ['build', *('kernel-'+str(i) for i in range(len(files)))]
+    expected = [['lake', '--no-cache', 'build', 'SandproofSqlite.Audit'],
+                *(['lake', 'env', 'lean', name] for name in files)]
+    commands = result['commands']
+    if [(s['label'], s['argv']) for s in commands] != list(zip(labels, expected, strict=True)):
+        raise ValueError('current correct SQLite kernel command inventory differs')
+    evidence = {str(result_path): sha(result_path)}
+    for command in commands:
+        log = folder/(command['label']+'.log')
+        if command['exit_code'] != 0 or sha(log) != command['log_sha256']:
+            raise ValueError('current correct SQLite command did not pass: '+command['label'])
+        evidence[str(log)] = sha(log)
+    for name, wanted in files.items():
+        evidence[str(project/name)] = wanted
+    physical = folder/'physical-files'
+    for name in ('requests.jsonl', 'service.log'):
+        evidence[str(physical/name)] = sha(physical/name)
+    logs = [{'original_log': str(folder/(label+'.log'))} for label in labels[1:]]
+    return project, result['actual'], commands[1:], evidence, physical, {'kernel_reuse': logs}
+
+
 def _replay(root, replay, readback):
     result = original(root).consume_current_replay(root, replay, readback)
     evidence = {str(readback.resolve()): sha(readback)}
@@ -262,10 +418,10 @@ def _replay(root, replay, readback):
 
 def check(result, root=ROOT):
     root = Path(root)
+    revision = head(root) if using_current(inventory(root)) else SOURCE_COMMIT
     if (result.get('convergence_entry') != 'sqlite-commit' or result.get('mode') != 'formal'
-            or result.get('complete') is not True or result.get('source_commit') != SOURCE_COMMIT):
+            or result.get('complete') is not True or result.get('source_commit') != revision):
         raise ValueError('different finite SQLite formal component result')
-    inventory(root)
     from tools.check_sqlite_extraction import check_libraries
     check_libraries(root, root/'.tools')
     context = result['readback']
@@ -340,6 +496,11 @@ def check(result, root=ROOT):
                 neg/'lean/scripts/lean-mcp-server.sh', neg/'lean/tools/proof_services.py',
                 neg/'physical-check/kernel-0.log',
                 neg/'physical-check/physical-files/requests.jsonl', neg/'physical-check/physical-files/service.log']
+    if using_current(inventory(root)):
+        dependency = neg/'evidence/generated/SandproofSqlite/SlotData.lean'
+        if sha(dependency) != sha(root/LIB/'SlotData.lean'):
+            raise ValueError('SQLite negative dependency differs from the original model')
+        required.append(dependency)
     evidence.update({str(p.resolve()): sha(p) for p in required})
     if not evidence.items() <= result['reuse_evidence'].items():
         raise ValueError('original evidence was not bound into the final result')
@@ -351,10 +512,46 @@ def evidence(result, root=ROOT):
 
 
 def formal(output, config, root=ROOT):
-    inventory(root)
+    current = using_current(inventory(root))
     native_path = Path(config['native_result']).resolve(strict=True)
     reused = check_native(read(native_path), root, native_path.parent)
     reused[str(native_path)] = sha(native_path)
+    commands = []
+
+    def run(cwd, folder, label, argv):
+        argv = list(map(str, argv))
+        log = folder/(label+'.log')
+        started = time.monotonic()
+        with log.open('xb') as stream:
+            done = subprocess.run(argv, cwd=cwd, env=os.environ.copy(), stdin=subprocess.DEVNULL,
+                                  stdout=stream, stderr=subprocess.STDOUT)
+        commands.append(dict(label=label, argv=argv, cwd=str(cwd), exit_code=done.returncode,
+                             log_sha256=sha(log), seconds=time.monotonic()-started))
+        if done.returncode:
+            raise ValueError('original SQLite formal stage failed: '+label)
+
+    checker = module('sqlite_original_actual_files', root/'verification/experiments/stage1-protocol/formal.py')
+    if current:
+        replay = output/'current-replay'
+        run(root, output, 'original-replay', [sys.executable, root/HERE/'replay.py',
+            '--source-base', root, '--destination', replay, '--tool-root', root/'.tools'])
+        ready = replay/'source'
+        shutil.copy2(root/'lake-sqlite.toml', ready/'lakefile.toml')
+        (ready/'.tools').symlink_to((root/'.tools').resolve(strict=True), target_is_directory=True)
+        (ready/'.lake').mkdir(exist_ok=True)
+        (ready/'.lake/packages').symlink_to((root/'.lake/packages').resolve(strict=True), target_is_directory=True)
+        physical = output/'current-correct'
+        physical.mkdir()
+        begin = len(commands)
+        run(ready, physical, 'build', ['lake', '--no-cache', 'build', 'SandproofSqlite.Audit'])
+        actual = checker.actual_files(ready, plan(root)['views']['correct']['files'],
+                                     physical, os.environ.copy(), run)
+        current_result = physical/'result.json'
+        write(current_result, dict(source_commit=head(root), complete=True,
+            actual=actual, commands=commands[begin:]))
+        config = dict(config, correct_replay=str(replay), correct_project=str(ready),
+                      current_correct_result=str(current_result))
+        reused[str((output/'original-replay.log').resolve())] = sha(output/'original-replay.log')
     project, correct, _, retained, physical, service = _correct(config, root)
     reused.update(retained)
     copied = output/'correct-readback'
@@ -372,19 +569,6 @@ def formal(output, config, root=ROOT):
                 'SandproofSqlite/Types.lean', 'SandproofSqlite/Funs.lean', 'translation.json')}))
     _, original_replay = _replay(root, replay, registry)
     reused.update(original_replay)
-    commands = []
-
-    def run(cwd, folder, label, argv):
-        argv = list(map(str, argv))
-        log = folder/(label+'.log')
-        started = time.monotonic()
-        with log.open('xb') as stream:
-            done = subprocess.run(argv, cwd=cwd, env=os.environ.copy(), stdin=subprocess.DEVNULL,
-                                  stdout=stream, stderr=subprocess.STDOUT)
-        commands.append(dict(label=label, argv=argv, cwd=str(cwd), exit_code=done.returncode,
-                             log_sha256=sha(log), seconds=time.monotonic()-started))
-        if done.returncode:
-            raise ValueError('original SQLite formal stage failed: '+label)
 
     negative = output/'negative'
     run(root, output, 'original-negative', [sys.executable, root/HERE/'negative.py', '--formal-only',
@@ -404,7 +588,6 @@ def formal(output, config, root=ROOT):
     (child/'artifacts').mkdir()
     physical_output = negative/'physical-check'
     physical_output.mkdir()
-    checker = module('sqlite_original_actual_files', root/'verification/experiments/stage1-protocol/formal.py')
     wrong = checker.actual_files(child, ['Counterexample.lean'], physical_output, os.environ.copy(), run)
     # Preserve the actual inputs consumed by the original bad-Rust pipeline.
     for name in ('result.json', 'SameProperties.lean', 'Counterexample.lean', 'native-rejected.log',
@@ -419,13 +602,17 @@ def formal(output, config, root=ROOT):
                  physical_output/'physical-files/requests.jsonl', physical_output/'physical-files/service.log',
                  output/'original-negative.log']:
         reused[str(path.resolve())] = sha(path)
-    for index in range(8):
+    if current:
+        dependency = negative/'evidence/generated/SandproofSqlite/SlotData.lean'
+        reused[str(dependency.resolve())] = sha(dependency)
+    for index in range(len(plan(root)['views']['correct']['files'])):
         path = copied/('kernel-'+str(index)+'.log')
         reused[str(path.resolve())] = sha(path)
     for name in ('requests.jsonl', 'service.log'):
         path = copied/'physical-files'/name
         reused[str(path.resolve())] = sha(path)
-    result = dict(convergence_entry='sqlite-commit', mode='formal', complete=True, source_commit=SOURCE_COMMIT,
+    result = dict(convergence_entry='sqlite-commit', mode='formal', complete=True,
+        source_commit=head(root) if current else SOURCE_COMMIT,
         actuals=[correct, wrong], commands=commands, reuse_evidence=reused,
         readback={**config, 'native_result':str(native_path), 'correct_replay':str(replay),
                   'correct_readback':str(copied), 'registry_readback':str(registry), 'negative':str(negative)})
@@ -494,11 +681,26 @@ def main():
     args = parser.parse_args()
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != args.mode:
         raise ValueError('ordinary work belongs on Ning; formal work on the proof host')
+    output = args.output.absolute()
+    output.mkdir(parents=True, exist_ok=False)
+    if using_current(inventory(ROOT)):
+        if args.mode == 'native':
+            result = current_native(output, ROOT)
+        else:
+            from tools.acceptance_receipts import digest, native_case
+            cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
+            scope = read(cache/'complete.json')['scope']
+            if scope not in ('all', 'stage1-protocol', 'stage1-protocol-convergence'):
+                raise ValueError('different native scope for the current SQLite component')
+            receipt = native_case('stage1-sqlite-commit', ROOT, None, scope=scope)
+            native_path = cache/'commands'/digest(receipt['key'])/'evidence/result.json'
+            result = formal(output, {'native_result': str(native_path)})
+        write(output/'result.json', result)
+        print(json.dumps(dict(complete=True, convergence_entry='sqlite-commit', mode=args.mode)))
+        return
     config = read(Path(os.environ[INPUTS_ENV]))
     if config.get('schema') != 1:
         raise ValueError('unknown private SQLite location manifest')
-    output = args.output.absolute()
-    output.mkdir(parents=True, exist_ok=False)
     selected = config[args.mode]
     if args.mode == 'formal' and 'completed_result' in selected:
         if set(selected) != {'completed_result'}:

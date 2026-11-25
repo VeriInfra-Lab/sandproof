@@ -36,12 +36,16 @@ CONVERGENCE = _convergence()
 _unload_spec = importlib.util.spec_from_file_location('stage1_unload_audits', ROOT/HERE/'unload_audits.py')
 UNLOAD = importlib.util.module_from_spec(_unload_spec)
 _unload_spec.loader.exec_module(UNLOAD)
+CPU_PINNED_UNLOAD_JOBS = (UNLOAD.LABEL, UNLOAD.PARENT_LABEL)
 PROFILES = ('full', 'create-delivery', CONVERGENCE.PROFILE)
 CREATE_SCOPE = 'stage1-create-delivery'
 CREATE_SOURCE_ENV = 'SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE'
-FULL_WORKERS = (1, 2, 4)
+FULL_WORKERS = (1, 2, 4, 8)
 CREATE_WORKERS = (1, 2, 4, 8, 12)
 CREATE_CPUS_PER_JOB = 4
+ROOT_PROVIDER_PACKAGES = (
+    'digest-uses', 'record-reply', 'standard-blob', 'standard-digest', 'standard-save-digest',
+)
 
 
 def _original_reader(root=ROOT):
@@ -353,14 +357,15 @@ NATIVE_DRIVERS = (
     ('source-live', 'tools/check_source_live_components.py', False),
     *V3_SLICE_NATIVE_DRIVERS,
     (UNLOAD.LABEL, str(UNLOAD.DRIVER), False),
+    (UNLOAD.PARENT_LABEL, str(UNLOAD.PARENT_DRIVER), False),
     *CREATE_NATIVE_DRIVERS,
     *(row for row in CONVERGENCE.NATIVE_DRIVERS if row[0] not in {v[0] for v in CREATE_NATIVE_DRIVERS}),
 )
 CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
 NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
     'stage1-protocol-'+name for name in CRATE_CASES)
-AUDIT_TEMPLATE_COUNT = 650
-AUDIT_DECLARATION_COUNT = 2729
+AUDIT_TEMPLATE_COUNT = 676
+AUDIT_DECLARATION_COUNT = 2952
 
 
 def native_labels(profile='full'):
@@ -591,6 +596,10 @@ def validate_metadata_inputs(root=ROOT, *, profile='full'):
         fields = ('inputs', 'base_sources', 'production_inputs')
         if path.parent in {HERE/name for name in (*CREATE_CASES, *CONVERGENCE.CASES)}:
             fields += ('source_inputs',)
+        if path.name == 'inventory.json' and path.parent.parent == HERE and path.parent.name in ROOT_PROVIDER_PACKAGES:
+            if 'providers' not in data:
+                raise ValueError('missing reviewed providers in registered inventory: ' + name)
+            fields += ('providers',)
         if path.name == 'frozen.json':
             fields += ('extraction_inputs', 'native_rust_inputs')
         for field in fields:
@@ -614,7 +623,7 @@ def validate_registration(root=ROOT, *, profile='full'):
     """Fail before execution if a required native case or Rust mutant was lost."""
     check_profile(profile)
     create_profile(root)
-    if len(NATIVE_CASES) != 78 or len(set(NATIVE_CASES)) != 78:
+    if len(NATIVE_CASES) != 79 or len(set(NATIVE_CASES)) != 79:
         raise ValueError('duplicate native registration')
     if profile == 'full':
         for name, variants in INBOX_CASES.items():
@@ -667,10 +676,11 @@ def run_native(root, work, *, profile='full', scope=None):
     for label, driver, needs_archive in drivers:
         output = work/label
         args = ['--output', output]
-        if label in ('stage1-sqlite-commit', 'source-live', UNLOAD.LABEL):
+        if label in ('stage1-sqlite-commit', 'source-live', *CPU_PINNED_UNLOAD_JOBS):
             args.insert(0, 'native')
+        accepted_parser = label == 'stage1-accepted-json-parser'
         native_pass_fds = ()
-        if Path(driver).parent.name in CONVERGENCE.LOCKED_NATIVE:
+        if accepted_parser or Path(driver).parent.name in CONVERGENCE.LOCKED_NATIVE:
             path = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK')
             descriptor = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK_FD')
             if path is None or descriptor is None:
@@ -685,12 +695,12 @@ def run_native(root, work, *, profile='full', scope=None):
             args += ['--source-archive', archive, '--target', target]
 
         success_field = ('success' if needs_archive else 'development_complete'
-                         if label == 'stage1-accepted-json-parser' else 'complete')
+                         if accepted_parser else 'complete')
         def action(driver=Path(driver), args=args, output=output, pass_fds=native_pass_fds,
-                   success_field=success_field):
+                   success_field=success_field, accepted_parser=accepted_parser):
             affinity = None
             admission = None
-            if profile == CONVERGENCE.PROFILE or driver.parent.name in CONVERGENCE.CASES:
+            if accepted_parser or profile == CONVERGENCE.PROFILE or driver.parent.name in CONVERGENCE.CASES:
                 allowed = sorted(os.sched_getaffinity(0))
                 if len(allowed) < CREATE_CPUS_PER_JOB:
                     raise ValueError('convergence native child requires four admitted CPUs')
@@ -892,6 +902,8 @@ def formal_plan(output, *, root=ROOT, profile='full'):
         native=('stage1-create-transaction-link', 'stage1-original-source-rows'),
         cases=('transaction', 'source-rows'))
     add(UNLOAD.LABEL, UNLOAD.DRIVER, ['formal'], native=(UNLOAD.LABEL,), cases=UNLOAD.PACKAGES)
+    add(UNLOAD.PARENT_LABEL, UNLOAD.PARENT_DRIVER, ['formal'],
+        native=(UNLOAD.PARENT_LABEL,), cases=UNLOAD.PARENT_CASES)
     CONVERGENCE.append_jobs(jobs, output, root, profile=profile)
     _append_create_jobs(jobs, output, root, profile)
     return CONVERGENCE.append_extra_jobs(jobs, output, root, profile=profile)
@@ -967,10 +979,17 @@ def _check_fixed_protocol_record(original, job):
 def _check_actual(result, job):
     if result.get('complete') is not True:
         raise ValueError('original formal driver incomplete: ' + job['name'])
+    if job['name'] == UNLOAD.PARENT_LABEL:
+        if any(not re.fullmatch(r'[0-9a-f]{64}', result.get(key, ''))
+               for key in ('source_sha256', 'native_result_sha256')):
+            raise ValueError('missing original parent transaction input or formal case')
+        UNLOAD.check_parent_audits(ROOT, result, None)
+        return
     if job['name'] == UNLOAD.LABEL:
         if (result.get('kind') != UNLOAD.KIND or result.get('frozen_inputs') != UNLOAD.frozen_inputs(ROOT)
-                or not re.fullmatch(r'[0-9a-f]{64}', result.get('native_result_sha256', ''))):
-            raise ValueError('missing original unload source or native receipt')
+                or any(not re.fullmatch(r'[0-9a-f]{64}', result.get(key, ''))
+                       for key in ('native_result_sha256', 'source_sha256'))):
+            raise ValueError('missing current unload source or native receipt')
         if set(result.get('cases', {})) != set(UNLOAD.PACKAGES):
             raise ValueError('missing or extra original unload package')
         templates = audit_templates(ROOT)
@@ -1206,6 +1225,10 @@ def compute_retained_coverage(root, record):
             folder = result_path.parent
         else:
             continue
+        # These producers pass the original client a nested actual-files output.
+        # Honor their exact layout without scanning for a replacement log.
+        if job.get('convergence_package') in ('restore-work', 'restore-lifetime', 'native-readiness'):
+            folder /= 'actual-files'
         include(actual, folder, job['name'], result_path, row['result_sha256'], job['name'])
     if set(coverage) != set(sources):
         raise ValueError('retained Protocol lacks exact correct-view coverage: ' + repr(sorted(set(sources)-set(coverage))))
@@ -1237,6 +1260,11 @@ def _execution_helper(root):
 
 def profile_is_convergence_job(job):
     return job.get('profile') == CONVERGENCE.PROFILE
+
+
+def requires_formal_cpu_slot(job):
+    return (job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS)
+            or any(key in job for key in ('create_package', 'convergence_package', 'convergence_extra')))
 
 
 def _job_description(job):
@@ -1391,7 +1419,7 @@ def _kernel_commands(value):
             yield from _kernel_commands(child)
 
 
-def _saved_physical_view(actual, project, physical, commands):
+def _saved_physical_view(actual, project, physical, commands, *, repeat_across_pages=False):
     """Read the same complete/fresh diagnostic predicates as proof_services.
 
     No service is replayed or invoked here; these are original saved messages.
@@ -1451,11 +1479,11 @@ def _saved_physical_view(actual, project, physical, commands):
                                  str(item.get('message', item.get('data', ''))))
             if match:
                 checked.append(match[1])
-        if set(expected) != set(checked):
+        if len(set(expected)) != len(expected) or sorted(expected) != sorted(checked):
             raise ValueError('original service audit differs from physical source')
         expected_audits.extend(expected)
         observed_audits.extend(checked)
-    if (len(set(expected_audits)) != len(expected_audits)
+    if ((not repeat_across_pages and len(set(expected_audits)) != len(expected_audits))
             or sorted(expected_audits) != sorted(observed_audits)
             or sorted(expected_audits) != sorted(actual['audits'])):
         raise ValueError('missing/duplicate original component audit')
@@ -1490,7 +1518,7 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                 evidence[str(origin)] = _sha(origin)
         evidence[str(result_path.resolve())] = _sha(result_path)
         evidence[str(log.resolve())] = _sha(log)
-        if profile_is_convergence_job(job):
+        if requires_formal_cpu_slot(job):
             admission = log.parent/'cpu-admission.json'
             _check_cpu_admission(admission)
             evidence[str(admission.resolve())] = _sha(admission)
@@ -1521,11 +1549,10 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                for name in evidence):
         raise ValueError('missing original raw LLBC evidence')
     if job['name'] == UNLOAD.LABEL:
-        for package in UNLOAD.PACKAGES:
-            for name, expected in UNLOAD.capture_hashes(ROOT, package).items():
-                capture = folder/'artifacts'/package/(name+'.llbc')
-                if evidence.get(str(capture)) != expected:
-                    raise ValueError('missing or changed original unload capture: ' + str(capture))
+        UNLOAD.check_current_captures(ROOT, folder, result, evidence)
+    if job['name'] == UNLOAD.PARENT_LABEL:
+        UNLOAD.check_parent_audits(ROOT, result, folder)
+        UNLOAD.check_parent_captures(folder, result, evidence)
     commands = list(_kernel_commands(result))
     views = list(_actual_views(result))
     if job['actual_files'] and not views:
@@ -1540,14 +1567,21 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                          if evidence[str(path)] == actual['service_log_sha256']), None)
         if project is None or physical is None or not project.resolve().is_relative_to(folder.resolve()):
             raise ValueError('original physical project/service evidence is missing')
-        _saved_physical_view(actual, project, physical, commands)
+        repeated = job['name'] == UNLOAD.PARENT_LABEL and 'UnloadParentLink.lean' in actual['files']
+        _saved_physical_view(actual, project, physical, commands, repeat_across_pages=repeated)
         for name, digest in actual['files'].items():
             if evidence.get(str((project/name).resolve())) != digest:
                 raise ValueError('physical proof is absent from the complete evidence inventory')
+    if job.get('convergence_package') == 'protocol-record':
+        evidence.update(CONVERGENCE.caller_evidence(ROOT).check_physical(
+            ROOT, job, result, folder, evidence, _shared(), _original_file))
+    if job.get('convergence_package') == 'standard-save-digest' and 'blob_update' in result:
+        CONVERGENCE.component(ROOT, 'standard-save-digest').check_blob_evidence(
+            result, ROOT, folder, evidence)
     if log.is_symlink() or not log.is_file():
         raise ValueError('missing original command log')
     evidence[str(log.resolve())] = _sha(log)
-    if job['name'] in ('source-live', 'v3-transaction-source', UNLOAD.LABEL) or 'create_package' in job or profile_is_convergence_job(job):
+    if requires_formal_cpu_slot(job):
         admission = log.parent/'cpu-admission.json'
         _check_cpu_admission(admission)
         evidence[str(admission.resolve())] = _sha(admission)
@@ -1571,13 +1605,14 @@ def _check_cpu_admission(path, expected=None):
 
 
 def _cpu_slots(profile, jobs, allowed=None):
-    """Exclusive slots for explicit Create; full keeps its original workers."""
+    """Allocate disjoint slots for finite profiles and eight-worker full runs."""
     allowed = list(os.sched_getaffinity(0) if allowed is None else allowed)
     if not allowed or any(type(n) is not int or n < 0 for n in allowed) or len(set(allowed)) != len(allowed):
         raise ValueError('invalid actual parent CPU affinity')
     allowed.sort()
-    if profile in ('create-delivery', CONVERGENCE.PROFILE) and len(allowed) < jobs*CREATE_CPUS_PER_JOB:
-        raise ValueError(f'Create requires {jobs*CREATE_CPUS_PER_JOB} admitted CPUs for {jobs} workers')
+    exclusive = profile in ('create-delivery', CONVERGENCE.PROFILE) or jobs == 8
+    if exclusive and len(allowed) < jobs * CREATE_CPUS_PER_JOB:
+        raise ValueError(f'{profile} requires {jobs * CREATE_CPUS_PER_JOB} admitted CPUs for {jobs} workers')
     if len(allowed) < CREATE_CPUS_PER_JOB:
         raise ValueError('Create jobs require four admitted CPUs')
     groups = [tuple(allowed[i:i+CREATE_CPUS_PER_JOB])
@@ -1627,7 +1662,7 @@ def _reuse_job(helper, job, context, previous):
         if _checkpoint_evidence(helper, job, result, result_path,
                 Path(receipt['command_log'])) != receipt['evidence']:
             raise ValueError('original evidence inventory changed')
-        if job['name'] in ('source-live', 'v3-transaction-source', UNLOAD.LABEL) or 'create_package' in job or profile_is_convergence_job(job):
+        if requires_formal_cpu_slot(job):
             admission = Path(receipt['command_log']).parent/'cpu-admission.json'
             if (previous.get('cpu_admission') != _check_cpu_admission(admission)
                     or previous.get('cpu_admission_path') != str(admission)
@@ -1666,7 +1701,7 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
         driver = HERE/'original_readback.py'
         args = ['run', '--job', job['name']]
     pass_fds = ()
-    if retained or job['name'] == UNLOAD.LABEL:
+    if retained or job['name'] in CPU_PINNED_UNLOAD_JOBS:
         fd, _ = inherited_lock()
         pass_fds = (fd,)
     elif (job['name'] in ('source-live', 'v3-transaction-source') or 'create_package' in job
@@ -1683,13 +1718,13 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
     env = dict(os.environ, SANDPROOF_FORMAL_CACHE=str(directory/'runtime-cache'),
                CARGO_TARGET_DIR=str(directory/'cargo-target'), PYTHONDONTWRITEBYTECODE='1')
     transport = dict(pass_fds=pass_fds) if pass_fds else {}
-    if job['name'] in ('source-live', 'v3-transaction-source', UNLOAD.LABEL) or 'create_package' in job or profile_is_convergence_job(job):
+    if requires_formal_cpu_slot(job):
         transport.update(cpu_affinity=cpu_affinity, cpu_admission=directory/'cpu-admission.json')
     argv = _invoke(root, driver, args, env, log=directory/'command.log', **transport)
     row = dict(name=job['name'], argv=argv, result_path=str(Path(job['output'])/'result.json'),
                 seconds=time.monotonic()-started, command_log=str(directory/'command.log'),
                 runtime_seed_sha256=seed_sha256)
-    if job['name'] in ('source-live', 'v3-transaction-source', UNLOAD.LABEL) or 'create_package' in job or profile_is_convergence_job(job):
+    if requires_formal_cpu_slot(job):
         admission = directory/'cpu-admission.json'
         row.update(cpu_admission=_check_cpu_admission(admission, cpu_affinity),
                    cpu_admission_path=str(admission), cpu_admission_sha256=_sha(admission))
@@ -1715,8 +1750,8 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
                 or Path(job['output']).resolve() != (output/job['name']).resolve()
                 or Path(job['output']).exists()):
             raise ValueError('job must use its original descriptor and new private output')
-    slots = (_cpu_slots(profile, jobs) if profile == CONVERGENCE.PROFILE
-             or any('create_package' in j for j in plan) else [None]*jobs)
+    slots = (_cpu_slots(profile, jobs) if any(requires_formal_cpu_slot(job) for job in plan)
+             else [None]*jobs)
     helper, shared = _execution_helper(root), _shared()
     context_path = output/'execution-inputs.json'
     shared.write_json(context_path, context)
@@ -1744,8 +1779,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
             while pending and len(inflight) < jobs and not stopped:
                 job = pending.pop(0)
                 slot = free_slots.pop(0)
-                options = (dict(cpu_affinity=slots[slot]) if job['name'] in ('source-live', 'v3-transaction-source', UNLOAD.LABEL) or 'create_package' in job
-                           or profile_is_convergence_job(job) else {})
+                options = dict(cpu_affinity=slots[slot]) if requires_formal_cpu_slot(job) else {}
                 if profile_is_convergence_job(job):
                     options['original_readback'] = not recompute
                 future = executor.submit(_launch_job, root, job, output/'execution'/job['name'], paths,
@@ -1794,7 +1828,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
 
 def _execution_options(jobs=None, resume_from=None, recompute=False, *, profile='full'):
     allowed = CREATE_WORKERS if check_profile(profile) in ('create-delivery', CONVERGENCE.PROFILE) else FULL_WORKERS
-    choices = '1, 2, 4, 8 or 12' if profile in ('create-delivery', CONVERGENCE.PROFILE) else '1, 2 or 4'
+    choices = '1, 2, 4, 8 or 12' if profile in ('create-delivery', CONVERGENCE.PROFILE) else '1, 2, 4 or 8'
     sources = dict(workers='argument' if jobs is not None else 'default',
                    resume_from='argument' if resume_from is not None else 'default')
     if jobs is None:
@@ -1914,13 +1948,20 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
             argv = _invoke(root, HERE/name/'test_binding.py', [], env)
             record['source_admission_regressions'].append(dict(name=name, argv=argv,
                                                                llbc_sha256=_sha(capture)))
-        expected_audits = ({audit for audits in audit_templates(root).values() for audit in audits}
+        templates = audit_templates(root) if profile == 'full' else {}
+        expected_audits = ({audit for audits in templates.values() for audit in audits}
             if profile == 'full' else {a for job in plan for view in job['views'].values() for a in view['audits']})
         observed_audits = retained_audits(record) if profile == 'full' else set()
+        actuals, composed = [], {}
         for checked in record['results']:
             result = _read(Path(checked['result_path']))
-            for actual in _actuals(result):
+            views = _actuals(result)
+            actuals.extend(views)
+            for actual in views:
                 observed_audits.update(actual.get('audits', ()))
+            if checked['name'] == UNLOAD.PARENT_LABEL:
+                name = 'RevisionReadyTransport.lean'
+                composed[name] = result['cases']['revision']['files'][name]
         record['template_audits'] = dict(expected=sorted(expected_audits), observed=sorted(observed_audits),
             missing=sorted(expected_audits-observed_audits),
             scope=('all template declarations; retained component audits also enter the public total gate'
@@ -1930,6 +1971,10 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
             raise ValueError('registered template audit declarations missing: '
                              + repr(record['template_audits']['missing']))
         if profile == 'full':
+            record['template_audits']['unload_parent'] = UNLOAD.parent_audit_pages(root, templates, actuals, composed)
+            if record['template_audits']['unload_parent']['missing']:
+                raise ValueError('missing actual unload parent audit pages: '
+                                 + repr(record['template_audits']['unload_parent']['missing']))
             record['retained_source_files'] = compute_retained_coverage(root, record)
             record['retained_inventory_sha256'] = _sha(root/HERE/'retained-protocol.json')
         elif expected_audits != observed_audits:

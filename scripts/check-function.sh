@@ -125,7 +125,12 @@ check_begin diagnostics-clippy lint
 cargo --config scripts/check-profiles.toml clippy --locked -p sandproof-controller-service --all-targets --features contention-diagnostics -- -D warnings
 check_end
 check_begin diagnostics-tests test
-cargo --config scripts/check-profiles.toml test --locked -p sandproof-controller-service --features contention-diagnostics
+# The preceding workspace stage ran these journal-only stress cases. The
+# diagnostics feature changes the application mutex, outside their call paths.
+cargo --config scripts/check-profiles.toml test --locked -p sandproof-controller-service --features contention-diagnostics -- --exact \
+  --skip controller::checkpoint::tests::build_capacity::private_settlement_reuses_one_slot_at_exact_sql_and_result_reservation_edges \
+  --skip controller::checkpoint::tests::build_capacity::unknown_private_anchor_keeps_only_its_own_credit_while_other_slot_churns \
+  --skip controller::checkpoint::tests::capacity::long_churn_keeps_old_running_and_unknown_but_bounds_tail_sql_and_pages
 check_end
 
 if [[ "$check_mode" == linux ]]; then

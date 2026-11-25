@@ -61,6 +61,9 @@
     "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
     "sandbox-protocol/src/lifecycle/terminal.rs": "5daf92c2ea486d187b91f8c2e38e863353ff55bc373b819a3ede9af3792f7396"
   },
+  "current_file_overrides": {
+    "controller-service/src/host_contract.rs": "5b94f7e4b3e7e3bf140462e7f43462af7aec698e524a3c9e58eff13001bb2d5d"
+  },
   "entry": "ControllerJournal::record_lifecycle_intent",
   "after_begin": "same WorldTransaction, original namespace, unit StandardRecordCodec",
   "production_dictionaries": [

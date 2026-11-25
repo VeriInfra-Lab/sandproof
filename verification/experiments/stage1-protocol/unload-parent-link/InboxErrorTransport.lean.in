@@ -1,0 +1,575 @@
+import SourceParentLink
+import InboxParentCarriers
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport
+
+-- Full constructor transports only. No controller decision or World conversion.
+def toSourceRetirementReject : SandproofStage1RequestRust.sandbox_controller_core.maintenance.retirement.RetirementReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.retirement.RetirementReject
+  | .Disabled => .Disabled
+  | .ControllerDown => .ControllerDown
+  | .SandboxNotFound => .SandboxNotFound
+  | .CertificateMismatch => .CertificateMismatch
+  | .NotTerminal => .NotTerminal
+  | .LedgerMismatch => .LedgerMismatch
+  | .ResourcesNotReclaimed => .ResourcesNotReclaimed
+  | .UnresolvedEffects => .UnresolvedEffects
+  | .SnapshotHistoryUnsupported => .SnapshotHistoryUnsupported
+  | .DependencyNotClosed => .DependencyNotClosed
+  | .RetentionExpired => .RetentionExpired
+  | .RetentionCapacity => .RetentionCapacity
+  | .IdentityBarrierMissing => .IdentityBarrierMissing
+
+def toInboxRetirementReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.retirement.RetirementReject → SandproofStage1RequestRust.sandbox_controller_core.maintenance.retirement.RetirementReject
+  | .Disabled => .Disabled
+  | .ControllerDown => .ControllerDown
+  | .SandboxNotFound => .SandboxNotFound
+  | .CertificateMismatch => .CertificateMismatch
+  | .NotTerminal => .NotTerminal
+  | .LedgerMismatch => .LedgerMismatch
+  | .ResourcesNotReclaimed => .ResourcesNotReclaimed
+  | .UnresolvedEffects => .UnresolvedEffects
+  | .SnapshotHistoryUnsupported => .SnapshotHistoryUnsupported
+  | .DependencyNotClosed => .DependencyNotClosed
+  | .RetentionExpired => .RetentionExpired
+  | .RetentionCapacity => .RetentionCapacity
+  | .IdentityBarrierMissing => .IdentityBarrierMissing
+
+@[simp] theorem recoverRetirementReject (value : SandproofStage1RequestRust.sandbox_controller_core.maintenance.retirement.RetirementReject) :
+    toInboxRetirementReject (toSourceRetirementReject value) = value := by
+  cases value <;> simp [toSourceRetirementReject, toInboxRetirementReject]
+
+@[simp] theorem reflectRetirementReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.retirement.RetirementReject) :
+    toSourceRetirementReject (toInboxRetirementReject value) = value := by
+  cases value <;> simp [toSourceRetirementReject, toInboxRetirementReject]
+
+def toSourceSlotReject : SandproofStage1RequestRust.sandbox_controller_core.maintenance.slots.SlotReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.slots.SlotReject
+  | .OutOfRange => .OutOfRange
+  | .BindingMismatch => .BindingMismatch
+  | .NotFree => .NotFree
+  | .NotOccupied => .NotOccupied
+  | .NotReleasing => .NotReleasing
+  | .StaleIdentity => .StaleIdentity
+  | .IdentityAlreadyBound => .IdentityAlreadyBound
+
+def toInboxSlotReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.slots.SlotReject → SandproofStage1RequestRust.sandbox_controller_core.maintenance.slots.SlotReject
+  | .OutOfRange => .OutOfRange
+  | .BindingMismatch => .BindingMismatch
+  | .NotFree => .NotFree
+  | .NotOccupied => .NotOccupied
+  | .NotReleasing => .NotReleasing
+  | .StaleIdentity => .StaleIdentity
+  | .IdentityAlreadyBound => .IdentityAlreadyBound
+
+@[simp] theorem recoverSlotReject (value : SandproofStage1RequestRust.sandbox_controller_core.maintenance.slots.SlotReject) :
+    toInboxSlotReject (toSourceSlotReject value) = value := by
+  cases value <;> simp [toSourceSlotReject, toInboxSlotReject]
+
+@[simp] theorem reflectSlotReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.slots.SlotReject) :
+    toSourceSlotReject (toInboxSlotReject value) = value := by
+  cases value <;> simp [toSourceSlotReject, toInboxSlotReject]
+
+def toSourceWindowReject : SandproofStage1RequestRust.sandbox_controller_core.maintenance.windows.WindowReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.windows.WindowReject
+  | .InvalidLimits => .InvalidLimits
+  | .InvalidState => .InvalidState
+  | .InvalidDuration => .InvalidDuration
+  | .ClockRegression => .ClockRegression
+  | .TimeOverflow => .TimeOverflow
+  | .IdExhausted => .IdExhausted
+  | .CapacityExceeded => .CapacityExceeded
+  | .UnknownWindow => .UnknownWindow
+  | .ClosedWindow => .ClosedWindow
+  | .WrongTenant => .WrongTenant
+
+def toInboxWindowReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.windows.WindowReject → SandproofStage1RequestRust.sandbox_controller_core.maintenance.windows.WindowReject
+  | .InvalidLimits => .InvalidLimits
+  | .InvalidState => .InvalidState
+  | .InvalidDuration => .InvalidDuration
+  | .ClockRegression => .ClockRegression
+  | .TimeOverflow => .TimeOverflow
+  | .IdExhausted => .IdExhausted
+  | .CapacityExceeded => .CapacityExceeded
+  | .UnknownWindow => .UnknownWindow
+  | .ClosedWindow => .ClosedWindow
+  | .WrongTenant => .WrongTenant
+
+@[simp] theorem recoverWindowReject (value : SandproofStage1RequestRust.sandbox_controller_core.maintenance.windows.WindowReject) :
+    toInboxWindowReject (toSourceWindowReject value) = value := by
+  cases value <;> simp [toSourceWindowReject, toInboxWindowReject]
+
+@[simp] theorem reflectWindowReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.windows.WindowReject) :
+    toSourceWindowReject (toInboxWindowReject value) = value := by
+  cases value <;> simp [toSourceWindowReject, toInboxWindowReject]
+
+def toSourceMaintenanceReject : SandproofStage1RequestRust.sandbox_controller_core.maintenance.MaintenanceReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.MaintenanceReject
+  | .ControllerDown => .ControllerDown
+  | .Disabled => .Disabled
+  | .AlreadyEnabled => .AlreadyEnabled
+  | .InvalidLimits => .InvalidLimits
+  | .TimeRegression => .TimeRegression
+  | .ResourceMismatch => .ResourceMismatch
+  | .ResourcesNotReclaimed => .ResourcesNotReclaimed
+  | .UnresolvedWork => .UnresolvedWork
+  | .Retirement value0 => .Retirement (toSourceRetirementReject value0)
+  | .Slot value0 => .Slot (toSourceSlotReject value0)
+  | .Window value0 => .Window (toSourceWindowReject value0)
+
+def toInboxMaintenanceReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.MaintenanceReject → SandproofStage1RequestRust.sandbox_controller_core.maintenance.MaintenanceReject
+  | .ControllerDown => .ControllerDown
+  | .Disabled => .Disabled
+  | .AlreadyEnabled => .AlreadyEnabled
+  | .InvalidLimits => .InvalidLimits
+  | .TimeRegression => .TimeRegression
+  | .ResourceMismatch => .ResourceMismatch
+  | .ResourcesNotReclaimed => .ResourcesNotReclaimed
+  | .UnresolvedWork => .UnresolvedWork
+  | .Retirement value0 => .Retirement (toInboxRetirementReject value0)
+  | .Slot value0 => .Slot (toInboxSlotReject value0)
+  | .Window value0 => .Window (toInboxWindowReject value0)
+
+@[simp] theorem recoverMaintenanceReject (value : SandproofStage1RequestRust.sandbox_controller_core.maintenance.MaintenanceReject) :
+    toInboxMaintenanceReject (toSourceMaintenanceReject value) = value := by
+  cases value <;> simp [toSourceMaintenanceReject, toInboxMaintenanceReject]
+
+@[simp] theorem reflectMaintenanceReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.maintenance.MaintenanceReject) :
+    toSourceMaintenanceReject (toInboxMaintenanceReject value) = value := by
+  cases value <;> simp [toSourceMaintenanceReject, toInboxMaintenanceReject]
+
+def toSourceReject : SandproofStage1RequestRust.sandbox_controller_core.request.Reject → SandproofOriginalSourceRowsRust.sandbox_controller_core.request.Reject
+  | .ControllerDown => .ControllerDown
+  | .SandboxExists => .SandboxExists
+  | .SandboxNotFound => .SandboxNotFound
+  | .WorkspaceExists => .WorkspaceExists
+  | .OperationExists => .OperationExists
+  | .OperationPlanExists => .OperationPlanExists
+  | .Unauthorized => .Unauthorized
+  | .WrongPhase => .WrongPhase
+  | .Terminal => .Terminal
+  | .NoCurrentVm => .NoCurrentVm
+  | .SnapshotUnavailable => .SnapshotUnavailable
+  | .OperationUnavailable => .OperationUnavailable
+  | .OperationNotCompensable => .OperationNotCompensable
+  | .OperationAlreadyFinal => .OperationAlreadyFinal
+  | .LedgerMismatch => .LedgerMismatch
+  | .FailureUnjustified => .FailureUnjustified
+  | .CounterExhausted => .CounterExhausted
+  | .RetiredIdentity => .RetiredIdentity
+  | .ResultExpired => .ResultExpired
+
+def toInboxReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.request.Reject → SandproofStage1RequestRust.sandbox_controller_core.request.Reject
+  | .ControllerDown => .ControllerDown
+  | .SandboxExists => .SandboxExists
+  | .SandboxNotFound => .SandboxNotFound
+  | .WorkspaceExists => .WorkspaceExists
+  | .OperationExists => .OperationExists
+  | .OperationPlanExists => .OperationPlanExists
+  | .Unauthorized => .Unauthorized
+  | .WrongPhase => .WrongPhase
+  | .Terminal => .Terminal
+  | .NoCurrentVm => .NoCurrentVm
+  | .SnapshotUnavailable => .SnapshotUnavailable
+  | .OperationUnavailable => .OperationUnavailable
+  | .OperationNotCompensable => .OperationNotCompensable
+  | .OperationAlreadyFinal => .OperationAlreadyFinal
+  | .LedgerMismatch => .LedgerMismatch
+  | .FailureUnjustified => .FailureUnjustified
+  | .CounterExhausted => .CounterExhausted
+  | .RetiredIdentity => .RetiredIdentity
+  | .ResultExpired => .ResultExpired
+
+@[simp] theorem recoverReject (value : SandproofStage1RequestRust.sandbox_controller_core.request.Reject) :
+    toInboxReject (toSourceReject value) = value := by
+  cases value <;> simp [toSourceReject, toInboxReject]
+
+@[simp] theorem reflectReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.request.Reject) :
+    toSourceReject (toInboxReject value) = value := by
+  cases value <;> simp [toSourceReject, toInboxReject]
+
+def toSourceEffectReject : SandproofStage1RequestRust.sandbox_controller_core.effect.EffectReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.effect.EffectReject
+  | .ControllerDown => .ControllerDown
+  | .EffectNotFound => .EffectNotFound
+  | .LogicalEffectNotFound => .LogicalEffectNotFound
+  | .LogicalEffectAlreadyFinal => .LogicalEffectAlreadyFinal
+  | .NotDispatchable => .NotDispatchable
+  | .NotAwaitingResult => .NotAwaitingResult
+  | .InvalidOutcomeEvidence => .InvalidOutcomeEvidence
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .NotDispatched => .NotDispatched
+  | .CurrentAttemptNotFailed => .CurrentAttemptNotFailed
+  | .FailureMismatch => .FailureMismatch
+  | .FailureNotRetryable => .FailureNotRetryable
+  | .RetryBudgetExhausted => .RetryBudgetExhausted
+  | .NextAttemptExists => .NextAttemptExists
+  | .RetryStillAvailable => .RetryStillAvailable
+  | .CounterExhausted => .CounterExhausted
+  | .InvalidRetirementEvidence => .InvalidRetirementEvidence
+  | .EffectRetired => .EffectRetired
+
+def toInboxEffectReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.effect.EffectReject → SandproofStage1RequestRust.sandbox_controller_core.effect.EffectReject
+  | .ControllerDown => .ControllerDown
+  | .EffectNotFound => .EffectNotFound
+  | .LogicalEffectNotFound => .LogicalEffectNotFound
+  | .LogicalEffectAlreadyFinal => .LogicalEffectAlreadyFinal
+  | .NotDispatchable => .NotDispatchable
+  | .NotAwaitingResult => .NotAwaitingResult
+  | .InvalidOutcomeEvidence => .InvalidOutcomeEvidence
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .NotDispatched => .NotDispatched
+  | .CurrentAttemptNotFailed => .CurrentAttemptNotFailed
+  | .FailureMismatch => .FailureMismatch
+  | .FailureNotRetryable => .FailureNotRetryable
+  | .RetryBudgetExhausted => .RetryBudgetExhausted
+  | .NextAttemptExists => .NextAttemptExists
+  | .RetryStillAvailable => .RetryStillAvailable
+  | .CounterExhausted => .CounterExhausted
+  | .InvalidRetirementEvidence => .InvalidRetirementEvidence
+  | .EffectRetired => .EffectRetired
+
+@[simp] theorem recoverEffectReject (value : SandproofStage1RequestRust.sandbox_controller_core.effect.EffectReject) :
+    toInboxEffectReject (toSourceEffectReject value) = value := by
+  cases value <;> simp [toSourceEffectReject, toInboxEffectReject]
+
+@[simp] theorem reflectEffectReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.effect.EffectReject) :
+    toSourceEffectReject (toInboxEffectReject value) = value := by
+  cases value <;> simp [toSourceEffectReject, toInboxEffectReject]
+
+def toSourceSchedulerReject : SandproofStage1RequestRust.sandbox_controller_core.scheduler.SchedulerReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.scheduler.SchedulerReject
+  | .ControllerDown => .ControllerDown
+  | .SandboxNotFound => .SandboxNotFound
+  | .OperationUnavailable => .OperationUnavailable
+  | .PlanUnavailable => .PlanUnavailable
+  | .VmNotFound => .VmNotFound
+  | .SlotNotFound => .SlotNotFound
+  | .SnapshotNotFound => .SnapshotNotFound
+  | .WrongPhase => .WrongPhase
+  | .Terminal => .Terminal
+  | .PlanMismatch => .PlanMismatch
+  | .PlanAlreadySealed => .PlanAlreadySealed
+  | .PlanNotOpen => .PlanNotOpen
+  | .FenceNotInstalled => .FenceNotInstalled
+  | .ResourceAlreadyExists => .ResourceAlreadyExists
+  | .RestoreSourceUnavailable => .RestoreSourceUnavailable
+  | .PrerequisiteNotSucceeded => .PrerequisiteNotSucceeded
+  | .ResourceMismatch => .ResourceMismatch
+  | .ResourceNotPlanned => .ResourceNotPlanned
+  | .ResourceNotReady => .ResourceNotReady
+  | .ResourceStillCurrent => .ResourceStillCurrent
+  | .AlreadyReclaimed => .AlreadyReclaimed
+  | .CounterExhausted => .CounterExhausted
+
+def toInboxSchedulerReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.scheduler.SchedulerReject → SandproofStage1RequestRust.sandbox_controller_core.scheduler.SchedulerReject
+  | .ControllerDown => .ControllerDown
+  | .SandboxNotFound => .SandboxNotFound
+  | .OperationUnavailable => .OperationUnavailable
+  | .PlanUnavailable => .PlanUnavailable
+  | .VmNotFound => .VmNotFound
+  | .SlotNotFound => .SlotNotFound
+  | .SnapshotNotFound => .SnapshotNotFound
+  | .WrongPhase => .WrongPhase
+  | .Terminal => .Terminal
+  | .PlanMismatch => .PlanMismatch
+  | .PlanAlreadySealed => .PlanAlreadySealed
+  | .PlanNotOpen => .PlanNotOpen
+  | .FenceNotInstalled => .FenceNotInstalled
+  | .ResourceAlreadyExists => .ResourceAlreadyExists
+  | .RestoreSourceUnavailable => .RestoreSourceUnavailable
+  | .PrerequisiteNotSucceeded => .PrerequisiteNotSucceeded
+  | .ResourceMismatch => .ResourceMismatch
+  | .ResourceNotPlanned => .ResourceNotPlanned
+  | .ResourceNotReady => .ResourceNotReady
+  | .ResourceStillCurrent => .ResourceStillCurrent
+  | .AlreadyReclaimed => .AlreadyReclaimed
+  | .CounterExhausted => .CounterExhausted
+
+@[simp] theorem recoverSchedulerReject (value : SandproofStage1RequestRust.sandbox_controller_core.scheduler.SchedulerReject) :
+    toInboxSchedulerReject (toSourceSchedulerReject value) = value := by
+  cases value <;> simp [toSourceSchedulerReject, toInboxSchedulerReject]
+
+@[simp] theorem reflectSchedulerReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.scheduler.SchedulerReject) :
+    toSourceSchedulerReject (toInboxSchedulerReject value) = value := by
+  cases value <;> simp [toSourceSchedulerReject, toInboxSchedulerReject]
+
+def toSourceWorkerReject : SandproofStage1RequestRust.sandbox_controller_core.worker.WorkerReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.worker.WorkerReject
+  | .StaleAttempt => .StaleAttempt
+  | .NotQueued => .NotQueued
+  | .NotAwaiting => .NotAwaiting
+  | .SandboxNotFound => .SandboxNotFound
+  | .ResourceNotFound => .ResourceNotFound
+  | .OperationNotFound => .OperationNotFound
+  | .PlanNotFound => .PlanNotFound
+  | .WrongPhase => .WrongPhase
+  | .Terminal => .Terminal
+  | .IdentityMismatch => .IdentityMismatch
+  | .PlanMismatch => .PlanMismatch
+  | .FenceNotReady => .FenceNotReady
+  | .ResourceBusy => .ResourceBusy
+  | .ResultAlreadyPresent => .ResultAlreadyPresent
+  | .SourceUnavailable => .SourceUnavailable
+  | .SnapshotNotReady => .SnapshotNotReady
+  | .ResourceStillCurrent => .ResourceStillCurrent
+
+def toInboxWorkerReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.worker.WorkerReject → SandproofStage1RequestRust.sandbox_controller_core.worker.WorkerReject
+  | .StaleAttempt => .StaleAttempt
+  | .NotQueued => .NotQueued
+  | .NotAwaiting => .NotAwaiting
+  | .SandboxNotFound => .SandboxNotFound
+  | .ResourceNotFound => .ResourceNotFound
+  | .OperationNotFound => .OperationNotFound
+  | .PlanNotFound => .PlanNotFound
+  | .WrongPhase => .WrongPhase
+  | .Terminal => .Terminal
+  | .IdentityMismatch => .IdentityMismatch
+  | .PlanMismatch => .PlanMismatch
+  | .FenceNotReady => .FenceNotReady
+  | .ResourceBusy => .ResourceBusy
+  | .ResultAlreadyPresent => .ResultAlreadyPresent
+  | .SourceUnavailable => .SourceUnavailable
+  | .SnapshotNotReady => .SnapshotNotReady
+  | .ResourceStillCurrent => .ResourceStillCurrent
+
+@[simp] theorem recoverWorkerReject (value : SandproofStage1RequestRust.sandbox_controller_core.worker.WorkerReject) :
+    toInboxWorkerReject (toSourceWorkerReject value) = value := by
+  cases value <;> simp [toSourceWorkerReject, toInboxWorkerReject]
+
+@[simp] theorem reflectWorkerReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.worker.WorkerReject) :
+    toSourceWorkerReject (toInboxWorkerReject value) = value := by
+  cases value <;> simp [toSourceWorkerReject, toInboxWorkerReject]
+
+def toSourcePublicationReject : SandproofStage1RequestRust.sandbox_controller_core.publication.PublicationReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.publication.PublicationReject
+  | .ControllerDown => .ControllerDown
+  | .SandboxNotFound => .SandboxNotFound
+  | .VmNotFound => .VmNotFound
+  | .SlotNotFound => .SlotNotFound
+  | .SnapshotNotFound => .SnapshotNotFound
+  | .OperationUnavailable => .OperationUnavailable
+  | .WrongPhase => .WrongPhase
+  | .TerminalMismatch => .TerminalMismatch
+  | .FenceNotInstalled => .FenceNotInstalled
+  | .ResourceMismatch => .ResourceMismatch
+  | .ResourceNotReady => .ResourceNotReady
+  | .PolicyNotApplied => .PolicyNotApplied
+  | .PrerequisiteNotSucceeded => .PrerequisiteNotSucceeded
+  | .ResourcesNotClosed => .ResourcesNotClosed
+  | .StopReceiptsMissing => .StopReceiptsMissing
+  | .WrongOperationKind => .WrongOperationKind
+  | .WrongOperationStatus => .WrongOperationStatus
+  | .LedgerMismatch => .LedgerMismatch
+
+def toInboxPublicationReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.publication.PublicationReject → SandproofStage1RequestRust.sandbox_controller_core.publication.PublicationReject
+  | .ControllerDown => .ControllerDown
+  | .SandboxNotFound => .SandboxNotFound
+  | .VmNotFound => .VmNotFound
+  | .SlotNotFound => .SlotNotFound
+  | .SnapshotNotFound => .SnapshotNotFound
+  | .OperationUnavailable => .OperationUnavailable
+  | .WrongPhase => .WrongPhase
+  | .TerminalMismatch => .TerminalMismatch
+  | .FenceNotInstalled => .FenceNotInstalled
+  | .ResourceMismatch => .ResourceMismatch
+  | .ResourceNotReady => .ResourceNotReady
+  | .PolicyNotApplied => .PolicyNotApplied
+  | .PrerequisiteNotSucceeded => .PrerequisiteNotSucceeded
+  | .ResourcesNotClosed => .ResourcesNotClosed
+  | .StopReceiptsMissing => .StopReceiptsMissing
+  | .WrongOperationKind => .WrongOperationKind
+  | .WrongOperationStatus => .WrongOperationStatus
+  | .LedgerMismatch => .LedgerMismatch
+
+@[simp] theorem recoverPublicationReject (value : SandproofStage1RequestRust.sandbox_controller_core.publication.PublicationReject) :
+    toInboxPublicationReject (toSourcePublicationReject value) = value := by
+  cases value <;> simp [toSourcePublicationReject, toInboxPublicationReject]
+
+@[simp] theorem reflectPublicationReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.publication.PublicationReject) :
+    toSourcePublicationReject (toInboxPublicationReject value) = value := by
+  cases value <;> simp [toSourcePublicationReject, toInboxPublicationReject]
+
+def toSourceAuxiliaryReject : SandproofStage1RequestRust.sandbox_controller_core.auxiliary.AuxiliaryReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.auxiliary.AuxiliaryReject
+  | .SandboxNotFound => .SandboxNotFound
+  | .OperationUnavailable => .OperationUnavailable
+  | .OperationAlreadyFinal => .OperationAlreadyFinal
+  | .LedgerMismatch => .LedgerMismatch
+  | .Unauthorized => .Unauthorized
+  | .WrongPhase => .WrongPhase
+  | .WrongGeneration => .WrongGeneration
+  | .CapabilityDenied => .CapabilityDenied
+  | .DestinationDenied => .DestinationDenied
+
+def toInboxAuxiliaryReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.auxiliary.AuxiliaryReject → SandproofStage1RequestRust.sandbox_controller_core.auxiliary.AuxiliaryReject
+  | .SandboxNotFound => .SandboxNotFound
+  | .OperationUnavailable => .OperationUnavailable
+  | .OperationAlreadyFinal => .OperationAlreadyFinal
+  | .LedgerMismatch => .LedgerMismatch
+  | .Unauthorized => .Unauthorized
+  | .WrongPhase => .WrongPhase
+  | .WrongGeneration => .WrongGeneration
+  | .CapabilityDenied => .CapabilityDenied
+  | .DestinationDenied => .DestinationDenied
+
+@[simp] theorem recoverAuxiliaryReject (value : SandproofStage1RequestRust.sandbox_controller_core.auxiliary.AuxiliaryReject) :
+    toInboxAuxiliaryReject (toSourceAuxiliaryReject value) = value := by
+  cases value <;> simp [toSourceAuxiliaryReject, toInboxAuxiliaryReject]
+
+@[simp] theorem reflectAuxiliaryReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.auxiliary.AuxiliaryReject) :
+    toSourceAuxiliaryReject (toInboxAuxiliaryReject value) = value := by
+  cases value <;> simp [toSourceAuxiliaryReject, toInboxAuxiliaryReject]
+
+def toSourceRuntimeReject : SandproofStage1RequestRust.sandbox_controller_core.recovery_monitor.RuntimeReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.recovery_monitor.RuntimeReject
+  | .ControllerAlreadyDown => .ControllerAlreadyDown
+  | .ControllerAlreadyUp => .ControllerAlreadyUp
+  | .EffectNotFound => .EffectNotFound
+
+def toInboxRuntimeReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.recovery_monitor.RuntimeReject → SandproofStage1RequestRust.sandbox_controller_core.recovery_monitor.RuntimeReject
+  | .ControllerAlreadyDown => .ControllerAlreadyDown
+  | .ControllerAlreadyUp => .ControllerAlreadyUp
+  | .EffectNotFound => .EffectNotFound
+
+@[simp] theorem recoverRuntimeReject (value : SandproofStage1RequestRust.sandbox_controller_core.recovery_monitor.RuntimeReject) :
+    toInboxRuntimeReject (toSourceRuntimeReject value) = value := by
+  cases value <;> simp [toSourceRuntimeReject, toInboxRuntimeReject]
+
+@[simp] theorem reflectRuntimeReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.recovery_monitor.RuntimeReject) :
+    toSourceRuntimeReject (toInboxRuntimeReject value) = value := by
+  cases value <;> simp [toSourceRuntimeReject, toInboxRuntimeReject]
+
+def toSourceCaptureReject : SandproofStage1RequestRust.sandbox_controller_core.capture.continuation.CaptureReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.capture.continuation.CaptureReject
+  | .ControllerDown => .ControllerDown
+  | .DrainNotConfirmed => .DrainNotConfirmed
+  | .StopNotObserved => .StopNotObserved
+  | .SandboxNotFound => .SandboxNotFound
+  | .Terminal => .Terminal
+  | .WrongPhase => .WrongPhase
+  | .IdentityMismatch => .IdentityMismatch
+  | .LedgerMismatch => .LedgerMismatch
+  | .CaptureNotRevoked => .CaptureNotRevoked
+  | .CommitUnresolved => .CommitUnresolved
+  | .EffectsUnresolved => .EffectsUnresolved
+  | .FreezeUnresolved => .FreezeUnresolved
+  | .FenceNotInstalled => .FenceNotInstalled
+  | .ResourcesNotReady => .ResourcesNotReady
+  | .ReceiptConflict => .ReceiptConflict
+  | .ContinuationNotPrepared => .ContinuationNotPrepared
+  | .ActivationNotObserved => .ActivationNotObserved
+
+def toInboxCaptureReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.capture.continuation.CaptureReject → SandproofStage1RequestRust.sandbox_controller_core.capture.continuation.CaptureReject
+  | .ControllerDown => .ControllerDown
+  | .DrainNotConfirmed => .DrainNotConfirmed
+  | .StopNotObserved => .StopNotObserved
+  | .SandboxNotFound => .SandboxNotFound
+  | .Terminal => .Terminal
+  | .WrongPhase => .WrongPhase
+  | .IdentityMismatch => .IdentityMismatch
+  | .LedgerMismatch => .LedgerMismatch
+  | .CaptureNotRevoked => .CaptureNotRevoked
+  | .CommitUnresolved => .CommitUnresolved
+  | .EffectsUnresolved => .EffectsUnresolved
+  | .FreezeUnresolved => .FreezeUnresolved
+  | .FenceNotInstalled => .FenceNotInstalled
+  | .ResourcesNotReady => .ResourcesNotReady
+  | .ReceiptConflict => .ReceiptConflict
+  | .ContinuationNotPrepared => .ContinuationNotPrepared
+  | .ActivationNotObserved => .ActivationNotObserved
+
+@[simp] theorem recoverCaptureReject (value : SandproofStage1RequestRust.sandbox_controller_core.capture.continuation.CaptureReject) :
+    toInboxCaptureReject (toSourceCaptureReject value) = value := by
+  cases value <;> simp [toSourceCaptureReject, toInboxCaptureReject]
+
+@[simp] theorem reflectCaptureReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.capture.continuation.CaptureReject) :
+    toSourceCaptureReject (toInboxCaptureReject value) = value := by
+  cases value <;> simp [toSourceCaptureReject, toInboxCaptureReject]
+
+def toSourceControllerReject : SandproofStage1RequestRust.sandbox_controller_core.controller.ControllerReject → SandproofOriginalSourceRowsRust.sandbox_controller_core.controller.ControllerReject
+  | .Maintenance value0 => .Maintenance (toSourceMaintenanceReject value0)
+  | .Request value0 => .Request (toSourceReject value0)
+  | .Effect value0 => .Effect (toSourceEffectReject value0)
+  | .Scheduler value0 => .Scheduler (toSourceSchedulerReject value0)
+  | .Worker value0 => .Worker (toSourceWorkerReject value0)
+  | .Publication value0 => .Publication (toSourcePublicationReject value0)
+  | .Auxiliary value0 => .Auxiliary (toSourceAuxiliaryReject value0)
+  | .Runtime value0 => .Runtime (toSourceRuntimeReject value0)
+  | .Capture value0 => .Capture (toSourceCaptureReject value0)
+
+def toInboxControllerReject : SandproofOriginalSourceRowsRust.sandbox_controller_core.controller.ControllerReject → SandproofStage1RequestRust.sandbox_controller_core.controller.ControllerReject
+  | .Maintenance value0 => .Maintenance (toInboxMaintenanceReject value0)
+  | .Request value0 => .Request (toInboxReject value0)
+  | .Effect value0 => .Effect (toInboxEffectReject value0)
+  | .Scheduler value0 => .Scheduler (toInboxSchedulerReject value0)
+  | .Worker value0 => .Worker (toInboxWorkerReject value0)
+  | .Publication value0 => .Publication (toInboxPublicationReject value0)
+  | .Auxiliary value0 => .Auxiliary (toInboxAuxiliaryReject value0)
+  | .Runtime value0 => .Runtime (toInboxRuntimeReject value0)
+  | .Capture value0 => .Capture (toInboxCaptureReject value0)
+
+@[simp] theorem recoverControllerReject (value : SandproofStage1RequestRust.sandbox_controller_core.controller.ControllerReject) :
+    toInboxControllerReject (toSourceControllerReject value) = value := by
+  cases value <;> simp [toSourceControllerReject, toInboxControllerReject]
+
+@[simp] theorem reflectControllerReject (value : SandproofOriginalSourceRowsRust.sandbox_controller_core.controller.ControllerReject) :
+    toSourceControllerReject (toInboxControllerReject value) = value := by
+  cases value <;> simp [toSourceControllerReject, toInboxControllerReject]
+
+def toParentContract : SandproofStage1RequestRust.sandproof_protocol.ContractError →
+    SandproofUnloadStartupJoint.sandproof_protocol.ContractError
+  | .InvalidIdentifier => .InvalidIdentifier
+  | .UnsupportedVersion version => .UnsupportedVersion version
+  | .MismatchedIdentity => .MismatchedIdentity
+  | .MismatchedObservation => .MismatchedObservation
+
+def toInboxContract : SandproofUnloadStartupJoint.sandproof_protocol.ContractError →
+    SandproofStage1RequestRust.sandproof_protocol.ContractError
+  | .InvalidIdentifier => .InvalidIdentifier
+  | .UnsupportedVersion version => .UnsupportedVersion version
+  | .MismatchedIdentity => .MismatchedIdentity
+  | .MismatchedObservation => .MismatchedObservation
+
+@[simp] theorem recoverContract (value : SandproofStage1RequestRust.sandproof_protocol.ContractError) :
+    toInboxContract (toParentContract value) = value := by cases value <;> rfl
+
+def toParentCrash : SandproofStage1RequestRust.sandproof_controller_service.CrashPoint → SandproofOriginalSourceRowsRust.CrashPoint
+  | .BeforeCommit => .BeforeCommit
+  | .AfterCommit => .AfterCommit
+  | .BeforeDispatchClaim => .BeforeDispatchClaim
+  | .AfterDispatchClaim => .AfterDispatchClaim
+  | .AfterWorkerCall => .AfterWorkerCall
+  | .AfterRetirementDelete => .AfterRetirementDelete
+
+def toInboxCrash : SandproofOriginalSourceRowsRust.CrashPoint → SandproofStage1RequestRust.sandproof_controller_service.CrashPoint
+  | .BeforeCommit => .BeforeCommit
+  | .AfterCommit => .AfterCommit
+  | .BeforeDispatchClaim => .BeforeDispatchClaim
+  | .AfterDispatchClaim => .AfterDispatchClaim
+  | .AfterWorkerCall => .AfterWorkerCall
+  | .AfterRetirementDelete => .AfterRetirementDelete
+
+@[simp] theorem recoverCrash (value : SandproofStage1RequestRust.sandproof_controller_service.CrashPoint) :
+    toInboxCrash (toParentCrash value) = value := by cases value <;> rfl
+
+end SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverRetirementReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectRetirementReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverSlotReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectSlotReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverWindowReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectWindowReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverMaintenanceReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectMaintenanceReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverEffectReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectEffectReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverSchedulerReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectSchedulerReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverWorkerReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectWorkerReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverPublicationReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectPublicationReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverAuxiliaryReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectAuxiliaryReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverRuntimeReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectRuntimeReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverCaptureReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectCaptureReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverControllerReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.reflectControllerReject
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverContract
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadParentLink.ErrorTransport.recoverCrash

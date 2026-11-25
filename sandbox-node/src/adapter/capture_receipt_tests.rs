@@ -1,6 +1,8 @@
 //! Real receipt construction/debug cut, synthetic physical inputs; no VM claim.
 use super::*;
 
+const COMPLETED: &str = "SANDPROOF_CAPTURE_RECEIPT_ASSERTIONS_PASSED";
+
 fn action(target: &str) -> WorkAction<core::EffectId> {
     use sandproof_protocol::{
         ActionIdentity, LogicalActionId, OperationId, PROTOCOL_VERSION, ResourceId, ResourceKind,
@@ -41,10 +43,9 @@ fn action(target: &str) -> WorkAction<core::EffectId> {
 }
 
 #[test]
+#[ignore = "subprocess entry for the receipt fault test"]
 fn capture_receipt_cut_child() {
-    let Ok(target) = std::env::var("SANDPROOF_UNIT_CAPTURE_RECEIPT_TARGET") else {
-        return;
-    };
+    let target = std::env::var("SANDPROOF_UNIT_CAPTURE_RECEIPT_TARGET").unwrap();
     let action = action(&target);
     let unknown = std::env::var_os("SANDPROOF_UNIT_CAPTURE_RECEIPT_UNKNOWN").is_some();
     let observation = if unknown {
@@ -69,6 +70,7 @@ fn capture_receipt_cut_child() {
         ),
         unknown
     );
+    eprintln!("{COMPLETED}");
 }
 
 #[test]
@@ -78,6 +80,7 @@ fn capture_receipt_cuts_only_the_selected_success_before_journal_storage() {
             let mut command = std::process::Command::new(std::env::current_exe().unwrap());
             command
                 .args([
+                    "--ignored",
                     "--exact",
                     "adapter::capture_receipt_tests::capture_receipt_cut_child",
                     "--nocapture",
@@ -103,6 +106,13 @@ fn capture_receipt_cuts_only_the_selected_success_before_journal_storage() {
                 "{}",
                 String::from_utf8_lossy(&output.stderr)
             );
+            if expected == 0 {
+                assert!(
+                    String::from_utf8_lossy(&output.stderr)
+                        .lines()
+                        .any(|line| line == COMPLETED)
+                );
+            }
         }
     }
 }

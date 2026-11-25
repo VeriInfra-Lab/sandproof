@@ -3,7 +3,7 @@
   "issue": 570,
   "base": "9c50da7cc9391518514f14405e6c779e5c5cbe2c",
   "source_files": {
-    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
+    "controller-service/src/controller/transaction.rs": "100391ccee63bd0e481ac7828971c2ac8eb97e781330fc6eb92a399c9d5f6bde",
     "controller-service/src/controller/storage.rs": "d08831d001d582702defdd328f0178039cec70ee7e49c64c6b9f2b1fdb2dccb3",
     "controller-service/src/controller/mod.rs": "3108ade2ef3bc126f469094170db9d058f6a729fe4923c38cc7f414fa1f507ca",
     "controller-service/src/controller/cache_tests.rs": "d4336427e823558e1615807099bd46e024d9c4c1ac23f98b66b8037d7cedd9ab",
@@ -16,13 +16,13 @@
     "controller-core/src/lib.rs": "2a260eede2d65205ba650e745ec718450cd5f99b0a0a26e4d092206ea4f9950c",
     "controller-core/src/maintenance.rs": "3b4b60b60bce6a7203b6fcf5735ac58183841afe68811897a6201af131a17808",
     "controller-core/src/request.rs": "3384865ad6c7b7a91c5859b55cb88ef49d83480bc56821e3b817d1aee64be3fe",
-    "controller-core/src/effect.rs": "a1ac32ff4c4232e274e0ee31f78aadba3bafe0ca167e67ef5b7c364e905f0eb1",
+    "controller-core/src/effect.rs": "047e9775518c8594d69b2d5ac382ae77f18342b69f3e967606450097cde802f6",
     "controller-core/src/scheduler.rs": "bd90d4387cc5470e873e3f17a41092721a2e8b2aa7476dfdce8b21a65bc50167",
     "controller-core/src/worker.rs": "93d12984975b43b64fc289ef5a14b750516477b6bdaca856757b757794a4447c",
     "controller-core/src/publication.rs": "27b068161f26d3bc27d6c1b70da0b2fd984ff281e0aeba591355401934565ae1",
     "controller-core/src/auxiliary.rs": "719ad906c6f96476149a916ad5083e9740b5d4aeeb4d6a5873e2267455a04d54",
     "controller-core/src/recovery_monitor.rs": "de372b099fdf31c818c6d2e4ec7da15fddf74871ee37e5b093067761d80fcb47",
-    "controller-core/src/capture/continuation.rs": "1712667f5e6aef2748a7635035bb655f9903046bf8ac785547b1ee123c4585b6",
+    "controller-core/src/capture/continuation.rs": "540ca8a735690eae6a4334baca947e22fd7c564b2b92b13c66d2096ff60d5833",
     "controller-core/src/capture.rs": "cfe090e04654b40de4b26ee751aa83e1333806b0eaf9e0f2df656f4874c4fe54",
     "controller-core/src/maintenance/retirement.rs": "190c4131bb3e43bb0ab5e4396e2f4f9aeb0215ee660b80a81333fff6f82cad9f",
     "controller-core/src/maintenance/slots.rs": "688d594565e4ebb584795b4f22b84e1eda20f089ebc8e809e8881a388a823114",
@@ -34,7 +34,7 @@
     "controller-core/src/maintenance/released_execution.rs": "0a31df15b42e2278daa43c62b4bcd2a122462f4fcd5401df01de736997956360"
   },
   "candidate_files": {
-    "controller-service/src/controller/transaction.rs": "bbf23b54adeaf7d4ca7e4a20a76a796c4deca003a312ac183d8d37a6f041090b",
+    "controller-service/src/controller/transaction.rs": "100391ccee63bd0e481ac7828971c2ac8eb97e781330fc6eb92a399c9d5f6bde",
     "controller-service/src/controller/transaction/memo.rs": "48313cde23179019d42279cca51f7c26083ee41b2dbc5c314f3a4fc5296c594d"
   },
   "patch_sha256": "c9a49700b35e985a5c882eac7085c6756f575ae6a1bed1e1c4fe79de62bb5044",
@@ -73,8 +73,9 @@
   },
   "production_adopted": true,
   "historical_candidate_base": "8a33bc230dbbaefd7bc6855e715c1dd5e63c1173",
-  "current_capture_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1",
+  "current_capture_source_commit": "912edc5043eeae9c05fcf25d109eb35409b6d149",
   "current_capture_formal_acceptance": false,
   "native_reference_driver_commit": "85575215beb85fa773ad4363f227ae6c5862fdb0",
-  "native_reference_driver_sha256": "fb3c7c84ae5c08350c1df1e28b0ecc695203ccd1166c70c2c63f42f6374ca1ab"
+  "native_reference_driver_sha256": "fb3c7c84ae5c08350c1df1e28b0ecc695203ccd1166c70c2c63f42f6374ca1ab",
+  "historical_capture_source_commit": "8fc694185a4ccbe2ea181564ba860b14bea9f6e1"
 }

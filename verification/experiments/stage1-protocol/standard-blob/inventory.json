@@ -10,9 +10,9 @@
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",
     "Cargo.toml": "721acf82b900589418d0671cac6427c9c22e79d9bf77f1c4ba97f7df4667ca82",
     "controller-core/src/auxiliary.rs": "719ad906c6f96476149a916ad5083e9740b5d4aeeb4d6a5873e2267455a04d54",
-    "controller-core/src/capture/continuation.rs": "1712667f5e6aef2748a7635035bb655f9903046bf8ac785547b1ee123c4585b6",
+    "controller-core/src/capture/continuation.rs": "540ca8a735690eae6a4334baca947e22fd7c564b2b92b13c66d2096ff60d5833",
     "controller-core/src/controller.rs": "1a08d5360cbffe8a5739e64074e14cac615bccbad726f0a26982e192a1865280",
-    "controller-core/src/effect.rs": "a1ac32ff4c4232e274e0ee31f78aadba3bafe0ca167e67ef5b7c364e905f0eb1",
+    "controller-core/src/effect.rs": "047e9775518c8594d69b2d5ac382ae77f18342b69f3e967606450097cde802f6",
     "controller-core/src/lib.rs": "2a260eede2d65205ba650e745ec718450cd5f99b0a0a26e4d092206ea4f9950c",
     "controller-core/src/maintenance.rs": "3b4b60b60bce6a7203b6fcf5735ac58183841afe68811897a6201af131a17808",
     "controller-core/src/maintenance/retirement.rs": "190c4131bb3e43bb0ab5e4396e2f4f9aeb0215ee660b80a81333fff6f82cad9f",
@@ -152,11 +152,11 @@
     "verification/experiments/stage1-protocol/inbox-validation/primitive-roots.rs.in": "d11ec157cfd880f89e9400f8cdc152a2488e774ca034eb4a8a1049eca4b3e4d6",
     "verification/experiments/stage1-protocol/terminal-binding/roots.rs.in": "4eb94c981d8bd6ec3cee2ea082195f0674c3310f09e4423e3b2f47c8a5ff0115",
     "verification/experiments/stage1-protocol/inbox-renewal-session/fragments.json": "0b4df089d01d9eb35cd6cd567ac182bdd0042de7b176954c09bf577baf342156",
-    "verification/experiments/stage1-protocol/formal.py": "c45a2dc4d0716015a1c2896b0ee0c57b0c5a66b6a1e183d0c7e1a0a88777b37a",
-    "verification/experiments/stage1-protocol/registered.py": "f78fe0d85301f8fc9096219e3d520aac865adff2a155f3ff29d6d3a1f1391e81",
+    "verification/experiments/stage1-protocol/formal.py": "59878b437b00bf4e2e36c32b315482e87147cf4f9255bebffbcf4a726697cc6d",
+    "verification/experiments/stage1-protocol/registered.py": "27f519a811d3e996bc92e25c6793df74eb7be411179b36f0ae8e0be0ac685c95",
     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
-    "tools/proof_batch.py": "2a08124a029a6c21eeb19852ff4dfdd80bf93c4b1370ef97deb3e2202a075869",
-    "tools/proof_services.py": "af22846b959e596cb1f3dbb12b21ea34b9847e7519d47e89ca84eab8c5ebf1a7",
+    "tools/proof_batch.py": "e8c5cab7e5c13ce7eef157ff23c37b761a90ad1f49a8bc43da2ea482cf36887c",
+    "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",
     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3"
   },
   "templates": {
@@ -192,7 +192,7 @@
     "external/ReadValueData.lean.in": "d05b9a6e9219ddf5a9d429bdaf77280e569b4cd8c7475c7f38e77a38f81b3db9",
     "external/TypesExternal.lean.in": "c58afadae676c43611cb3c2add28d3ab16689edf4fd8f39ae15c65b5dc196a9a",
     "function-inventory.json": "c2944b1aa91d4cf243d9b0cec65c5f50e46d976857bff53e34a44712ea8528e5",
-    "generated-index.json": "c128da71c714f8aed31aceef0ebda8142a9a8bf0583d695fad23a5d78631a8e0",
+    "generated-index.json": "51f89c15d3d0a7d5c60fc064f7eddcaa4da1e9ea18fbf9c6d87107b05e5f68cd",
     "materialization.json": "a58a2967346bc9d2aec5a27ccd80f592c3de0562b27f6d26c191dfe8a6434efe",
     "mutations.json": "ef77ec44241b804493ca5aa0872eb1c9a9d028131b80c641b17120b845233d8c",
     "native-cases.rs.in": "172dcb3d597fc7a29c146440a9406fde1faf61b55bce03a80710beb7eeae2e13",
@@ -1096,5 +1096,13 @@
     "verification/aeneas/stage1-protocol/standard-blob/second-error-first/SandproofLoadBlob/Funs.lean": "3922df15fcbea00bbd60050d51cd34e909679f772c4422b657a9d38f52bcc72b",
     "verification/aeneas/stage1-protocol/standard-blob/second-error-first/SandproofLoadBlob/Types.lean": "c3cb96746df45513a86fb3000828251db398251699884408c1d4d0c23956382e",
     "verification/aeneas/stage1-protocol/standard-blob/second-error-first/translation.json": "a2f34eba46dc68b29138d9c9a29b4179c9ec9024a654767894774770c22524d6"
+  },
+  "current_standard_capture": {
+    "candidate": "13cdef0530f00483fff329b14e0312cd3c94d0e3",
+    "actual_capture_index_sha256": "1bb71361dcf848ed8ec3e837ee9f4b8b73194e11f9a08eceb194e7ac7c8ea16c",
+    "readback_sha256": "b3c3999967f9cb70e44940bc15701fe200612a14653bea5b725419a0e9a7e661",
+    "provider_review_sha256": "61c49823a73191d2aa90d81bd4d5dc8bcb855154b1f0808fe0ef3afa7f52f260",
+    "view_count": 3,
+    "acceptance_pending": true
   }
 }
