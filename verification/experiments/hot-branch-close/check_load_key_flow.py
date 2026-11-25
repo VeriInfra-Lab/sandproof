@@ -137,7 +137,8 @@ def check_load(capture):
         translated, functions, type_decls, types, integers, trait_refs,
     )
     retirement, = (entry for entry in functions.values()
-                   if name(entry) == (*DIGEST[:-1], 'retire_closed_parent'))
+                   if name(entry) == (*DIGEST[:-1], 'retire_closed_parent')
+                   and entry['item_meta']['name'][-1] == {'Ident': ['retire_closed_parent', 0]})
     retirement_calls = (data['call'] for tag, data, _
                         in statements(retirement['body']['Structured']['body']) if tag == 'Call')
     delete_digest, = (call for call in retirement_calls
