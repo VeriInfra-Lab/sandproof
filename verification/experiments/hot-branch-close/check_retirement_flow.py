@@ -24,6 +24,8 @@ RESULT_RESIDUAL = ('core', 'result', 'from_residual')
 RESULT = ('core', 'result', 'Result')
 CONTROL_FLOW = ('core', 'ops', 'control_flow', 'ControlFlow')
 IDENTITY_CONVERT = ('core', 'convert', 'From')
+JOURNAL_ERROR = ('sandproof_controller_service', 'JournalError')
+SQLITE_ERROR = ('rusqlite', 'error', 'Error')
 READ_LIMITS = (*BRANCH, 'read_limits')
 LOAD_BATCH = (*BRANCH, 'load')
 DIGEST = (*BRANCH, 'digest')
@@ -85,7 +87,7 @@ def statements(block, loop_depth=0):
             yield kind, value, loop_depth
 
 
-def representations(root, *, trait_refs=None, discriminants=None):
+def representations(root, *, trait_refs=None, switch_values=None):
     types, integers = {}, {}
     pending = [root]
     while pending:
@@ -108,9 +110,9 @@ def representations(root, *, trait_refs=None, discriminants=None):
             elif (trait_refs is not None and isinstance(data, dict)
                   and data.keys() == {'kind', 'trait_decl_ref'}):
                 table = trait_refs
-            elif (discriminants is not None and isinstance(data, list) and len(data) == 2
-                  and isinstance(data[0], dict) and 'Discriminant' in data[0]):
-                table = discriminants
+            elif (switch_values is not None and isinstance(data, list) and len(data) == 2
+                  and isinstance(data[0], dict) and data[0].keys() & {'Discriminant', 'Bool'}):
+                table = switch_values
             else:
                 continue
             require(table.setdefault(index, data) == data, 'conflicting LLBC parameter representation')
@@ -121,6 +123,12 @@ def unpack(encoded, deduplicated):
     if 'Deduplicated' in encoded:
         return deduplicated.get(encoded['Deduplicated'], {})
     return encoded['Value'][1]
+
+
+def enum_variant(type_decls, adt, index, enum):
+    decl = type_decls[adt['id']]
+    require(name(decl) == enum, 'unexpected enum in the retirement flow')
+    return decl['kind']['Enum'][index]['name']
 
 
 def mapped_callback(translated, definitions, query, functions, types, trait_refs):
@@ -205,16 +213,11 @@ def check_row_columns(translated, body, functions, types, integers):
     return columns
 
 
-def check_row_returns(translated, body, functions, types, integers, trait_refs, discriminants):
+def check_row_returns(translated, body, functions, types, integers, trait_refs, switch_values):
     """Enumerate normal returns of the original captureless row callback."""
     type_decls = {entry['def_id']: entry for entry in translated['type_decls'] if entry}
     trait_names = {entry['def_id']: name(entry) for entry in translated['trait_decls'] if entry}
     returns = []
-
-    def variant(adt, index, enum):
-        decl = type_decls[adt['id']]
-        require(name(decl) == enum, 'unexpected enum in the retirement row callback')
-        return decl['kind']['Enum'][index]['name']
 
     def origin(place, values):
         kind = place['kind']
@@ -243,7 +246,7 @@ def check_row_returns(translated, body, functions, types, integers, trait_refs, 
         if adt['builtin'] == 'Tuple':
             require(index is None, 'retirement Stored tuple must have no variant')
             return ('tuple', fields)
-        require(variant(adt, index, RESULT) == 'Ok' and len(fields) == 1,
+        require(enum_variant(type_decls, adt, index, RESULT) == 'Ok' and len(fields) == 1,
                 'retirement row success must construct the original Result::Ok')
         return ('ok', fields[0])
 
@@ -272,7 +275,7 @@ def check_row_returns(translated, body, functions, types, integers, trait_refs, 
                 source, target = (unpack(ty, types)['Adt']
                                   for ty in dictionary['generics']['types'])
                 require(trait_names[dictionary['id']] == IDENTITY_CONVERT and source == target
-                        and name(type_decls[source['id']]) == ('rusqlite', 'error', 'Error')
+                        and name(type_decls[source['id']]) == SQLITE_ERROR
                         and 'TraitImpl' in binding['kind'],
                         'retirement row replaced the original error conversion')
                 event, result = 'from-residual', ('error', incoming[1])
@@ -287,9 +290,9 @@ def check_row_returns(translated, body, functions, types, integers, trait_refs, 
                 'retirement row must match the corresponding get ControlFlow')
         found = {}
         for encoded, position in selector['branches']:
-            value, _ = unpack(encoded, discriminants)
+            value, _ = unpack(encoded, switch_values)
             adt, index = value['Discriminant']
-            tag = variant(adt, index, CONTROL_FLOW)
+            tag = enum_variant(type_decls, adt, index, CONTROL_FLOW)
             require(tag not in found, 'retirement row duplicates a ControlFlow variant')
             found[tag] = (index, position)
         require(len(switch['branches']) == 2 and set(found) == {'Continue', 'Break'}
@@ -355,11 +358,190 @@ def check_row_returns(translated, body, functions, types, integers, trait_refs, 
     return outcomes
 
 
-def check_sql_parameters(translated, definitions, calls, functions):
+def check_delete_returns(translated, body, functions, execute, types, integers, trait_refs, switch_values):
+    """Follow each original execute result to the actual function exit or loop back edge."""
+    type_decls = {entry['def_id']: entry for entry in translated['type_decls'] if entry}
+    trait_names = {entry['def_id']: name(entry) for entry in translated['trait_decls'] if entry}
+
+    def continuations(block, parents=(), in_loop=False):
+        for index, statement in enumerate(block['statements']):
+            effect = statement['kind']
+            remaining = (*parents, (block, index + 1, in_loop))
+            if not isinstance(effect, dict):
+                continue
+            if 'Call' in effect and effect['Call']['call'] is execute:
+                yield remaining
+            elif 'Switch' in effect:
+                for arm in effect['Switch']['branches']:
+                    yield from continuations(arm, remaining)
+            elif 'Loop' in effect:
+                yield from continuations(effect['Loop'], remaining, True)
+
+    initial, = continuations(body['body'])
+    delete_loop = next(block for block, _, in_loop in reversed(initial) if in_loop)
+
+    def origin(place, values):
+        kind = place['kind']
+        if 'Local' in kind:
+            return values.get(kind['Local'])
+        base, projection = kind['Projection']
+        result = origin(base, values)
+        if (isinstance(result, tuple) and result[0] == 'guarded'
+                and projection == {'Field': [result[2], 0]}):
+            return 'count' if result[1] == 'Continue' else 'sql-residual'
+        return None
+
+    def operand(argument, values):
+        place = argument.get('Move', argument.get('Copy'))
+        return origin(place, values) if place is not None else None
+
+    def assignment(source, values, reply, events):
+        if 'Use' in source:
+            return operand(source['Use'][0], values)
+        if 'BinaryOp' in source:
+            op, left, right = source['BinaryOp']
+            require(op in ('Eq', 'Ne'), 'retirement DELETE must compare its count with exactly one')
+            if 'Const' in left:
+                left, right = right, left
+            require(operand(left, values) == 'count' and 'Const' in right,
+                    'retirement DELETE did not compare the original affected-row count')
+            literal = unpack(right['Const'], integers)
+            scalar, count = literal[0]['Integer']['Unsigned']
+            require(scalar == 'Usize' and int(count) == 1,
+                    'retirement DELETE must compare its count with exactly one usize row')
+            events.append('compare-one')
+            return (reply == 'one') == (op == 'Eq')
+        aggregate, inputs = source['Aggregate']
+        adt, index, _ = aggregate['Adt']
+        if name(type_decls[adt['id']]) == JOURNAL_ERROR:
+            error = enum_variant(type_decls, adt, index, JOURNAL_ERROR)
+            require(error == 'CorruptStore' and not inputs,
+                    'retirement DELETE mismatch must return the original CorruptStore')
+            return 'corrupt-store'
+        value, = inputs
+        require(enum_variant(type_decls, adt, index, RESULT) == 'Err'
+                and operand(value, values) == 'corrupt-store',
+                'retirement DELETE mismatch must return Err(CorruptStore)')
+        return 'returned-corrupt-store'
+
+    def select_arm(switch, values, reply, events):
+        selector = switch['data']
+        scrutinee = selector['scrutinee']
+        if 'Discriminant' in scrutinee:
+            place = scrutinee['Discriminant']
+            require(origin(place, values) == 'control' and selector['fallback'] is None,
+                    'retirement DELETE must branch on its original execute result')
+            arms = {}
+            for encoded, position in selector['branches']:
+                value, _ = unpack(encoded, switch_values)
+                adt, index = value['Discriminant']
+                tag = enum_variant(type_decls, adt, index, CONTROL_FLOW)
+                require(tag not in arms, 'repeated retirement DELETE ControlFlow variant')
+                arms[tag] = (index, position)
+            require(set(arms) == {'Continue', 'Break'}
+                    and {position for _, position in arms.values()} == {0, 1}
+                    and len(switch['branches']) == 2,
+                    'retirement DELETE needs distinct Continue and Break arms')
+            tag = 'Break' if reply == 'sql-error' else 'Continue'
+            index, position = arms[tag]
+            values[place['kind']['Local']] = ('guarded', tag, index)
+            events.append(tag)
+        else:
+            check = operand(scrutinee['Value'], values)
+            require(type(check) is bool, 'retirement DELETE branched on a different count predicate')
+            arms = {}
+            for encoded, position in selector['branches']:
+                value, _ = unpack(encoded, switch_values)
+                boolean = value['Bool']
+                require(type(boolean) is bool and boolean not in arms,
+                        'invalid retirement DELETE count branch')
+                arms[boolean] = position
+            positions = {value: arms.get(value, selector['fallback']) for value in (False, True)}
+            require(set(positions.values()) == {0, 1} and len(switch['branches']) == 2,
+                    'retirement DELETE must separate the two count outcomes')
+            position = positions[check]
+            events.append('count-branch')
+        return switch['branches'][position]
+
+    def call_result(call, values, events):
+        regular = call['func']['Regular']
+        callee = name(functions[regular['kind']['Fun']])
+        require(callee in (RESULT_BRANCH, RESULT_RESIDUAL),
+                'unexpected call after the original retirement DELETE')
+        argument, = call['args']
+        value = operand(argument, values)
+        if callee == RESULT_BRANCH:
+            require(value == 'execute', 'retirement DELETE changed the Result being checked')
+            events.append('branch')
+            return 'control'
+        require(value == 'sql-residual', 'retirement DELETE must propagate the original SQL error')
+        reference, = regular['generics']['trait_refs']
+        binding = unpack(reference, trait_refs)
+        dictionary = binding['trait_decl_ref']['skip_binder']
+        converted = tuple(name(type_decls[unpack(ty, types)['Adt']['id']])
+                          for ty in dictionary['generics']['types'])
+        require(trait_names[dictionary['id']] == IDENTITY_CONVERT
+                and converted == (JOURNAL_ERROR, SQLITE_ERROR) and 'TraitImpl' in binding['kind'],
+                'retirement DELETE changed the original SQL error conversion')
+        events.append('from-residual')
+        return 'returned-sql-error'
+
+    def follow(reply):
+        scopes = list(initial)
+        values = {execute['dest']['kind']['Local']: 'execute'}
+        events = []
+        while scopes:
+            block, index, in_loop = scopes.pop()
+            if index == len(block['statements']):
+                require(not in_loop, 'retirement DELETE fell through the loop without checking its result')
+                continue
+            scopes.append((block, index + 1, in_loop))
+            effect = block['statements'][index]['kind']
+            if effect == 'Return':
+                return events, values.get(0)
+            require(isinstance(effect, dict), 'retirement DELETE has an unexpected terminal instruction')
+            ((tag, detail),) = effect.items()
+            if tag == 'Switch':
+                scopes.append((select_arm(detail, values, reply, events), 0, False))
+            elif tag == 'Assign':
+                target, source = detail
+                values[target['kind']['Local']] = assignment(source, values, reply, events)
+            elif tag == 'Call':
+                call = detail['call']
+                values[call['dest']['kind']['Local']] = call_result(call, values, events)
+            elif tag in ('Break', 'Continue'):
+                loops = [pos for pos, (_, _, loop) in enumerate(scopes) if loop]
+                require(type(detail) is int and 0 <= detail < len(loops),
+                        'retirement DELETE has an invalid loop target')
+                target = loops[-1 - detail]
+                if tag == 'Continue':
+                    require(scopes[target][0] is delete_loop,
+                            'retirement DELETE continued a different loop')
+                    return events, 'continue-delete-loop'
+                del scopes[target:]
+            elif tag == 'StorageDead':
+                values.pop(detail, None)
+            else:
+                require(tag in ('StorageLive', 'Borrowck', 'PlaceMention', 'Drop'),
+                        'unexpected effect after the original retirement DELETE: ' + tag)
+        raise ValueError('retirement DELETE has no original loop continuation or function return')
+
+    success = ['branch', 'Continue', 'compare-one', 'count-branch']
+    require(follow('one') == (success, 'continue-delete-loop'),
+            'retirement DELETE must continue the original loop only for exactly one row')
+    require(follow('other') == (success, 'returned-corrupt-store'),
+            'retirement DELETE non-one count must return Err(CorruptStore)')
+    require(follow('sql-error') == (['branch', 'Break', 'from-residual'], 'returned-sql-error'),
+            'retirement DELETE SQL error must return the original error without continuing')
+    return dict(exactly_one='continue-delete-loop', other_count='return-corrupt-store',
+                sql_error='return-original-sql-error')
+
+
+def check_sql_parameters(translated, body, definitions, calls, functions):
     trait_refs = {}
-    discriminants = {}
+    switch_values = {}
     types, integers = representations(
-        translated, trait_refs=trait_refs, discriminants=discriminants,
+        translated, trait_refs=trait_refs, switch_values=switch_values,
     )
 
     def uint(encoded):
@@ -489,10 +671,17 @@ def check_sql_parameters(translated, definitions, calls, functions):
         data[2] for entries in definitions.values() for kind, data in entries
         if kind == 'call' and data[0] == SQLITE_QUERY
     )
+    delete_call, = (
+        data[2] for entries in definitions.values() for kind, data in entries
+        if kind == 'call' and data[0] == SQLITE_EXECUTE
+    )
     callback = mapped_callback(translated, definitions, query_call, functions, types, trait_refs)
     columns = check_row_columns(translated, callback, functions, types, integers)
     row_outcomes = check_row_returns(
-        translated, callback, functions, types, integers, trait_refs, discriminants,
+        translated, callback, functions, types, integers, trait_refs, switch_values,
+    )
+    delete_outcomes = check_delete_returns(
+        translated, body, functions, delete_call, types, integers, trait_refs, switch_values,
     )
     return dict(
         select_parameter=dict(slot=1, rust_type='u32', source='HostBranchLimits.max_batches', add=1),
@@ -500,6 +689,7 @@ def check_sql_parameters(translated, definitions, calls, functions):
                               bytes=32, through='original retirement vector'),
         row_callback_columns=columns,
         row_callback_outcomes=row_outcomes,
+        delete_result_outcomes=delete_outcomes,
     )
 
 
@@ -620,7 +810,7 @@ def check(capture):
                 branch_source_sha256=BRANCH_SHA256, original_owner_argument=1,
                 direct_calls=len(calls), select=SELECT, delete=DELETE,
                 separate_transaction_calls=0,
-                **check_sql_parameters(translated, defs, calls, functions))
+                **check_sql_parameters(translated, body, defs, calls, functions))
 
 
 if __name__ == '__main__':
