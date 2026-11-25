@@ -350,6 +350,23 @@ impl SnapshotLayout {
             .open_bundle(directory_key, limits)
     }
 
+    /// Reopen the original published bundle in the live capture worker's
+    /// continuous protection window, falling back to complete measurements.
+    /// The caller must retain the original exclusive gate, validate the
+    /// worker and job binding, and compare the measurements with the original
+    /// durable completion and manifest.
+    /// # Errors
+    /// Rejects changed layout and invalid or incomplete original material.
+    pub fn open_capture_bundle_after_worker(
+        &self,
+        directory_key: [u8; 32],
+        limits: crate::snapshot_store::BundleReadLimits,
+        handoff: Option<&crate::snapshot_store::LiveCaptureHandoff>,
+    ) -> Result<crate::snapshot_store::SnapshotBundle, RuntimeError> {
+        self.store_for_runtime(&self.runtime_root())?
+            .open_bundle_after_capture(directory_key, limits, handoff)
+    }
+
     /// Persist one bounded physical worker completion under this original layout.
     /// This does not adopt materials or grant Stop/Free permission.
     /// # Errors

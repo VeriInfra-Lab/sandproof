@@ -9,7 +9,7 @@ use crate::{
 use sandbox_runtime::{
     FullCaptureApiContext, FullCaptureLimits, HelperLimits, OriginalPauseObservation, OwnedChild,
     RuntimeConfig, RuntimeHelperGuard, RuntimeProcessIdentity, SnapshotLayout,
-    snapshot_store::BundleReadLimits,
+    snapshot_store::{BundleReadLimits, LiveCaptureHandoff},
 };
 use sandproof_controller_service::capture::{
     CaptureWorkerBinding, FullCaptureLaunchPermit, FullCaptureWorkRequest, RawSourceObservation,
@@ -96,7 +96,7 @@ impl PreparedCaptureWorker {
     pub(super) fn release_and_read<T>(
         self,
         permit: FullCaptureLaunchPermit,
-        read: impl FnOnce(&CaptureWorkerJob, ContentDigest) -> NodeResult<T>,
+        read: impl FnOnce(&CaptureWorkerJob, CaptureWorkerSuccess) -> NodeResult<T>,
     ) -> NodeResult<T> {
         self.require_launch_permit(&permit)?;
         // Consume this unique post-commit permission before opening the child gate.
@@ -113,8 +113,11 @@ impl PreparedCaptureWorker {
         };
         let mut child = self.child;
         let output = child.exchange(handshake::RELEASE, limits)?;
-        let manifest = decode_reply(self.job_digest, &output)?;
-        read(&self.job, manifest)
+        let result = decode_reply(self.job_digest, &output)?;
+        self.gate.require_live_capture_protection(&self.process)?;
+        let value = read(&self.job, result)?;
+        self.gate.require_live_capture_protection(&self.process)?;
+        Ok(value)
     }
 
     /// Close the Ready worker's release pipe. Only that worker may persist its
@@ -208,8 +211,15 @@ pub(super) struct CaptureWorkerReply {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "result", rename_all = "snake_case", deny_unknown_fields)]
 pub(super) enum CaptureWorkerOutcome {
-    Captured { manifest_digest: ContentDigest },
+    Captured(CaptureWorkerSuccess),
     Failed,
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(super) struct CaptureWorkerSuccess {
+    pub(super) manifest_digest: ContentDigest,
+    pub(super) handoff: Option<Box<LiveCaptureHandoff>>,
 }
 pub(super) fn api_context(
     action: &WorkAction<core::EffectId>,
@@ -230,7 +240,7 @@ fn digest(body: &[u8]) -> ContentDigest {
 fn decode_reply(
     expected: ContentDigest,
     output: &std::process::Output,
-) -> NodeResult<ContentDigest> {
+) -> NodeResult<CaptureWorkerSuccess> {
     if !output.status.success()
         || !output.stderr.is_empty()
         || output.stdout.is_empty()
@@ -243,7 +253,7 @@ fn decode_reply(
         return Err("capture worker reply names another original job".into());
     }
     match reply.outcome {
-        CaptureWorkerOutcome::Captured { manifest_digest } => Ok(manifest_digest),
+        CaptureWorkerOutcome::Captured(success) => Ok(success),
         CaptureWorkerOutcome::Failed => {
             Err("capture worker reported an unknown Full outcome".into())
         }
@@ -301,7 +311,7 @@ impl CaptureWorkerJob {
         Ok(())
     }
 
-    fn execute(&self, job_digest: ContentDigest) -> NodeResult<ContentDigest> {
+    fn execute(&self, job_digest: ContentDigest) -> NodeResult<CaptureWorkerSuccess> {
         self.validate_job()?;
         let provider = ProtectedHostEpochSource::at(self.bootstrap_path.clone())?;
         let inputs = crate::host_epoch::Inputs {
@@ -365,7 +375,17 @@ impl CaptureWorkerJob {
             .try_fold(0_u64, |n, f| n.checked_add(f.length))
             .ok_or("completed Full material length overflow")?;
         self.persist_completion(&layout, job_digest, manifest, material_bytes)?;
-        Ok(manifest)
+        Ok(CaptureWorkerSuccess {
+            manifest_digest: manifest,
+            // A durable completion still needs to be reconciled if metadata
+            // changed after capture. The receiving end then hashes all bytes.
+            handoff: captured
+                .stored()
+                .bundle()
+                .live_capture_handoff()
+                .ok()
+                .map(Box::new),
+        })
     }
     fn capture_original(
         &self,
@@ -518,16 +538,20 @@ mod tests {
         let manifest = ContentDigest::from_sha256([2; 32]);
         let reply = CaptureWorkerReply {
             job_digest: expected,
-            outcome: CaptureWorkerOutcome::Captured {
+            outcome: CaptureWorkerOutcome::Captured(CaptureWorkerSuccess {
                 manifest_digest: manifest,
-            },
+                handoff: None,
+            }),
         };
         let output = std::process::Output {
             status: std::process::ExitStatus::from_raw(0),
             stdout: serde_json::to_vec(&reply).unwrap(),
             stderr: vec![],
         };
-        assert_eq!(decode_reply(expected, &output).unwrap(), manifest);
+        assert_eq!(
+            decode_reply(expected, &output).unwrap().manifest_digest,
+            manifest
+        );
         assert!(decode_reply(ContentDigest::from_sha256([3; 32]), &output).is_err());
         for variant in 0..6 {
             let mut bad = output.clone();
@@ -550,12 +574,60 @@ mod tests {
     }
 
     #[test]
+    fn complete_live_handoff_fits_the_existing_reply_budget_and_rejects_replay() {
+        use std::os::unix::process::ExitStatusExt;
+        let stamp = serde_json::json!({
+            "device": u64::MAX,
+            "inode": u64::MAX,
+            "owner": u32::MAX,
+            "group": u32::MAX,
+            "mode": u32::MAX,
+            "links": u64::MAX,
+            "length": u64::MAX,
+            "modified": [i64::MIN, i64::MIN],
+            "changed": [i64::MIN, i64::MIN]
+        });
+        let digest_bytes = [u8::MAX; 32];
+        let file = serde_json::json!([stamp, digest_bytes]);
+        let handoff = serde_json::from_value(serde_json::json!({
+            "directory_key": digest_bytes,
+            "directory": stamp,
+            "manifest": stamp,
+            "manifest_sha256": digest_bytes,
+            "files": [file, file, file]
+        }))
+        .unwrap();
+        let original_job = ContentDigest::from_sha256(digest_bytes);
+        let manifest = ContentDigest::from_sha256(digest_bytes);
+        let reply = CaptureWorkerReply {
+            job_digest: original_job,
+            outcome: CaptureWorkerOutcome::Captured(CaptureWorkerSuccess {
+                manifest_digest: manifest,
+                handoff: Some(Box::new(handoff)),
+            }),
+        };
+        let mut stdout = serde_json::to_vec(&reply).unwrap();
+        stdout.push(b'\n');
+        assert!(stdout.len() <= CAPTURE_WORKER_OUTPUT_BYTES - 1024);
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stderr: Vec::new(),
+            stdout,
+        };
+        let received = decode_reply(original_job, &output).unwrap();
+        assert_eq!(received.manifest_digest, manifest);
+        assert!(received.handoff.is_some());
+        assert!(decode_reply(ContentDigest::from_sha256([0; 32]), &output).is_err());
+    }
+
+    #[test]
     fn diagnostic_noise_cannot_be_accepted_as_a_success_frame() {
         let reply = CaptureWorkerReply {
             job_digest: ContentDigest::from_sha256([1; 32]),
-            outcome: CaptureWorkerOutcome::Captured {
+            outcome: CaptureWorkerOutcome::Captured(CaptureWorkerSuccess {
                 manifest_digest: ContentDigest::from_sha256([2; 32]),
-            },
+                handoff: None,
+            }),
         };
         let bytes = serde_json::to_vec(&reply).unwrap();
         assert!(serde_json::from_slice::<CaptureWorkerReply>(&bytes).is_ok());

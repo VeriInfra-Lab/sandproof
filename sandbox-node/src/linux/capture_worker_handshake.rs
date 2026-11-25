@@ -175,7 +175,7 @@ pub(super) fn run(expected_job_digest: &str) -> NodeResult<()> {
     let released = await_release(&mut input, &source, deadline).unwrap_or(false);
     let outcome = if released {
         match job.execute(expected) {
-            Ok(manifest_digest) => CaptureWorkerOutcome::Captured { manifest_digest },
+            Ok(success) => CaptureWorkerOutcome::Captured(success),
             Err(_) => CaptureWorkerOutcome::Failed,
         }
     } else {
@@ -244,9 +244,10 @@ mod tests {
         assert!(check_ready(&ready[..ready.len() - 1], expected, &worker).is_err());
         let reply = serde_json::to_vec(&CaptureWorkerReply {
             job_digest: expected,
-            outcome: CaptureWorkerOutcome::Captured {
+            outcome: CaptureWorkerOutcome::Captured(super::super::CaptureWorkerSuccess {
                 manifest_digest: expected,
-            },
+                handoff: None,
+            }),
         })
         .unwrap();
         assert!(ready.len() + reply.len() < CAPTURE_WORKER_OUTPUT_BYTES);

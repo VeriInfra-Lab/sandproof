@@ -82,6 +82,80 @@ impl Drop for Fixture {
     }
 }
 
+const TEST_LIMITS: BundleReadLimits = BundleReadLimits {
+    state_bytes: 17,
+    memory_bytes: 17,
+    disk_bytes: 17,
+};
+
+#[test]
+fn live_handoff_reuses_every_original_measurement_in_an_independent_store() {
+    let fixture = Fixture::new();
+    let original = fixture.open().unwrap();
+    let handoff = original.live_capture_handoff().unwrap();
+    let pipe = serde_json::to_vec(&handoff).unwrap();
+    let handoff: LiveCaptureHandoff = serde_json::from_slice(&pipe).unwrap();
+    let receiver = SnapshotStore::open_for_owner(&fixture.store.path, fixture.store.owner).unwrap();
+    let checked = receiver
+        .open_bundle_after_capture_measuring(fixture.key, TEST_LIMITS, Some(&handoff), |_, _| {
+            panic!("receiver rehashed an exact producer measurement");
+        })
+        .unwrap();
+    assert_eq!(checked.manifest_sha256(), original.manifest_sha256());
+    assert_eq!(checked.measurements(), original.measurements());
+    checked.verify_unchanged().unwrap();
+}
+
+#[test]
+fn changed_live_handoff_artifacts_require_full_measurement_again() {
+    let fixture = Fixture::new();
+    let original = fixture.open().unwrap();
+    let handoff = original.live_capture_handoff().unwrap();
+    let disk = fixture.bundle_path().join("disk-0.img");
+    fixture.writable_directory();
+    fs::remove_file(&disk).unwrap();
+    fs::write(&disk, [9u8; 17]).unwrap();
+    fs::set_permissions(&disk, fs::Permissions::from_mode(0o400)).unwrap();
+    fixture.seal_directory();
+
+    let mut reads = 0;
+    let measured = fixture
+        .store
+        .open_bundle_after_capture_measuring(
+            fixture.key,
+            TEST_LIMITS,
+            Some(&handoff),
+            |file, role| {
+                reads += 1;
+                measure(file, role)
+            },
+        )
+        .unwrap();
+    assert_eq!(reads, 3);
+    // A manifest binding the original content must reject these measurements.
+    assert_eq!(measured.measurements()[..2], original.measurements()[..2]);
+    assert_ne!(measured.measurements()[2], original.measurements()[2]);
+}
+
+#[test]
+fn an_observation_without_live_handoff_remeasures_after_restart_or_lost_protection() {
+    let fixture = Fixture::new();
+    let original = fixture.open().unwrap();
+    let restarted =
+        SnapshotStore::open_for_owner(&fixture.store.path, fixture.store.owner).unwrap();
+    for receiver in [&fixture.store, &restarted] {
+        let mut reads = 0;
+        let measured = receiver
+            .open_bundle_after_capture_measuring(fixture.key, TEST_LIMITS, None, |file, role| {
+                reads += 1;
+                measure(file, role)
+            })
+            .unwrap();
+        assert_eq!(reads, 3);
+        assert_eq!(measured.measurements(), original.measurements());
+    }
+}
+
 #[test]
 fn verified_bundle_reuses_hashes_but_checks_current_limits_and_restarts_cold() {
     let fixture = Fixture::new();
@@ -92,14 +166,14 @@ fn verified_bundle_reuses_hashes_but_checks_current_limits_and_restarts_cold() {
     };
     let original = fixture
         .store
-        .open_bundle_measuring(fixture.key, limits, |_, _| {
+        .open_bundle_measuring(fixture.key, limits, Measurements::Cache, |_, _| {
             panic!("successful publication lost its verified measurements")
         })
         .unwrap()
         .measurements();
     let cached = fixture
         .store
-        .open_bundle_measuring(fixture.key, limits, |_, _| {
+        .open_bundle_measuring(fixture.key, limits, Measurements::Cache, |_, _| {
             panic!("unchanged sealed files were rehashed")
         })
         .unwrap();
@@ -113,14 +187,15 @@ fn verified_bundle_reuses_hashes_but_checks_current_limits_and_restarts_cold() {
                     memory_bytes: 16,
                     ..limits
                 },
-                measure
+                Measurements::Cache,
+                measure,
             )
             .is_err()
     );
     let reopened = SnapshotStore::open_for_owner(&fixture.store.path, fixture.store.owner).unwrap();
     let mut reads = 0;
     let fresh = reopened
-        .open_bundle_measuring(fixture.key, limits, |file, role| {
+        .open_bundle_measuring(fixture.key, limits, Measurements::Cache, |file, role| {
             reads += 1;
             measure(file, role)
         })
@@ -158,6 +233,7 @@ fn failed_bundle_check_requires_fresh_measurements_on_the_next_open() {
                 memory_bytes: 17,
                 disk_bytes: 17,
             },
+            Measurements::Cache,
             |file, artifact| {
                 measured.push(artifact);
                 measure(file, artifact)
@@ -195,6 +271,7 @@ fn cached_measurement_rechecks_changed_bytes_and_replaced_inodes() {
                 memory_bytes: 17,
                 disk_bytes: 17,
             },
+            Measurements::Cache,
             |file, role| {
                 reads += 1;
                 measure(file, role)

@@ -40,7 +40,7 @@ pub(crate) mod material_retirement;
 #[path = "snapshot_retirement.rs"]
 mod retirement;
 pub(crate) use bundle::BundleMeasurements;
-pub use bundle::{BundleReadLimits, SnapshotBundle};
+pub use bundle::{BundleReadLimits, LiveCaptureHandoff, SnapshotBundle};
 pub use material_retirement::CaptureStoreRetirement;
 
 const MAX_MANIFEST_BYTES: usize = 1_048_576;
