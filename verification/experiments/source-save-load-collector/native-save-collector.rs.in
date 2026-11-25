@@ -1,0 +1,38 @@
+#[test]
+fn proof_source_load_requires_complete_persisted_work_key() {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&directory.path().join("db"));
+    let original = prepare(&mut journal);
+    let connection = &journal.journal.connection;
+    let sources = codec::load(connection).unwrap().unwrap();
+    assert_eq!(sources.records, vec![original.clone()]);
+
+    let key = original.work.requirement.work_binding.as_bytes();
+    let mut foreign = *key;
+    foreign[0] ^= 1;
+    assert_ne!(foreign, *key);
+    let tx = connection.unchecked_transaction().unwrap();
+    codec::save(&tx, &sources, sources.max_sessions).unwrap();
+    assert_eq!(
+        tx.execute(
+            "UPDATE controller_source_work_records SET work_key=?1 WHERE work_key=?2",
+            [foreign.as_slice(), key.as_slice()],
+        )
+        .unwrap(),
+        1
+    );
+    let result = codec::load(&tx);
+    tx.rollback().unwrap();
+    assert_eq!(
+        codec::load(connection).unwrap().unwrap().records,
+        vec![original.clone()]
+    );
+
+    match result {
+        Err(JournalError::CorruptStore) => (),
+        Ok(Some(loaded)) if loaded.records == vec![original] => {
+            panic!("source loader accepted the original record under a foreign 32-byte stored key")
+        }
+        _ => panic!("source loader returned a different outcome for the foreign stored key"),
+    }
+}
