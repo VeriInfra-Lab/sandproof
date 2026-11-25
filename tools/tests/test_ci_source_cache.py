@@ -4,6 +4,8 @@ from dataclasses import asdict
 import json
 import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -106,13 +108,38 @@ class CacheTests(unittest.TestCase):
         with patch.object(cache,'prepare_disk',side_effect=self.prepare):
             with self.cache.acquire(SOURCE,{}):
                 pass
-            (self.cache.root/MERGE).chmod(0o700)
+            directory=self.cache.root/MERGE
+            directory.chmod(0o700)
             with self.assertRaisesRegex(ValueError,'inaccessible to the VM account'):
                 with self.cache.acquire(SOURCE,{}):
                     self.fail('an unreadable disk must not be attached')
+            directory.chmod(0o711)
+            (directory/'source.iso').chmod(0o000)
+            with self.assertRaises((PermissionError,ValueError)):
+                with self.cache.acquire(SOURCE,{}):
+                    self.fail('an unreadable image must not be attached')
 
 
 class IdentityTests(unittest.TestCase):
+    def test_unmounted_guest_cache_uses_original_checkout(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp)
+            mount=root/'source'
+            mount.mkdir()
+            env=dict(os.environ,GIT_ALLOW_PROTOCOL='file',GITHUB_REPOSITORY=cache.REPOSITORY,
+                     GITHUB_EVENT_NAME='pull_request',GITHUB_REF='refs/pull/1040/merge',GITHUB_SHA=MERGE)
+            subprocess.run(['/usr/bin/git','init','-q',temp],check=True)
+            subprocess.run(['/usr/bin/git','-C',temp,'remote','add','origin',cache.URL],check=True)
+            disk=cache.SourceDisk(root/'source.iso',SOURCE,MERGE,TREE)
+            with patch.object(cache,'MOUNT',str(mount)):
+                wrapper=cache.guest_wrapper(disk)
+            result=subprocess.run([sys.executable,'-I','-c',wrapper,'-c','protocol.version=2',
+                'fetch','--no-tags','--prune','--no-recurse-submodules','--depth=1','origin',
+                f'+{MERGE}:refs/remotes/pull/1040/merge'],cwd=root,env=env,capture_output=True,text=True)
+            self.assertNotEqual(result.returncode,0)
+            self.assertIn("transport 'https' not allowed",result.stderr)
+            self.assertNotIn('source cache hit',result.stdout)
+
     def test_only_exact_checkout_action_and_assigned_merge_match(self):
         env=dict(GITHUB_REPOSITORY=cache.REPOSITORY,GITHUB_EVENT_NAME='pull_request',
                  GITHUB_REF='refs/pull/1040/merge',GITHUB_SHA=MERGE)

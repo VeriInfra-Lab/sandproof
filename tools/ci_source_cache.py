@@ -183,7 +183,8 @@ REPOSITORY = {REPOSITORY!r}
 {match}
 git = '/usr/bin/git'
 argv = sys.argv[1:]
-if translated_argv(argv,os.environ,SimpleNamespace(number={disk.source.number!r}),{disk.merge!r}):
+if (translated_argv(argv,os.environ,SimpleNamespace(number={disk.source.number!r}),{disk.merge!r})
+        and os.path.ismount({MOUNT!r})):
     origin = subprocess.run([git,'config','--local','--get','remote.origin.url'],text=True,capture_output=True)
     if origin.returncode == 0 and origin.stdout.strip().casefold() in ({URL.casefold()!r}, {URL[:-4].casefold()!r}):
         cache = {MOUNT!r}+'/repo.git'
@@ -361,6 +362,8 @@ class SourceCache:
                         raise ValueError('cached PR source directory is inaccessible to the VM account')
                     name=path/'source.iso'
                     image=name.open('rb')
+                    if not os.fstat(image.fileno()).st_mode & stat.S_IROTH:
+                        raise ValueError('cached PR source image is unreadable to the VM account')
                     fcntl.flock(image,fcntl.LOCK_SH)
                     tree=record.get('tree','')
                     if (record.get('merge')!=path.name or not isinstance(tree,str) or not SHA.fullmatch(tree)

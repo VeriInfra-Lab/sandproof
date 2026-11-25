@@ -400,8 +400,9 @@ if processes():
             git_bin = ci_source_cache.GUEST_BIN
             result['write_files'][0]['content'] = result['write_files'][0]['content'].replace('PATH=', f'PATH={git_bin}:', 1)
             result['write_files'].append(file_entry(git_bin+'/git',ci_source_cache.guest_wrapper(source_disk),'0555'))
-            preparation += (f'/usr/bin/install -d -m0755 {mount} && '
-                            f'/usr/bin/mount -t iso9660 -o ro,nosuid,nodev,noexec LABEL={ci_source_cache.LABEL} {mount} && ')
+            preparation += (f'{{ /usr/bin/install -d -m0755 {mount} && '
+                            f'/usr/bin/mount -t iso9660 -o ro,nosuid,nodev,noexec LABEL={ci_source_cache.LABEL} {mount} '
+                            '|| echo "Sandproof CI source mount unavailable; using GitHub checkout"; } && ')
         result['runcmd'] = [['chown', '-R', 'runner:runner', '/opt/actions-runner'],
             ['systemctl', 'daemon-reload'], ['bash', '-c',
             'if ' + preparation + 'runuser -u runner -- python3 /opt/sandproof-ci/check-isolation.py; then '
