@@ -17,6 +17,17 @@ elif [[ "$#" != 0 ]]; then
   exit 2
 fi
 
+# Managed manual runs may pin the libtest worker count for the two full suites.
+# An explicit argument takes precedence over any inherited RUST_TEST_THREADS.
+rust_test_thread_arg=''
+if [[ ${SANDPROOF_CHECK_RUST_THREADS+x} ]]; then
+  if [[ ! $SANDPROOF_CHECK_RUST_THREADS =~ ^[1-9][0-9]*$ ]]; then
+    echo 'SANDPROOF_CHECK_RUST_THREADS must be a positive integer' >&2
+    exit 2
+  fi
+  rust_test_thread_arg="--test-threads=$SANDPROOF_CHECK_RUST_THREADS"
+fi
+
 # Diagnostics never wrap child I/O, change test options, retry commands or own
 # cleanup. Keep the original shell/stdio and exit status. Receipts are private,
 # bounded and fresh per invocation; a killed run remains explicitly incomplete.
@@ -116,7 +127,11 @@ check_begin workspace-clippy lint
 cargo --config scripts/check-profiles.toml clippy --workspace --all-targets --locked -- -D warnings
 check_end
 check_begin workspace-tests test
-cargo --config scripts/check-profiles.toml test --workspace --all-targets --locked --no-fail-fast
+if [[ -n $rust_test_thread_arg ]]; then
+  printf 'Rust test threads (workspace and diagnostics): %s\n' "$SANDPROOF_CHECK_RUST_THREADS"
+fi
+cargo --config scripts/check-profiles.toml test --workspace --all-targets --locked --no-fail-fast \
+  ${rust_test_thread_arg:+-- "$rust_test_thread_arg"}
 check_end
 check_begin workspace-doctests test
 cargo --config scripts/check-profiles.toml test --workspace --doc --locked
@@ -128,6 +143,7 @@ check_begin diagnostics-tests test
 # The preceding workspace stage ran these journal-only stress cases. The
 # diagnostics feature changes the application mutex, outside their call paths.
 cargo --config scripts/check-profiles.toml test --locked -p sandproof-controller-service --features contention-diagnostics -- --exact \
+  ${rust_test_thread_arg:+"$rust_test_thread_arg"} \
   --skip controller::checkpoint::tests::build_capacity::private_settlement_reuses_one_slot_at_exact_sql_and_result_reservation_edges \
   --skip controller::checkpoint::tests::build_capacity::unknown_private_anchor_keeps_only_its_own_credit_while_other_slot_churns \
   --skip controller::checkpoint::tests::capacity::long_churn_keeps_old_running_and_unknown_but_bounds_tail_sql_and_pages

@@ -219,7 +219,8 @@ if sys.argv[1] == 'tree':
         events = directory / 'events.jsonl'
         env = os.environ | {'SANDPROOF_CHECK_EVENTS': str(events), 'CHECK_TRACE': str(directory / 'trace'),
                             'PATH': str(directory / 'bin') + os.pathsep + os.environ['PATH']}
-        for name in ('CHECK_FAIL_CARGO', 'CHECK_FAIL_TOOLS', 'CHECK_BAD_DEPENDENCY'):
+        for name in ('CHECK_FAIL_CARGO', 'CHECK_FAIL_TOOLS', 'CHECK_BAD_DEPENDENCY',
+                     'SANDPROOF_CHECK_RUST_THREADS'):
             env.pop(name, None)
         env.update(extra or {})
         command = ['bash', 'scripts/check-function.sh'] + (['--portable'] if mode == 'portable' else [])
@@ -259,6 +260,27 @@ if sys.argv[1] == 'tree':
             self.assertIn(['python', 'tools/check_function_tests.py', '--mode', 'linux'], trace)
             self.assertIn(['python', 'tools/check_docs.py'], trace)
             self.assertEqual(len(report['stages']), 13)
+
+    def test_manual_worker_count_reaches_both_rust_suites(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            self.fixture(directory)
+            result, trace, report = self.execute(directory, extra={
+                'SANDPROOF_CHECK_RUST_THREADS': '32',
+                'RUST_TEST_THREADS': '2',
+            })
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(report['exit_code'], 0)
+            worker_commands = [item for item in trace if '--test-threads=32' in item]
+            self.assertEqual(len(worker_commands), 2)
+            workspace, diagnostics = worker_commands
+            self.assertEqual(workspace, ['cargo', 'test', '--workspace', '--all-targets',
+                                         '--locked', '--no-fail-fast', '--', '--test-threads=32'])
+            self.assertEqual(diagnostics[:10], [
+                'cargo', 'test', '--locked', '-p', 'sandproof-controller-service',
+                '--features', 'contention-diagnostics', '--', '--exact', '--test-threads=32',
+            ])
+            self.assertIn('Rust test threads (workspace and diagnostics): 32', result.stdout)
 
     def test_failed_execution_keeps_exit_and_never_runs_later_checks(self):
         command = ['test', '--workspace', '--all-targets', '--locked', '--no-fail-fast']
