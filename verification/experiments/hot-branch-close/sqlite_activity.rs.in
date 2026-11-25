@@ -1,0 +1,360 @@
+
+mod sqlite_activity {
+    use super::*;
+    use crate::controller::lifecycle_inbox::model::Inbox;
+    use crate::{CrashInjector, CrashPoint};
+    use rusqlite::hooks::Action;
+    use rusqlite::trace::{TraceEvent, TraceEventCodes};
+    use rusqlite::{Connection, Error, ErrorCode, TransactionBehavior};
+    use sha2::{Digest, Sha256};
+    use std::cell::RefCell;
+    use std::fmt::Write as _;
+    use std::os::unix::fs::MetadataExt as _;
+    use std::time::Duration;
+
+    const SCAN: &str = "SELECT operation,parent,execution,record,sha256 FROM controller_host_branch_batches LIMIT ?1";
+    const RETIRE: &str = "DELETE FROM controller_host_branch_batches WHERE operation=?1";
+    const SAVE: &str = "UPDATE controller_lifecycle_inbox SET state_json=?1,sha256=?2 WHERE id=1";
+
+    thread_local! {
+        static SQL: RefCell<Vec<Activity>> = const { RefCell::new(Vec::new()) };
+    }
+
+    enum Activity {
+        Statement(String),
+        ScanRow,
+        BatchDeleted(i64),
+        InboxUpdated(i64),
+        UnexpectedWrite,
+    }
+
+    fn transaction_statement(sql: &str) -> bool {
+        sql.split_ascii_whitespace().next().is_some_and(|first| {
+            matches!(
+                first.to_ascii_uppercase().as_str(),
+                "BEGIN" | "COMMIT" | "END" | "ROLLBACK" | "SAVEPOINT" | "RELEASE"
+            )
+        })
+    }
+
+    fn observe_statement(event: TraceEvent<'_>) {
+        if matches!(&event, TraceEvent::Row(statement) if statement.sql() == SCAN) {
+            SQL.with_borrow_mut(|history| history.push(Activity::ScanRow));
+            return;
+        }
+        let TraceEvent::Stmt(statement, _) = event else {
+            return;
+        };
+        let sql = statement.sql();
+        let selected = match sql.as_ref() {
+            SCAN | RETIRE | SAVE => statement.expanded_sql().unwrap_or_default(),
+            boundary if transaction_statement(boundary) => {
+                boundary.trim().trim_end_matches(';').to_owned()
+            }
+            _ => return,
+        };
+        SQL.with_borrow_mut(|history| history.push(Activity::Statement(selected)));
+    }
+
+    fn observe_row(action: Action, database: &str, table: &str, rowid: i64) {
+        let change = match (action, database, table) {
+            (Action::SQLITE_DELETE, "main", "controller_host_branch_batches") => {
+                Activity::BatchDeleted(rowid)
+            }
+            (Action::SQLITE_UPDATE, "main", "controller_lifecycle_inbox") => {
+                Activity::InboxUpdated(rowid)
+            }
+            (_, _, "controller_host_branch_batches" | "controller_lifecycle_inbox") => {
+                Activity::UnexpectedWrite
+            }
+            _ => return,
+        };
+        SQL.with_borrow_mut(|history| history.push(change));
+    }
+
+    #[derive(Clone, PartialEq, Eq)]
+    struct Image {
+        batches: Vec<(i64, [Vec<u8>; 5])>,
+        inbox: Vec<u8>,
+        inbox_digest: Vec<u8>,
+        reserve: i64,
+    }
+
+    fn image(connection: &Connection) -> Image {
+        let mut statement = connection
+            .prepare(
+                "SELECT rowid,operation,parent,execution,record,sha256
+                 FROM controller_host_branch_batches ORDER BY operation",
+            )
+            .unwrap();
+        let batches = statement
+            .query_map([], |row| {
+                Ok((
+                    row.get(0)?,
+                    [row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?],
+                ))
+            })
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let (inbox, inbox_digest, reserve) = connection
+            .query_row(
+                "SELECT state_json,sha256,reserve_bytes FROM controller_lifecycle_inbox WHERE id=1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+        Image { batches, inbox, inbox_digest, reserve }
+    }
+
+    fn blob_literal(bytes: &[u8]) -> String {
+        let mut literal = String::from("x'");
+        for byte in bytes {
+            write!(literal, "{byte:02x}").unwrap();
+        }
+        literal.push('\'');
+        literal
+    }
+
+    fn file_identity(path: &Path) -> (u64, u64) {
+        let metadata = path.metadata().unwrap();
+        (metadata.dev(), metadata.ino())
+    }
+
+    fn assert_storage(journal: &ControllerJournal, path: &Path) {
+        let original = path.canonicalize().unwrap();
+        assert_eq!(
+            journal.journal.connection.path().map(Path::new),
+            Some(original.as_path())
+        );
+        let settings = journal.journal.storage_settings().unwrap();
+        assert_eq!(settings.sqlite_version, "3.53.2");
+        assert_eq!(settings.journal_mode, "wal");
+        assert_eq!(settings.synchronous, 2);
+        assert!(settings.foreign_keys && !settings.trusted_schema);
+    }
+
+    struct Observe<'a> {
+        database: &'a Path,
+        other: Connection,
+        old: &'a Image,
+        stop: Option<CrashPoint>,
+        seen: Vec<CrashPoint>,
+    }
+
+    impl CrashInjector for Observe<'_> {
+        fn hit(&mut self, point: CrashPoint) -> Result<(), JournalError> {
+            self.seen.push(point);
+            if point == CrashPoint::BeforeCommit {
+                let read = self.other.unchecked_transaction().unwrap();
+                assert!(image(&read) == *self.old, "retirement published a partial image before commit");
+                read.commit().unwrap();
+                assert!(matches!(
+                    self.other.transaction_with_behavior(TransactionBehavior::Immediate),
+                    Err(Error::SqliteFailure(error, _)) if error.code == ErrorCode::DatabaseBusy
+                ));
+                assert!(matches!(
+                    crate::controller::lease_controller_store(self.database),
+                    Err(JournalError::ControllerBusy)
+                ));
+            }
+            if self.stop == Some(point) {
+                Err(JournalError::InjectedCrash(point))
+            } else {
+                Ok(())
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Settlement {
+        RollbackBeforeCommit,
+        UnknownRolledBack,
+        UnknownCommitted,
+        LostAfterCommit,
+        Committed,
+    }
+
+    fn check_history(history: &[Activity], new: &Image, keys: &[([u8; 32], i64); 2], end: &str) {
+        let scan_sql = SCAN.replace("?1", &(u32::from(LIMITS.max_batches) + 1).to_string());
+        let scans = history
+            .iter()
+            .enumerate()
+            .filter_map(|(position, entry)| {
+                matches!(entry, Activity::Statement(sql) if sql == &scan_sql).then_some(position)
+            })
+            .collect::<Vec<_>>();
+        let &[scan] = scans.as_slice() else {
+            panic!("retirement must issue one original SELECT with the actual configured bound");
+        };
+        let begin = history[..scan]
+            .iter()
+            .rposition(|entry| {
+                matches!(entry, Activity::Statement(sql) if transaction_statement(sql))
+            })
+            .unwrap();
+        assert!(matches!(&history[begin..scan], [Activity::Statement(sql)] if sql == "BEGIN IMMEDIATE"));
+
+        use Activity::{BatchDeleted, InboxUpdated, ScanRow, Statement};
+        let [ScanRow, ScanRow, ScanRow, Statement(first), BatchDeleted(first_id),
+             Statement(second), BatchDeleted(second_id), Statement(save), InboxUpdated(1),
+             Statement(ending)] = &history[scan + 1..] else {
+            panic!("DELETEs, inbox UPDATE and transaction end must be consecutive on the original handle");
+        };
+        let delete = |key: &[u8; 32]| RETIRE.replace("?1", &blob_literal(key));
+        let mut expected = keys.each_ref().map(|(key, id)| (delete(key), *id));
+        expected.sort_unstable();
+        let mut observed = [(first.as_str(), *first_id), (second.as_str(), *second_id)];
+        observed.sort_unstable();
+        assert!(
+            observed == expected.each_ref().map(|(sql, id)| (sql.as_str(), *id)),
+            "DELETE did not bind the original key and affect exactly its row"
+        );
+        let update = SAVE
+            .replace("?1", &blob_literal(&new.inbox))
+            .replace("?2", &blob_literal(&new.inbox_digest));
+        assert!(save == &update, "UPDATE did not bind the original closed inbox and digest");
+        assert_eq!(ending, end);
+    }
+
+    fn check_settlement(settlement: Settlement) {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("db");
+        let (mut journal, parent, context) = running(&path);
+        assert_storage(&journal, &path);
+        journal.configure_host_branching(LIMITS).unwrap();
+        let create = fixture::create("alpha", "session-a");
+        let local = journal.lifecycle_work_state(&create, &context).unwrap().local.unwrap();
+        let (sibling, _) = admit_running(&mut journal, &fixture::create("bravo", "session-b"), &context);
+
+        let originals = [key(&parent, "first", 10), key(&parent, "second", 11)];
+        let sibling_key = key(&sibling, "sibling", 10);
+        let sibling_targets = [target("sibling", 31_000)];
+        for (position, (original, branch)) in originals.iter().zip(["original-a", "original-b"]).enumerate() {
+            let port = 31_000 + u16::try_from(position).unwrap();
+            journal
+                .reserve_host_branch_batch(&parent, &context, original, &[target(branch, port)], NOW)
+                .unwrap();
+        }
+        journal
+            .reserve_host_branch_batch(&sibling, &context, &sibling_key, &sibling_targets, NOW)
+            .unwrap();
+        let pending = key(&sibling, "pending", 12);
+        let pending_targets = [target("pending", 31_002)];
+        let must_hold_capacity = |journal: &mut ControllerJournal| {
+            assert!(matches!(
+                journal.reserve_host_branch_batch(&sibling, &context, &pending, &pending_targets, NOW),
+                Err(JournalError::MaintenanceCapacity)
+            ));
+        };
+        let close = confirm_terminal_branch_parent(&mut journal, &create, local, &context, must_hold_capacity);
+        let database_identity = file_identity(&path);
+        let lease_identity = file_identity(&path.with_file_name("db.controller.lock"));
+        let old = image(&journal.journal.connection);
+        assert_eq!(old.batches.len(), 3);
+        let operation_keys = originals.map(|key| {
+            let operation =
+                <[u8; 32]>::from(Sha256::digest(serde_json::to_vec(&key.operation).unwrap()));
+            let (rowid, _) = old.batches.iter()
+                .find(|(_, row)| row[0].as_slice() == operation.as_slice())
+                .unwrap();
+            (operation, *rowid)
+        });
+        let mut new = old.clone();
+        new.batches.retain(|(id, _)| !operation_keys.iter().any(|(_, retired)| retired == id));
+        assert_eq!(new.batches.len(), 1);
+        let mut inbox: Inbox = serde_json::from_slice(&old.inbox).unwrap();
+        let retired = &close.terminal.request.retention;
+        let lane = inbox.lanes.iter_mut().find(|lane| lane.slot == retired.slot).unwrap();
+        assert_eq!(lane.current_window, Some(retired.window));
+        lane.retired_through = retired.window.get();
+        lane.current_window = Some((retired.window.get() + 1).try_into().unwrap());
+        lane.last_retired = Some(close.terminal.clone());
+        inbox.sessions.retain(|session| session.id != parent.session);
+        inbox.owners.retain(|owner| owner.external != create.request.binding.key.owner);
+        new.inbox = serde_json::to_vec(&inbox).unwrap();
+        new.inbox_digest = Sha256::digest(&new.inbox).to_vec();
+        assert!(new.inbox != old.inbox);
+
+        let other = Connection::open(&path).unwrap();
+        other.busy_timeout(Duration::ZERO).unwrap();
+        let mut witness = Observe {
+            database: &path,
+            other,
+            old: &old,
+            stop: match settlement {
+                Settlement::RollbackBeforeCommit => Some(CrashPoint::BeforeCommit),
+                Settlement::LostAfterCommit => Some(CrashPoint::AfterCommit),
+                _ => None,
+            },
+            seen: Vec::new(),
+        };
+        match settlement {
+            Settlement::UnknownRolledBack => crate::controller::transaction::fail_next_commit(false),
+            Settlement::UnknownCommitted => crate::controller::transaction::fail_next_commit(true),
+            _ => {}
+        }
+        SQL.with_borrow_mut(Vec::clear);
+        journal.journal.connection.trace_v2(
+            TraceEventCodes::SQLITE_TRACE_STMT | TraceEventCodes::SQLITE_TRACE_ROW,
+            Some(observe_statement),
+        );
+        journal.journal.connection.update_hook(Some(observe_row)).unwrap();
+        let result = journal.close_lifecycle_window(&close, &context, &mut witness);
+        journal.journal.connection.trace_v2(TraceEventCodes::empty(), None);
+        journal.journal.connection.update_hook(None::<fn(Action, &str, &str, i64)>).unwrap();
+        let history = SQL.with_borrow_mut(std::mem::take);
+        assert!(journal.journal.connection.is_autocommit());
+        match settlement {
+            Settlement::RollbackBeforeCommit => assert!(matches!(result, Err(JournalError::InjectedCrash(CrashPoint::BeforeCommit)))),
+            Settlement::UnknownRolledBack | Settlement::UnknownCommitted => {
+                assert!(matches!(result, Err(JournalError::CommitUncertain(_))));
+            }
+            Settlement::LostAfterCommit => assert!(matches!(result, Err(JournalError::InjectedCrash(CrashPoint::AfterCommit)))),
+            Settlement::Committed => assert_eq!(result.unwrap().terminal, close.terminal),
+        }
+        let committed = matches!(
+            settlement,
+            Settlement::UnknownCommitted | Settlement::LostAfterCommit | Settlement::Committed
+        );
+        let after_hook = matches!(settlement, Settlement::LostAfterCommit | Settlement::Committed);
+        let expected_hooks = if after_hook {
+            &[CrashPoint::BeforeCommit, CrashPoint::AfterCommit][..]
+        } else {
+            &[CrashPoint::BeforeCommit][..]
+        };
+        assert_eq!(witness.seen.as_slice(), expected_hooks);
+        check_history(&history, &new, &operation_keys, if committed { "COMMIT" } else { "ROLLBACK" });
+        drop(witness);
+        drop(journal);
+
+        let mut reopened = fixture::open(&path);
+        assert_storage(&reopened, &path);
+        assert_eq!(file_identity(&path), database_identity);
+        assert_eq!(file_identity(&path.with_file_name("db.controller.lock")), lease_identity);
+        assert!(&image(&reopened.journal.connection) == if committed { &new } else { &old },
+                "protected reopen found a split or unexpected retirement image");
+        fixture::refresh_epoch(&mut reopened);
+        if committed {
+            let replay = reopened.close_lifecycle_window(&close, &context, &mut NeverCrash).unwrap();
+            assert_eq!(replay.terminal, close.terminal);
+            assert_eq!(replay.retired_through, retired.window);
+            assert!(image(&reopened.journal.connection) == new);
+        } else {
+            must_hold_capacity(&mut reopened);
+        }
+    }
+
+    #[test]
+    fn original_retirement_sqlite_activity_and_protected_reopen_are_joint() {
+        for settlement in [
+            Settlement::RollbackBeforeCommit,
+            Settlement::UnknownRolledBack,
+            Settlement::UnknownCommitted,
+            Settlement::LostAfterCommit,
+            Settlement::Committed,
+        ] {
+            check_settlement(settlement);
+        }
+    }
+}

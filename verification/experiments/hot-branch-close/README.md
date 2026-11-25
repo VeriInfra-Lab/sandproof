@@ -14,6 +14,20 @@
 
 实际游标和 BLOB 值、DELETE 影响的物理行及事务镜像、受保护重开、宿主授权和资源释放仍需各自的实现对应。
 
+## 活动 SQLite 原生对照
+
+`sqlite_activity_native.py` 把测试夹具追加到精确候选的私有源码归档。它在原控制器连接上登记固定 SQLite 的语句跟踪及行更新回调，记录一次 `BEGIN IMMEDIATE` 下的实参、游标行数、各自原键对应的 DELETE 行、收件箱两个有序 BLOB 及提交或回滚。提交前使用第二连接核对旧镜像可读、独占写入受阻和产品控制租约拒绝。通过产品打开原文件后，再核对库和租约身份、原 WAL/FULL 设置、整张相关旧或新镜像以及旧请求重放。
+
+夹具分别验证提交前退出、未知但回滚、未知但提交、提交后回复失败和正常确认。提前提交的独立变体必须成功编译，并在原提交前读回断言被拒绝。原生记录仅覆盖上述实物样例。游标值和 SQL 事务结果到现有 Lean 条件的通用实现对应仍需单独完成。
+
+使用下节同一固定工具、协调锁及 `/mnt/data2tb` 私有输出。候选须是已审核且干净的检出，另在独立目标目录编译和运行每个变体。
+
+```sh
+taskset -c "$native_cpus" "$proof_python" -B \
+  "$candidate_checkout/verification/experiments/hot-branch-close/sqlite_activity_native.py" \
+  --candidate "$candidate" --checkout "$candidate_checkout" --output "$sqlite_activity_output"
+```
+
 ## Linux 复验
 
 使用 `msra` 的数据盘、项目固定的原证明工具和独立输出。按工作流取得原 Stage1 锁及可继承的文件描述符，设置 `SANDPROOF_ACCEPTANCE_ROLE=formal`、`SANDPROOF_LOCK_FILE` 与 `SANDPROOF_LOCK_FD`。两个入口各在四个已分配 CPU 上运行。原生入口需要离线 Cargo 缓存。`--checkout` 指向含固定候选及其父节点的干净检出。
