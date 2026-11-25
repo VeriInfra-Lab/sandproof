@@ -1,0 +1,20 @@
+{
+  "issue": 635,
+  "id": "source-save-load-decision",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "2edc1a6c14c0b379dd7dc4977631adde488c97ca",
+  "original_collector": "cd6f6b3c8365e1dd05fe350443f0ff848e33c557",
+  "formal_entry": "verification/experiments/source-save-load-decision/decision_check.py",
+  "native_entry": "verification/experiments/source-save-load-decision/decision_native.py",
+  "root": "SaveLoadDecisionWitness",
+  "field_contract": "SandboxModel.Stage1Protocol.SaveLoadDecision.actual_decoder_satisfies_complete_decision",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveLoadDecision.original_load_refines_complete_precise_read",
+  "first_error_theorem": "SandboxModel.Stage1Protocol.SaveLoadDecision.original_save_preserves_first_complete_precise_error",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveLoadDecisionWitness.length_only_wrong_refutes_same_complete_decision",
+  "remaining": [
+    "Ning exact ordinary and native acceptance",
+    "main coordinator shared registration and coverage adoption",
+    "concrete named Serde/SHA library conformance, physical rows and transaction"
+  ],
+  "public_acceptance": false
+}
