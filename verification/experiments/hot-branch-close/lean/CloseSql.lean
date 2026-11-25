@@ -179,6 +179,7 @@ theorem actual_retirement_statements :
     selectSql =
       "SELECT operation,parent,execution,record,sha256 FROM controller_host_branch_batches LIMIT ?1" ∧
     deleteSql = "DELETE FROM controller_host_branch_batches WHERE operation=?1" ∧
+    selectColumns = [0, 1, 2, 3, 4] ∧ selectLimitOffset = 1 ∧ deleteDigestBytes = 32 ∧
     separateTransactionCalls = 0 := by
   decide
 

@@ -16,6 +16,9 @@ SQLITE_DEREF = ('rusqlite', 'transaction', 'deref')
 SQLITE_PREPARE = ('rusqlite', 'prepare')
 SQLITE_QUERY = ('rusqlite', 'statement', 'query_map')
 SQLITE_EXECUTE = ('rusqlite', 'execute')
+SQLITE_ROW_GET = ('rusqlite', 'row', 'get')
+FN_MUT = ('core', 'ops', 'function', 'FnMut')
+BYTE_VEC = ('alloc', 'vec', 'Vec')
 RESULT_BRANCH = ('core', 'result', 'branch')
 READ_LIMITS = (*BRANCH, 'read_limits')
 LOAD_BATCH = (*BRANCH, 'load')
@@ -78,7 +81,7 @@ def statements(block, loop_depth=0):
             yield kind, value, loop_depth
 
 
-def representations(root):
+def representations(root, *, trait_refs=None):
     types, integers = {}, {}
     pending = [root]
     while pending:
@@ -93,11 +96,14 @@ def representations(root):
             index, data = value
             # Charon uses separate ID spaces for types, constants, spans and
             # trait references. Only select the relevant typed encodings.
-            if isinstance(data, dict) and data.keys() & {'Scalar', 'Array', 'Ref', 'Slice'}:
+            if isinstance(data, dict) and data.keys() & {'Scalar', 'Array', 'Ref', 'Slice', 'Adt'}:
                 table = types
             elif (isinstance(data, list) and len(data) == 2
                   and isinstance(data[0], dict) and 'Integer' in data[0]):
                 table = integers
+            elif (trait_refs is not None and isinstance(data, dict)
+                  and data.keys() == {'kind', 'trait_decl_ref'}):
+                table = trait_refs
             else:
                 continue
             require(table.setdefault(index, data) == data, 'conflicting LLBC parameter representation')
@@ -110,8 +116,91 @@ def unpack(encoded, deduplicated):
     return encoded['Value'][1]
 
 
-def check_sql_parameters(translated, definitions, calls):
-    types, integers = representations(translated)
+def mapped_callback(translated, definitions, query, functions, types, trait_refs):
+    """Follow the actual query_map operand and its compiler-selected FnMut method."""
+    callback = query['args'][2].get('Move')
+    require(callback is not None and 'Local' in callback['kind'],
+            'retirement query must pass its original closure local')
+    values = definitions[callback['kind']['Local']]
+    require(len(values) == 1 and values[0][0] == 'assign',
+            'retirement query callback has no unique construction')
+    aggregate, captures = values[0][1]['Aggregate']
+    closure, variant, union = aggregate['Adt']
+    require(captures == [] and variant is None and union is None,
+            'retirement query callback must be the original captureless closure')
+
+    generics = query['func']['Regular']['generics']
+    trait_names = {entry['def_id']: name(entry) for entry in translated['trait_decls'] if entry}
+    bindings = [unpack(encoded, trait_refs) for encoded in generics['trait_refs']]
+    dictionaries = [binding for binding in bindings
+                    if trait_names.get(binding['trait_decl_ref']['skip_binder']['id']) == FN_MUT]
+    require(len(dictionaries) == 1, 'retirement SELECT must pass one exact FnMut dictionary')
+    dictionary = dictionaries[0]
+    receiver = dictionary['trait_decl_ref']['skip_binder']['generics']['types'][0]
+    require(all(unpack(encoded, types).get('Adt') == closure
+                for encoded in (callback['ty'], generics['types'][2], receiver)),
+            'retirement SELECT callback and FnMut dictionary disagree on the closure type')
+    implementation = dictionary['kind']['TraitImpl']['id']
+    impl, = (entry for entry in translated['trait_impls'] if entry and entry['def_id'] == implementation)
+    methods = [functions[entry['skip_binder']['id']] for entry in impl['methods']]
+    method, = (entry for entry in methods if name(entry)[-1] == 'call_mut')
+    require(name(method) == (*BRANCH, 'retire_closed_parent', 'call_mut')
+            and method['item_meta']['name'][-2] == {'Impl': {'Trait': implementation}}
+            and method['item_meta']['opacity'] == 'Transparent',
+            'retirement SELECT did not capture the original FnMut body')
+    return method['body']['Structured']
+
+
+def check_row_columns(translated, body, functions, types, integers):
+    require(body['locals']['arg_count'] == 2, 'retirement SELECT changed its row callback arguments')
+    assignments = defaultdict(list)
+    row_reads = []
+    for tag, value, _ in statements(body['body']):
+        if tag == 'Assign':
+            target, source = value
+            if 'Local' in target['kind']:
+                assignments[target['kind']['Local']].append(source)
+        elif tag == 'Call':
+            call = value['call']
+            target = call['func'].get('Regular', {}).get('kind', {}).get('Fun')
+            if target in functions and name(functions[target]) == SQLITE_ROW_GET:
+                row_reads.append(call)
+
+    type_names = {entry['def_id']: name(entry) for entry in translated['type_decls'] if entry}
+    columns = []
+    for call in row_reads:
+        receiver, index = call['args']
+        receiver = receiver.get('Move', receiver.get('Copy'))
+        [borrow] = assignments[receiver['kind']['Local']]
+        reference = borrow['Ref']
+        place, projection = reference['place']['kind']['Projection']
+        require(reference['kind'] == 'Shared' and projection == 'Deref',
+                'retirement column read must borrow the original row')
+        [row] = assignments[place['kind']['Local']]
+        original = row['Use'][0]
+        incoming = original.get('Move', original.get('Copy'))
+        argument, projection = incoming['kind']['Projection']
+        require(argument['kind'] == {'Local': 2} and projection == {'Field': [None, 0]},
+                'retirement column read changed its original callback row')
+
+        index_type, blob_type = call['func']['Regular']['generics']['types']
+        vector = unpack(blob_type, types)['Adt']
+        byte, = vector['generics']['types']
+        require(unpack(index_type, types) == {'Scalar': {'Integer': {'Unsigned': 'Usize'}}}
+                and type_names.get(vector['id']) == BYTE_VEC
+                and unpack(byte, types) == {'Scalar': {'Integer': {'Unsigned': 'U8'}}},
+                'retirement column read must use Row::get<usize, Vec<u8>>')
+        literal = unpack(index['Const'], integers)
+        scalar, value = literal[0]['Integer']['Unsigned']
+        require(scalar == 'Usize', 'retirement column number must be a usize literal')
+        columns.append(int(value))
+    require(columns == list(range(5)), 'retirement row must read the original five BLOB columns in order')
+    return columns
+
+
+def check_sql_parameters(translated, definitions, calls, functions):
+    trait_refs = {}
+    types, integers = representations(translated, trait_refs=trait_refs)
 
     def uint(encoded):
         data = unpack(encoded, integers)
@@ -216,7 +305,7 @@ def check_sql_parameters(translated, definitions, calls):
             'retirement SELECT must bind the single u32 max_batches + 1')
 
     # Follow the original row cursor to load and through both field projections
-    # to the digest. The callback that constructs the row is opaque here.
+    # to the digest. The column checker separately resolves its FnMut body.
     issued = field(invoke(RESULT_BRANCH, invoke(SQLITE_QUERY)), 0, 0)
     rows = invoke(INTO_ITER, invoke(ENUMERATE, issued))
     row_result = field(field(invoke(ENUMERATE_NEXT, referenced(rows, 'TwoPhaseMut')), 1, 0), None, 1)
@@ -236,11 +325,17 @@ def check_sql_parameters(translated, definitions, calls):
     require(operand(delete[2]) == ('array', ('ref-type', 'Shared', ('slice', 'U8')), one, (key_slice,)),
             'retirement DELETE must bind the single full 32-byte operation digest')
 
+    query_call, = (
+        data[2] for entries in definitions.values() for kind, data in entries
+        if kind == 'call' and data[0] == SQLITE_QUERY
+    )
+    callback = mapped_callback(translated, definitions, query_call, functions, types, trait_refs)
+    columns = check_row_columns(translated, callback, functions, types, integers)
     return dict(
         select_parameter=dict(slot=1, rust_type='u32', source='HostBranchLimits.max_batches', add=1),
         delete_parameter=dict(slot=1, rust_type='&[u8]', source='digest(loaded_record.key.operation)',
                               bytes=32, through='original retirement vector'),
-        row_callback_columns='not verified by the parameter dataflow check',
+        row_callback_columns=columns,
     )
 
 
@@ -361,7 +456,7 @@ def check(capture):
                 branch_source_sha256=BRANCH_SHA256, original_owner_argument=1,
                 direct_calls=len(calls), select=SELECT, delete=DELETE,
                 separate_transaction_calls=0,
-                **check_sql_parameters(translated, defs, calls))
+                **check_sql_parameters(translated, defs, calls, functions))
 
 
 if __name__ == '__main__':

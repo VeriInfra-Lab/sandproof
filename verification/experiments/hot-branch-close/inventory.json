@@ -156,7 +156,7 @@
     ]
   },
   "close_sql": {
-    "sha256": "5d5fecf3e7925a52d2874fec0b51a3b5473302ecaf3ee915264083b28c325559",
+    "sha256": "1513900ac9d9c3d1d1b32d04e9e96c2dc570c5be6fee8bf40b1d1405dd21aed7",
     "generated": false,
     "audits": [
       "SandproofBranchBatch.CloseSql.complete_original_scan",

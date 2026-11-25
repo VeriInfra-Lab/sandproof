@@ -27,6 +27,14 @@ def render(window_path, retirement_path, window_llbc, retirement_llbc, commit):
         raise ValueError('retirement receipt does not bind the linked actual source capture')
     if retirement['original_owner_argument'] != 1 or retirement['separate_transaction_calls'] != 0:
         raise ValueError('retirement receipt changes the transaction owner')
+    columns = retirement['row_callback_columns']
+    select = retirement['select_parameter']
+    delete = retirement['delete_parameter']
+    if (type(columns) is not list or any(type(column) is not int for column in columns)
+            or columns != list(range(5))
+            or type(select['add']) is not int or select['add'] != 1
+            or type(delete['bytes']) is not int or delete['bytes'] != 32):
+        raise ValueError('retirement receipt differs from the original SQL arguments or row columns')
     traces = [
         '  [' + ', '.join(map(lean_string, trace['events'])) + ']'
         for trace in window['traces']
@@ -40,6 +48,9 @@ def render(window_path, retirement_path, window_llbc, retirement_llbc, commit):
         'def retirementLlbcSha256 : String := ' + lean_string(retirement['capture_sha256']),
         'def selectSql : String := ' + lean_string(retirement['select']),
         'def deleteSql : String := ' + lean_string(retirement['delete']),
+        'def selectColumns : List Nat := [' + ', '.join(map(str, columns)) + ']',
+        'def selectLimitOffset : Nat := ' + str(select['add']),
+        'def deleteDigestBytes : Nat := ' + str(delete['bytes']),
         'def separateTransactionCalls : Nat := ' + str(retirement['separate_transaction_calls']),
         'def windowTraces : List (List String) := [',
         ',\n'.join(traces),
