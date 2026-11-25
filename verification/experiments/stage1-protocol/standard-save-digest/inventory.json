@@ -356,7 +356,7 @@
     "verification/experiments/stage1-protocol/inbox-save/InboxSaveRun.lean.in": "855064a16f60567a9c5aba057e84611a6064a099b1dc66636aa2e2dc93b9ab15",
     "verification/experiments/stage1-protocol/inbox-save/admission.py": "8c14fd427659373469d60958d0792b1059355f665ca7fec4bf5ab836b3d30e96",
     "verification/experiments/stage1-protocol/inbox-save/generic-root.rs.in": "67d95713861120e3a063079e2037876f9caf94247a958cee87a4c92ef21c2be4",
-    "verification/experiments/stage1-protocol/inbox-save/inventory.json": "d757f6caee732702ad75cf54b22fd81540a18fd58b7a40def9b98ea5d2ea2297",
+    "verification/experiments/stage1-protocol/inbox-save/inventory.json": "0114d1dfbef6cd88d12e9b8e23715d78df2c1a89ea9555a6fe4713f74b1f8aaa",
     "verification/experiments/stage1-protocol/inbox-save/prepare.py": "5b15c65052643549533c20aab715e7ffcccb2caadbc2838cb201eb75dae28c3e",
     "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadLibrary.lean.in": "6e63e219d7bdb8c60b191ea556fb5fe7057efab9191298b436991fe0adedbc41",
     "verification/experiments/stage1-protocol/inbox-unload-resolution/UnloadModel.lean.in": "83efbd21b70020edc3505ce7f18ecf4937b54cd677ceb88f6b735fef36728a5f",
