@@ -95,7 +95,8 @@ def digest(path):
 
 def git(repo,*args, **kwargs):
     env=dict(PATH='/usr/bin:/bin',GIT_CONFIG_GLOBAL='/dev/null',GIT_CONFIG_NOSYSTEM='1',GIT_TERMINAL_PROMPT='0')
-    cmd=['/usr/bin/prlimit',f'--fsize={MAX_DISK}','--','/usr/bin/git','-C',str(repo),*args]
+    # The publisher's service has a fixed task budget even on a many-core host.
+    cmd=['/usr/bin/prlimit',f'--fsize={MAX_DISK}','--','/usr/bin/git','-c','pack.threads=2','-C',str(repo),*args]
     return subprocess.run(cmd,env=env,check=True,timeout=45,**kwargs)
 
 
