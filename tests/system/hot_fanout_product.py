@@ -34,7 +34,7 @@ from _hot_fanout_evidence import automatic_expiry_acceptance, capture_live_nativ
 from _runtime_services import RuntimeServices
 from hot_fanout_guest import make_package
 from hot_fanout_host import SDK_COMMIT
-from lifecycle_unload_runtime import original_json
+from lifecycle_unload_runtime import original_json, remaining
 from lifecycle_unload_scenario import PREFIX, PublicStatusMismatch, PublicUnloadScenario, failure_details
 from sdk_c02_acceptance import processes_in_uid_range
 from server_process_crash import fetch, free_loopback_port, process_start_ticks
@@ -741,21 +741,29 @@ def verify_public_partial_start(client, running, parent, owner, checkpoint, inhe
     return (path, key, failure), ((steady_path, steady_key), (refill_path, refill_key)), [steady, *refilled]
 
 
-def run(args, receipt, report):
-    paths = dict(center=args.center, host=args.host)
-    versions = {role: contract_versions(path, ENV) for role, path in paths.items()}
-    assert versions["center"] == versions["host"]
-    publish(args.output/"candidate.json", candidate=args.candidate,
-            paths={role: str(path) for role, path in paths.items()}, versions=versions["center"])
-    storage = Path(tempfile.mkdtemp(prefix="h.", dir=args.storage_parent))
-    storage.chmod(0o711)
-    report["storage"] = str(storage)
-    write_once(args.output/"location.json", {"storage": str(storage)})
-    foreign_key = secrets.token_hex(32)
-    with phase(report, "provision"):
-        services, root, record, groups, installation = build_deployment(
-            args, receipt, storage, paths, report,
-            extra_credentials=[dict(tenant=2, secret=foreign_key)])
+def run(args, receipt, report, *, prepared=None):
+    if prepared is None:
+        paths = dict(center=args.center, host=args.host)
+        versions = {role: contract_versions(path, ENV) for role, path in paths.items()}
+        assert versions["center"] == versions["host"]
+        publish(args.output/"candidate.json", candidate=args.candidate,
+                paths={role: str(path) for role, path in paths.items()}, versions=versions["center"])
+        storage = Path(tempfile.mkdtemp(prefix="h.", dir=args.storage_parent))
+        storage.chmod(0o711)
+        report["storage"] = str(storage)
+        write_once(args.output/"location.json", {"storage": str(storage)})
+        foreign_key = secrets.token_hex(32)
+        with phase(report, "provision"):
+            services, root, record, groups, installation = build_deployment(
+                args, receipt, storage, paths, report,
+                extra_credentials=[dict(tenant=2, secret=foreign_key)])
+        host_root = root / "0"
+        deadline = None
+    else:
+        services = prepared.services
+        foreign_key = prepared.foreign_key
+        host_root = prepared.root
+        deadline = prepared.deadline
     client = None
     cleaned = False
     native = services.native_pools[0]
@@ -764,15 +772,16 @@ def run(args, receipt, report):
     try:
         with phase(report, "service_readiness"):
             services.start()
-            ready = services.wait_ready(timeout=180)
+            ready = services.wait_ready(timeout=180 if deadline is None else min(180, remaining(deadline)))
             expected_processes = services.processes.observe()
         client = PublicUnloadScenario(services.sdk_url, services.key, foreign_key,
-                                      services.center_config["deployment_id"], time.monotonic() + 480)
+                                      services.center_config["deployment_id"], deadline or time.monotonic() + 480)
         with phase(report, "parent_create", client):
             from e2b import Sandbox
             from sdk_server_smoke import options as sdk_options
 
-            parameters = create_parameters(services, ready, receipt["binding"])
+            parameters = (create_parameters(services, ready, receipt["binding"])
+                          if prepared is None else prepared.create_parameters(owner=1))
             if args.fault_case == "natural-expiry":
                 parameters["timeout_ms"] = EXPIRY_TTL_MS
             client.create(parameters)
@@ -781,6 +790,8 @@ def run(args, receipt, report):
             owner = sdk_options(services.key, services.sdk_url, services.sdk_url)
             slot_path, context, claim = slot_and_claim(native)
             [native_id] = capture_live_native_ids(native, [claim], original_json)
+            if prepared is not None:
+                prepared.running = {"source": claim}
             # Preserve the original accepted parent version for the keyed
             # operations below. Branch connections use the stock Connect API.
             parent = client.sdk()
@@ -790,10 +801,14 @@ def run(args, receipt, report):
                 slot = original_json(slot_path, 65536)
                 assert slot["position"] == 0 and slot["value"]["context"] == context
                 assert slot["value"]["phase"] == "Free"
-                check_no_resources(root/"0", native["namespace"], args.firecracker, args.vm_uid,
+                check_no_resources(host_root, native["namespace"], Path(native["firecracker"]), native["uid_base"],
                                    [claim], native=native)
                 assert services.processes.observe() == expected_processes
                 report["exact_parent_slot_free"] = True
+                if prepared is not None:
+                    assert terminal_cleanup_confirmed(Path(native["database"]), native_id)
+                    report["native_parent_terminal"] = True
+                    prepared.physical_complete = True
 
         pin = receipt["native_hot_fanout"]["template"]
         checkpoint, branch_limit = pin["checkpoint_id"], pin["max_branches"]
@@ -975,7 +990,7 @@ def run(args, receipt, report):
             report["parent_ended_batch"] = True
         confirm_native_release()
     finally:
-        if not cleaned and client is not None and client.session is not None:
+        if prepared is None and not cleaned and client is not None and client.session is not None:
             try:
                 client.deadline = time.monotonic() + 120
                 if args.fault_case == "natural-expiry":
@@ -989,27 +1004,32 @@ def run(args, receipt, report):
                 cleaned = True
             except Exception as failure:
                 report["cleanup_request_error"] = type(failure).__name__
-        with phase(report, "reclaim_test_resources", client):
-            services.stop_all()
-            for log in (root/"initialize.log", *(root/"control-logs").glob("*.log")):
-                if log.is_file():
-                    shutil.copyfile(log, args.output/log.name)
-            if cleaned:
-                check_no_resources(root/"0", native["namespace"], args.firecracker, args.vm_uid,
-                                   [] if claim is None else [claim], native=native)
-                assert native_id is not None, "no original occupied native binding was observed"
-                assert terminal_cleanup_confirmed(Path(native["database"]), native_id)
-                report["native_parent_terminal"] = True
-            report["service_cgroup"] = service_cgroup.remove(record)
-            if cleaned:
-                services.cleanup_staging()
-                for group in groups:
-                    group.rmdir()
-                assert reopen(storage, installation["receipt"]["project"]) == installation["receipt"]
-                command("/usr/bin/umount", storage/"data")
-                assert not os.path.ismount(storage/"data")
-                (storage/"control/volume.xfs").unlink()
-                report["physical_test_volume_removed"] = True
+        if prepared is None:
+            with phase(report, "reclaim_test_resources", client):
+                services.stop_all()
+                for log in (root/"initialize.log", *(root/"control-logs").glob("*.log")):
+                    if log.is_file():
+                        shutil.copyfile(log, args.output/log.name)
+                if cleaned:
+                    check_no_resources(host_root, native["namespace"], Path(native["firecracker"]), native["uid_base"],
+                                       [] if claim is None else [claim], native=native)
+                    assert native_id is not None, "no original occupied native binding was observed"
+                    assert terminal_cleanup_confirmed(Path(native["database"]), native_id)
+                    report["native_parent_terminal"] = True
+                report["service_cgroup"] = service_cgroup.remove(record)
+                if cleaned:
+                    services.cleanup_staging()
+                    for group in groups:
+                        group.rmdir()
+                    assert reopen(storage, installation["receipt"]["project"]) == installation["receipt"]
+                    command("/usr/bin/umount", storage/"data")
+                    assert not os.path.ismount(storage/"data")
+                    (storage/"control/volume.xfs").unlink()
+                    report["physical_test_volume_removed"] = True
+        elif client is not None:
+            report["known_parent"] = dict(session=client.session, window=client.window,
+                sequence=client.sequence, acceptance=client.current_acceptance,
+                timings=client.timing_report())
 
 
 def checked_args(parser=None):

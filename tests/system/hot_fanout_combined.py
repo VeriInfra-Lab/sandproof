@@ -12,6 +12,7 @@ import hashlib
 import importlib.metadata
 import json
 import os
+import signal
 from pathlib import Path
 import stat
 import time
@@ -21,7 +22,7 @@ from hot_fanout_host import SDK_COMMIT
 from hot_fanout_product import (
     COMMAND_MARKER, MARKER, batch_request, check_batch_parent_ended, check_batch_rejection,
     check_batch_replay, check_hot_unload_rejection, check_reverse_branch_writes,
-    check_sdk_not_found, check_stale_data_route, concurrent_sdk, start_batch,
+    check_sdk_not_found, check_stale_data_route, concurrent_sdk, run as run_hot_product, start_batch,
 )
 from lifecycle_unload_quota import validate_run_receipt
 from lifecycle_unload_runtime import (
@@ -31,6 +32,7 @@ from lifecycle_unload_scenario import PublicUnloadScenario, check_center_configu
 from sdk_c02_acceptance import processes_in_uid_range
 from sdk_server_smoke import options as sdk_options
 from server_process_crash import free_loopback_port, process_start_ticks
+from tools.build_hot_fanout_guest import PARTIAL_START
 from tools.capture_acceptance import validate_settings
 from tools.check_kvm_host import trusted_path, unique_keys
 from tools.system_acceptance import private_path, write_once
@@ -75,8 +77,20 @@ def prepare_combined(args):
     root = private_path(args.run_root, directory=True)
     fixture = approved_json(args.fixture, args.fixture_sha256, GIB // 1024)
     hot_receipt = approved_json(args.hot_receipt, args.hot_receipt_sha256, 65536)
-    if 'fault_case' in hot_receipt or not 2 <= args.n <= hot_receipt['native_hot_fanout']['template']['max_branches']:
-        raise ValueError('non-faulting approved hot fixture covering requested N required')
+    limits = hot_receipt['native_hot_fanout']
+    maximum = limits['template']['max_branches']
+    if not 2 <= args.n <= maximum:
+        raise ValueError('approved hot fixture covering requested N required')
+    if args.only_hot_case == PARTIAL_START:
+        if hot_receipt.get('fault_case') != PARTIAL_START or args.n != maximum or maximum != 4 or limits['max_batches'] < 3:
+            raise ValueError('partial-start requires its own approved fixture and four branches')
+    elif 'fault_case' in hot_receipt:
+        raise ValueError('non-faulting approved hot fixture required')
+    if args.only_hot_case == 'inflight-close' and (args.n != maximum or limits['max_batches'] < 2):
+        raise ValueError('inflight-close requires full branch capacity and one replacement batch')
+    if args.only_hot_case == 'parent-vmm-loss' and not (
+            callable(getattr(os, 'pidfd_open', None)) and callable(getattr(signal, 'pidfd_send_signal', None))):
+        raise ValueError('original same SDK interpreter must support Linux pidfds')
     if set(fixture) != {'native', 'catalog', 'registry', 'activation_ceiling_bytes',
                          'startup_timeout_ms', 'timeout_ms', 'max_lifetime_ms'}:
         raise ValueError('exact bounded lifecycle deployment fixture required')
@@ -228,17 +242,26 @@ def run(args):
         registration = check_center_configuration(runtime.services, runtime.owner_key, runtime.foreign_key)
         deployment = registration['deployment']
         report['registration'] = registration
-        runtime.start(deadline)
-        current = PublicUnloadScenario(runtime.services.sdk_url, runtime.owner_key, runtime.foreign_key,
-            deployment, deadline)
-        clients.append(current)
         report['phase'] = 'hot-template'
-        exercise_hot(runtime, current, args, report.setdefault('hot', {}))
-        current = PublicUnloadScenario(runtime.services.sdk_url, runtime.foreign_key, runtime.owner_key,
-            deployment, deadline, owner='2')
-        clients.append(current)
-        report['phase'] = 'ordinary-template'
-        exercise_ordinary(runtime, current, report.setdefault('ordinary', {}))
+        if args.only_hot_case:
+            runtime.deadline = deadline
+            report['kind'] = 'hot-prepared-deployment-system-scenario'
+            report['fault_case'] = args.only_hot_case
+            report['hot'] = dict(phase_seconds={})
+            case = argparse.Namespace(n=args.n, output=runtime.root,
+                fault_case=None if args.only_hot_case == 'smoke' else args.only_hot_case)
+            run_hot_product(case, runtime.hot_receipt, report['hot'], prepared=runtime)
+        else:
+            runtime.start(deadline)
+            hot = PublicUnloadScenario(runtime.services.sdk_url, runtime.owner_key, runtime.foreign_key,
+                deployment, deadline)
+            clients.append(hot)
+            exercise_hot(runtime, hot, args, report.setdefault('hot', {}))
+            ordinary = PublicUnloadScenario(runtime.services.sdk_url, runtime.foreign_key, runtime.owner_key,
+                deployment, deadline, owner='2')
+            clients.append(ordinary)
+            report['phase'] = 'ordinary-template'
+            exercise_ordinary(runtime, ordinary, report.setdefault('ordinary', {}))
         report['phase'] = 'settlement'
         report['settlement'] = runtime.settlement_evidence(deadline)
         report['complete'] = True
@@ -269,6 +292,8 @@ def main():
     parser.add_argument('--hot-receipt', type=Path, required=True)
     parser.add_argument('--hot-receipt-sha256', required=True)
     parser.add_argument('--n', type=int, required=True)
+    parser.add_argument('--only-hot-case', choices=('smoke', 'unload-race', 'inflight-close',
+        'natural-expiry', 'parent-vmm-loss', PARTIAL_START))
     parser.add_argument('--scenario-timeout', type=int, default=600)
     args = parser.parse_args()
     if not 0 < args.scenario_timeout <= 3600:
