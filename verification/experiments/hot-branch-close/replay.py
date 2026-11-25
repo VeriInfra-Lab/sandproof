@@ -40,6 +40,8 @@ def replay(args):
     admission = {}
     require(not args.with_blob_bridge or args.approved_linux,
             'the original BLOB provider was reviewed for the exact Linux inputs')
+    require(not args.with_branch_scan or (args.approved_linux and args.with_window),
+            'the branch scan view requires the validated Linux retirement capture')
     if args.approved_linux:
         require(args.with_window, 'the exact Linux replay requires the CloseWindow case')
         admission = linux_admission(output)
@@ -151,6 +153,8 @@ def replay(args):
             generated_data[evidence.name] = evidence
             lean_entries[evidence.name] = dict(sha256=digest(evidence), generated=True, audits=[])
             lean_entries['CloseSql.lean'] = inventory['close_sql']
+            if args.with_branch_scan:
+                lean_entries['NormalBranchScan.lean'] = inventory['normal_branch_scan']
 
         (rust_relative, fixture_hash), = inventory['append_only'].items()
         fixture = HERE / 'roots.rs.in'
@@ -232,6 +236,8 @@ def replay(args):
         targets = [LIB + '.CloseProof']
         if args.with_window:
             targets.append(LIB + '.CloseSql')
+        if args.with_branch_scan:
+            targets.append(LIB + '.NormalBranchScan')
         if args.with_blob_bridge:
             targets.extend((LIB + '.CloseSqlBlobProducer', LIB + '.CloseSqlBlobConsumer'))
         command('lake-build', ['lake', 'build', *targets])
@@ -302,6 +308,7 @@ if __name__ == '__main__':
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--with-window', action='store_true')
     parser.add_argument('--with-blob-bridge', action='store_true')
+    parser.add_argument('--with-branch-scan', action='store_true')
     parser.add_argument('--approved-linux', action='store_true')
     parser.add_argument('--candidate', help='the pinned combined Linux commit')
     replay(parser.parse_args())

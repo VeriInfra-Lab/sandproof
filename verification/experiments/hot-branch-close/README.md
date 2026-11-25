@@ -14,6 +14,12 @@
 
 实际游标和 BLOB 值、DELETE 影响的物理行及事务镜像、受保护重开、宿主授权和资源释放仍需各自的实现对应。
 
+## 固定整数 LIMIT 与五列游标
+
+`NormalBranchScan` 沿用原 `ReadView`、绑定返回的原 statement 和 `IssuedMappedCursor`。条件限定于由 Charon 回执生成的固定 SELECT 和整数参数。页内用既有固定 `rowGet index blobColumn` 推出逐次 Next 的五列值、原 SQL 错误及游标 EOF 保持，并将正常扫描映像接到 `CloseSql.Select`。回执同时提供原 `FnMut` 六条路径和原 DELETE 的摘要实参来源。首列操作 BLOB 按原字节排入结果。
+
+用下节原局部入口加 `--with-branch-scan` 重建和检查此页。限定的 SQLite 提供方仍须绑定物理事务和同一次原整数查询。原 Rust `load` 对解码操作键摘要等于第零列的检查、按确切父机筛出所有键、实际闭包到库视图、窗口更新值到两 BLOB 以及受保护重开均有单列义务。
+
 ## 活动 SQLite 原生对照
 
 `sqlite_activity_native.py` 把测试夹具追加到精确候选的私有源码归档。它在原控制器连接上登记固定 SQLite 的语句跟踪及行更新回调，记录一次 `BEGIN IMMEDIATE` 下的实参、游标行数、各自原键对应的 DELETE 行、收件箱两个有序 BLOB 及提交或回滚。提交前使用第二连接核对旧镜像可读、独占写入受阻和产品控制租约拒绝。通过产品打开原文件后，再核对库和租约身份、原 WAL/FULL 设置、整张相关旧或新镜像以及旧请求重放。

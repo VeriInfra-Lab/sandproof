@@ -168,6 +168,23 @@
       "SandproofBranchBatch.CloseSql.unknown_reply_excludes_split_retirement"
     ]
   },
+  "normal_branch_scan": {
+    "sha256": "3b6830899f9f709720aa50f99b3972381af30a1f58314540ad59d4958c036785",
+    "generated": false,
+    "audits": [
+      "SandproofBranchBatch.NormalBranchScan.original_retirement_row_and_key_observation",
+      "SandproofBranchBatch.NormalBranchScan.issued_cursor_keeps_raw_integer",
+      "SandproofBranchBatch.NormalBranchScan.emitted_row_keeps_the_issued_statement",
+      "SandproofBranchBatch.NormalBranchScan.withBlob_keeps_read_error",
+      "SandproofBranchBatch.NormalBranchScan.five_columns_keep_original_values",
+      "SandproofBranchBatch.NormalBranchScan.successful_row_preserves_the_stored_operation",
+      "SandproofBranchBatch.NormalBranchScan.issued_limit_is_one_past_configured_bound",
+      "SandproofBranchBatch.NormalBranchScan.normal_next_preserves_the_five_values",
+      "SandproofBranchBatch.NormalBranchScan.normal_end_keeps_the_original_cursor",
+      "SandproofBranchBatch.NormalBranchScan.raw_cursor_error_bypasses_the_row_callback",
+      "SandproofBranchBatch.NormalBranchScan.observed_image_supplies_the_existing_select"
+    ]
+  },
   "linux_merge": {
     "integration": "fe2b7b519732a702721245457bf64d9b395aeebd",
     "tree": "48c22f24580a7e88daa48338af94ca0d6f704706",
