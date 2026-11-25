@@ -129,8 +129,7 @@ fn integer_overflow_panics() {
 
     def test_cold_reducer_build_precedes_component_tests_and_keeps_checks(self):
         root = Path(__file__).resolve().parents[2]
-        commands = [line.strip().removesuffix(' \\') for line in
-                    (root / 'scripts/check-function.sh').read_text().splitlines()
+        commands = [line.strip() for line in (root / 'scripts/check-function.sh').read_text().splitlines()
                     if line.strip() and not line.lstrip().startswith('#')]
         cargo = 'cargo --config scripts/check-profiles.toml '
         build = cargo + 'build --locked -p sandproof-controller-service --bin sandproof-window-reducer'

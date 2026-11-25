@@ -28,11 +28,12 @@ Python 产物指纹与模板暂存哈希在 Linux 上按文件系统报告的数
 
 ### 普通 CI 自建执行环境
 
-手动验收宿主可在统一启动环境设置 `SANDPROOF_CHECK_RUST_THREADS=32`。工作区和
-`contention-diagnostics` 两轮将这个值作为显式测试参数，并在日志打印实际设置。
-该值是每个 Rust 测试二进制的线程数，Cargo 编译并行和 Stage1 证明任务各有独立配置。
-设置必须为正整数。未配置时使用原 Cargo 测试命令及其环境。托管启动器应把这项变量
-传给子进程，使普通验收及 Stage1 调用的普通验收共用这项设置。
+手动验收宿主可在统一启动环境设置 `SANDPROOF_CHECK_RUST_THREADS=32`。Cargo 继续按原工作区
+和特性选择测试。工作区各测试二进制以及 `contention-diagnostics` 通常使用设置的线程预算。
+工作区的 `managed_port`、`business_authority`、`redis_https_application` 和 `redis_ledger`
+使用真实持久写入和应用回复期限，最多使用两路。入口记录总预算，受限套件另记录实际值。
+接受正整数。未配置时使用原 Cargo 测试命令及其环境。托管启动器应把这项变量传给子进程，
+使普通验收及 Stage1 调用的普通验收共用这项设置。Cargo 编译并行和证明任务各有独立配置。
 
 SDK 与 Harbor 的原锁定检查使用 `UV_OFFLINE=1`、`CARGO_NET_OFFLINE=true`，只读取受控黄金盘中已制备的固定依赖，避免缓存未命中后等待 GitHub/PyPI/crates.io 下载。缺材料立即失败，审核新锁后重新制备和验收黄金盘；不静默改锁、联网补料或跳过测试。GitHub 源码检出、任务领取及结果回传仍经原受限网络，依赖离线不表示整条 CI 无网络。
 

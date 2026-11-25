@@ -17,8 +17,7 @@ elif [[ "$#" != 0 ]]; then
   exit 2
 fi
 
-# Managed manual runs may pin the libtest worker count for the two full suites.
-# An explicit argument takes precedence over any inherited RUST_TEST_THREADS.
+# Managed manual runs may set a libtest worker budget for the two full suites.
 rust_test_thread_arg=''
 if [[ ${SANDPROOF_CHECK_RUST_THREADS+x} ]]; then
   if [[ ! $SANDPROOF_CHECK_RUST_THREADS =~ ^[1-9][0-9]*$ ]]; then
@@ -128,10 +127,18 @@ cargo --config scripts/check-profiles.toml clippy --workspace --all-targets --lo
 check_end
 check_begin workspace-tests test
 if [[ -n $rust_test_thread_arg ]]; then
-  printf 'Rust test threads (workspace and diagnostics): %s\n' "$SANDPROOF_CHECK_RUST_THREADS"
+  printf 'Rust test threads (workspace maximum and diagnostics): %s\n' "$SANDPROOF_CHECK_RUST_THREADS"
+  rust_test_runner=$("$check_python" -c '
+import json
+import sys
+print("target." + json.dumps("cfg(all())") + ".runner=" +
+      json.dumps(["bash", sys.argv[1]], ensure_ascii=False))
+' "$PROJECT_ROOT/scripts/run-workspace-rust-test.sh")
+  cargo --config scripts/check-profiles.toml test --workspace --all-targets --locked --no-fail-fast \
+    --config "$rust_test_runner"
+else
+  cargo --config scripts/check-profiles.toml test --workspace --all-targets --locked --no-fail-fast
 fi
-cargo --config scripts/check-profiles.toml test --workspace --all-targets --locked --no-fail-fast \
-  ${rust_test_thread_arg:+-- "$rust_test_thread_arg"}
 check_end
 check_begin workspace-doctests test
 cargo --config scripts/check-profiles.toml test --workspace --doc --locked

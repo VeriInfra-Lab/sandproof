@@ -261,7 +261,7 @@ if sys.argv[1] == 'tree':
             self.assertIn(['python', 'tools/check_docs.py'], trace)
             self.assertEqual(len(report['stages']), 13)
 
-    def test_manual_worker_count_reaches_both_rust_suites(self):
+    def test_manual_worker_budget_routes_workspace_and_reaches_diagnostics(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             self.fixture(directory)
@@ -271,16 +271,43 @@ if sys.argv[1] == 'tree':
             })
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(report['exit_code'], 0)
-            worker_commands = [item for item in trace if '--test-threads=32' in item]
-            self.assertEqual(len(worker_commands), 2)
-            workspace, diagnostics = worker_commands
-            self.assertEqual(workspace, ['cargo', 'test', '--workspace', '--all-targets',
-                                         '--locked', '--no-fail-fast', '--', '--test-threads=32'])
+            workspace = next(item for item in trace if '--no-fail-fast' in item)
+            self.assertEqual(workspace[:7], ['cargo', 'test', '--workspace', '--all-targets',
+                                             '--locked', '--no-fail-fast', '--config'])
+            setting, runner = workspace[7].split('=', 1)
+            self.assertEqual(setting, 'target."cfg(all())".runner')
+            self.assertEqual(json.loads(runner), [
+                'bash', str(directory.resolve() / 'scripts/run-workspace-rust-test.sh'),
+            ])
+            diagnostics, = [item for item in trace if '--test-threads=32' in item]
             self.assertEqual(diagnostics[:10], [
                 'cargo', 'test', '--locked', '-p', 'sandproof-controller-service',
                 '--features', 'contention-diagnostics', '--', '--exact', '--test-threads=32',
             ])
-            self.assertIn('Rust test threads (workspace and diagnostics): 32', result.stdout)
+            self.assertIn('Rust test threads (workspace maximum and diagnostics): 32', result.stdout)
+
+    def test_workspace_runner_limits_deadline_sensitive_targets(self):
+        runner = ROOT / 'scripts/run-workspace-rust-test.sh'
+        with tempfile.TemporaryDirectory() as temporary:
+            for suite, budget, threads in [
+                ('ordinary', '32', '32'),
+                ('managed_port', '32', '2'),
+                ('business_authority', '32', '2'),
+                ('redis_https_application', '32', '2'),
+                ('redis_ledger', '32', '2'),
+                ('business_authority', '1', '1'),
+            ]:
+                with self.subTest(suite=suite, budget=budget):
+                    binary = Path(temporary) / f'{suite}-12345678'
+                    binary.write_text('#!/bin/bash\nprintf "arg=%s\\n" "$@"\n')
+                    binary.chmod(0o700)
+                    result = subprocess.run(
+                        ['bash', runner, binary, '--exact', 'sample'],
+                        env=os.environ | {'SANDPROOF_CHECK_RUST_THREADS': budget},
+                        check=True, capture_output=True, text=True,
+                    )
+                    self.assertEqual(result.stdout.splitlines()[-3:],
+                                     ['arg=--exact', 'arg=sample', f'arg=--test-threads={threads}'])
 
     def test_failed_execution_keeps_exit_and_never_runs_later_checks(self):
         command = ['test', '--workspace', '--all-targets', '--locked', '--no-fail-fast']
