@@ -1,0 +1,47 @@
+#[test]
+fn proof_source_save_roundtrips_full_record_and_checksum() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, _) = ready(&dir.path().join("db"));
+    let record = prepare(&mut journal);
+    let key = record.work.requirement.work_binding.as_bytes();
+    assert_ne!(*key, [0_u8; 32], "fixture requires a nonzero complete key");
+    let json = serde_json::to_vec(&record).unwrap();
+    assert_eq!(serde_json::to_vec(&Some(&record)).unwrap(), json);
+    assert_eq!(
+        serde_json::from_slice::<Option<SourceWorkRecord>>(&json).unwrap(),
+        Some(record.clone())
+    );
+    let anchor = serde_json::to_vec(&record.work.anchor).unwrap();
+    assert_eq!(super::super::sha256::digest(&anchor), *key);
+
+    let db = &journal.journal.connection;
+    let (stored, bytes, checksum, capacity): (Vec<u8>, Vec<u8>, Vec<u8>, i64) = db
+        .query_row(
+            "SELECT work_key,state_json,sha256,reserve_bytes FROM controller_source_work_records WHERE work_key IS NOT NULL AND state_json=?1",
+            [json.as_slice()],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        stored.as_slice(),
+        key,
+        "the encoded SQL row must keep its complete key"
+    );
+    assert_eq!(bytes, json);
+    assert_eq!(
+        checksum.as_slice(),
+        super::super::sha256::digest(&bytes).as_slice()
+    );
+    assert!(i64::try_from(bytes.len()).unwrap() <= capacity);
+    let original = codec::load(db).unwrap().unwrap();
+    assert_eq!(original.records, vec![record]);
+    assert_eq!(
+        capacity,
+        i64::try_from(original.config.required_bytes(1)).unwrap()
+    );
+    let tx = db.unchecked_transaction().unwrap();
+    codec::save(&tx, &original, original.max_sessions).unwrap();
+    assert_eq!(codec::load(&tx).unwrap().unwrap(), original);
+    tx.rollback().unwrap();
+    assert_eq!(codec::load(db).unwrap().unwrap(), original);
+}

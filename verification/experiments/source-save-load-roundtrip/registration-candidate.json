@@ -1,0 +1,19 @@
+{
+  "issue": 635,
+  "id": "source-save-load-roundtrip",
+  "source": "60aad8af23e317f5b1ba913518603d1fda015f4c",
+  "save_parent": "75fe473e92066b8ed0ae1f41d8ac21ec52ab1890",
+  "original_encoder": "dd82c2cdf2921bfdc04f11d032a2fcddd5771132",
+  "formal_entry": "verification/experiments/source-save-load-roundtrip/roundtrip_check.py",
+  "native_entry": "verification/experiments/source-save-load-roundtrip/roundtrip_native.py",
+  "root": "SaveRoundTripWitness",
+  "field_contract": "SandboxModel.Stage1Protocol.SaveRoundTripEncoder.actual_encoder_full_evidence_contract",
+  "positive_theorem": "SandboxModel.Stage1Protocol.SaveRoundTripShared.original_load_roundtrips_full_sources",
+  "negative_theorem": "SandboxModel.Stage1Protocol.SaveRoundTripWitness.wrong_encoder_breaks_same_complete_evidence",
+  "remaining": [
+    "Ning exact ordinary and native acceptance",
+    "main coordinator shared registration and coverage adoption",
+    "physical ordered row projection and transaction persistence, concrete named Serde/SHA conformance"
+  ],
+  "public_acceptance": false
+}
