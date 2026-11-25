@@ -46,13 +46,7 @@ async fn isolated(mode: &str) {
 #[tokio::test]
 #[ignore = "isolated HTTP subprocess; lowers only its own descriptor limit"]
 async fn isolated_http_pipe_failure() {
-    let (pty, missing_cwd) = match std::env::var(MARKER).unwrap().as_str() {
-        "pty" => (true, false),
-        "pipe" => (false, false),
-        "cwd-pty" => (true, true),
-        "cwd-pipe" => (false, true),
-        _ => panic!("private child mode required"),
-    };
+    let (pty, missing_cwd) = pipe_failure_mode();
     let fixture = fixture().await;
     let registry = registry();
     let ordinary = requests(1);
@@ -149,4 +143,14 @@ async fn isolated_http_pipe_failure() {
         );
     }
     eprintln!("{COMPLETED}");
+}
+
+fn pipe_failure_mode() -> (bool, bool) {
+    match std::env::var(MARKER).unwrap().as_str() {
+        "pty" => (true, false),
+        "pipe" => (false, false),
+        "cwd-pty" => (true, true),
+        "cwd-pipe" => (false, true),
+        _ => panic!("private child mode required"),
+    }
 }
