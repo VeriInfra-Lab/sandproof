@@ -1,4 +1,4 @@
-"""Config setup for the one-host, one-template public hot fan-out probe."""
+"""Protected config for one hot and an optional distinct ordinary template."""
 
 from copy import deepcopy
 import hashlib
@@ -59,6 +59,23 @@ class HotFanoutProductConfigTests(unittest.TestCase):
 
     def test_refuse_changed_artifact_before_creating_protected_config(self):
         self.staged["rootfs"]["size_bytes"] += 1
+        with self.assertRaises(ValueError):
+            protected_configs(self.center, [self.host], self.receipt)
+        self.assertNotIn("branching", self.center)
+        self.assertNotIn("hot_fanout", self.host["native"])
+
+    def test_combined_catalog_only_marks_the_approved_hot_revision(self):
+        ordinary = dict(template_id="ordinary", revision="r2", owner=2)
+        self.center["templates"]["templates"].insert(0, ordinary)
+        self.center["template_registrations"].insert(0, {"template_id": "ordinary", "revision": "ordinary-r2"})
+        original = deepcopy(self.center["templates"])
+        protected_configs(self.center, [self.host], self.receipt)
+        self.assertEqual(self.center["templates"], original)
+        self.assertEqual(self.center["branching"]["template_revisions"], ["training-r1"])
+
+    def test_combined_catalog_requires_both_bound_registrations(self):
+        self.center["templates"]["templates"].append(dict(template_id="ordinary", revision="r2", owner=2))
+        self.center["template_registrations"].append({"template_id": "ordinary", "revision": "ordinary-r9"})
         with self.assertRaises(ValueError):
             protected_configs(self.center, [self.host], self.receipt)
         self.assertNotIn("branching", self.center)

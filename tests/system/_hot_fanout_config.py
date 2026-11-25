@@ -1,4 +1,4 @@
-"""Protected inputs for one prepared template on one fresh isolated host."""
+"""Protected inputs for one hot template on one fresh isolated host."""
 
 import runpy as _runpy
 from pathlib import Path as _GuardPath
@@ -35,10 +35,21 @@ def descriptor_digest(binding):
 def protected_configs(center, hosts, receipt):
     """Install exact catalog declarations before the original roles seal configuration."""
     [host] = hosts
-    [staged] = center["templates"]["templates"]
     approved = receipt["binding"]
+    templates = center["templates"]["templates"]
+    registrations = center["template_registrations"]
     if type(approved["owner"]) is not int or approved["owner"] != 1:
-        raise ValueError("fixture's first and only allocating owner must be 1")
+        raise ValueError("fixture's first allocating owner must be 1")
+    if len(templates) not in (1, 2) or len({row["template_id"] for row in templates}) != len(templates):
+        raise ValueError("expected one hot template and at most one distinct ordinary template")
+    if len(templates) == 2 and {row["owner"] for row in templates} != {1, 2}:
+        raise ValueError("combined fixture needs a distinct ordinary owner")
+    expected = [{"template_id": row["template_id"], "revision": f'{row["template_id"]}-{row["revision"]}'}
+                for row in templates]
+    if len(registrations) != len(expected) or any(registrations.count(row) != 1 for row in expected):
+        raise ValueError("registered revisions differ from the original template binding")
+    [staged] = [row for row in templates
+                if (row["template_id"], row["revision"]) == (approved["template_id"], approved["revision"])]
     for key, value in approved.items():
         if key in ("kernel", "rootfs"):
             if any(staged[key][field] != value[field] for field in ("sha256", "size_bytes")):
@@ -61,8 +72,6 @@ def protected_configs(center, hosts, receipt):
         raise ValueError("unexpected prepared checkpoint or bounds")
 
     revision = f'{staged["template_id"]}-{staged["revision"]}'
-    if center["template_registrations"] != [{"template_id": staged["template_id"], "revision": revision}]:
-        raise ValueError("expected one exact originally registered revision")
     cache_key = hashlib.sha256(revision.encode() + b"\0" + descriptor_digest(staged)).hexdigest()
     directory = Path(host["template_cache"]["root"]) / "artifacts" / cache_key
     local = deepcopy(staged)
