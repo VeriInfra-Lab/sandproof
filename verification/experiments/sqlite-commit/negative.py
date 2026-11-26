@@ -10,8 +10,6 @@ import subprocess
 import sys
 import time
 
-from prepare import HERE, prepare
-
 
 def sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -58,8 +56,23 @@ def consume_current_replay(root, replay, readback):
     return baseline
 
 
+def matches_native_runtime(runtime, *, current):
+    if runtime.get("platform") != "linux":
+        return False
+    uid = runtime.get("uid")
+    if not current:
+        return uid == 1000
+    if type(uid) is not int or uid <= 0:
+        return False
+    batch_runtime = Path(os.environ["SANDPROOF_NATIVE_EVIDENCE"]) / "runtime.json"
+    if batch_runtime.is_symlink() or not batch_runtime.is_file():
+        raise ValueError("missing or linked SQLite native batch runtime")
+    from tools.check_sqlite_extraction import read_json
+    return runtime == read_json(batch_runtime)
+
+
 def consume_native_fault(root, source, directory, output, profile, command):
-    """Read one exact Ning component receipt; this never runs ordinary tests."""
+    """Read one exact native component receipt; this never runs ordinary tests."""
     from tools.acceptance_receipts import load_success, rust_inputs, digest
     from tools.check_sqlite_extraction import read_json
     directory = directory.resolve(strict=True)
@@ -75,7 +88,8 @@ def consume_native_fault(root, source, directory, output, profile, command):
     production_commit = profile["current_capture_source_commit"]
     driver_commit = profile["native_reference_driver_commit"]
     driver_sha = profile["native_reference_driver_sha256"]
-    if "historical_capture_source_commit" in profile:
+    current = "historical_capture_source_commit" in profile
+    if current:
         production_commit = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
         driver_commit = production_commit
@@ -94,7 +108,7 @@ def consume_native_fault(root, source, directory, output, profile, command):
             or key.get("command") != command or key.get("options") != {}
             or key.get("rust") != rust_inputs(source)
             or key.get("rules", {}).get("verification/experiments/sqlite-commit/negative.py") != driver_sha
-            or runtime.get("platform") != "linux" or runtime.get("uid") != 1000
+            or not matches_native_runtime(runtime, current=current)
             or runtime.get("rustc", {}).get("version", "").splitlines()[:1] != [compiler]
             or load_success(directory, key) != receipt
             or receipt.get("expected") != 101 or receipt.get("actual_exit") != 101
@@ -108,6 +122,8 @@ def consume_native_fault(root, source, directory, output, profile, command):
 
 
 def main():
+    from prepare import HERE, prepare
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-base", type=Path, required=True)
     parser.add_argument("--destination", type=Path, required=True)

@@ -42,6 +42,28 @@ class OriginalReadPlanFixture(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
 
+class SqliteNativeRuntime(unittest.TestCase):
+    def test_current_receipt_requires_its_batch_runtime(self):
+        adapter = registered.CONVERGENCE.extra(registered.ROOT, 'sqlite-commit')
+        check = adapter.original(registered.ROOT).matches_native_runtime
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, SANDPROOF_NATIVE_EVIDENCE=directory):
+            record = Path(directory)/'runtime.json'
+            msra = dict(platform='linux', uid=1002, gid=1002, rustc={'sha256': 'fixed'})
+            record.write_text(json.dumps(msra))
+            self.assertTrue(check(msra, current=True))
+            self.assertFalse(check(dict(msra, uid=1000), current=True))
+            self.assertFalse(check(dict(msra, gid=1001), current=True))
+            self.assertFalse(check(msra, current=False))
+            self.assertTrue(check(dict(msra, uid=1000), current=False))
+            root = dict(msra, uid=0)
+            record.write_text(json.dumps(root))
+            self.assertFalse(check(root, current=True))
+            record.unlink()
+            with self.assertRaisesRegex(ValueError, 'missing'):
+                check(msra, current=True)
+
+
 class CreateDelivery(OriginalReadPlanFixture):
     def plan(self):
         return registered.formal_plan(Path('/unused'), profile='create-delivery')

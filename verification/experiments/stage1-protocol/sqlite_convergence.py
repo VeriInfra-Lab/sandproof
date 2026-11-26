@@ -188,6 +188,8 @@ def _native_readback(folder, root, expected_packet, source_commit, current):
                 or key.get('contracts') != dict(review=contract_inputs(root), source=contract_inputs(root))
                 or key.get('source_archives') != source_archive_inputs()):
             raise ValueError('current SQLite native fault rules, contracts or source archives differ')
+    if not original(root).matches_native_runtime(key.get('runtime', {}), current=current):
+        raise ValueError('SQLite native fault receipt runtime differs from its required runtime')
     if (summary.get('complete') is not True or summary.get('driver_exit_code') != 0
             or summary.get('production_commit') != source_commit
             or summary.get('driver_commit') != driver_commit
@@ -200,7 +202,6 @@ def _native_readback(folder, root, expected_packet, source_commit, current):
             or key.get('label') != 'sqlite-commit-native-rejected' or key.get('command') != NATIVE_COMMAND
             or key.get('options') != {} or key.get('rust') != expected
             or key.get('rules', {}).get(str(HERE/'negative.py')) != driver_sha
-            or key.get('runtime', {}).get('platform') != 'linux' or key['runtime'].get('uid') != 1000
             or key['runtime'].get('rustc', {}).get('version', '').splitlines()[:1] != [compiler]
             or load_success(packet/'fault', key) != receipt or receipt.get('actual_exit') != 101
             or receipt.get('expected') != 101):
