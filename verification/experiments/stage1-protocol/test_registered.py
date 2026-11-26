@@ -1,5 +1,6 @@
 """Admission and scheduling regressions; no compiler, VM or proof is launched."""
 import ast
+from contextlib import contextmanager, nullcontext
 import copy
 import fcntl
 import io
@@ -331,6 +332,9 @@ class CreateDelivery(OriginalReadPlanFixture):
         with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS='8'):
             self.assertEqual(registered._execution_options()['workers'], 8)
         self.assertEqual(registered._execution_options(8)['workers'], 8)
+        self.assertEqual(registered._execution_options(64)['workers'], 64)
+        with self.assertRaises(ValueError):
+            registered._execution_options(64, profile='create-delivery')
         with patch.dict(os.environ, SANDPROOF_STAGE1_JOBS='12'):
             with self.assertRaises(ValueError):
                 registered._execution_options()
@@ -496,6 +500,21 @@ class CreateDelivery(OriginalReadPlanFixture):
 
 
 class Registration(OriginalReadPlanFixture):
+    def test_sqlite_fault_uid_uses_the_current_native_batch_and_preserves_the_archive(self):
+        adapter = registered.CONVERGENCE.extra(registered.ROOT, 'sqlite-commit')
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, SANDPROOF_NATIVE_EVIDENCE=directory):
+            stamp = Path(directory)/'runtime.json'
+            stamp.write_text('{"uid":1002}')
+            adapter._check_native_fault_uid({'uid':1002}, True)
+            adapter._check_native_fault_uid({'uid':1000}, False)
+            for uid, current in ((1000, True), (1002, False), (0, True), (None, True)):
+                with self.subTest(uid=uid, current=current), self.assertRaisesRegex(ValueError, 'receipt UID'):
+                    adapter._check_native_fault_uid({'uid':uid}, current)
+            stamp.write_text('{"uid":0}')
+            with self.assertRaisesRegex(ValueError, 'receipt UID'):
+                adapter._check_native_fault_uid({'uid':0}, True)
+
     def test_original_read_fixture_rejects_a_changed_private_source(self):
         adapter = registered.CONVERGENCE.extra(registered.ROOT, 'standard-record-read')
         # current() is the unmodified production source/mode validator. Only
@@ -638,6 +657,33 @@ class Registration(OriginalReadPlanFixture):
             self.assertCountEqual([call.kwargs for call in launch.call_args_list], [
                 {'cpu_affinity': (0, 1, 2, 3)}, {'cpu_affinity': (4, 5, 6, 7)}])
 
+    def test_full_cpu_budget_preserves_required_four_cpu_drivers_and_exhausts_sixty_four_slots(self):
+        plan = registered.formal_plan(Path('/unused'))
+        self.assertEqual([registered._formal_cpu_width(job) for job in plan].count(1), 126)
+        self.assertEqual([registered._formal_cpu_width(job) for job in plan].count(4), 42)
+        four = [job for job in plan if registered.requires_formal_cpu_slot(job)]
+        self.assertEqual(len(four), 42)
+        self.assertTrue(all(registered._formal_cpu_width(job) == 4 for job in four))
+        unknown = dict(name='untested', driver='unreviewed.py')
+        self.assertEqual(registered._formal_cpu_width(unknown), 4)
+        allowed = list(range(32, 96))
+        with patch.object(registered.os,'sched_getaffinity',return_value=set(allowed),create=True) as affinity:
+            self.assertEqual(registered._formal_cpu_budget(), allowed)
+            for wrong in (allowed[:-1], allowed+[96]):
+                affinity.return_value = set(wrong)
+                with self.assertRaisesRegex(ValueError, 'requires exactly 64 admitted CPUs'):
+                    registered._formal_cpu_budget()
+        pending = list(plan)
+        free = allowed.copy()
+        for wanted in allowed:
+            index, slot = registered._take_formal_slot(pending, free, budgeted=True)
+            self.assertEqual(slot, (wanted,))
+            pending.pop(index)
+            free.pop(0)
+        self.assertIsNone(registered._take_formal_slot(pending, free, budgeted=True))
+        single = next(job for job in pending if registered._formal_cpu_width(job) == 1)
+        self.assertEqual(registered._take_formal_slot([four[0], single], [60], budgeted=True), (1, (60,)))
+
     def test_unload_parent_requires_each_actual_page_for_repeated_audits(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -737,7 +783,7 @@ class Registration(OriginalReadPlanFixture):
             self.assertEqual(options['sources']['workers'],'SANDPROOF_STAGE1_JOBS')
             self.assertEqual(registered._execution_options(4,Path('/explicit.json'))['workers'],4)
         with patch.dict(os.environ,SANDPROOF_STAGE1_JOBS='3'):
-            with self.assertRaisesRegex(ValueError,'must be 1, 2, 4 or 8'):
+            with self.assertRaisesRegex(ValueError,'must be 1, 2, 4, 8 or 64'):
                 registered._execution_options()
             self.assertEqual(registered._execution_options(1)['workers'],1)
         with patch.dict(os.environ,SANDPROOF_STAGE1_RESUME_FROM='relative.json'):
@@ -746,14 +792,16 @@ class Registration(OriginalReadPlanFixture):
 
     def test_formal_refuses_missing_seal_or_native_case_before_driver(self):
         for failure in ('seal', 'case'):
-            def validate_native(cache, *, scope):
+            @contextmanager
+            def registered_native_admission(cache, *, scope):
                 self.assertEqual(scope, 'stage1-protocol')
                 if failure == 'seal':
                     raise ValueError('changed seal')
+                yield 'controlled seal'
             def native_case(*args, scope):
                 self.assertEqual(scope, 'stage1-protocol')
                 raise ValueError('missing native case')
-            shared = SimpleNamespace(validate_native=validate_native, native_case=native_case)
+            shared = SimpleNamespace(registered_native_admission=registered_native_admission, native_case=native_case)
             # This fixture tests seal admission after structural registration.
             # Historical full-package input migration has its own real guard;
             # it must not intercept this synthetic missing-seal/case boundary.
@@ -806,6 +854,106 @@ class Registration(OriginalReadPlanFixture):
             with self.assertRaisesRegex(ValueError, 'crate test inventory'):
                 registered._crate_native(registered.ROOT, Path(temporary)/'output', 'envelope-schema')
 
+    def test_native_batches_keep_shared_work_serial_and_admit_short_last_group(self):
+        drivers = registered.NATIVE_DRIVERS
+        batches = list(registered._native_batches(drivers, 16))
+        self.assertEqual([row for batch in batches for row in batch], list(drivers))
+        private = [batch for batch in batches if len(batch) > 1]
+        self.assertEqual([len(batch) for batch in private], [16, 8])
+        for batch in private:
+            for label, path, archive in batch:
+                name = Path(path).parent.name
+                self.assertFalse(archive)
+                self.assertEqual(path, str(registered.HERE/name/'native.py'))
+                self.assertEqual(label, 'stage1-' + name)
+                self.assertNotIn(name, registered.CONVERGENCE.LOCKED_NATIVE)
+        self.assertEqual({Path(path).parent.name for batch in private for _, path, _ in batch},
+                         registered._PRIVATE_NATIVE_COMPONENTS)
+        self.assertEqual(list(registered._native_batches(drivers, 1)), [[row] for row in drivers])
+
+    def test_native_worker_limit_requires_actual_disjoint_affinity(self):
+        actual = set(range(32, 96))
+        with patch.dict(os.environ, SANDPROOF_STAGE1_NATIVE_JOBS='16'), \
+                patch.object(registered.os, 'sched_getaffinity', return_value=actual, create=True) as host:
+            slots = registered._native_worker_slots('full')
+            self.assertEqual(len(slots), 16)
+            self.assertEqual([cpu for slot in slots for cpu in slot], sorted(actual))
+            self.assertEqual(registered._native_worker_slots('create-delivery'), ())
+            self.assertEqual(registered._native_worker_slots(registered.CONVERGENCE.PROFILE), ())
+            host.assert_called_once_with(0)
+            host.return_value = actual - {95}
+            with self.assertRaisesRegex(ValueError, '16 native workers require 64 admitted CPUs'):
+                registered._native_worker_slots('full')
+        with patch.dict(os.environ, SANDPROOF_STAGE1_NATIVE_JOBS='17'):
+            with self.assertRaisesRegex(ValueError, 'integer from 1 to 16'):
+                registered._native_worker_slots('full')
+
+    def test_native_parallel_receipts_cover_short_group_and_reject_bad_driver_or_affinity(self):
+        private = [row for batch in registered._native_batches(registered.NATIVE_DRIVERS, 16)
+                   if len(batch) > 1 for row in batch]
+        drivers = tuple(private[:19])
+        labels = [row[0] for row in drivers]
+        first_batch, last_batch = labels[:16], labels[16:]
+        for failure in (None, 'driver', 'affinity'):
+            barriers = (threading.Barrier(16, timeout=15), threading.Barrier(3, timeout=15))
+            invoked = {}
+            completed = {}
+
+            def invoke(root, driver, args, *, pass_fds, cpu_affinity, cpu_admission):
+                output = args[1]
+                label = output.name
+                self.assertEqual(pass_fds, ())
+                self.assertEqual(cpu_admission.name, label + '-cpu-admission.json')
+                invoked[label] = tuple(cpu_affinity)
+                output.mkdir()
+                result = {'complete': not (failure == 'driver' and label == labels[0])}
+                (output/'result.json').write_text(json.dumps(result))
+                observed = sorted(cpu_affinity)
+                if failure == 'affinity' and label == labels[0]:
+                    observed = [60, 61, 62, 63]
+                cpu_admission.write_text(json.dumps(dict(kind='stage1-create-four-cpu-admission',
+                    actual=observed, requested=observed, parent_allowed=list(range(64)), pid=42)))
+                barriers[int(label in last_batch)].wait()
+
+            def native_case(label, root, output, action, *, scope):
+                self.assertEqual(scope, 'stage1-protocol')
+                files = {}
+                if label != 'stage1-protocol':
+                    action()
+                    for name in ('result.json', 'cpu-admission.json'):
+                        files['evidence/' + name] = registered._sha(output/name)
+                    completed[label] = files
+                return {'output': output, 'files': files}
+
+            def original_file(receipt, relative):
+                return receipt['output']/relative
+
+            with (self.subTest(failure=failure), tempfile.TemporaryDirectory() as tmp,
+                  patch.dict(os.environ, SANDPROOF_STAGE1_NATIVE_JOBS='16',
+                             SANDPROOF_ACCEPTANCE_ROLE='native', CARGO_TARGET_DIR=tmp),
+                  patch.object(registered.os, 'sched_getaffinity', return_value=set(range(64)), create=True),
+                  patch.object(registered, 'validate_registration'),
+                  patch.object(registered, 'check_create_sources'),
+                  patch.object(registered, 'NATIVE_DRIVERS', drivers),
+                  patch.object(registered, 'CRATE_CASES', ()),
+                  patch.object(registered, '_shared', return_value=SimpleNamespace(native_case=native_case)),
+                  patch.object(registered, '_original_file', side_effect=original_file),
+                  patch.object(registered, '_invoke', side_effect=invoke)):
+                if failure is None:
+                    actual = registered.run_native(registered.ROOT, Path(tmp))
+                    self.assertEqual(list(actual), labels)
+                    self.assertEqual(set(completed), set(labels))
+                    self.assertEqual([cpu for label in last_batch for cpu in invoked[label]], list(range(12)))
+                    self.assertEqual(completed, {label: row['files'] for label, row in actual.items()})
+                else:
+                    message = ('original native driver did not complete' if failure == 'driver'
+                               else 'missing or changed original four-CPU child admission')
+                    with self.assertRaisesRegex(ValueError, message):
+                        registered.run_native(registered.ROOT, Path(tmp))
+                    self.assertEqual(set(invoked), set(first_batch))
+                    self.assertEqual(set(completed), set(first_batch[1:]))
+                self.assertEqual([cpu for label in first_batch for cpu in invoked[label]], list(range(64)))
+
     def test_full_native_accepted_parser_inherits_lock_and_four_cpus(self):
         label = 'stage1-accepted-json-parser'
         driver, = [row for row in registered.NATIVE_DRIVERS if row[0] == label]
@@ -814,7 +962,7 @@ class Registration(OriginalReadPlanFixture):
             self.assertEqual(scope, 'stage1-protocol')
             if name == label:
                 action()
-            return {}
+            return {'files': {}}
 
         with tempfile.TemporaryDirectory() as temporary, \
                 patch.object(registered, 'validate_registration'), \
@@ -830,6 +978,7 @@ class Registration(OriginalReadPlanFixture):
             lock = root/'existing.lock'
             with lock.open('w+') as inherited, patch.dict(os.environ, {
                     'SANDPROOF_ACCEPTANCE_ROLE': 'native', 'CARGO_TARGET_DIR': temporary,
+                    'SANDPROOF_STAGE1_NATIVE_JOBS': '1',
                     'SANDPROOF_PROOF_HEAVY_LOCK': str(lock),
                     'SANDPROOF_PROOF_HEAVY_LOCK_FD': str(inherited.fileno())}):
                 registered.run_native(registered.ROOT, root)
@@ -1047,6 +1196,29 @@ class Registration(OriginalReadPlanFixture):
                 metadata.write_text('{}')
                 with self.assertRaisesRegex(ValueError, 'missing reviewed providers'):
                     registered.validate_metadata_inputs(root)
+
+    def test_source_guard_providers_are_checked_during_registration(self):
+        for component in ('lifetime-row', 'pause-request', 'source-origin', 'source-question'):
+            with self.subTest(component=component), tempfile.TemporaryDirectory() as temporary:
+                root = Path(temporary)
+                package = registered.HERE/component
+                name = str(package/'inventory.json')
+                metadata = root/name
+                metadata.parent.mkdir(parents=True)
+                provider_name = 'docs/proof-workflow.md'
+                provider = root/provider_name
+                provider.parent.mkdir()
+                provider.write_text('reviewed workflow\n')
+                data = dict(inputs={}, providers={provider_name: registered._sha(provider)},
+                            templates={}, drivers={})
+                metadata.write_text(json.dumps(data))
+                with patch.object(registered, 'audit_template_paths', return_value=(str(package/'Audit.lean.in'),)), \
+                        patch.object(registered, 'formal_plan', return_value=[]), \
+                        patch.object(registered.subprocess, 'check_output', return_value=(name+'\0').encode()):
+                    self.assertEqual(registered.validate_metadata_inputs(root)[name+':providers'], 1)
+                    provider.write_text('changed workflow\n')
+                    with self.assertRaisesRegex(ValueError, f'{component}/inventory.json:providers:{provider_name}'):
+                        registered.validate_metadata_inputs(root)
 
     def retained_fixture(self, temporary, *, wrong=False):
         root = Path(temporary)/'root'
@@ -1274,7 +1446,8 @@ class CheckpointExecution(unittest.TestCase):
                      output=str(output/name), native=[], cases=['correct'], actual_files=True)
                 for name in names]
 
-    def invoke(self, root, driver, args, env=None, *, log=None):
+    def invoke(self, root, driver, args, env=None, *, log=None, cpu_affinity=None,
+               cpu_admission=None, cpu_width=registered.CREATE_CPUS_PER_JOB):
         output = Path(args[args.index('--output')+1])
         name = output.name
         with self.mutex:
@@ -1282,6 +1455,10 @@ class CheckpointExecution(unittest.TestCase):
             self.environments[name] = dict(env)
         if self.hook is not None:
             self.hook(name)
+        if cpu_affinity is not None:
+            kind = 'stage1-single-cpu-admission' if cpu_width == 1 else 'stage1-create-four-cpu-admission'
+            cpu_admission.write_text(json.dumps(dict(kind=kind, actual=list(cpu_affinity),
+                requested=list(cpu_affinity), parent_allowed=sorted(os.sched_getaffinity(0)), pid=123)))
         output.mkdir(mode=0o700)
         project = output/'source'
         (project/'artifacts').mkdir(parents=True)
@@ -1631,6 +1808,49 @@ class CheckpointExecution(unittest.TestCase):
         self.assertEqual(len(rows),4)
         self.assertEqual(len(set(row['result_path'] for row in rows)),4)
 
+    def test_budgeted_failure_stops_new_work_and_keeps_other_original_checkpoints(self):
+        output = self.directory/'sixty-four'
+        output.mkdir()
+        early = [f'fixture-wide-{i}' for i in range(15)] + [f'fixture-single-{i}' for i in range(3)]
+        waiting, refill = 'fixture-waits-for-four', 'fixture-refills-one'
+        plan = self.plan(output, names=[*early, waiting, refill])
+        for job in plan:
+            if job['name'] in (*early[-3:], refill):
+                job['driver'] = 'fixture-single.py'
+        running = threading.Barrier(19, timeout=15)
+        observed_failure = threading.Event()
+
+        def hook(name):
+            running.wait()
+            if name == early[0]:
+                raise ValueError('controlled original driver failure')
+            self.assertTrue(observed_failure.wait(timeout=15))
+
+        def progress(rows, failures, misses):
+            if failures:
+                observed_failure.set()
+
+        self.hook = hook
+        allowed = set(range(64))
+        with (patch.object(registered, 'formal_plan', return_value=plan),
+              patch.object(registered, '_invoke', side_effect=self.invoke),
+              patch.object(registered, 'FORMAL_SINGLE_CPU_DRIVERS', {'fixture-single.py'}),
+              patch.object(registered.os,'sched_getaffinity',return_value=allowed,create=True)):
+            rows, failures = registered.execute_formal_jobs(registered.ROOT, output, plan,
+                self.context, {}, jobs=64, progress=progress)
+            self.assertEqual(set(self.called), {*early, refill})
+            self.assertEqual([row['name'] for row in rows], [*early[1:], refill])
+            self.assertEqual(set(failures), {early[0]})
+            used = [cpu for row in rows for cpu in row['cpu_admission']['actual']]
+            self.assertEqual(len(used), len(set(used)))
+            self.assertEqual(set(used), allowed - {0, 1, 2, 3})
+            for job, row in zip([*plan[1:-2], plan[-1]], rows, strict=True):
+                checkpoint = registered._read(Path(row['checkpoint_path']))
+                self.assertEqual(checkpoint['evidence'][row['cpu_admission_path']], row['cpu_admission_sha256'])
+                reused, reason = registered._reuse_job(self.helper, job, self.context, row)
+                self.assertIsNone(reason)
+                self.assertEqual(reused['use'], 'REUSE')
+
     def test_verified_parent_runtime_metadata_seeds_private_caches_without_rewriting_it(self):
         seed = self.directory/'runtime-file-hashes.json'
         seed.write_text('{"schema":1,"files":{"controlled":{"sha256":"original"}}}')
@@ -1683,7 +1903,7 @@ class CheckpointExecution(unittest.TestCase):
             self.assertEqual(name, 'result.json')
             return sqlite_result if receipt['key']['label'] == 'stage1-sqlite-commit' else retained
         output = self.directory/'public'
-        shared = SimpleNamespace(validate_native=lambda *a,**k: None,
+        shared = SimpleNamespace(registered_native_admission=lambda *a,**k: nullcontext(registered._sha(cache/'complete.json')),
             native_case=lambda *a,**k: {'key':{'label':a[0]}},
             repository_inputs=lambda root: {'fixture':'original'}, digest=registered._object_sha,
             write_json=self.shared.write_json)

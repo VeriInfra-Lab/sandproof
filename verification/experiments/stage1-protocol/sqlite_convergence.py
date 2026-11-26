@@ -151,6 +151,18 @@ def _packet(folder, expected):
     return base
 
 
+def _check_native_fault_uid(runtime, current):
+    # The archived packet is tied to its original runner. For a new packet
+    # the enclosing native batch records the execution UID independently.
+    expected = 1000
+    if current:
+        cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
+        expected = read(cache/'runtime.json').get('uid')
+    actual = runtime.get('uid')
+    if type(expected) is not int or expected <= 0 or type(actual) is not int or actual != expected:
+        raise ValueError('SQLite native fault receipt UID differs from the recorded execution account')
+
+
 def _native_readback(folder, root, expected_packet, source_commit, current):
     from tools.acceptance_receipts import digest, load_success, rust_inputs
     profile = inventory(root)
@@ -188,6 +200,8 @@ def _native_readback(folder, root, expected_packet, source_commit, current):
                 or key.get('contracts') != dict(review=contract_inputs(root), source=contract_inputs(root))
                 or key.get('source_archives') != source_archive_inputs()):
             raise ValueError('current SQLite native fault rules, contracts or source archives differ')
+    runtime = key.get('runtime', {})
+    _check_native_fault_uid(runtime, current)
     if (summary.get('complete') is not True or summary.get('driver_exit_code') != 0
             or summary.get('production_commit') != source_commit
             or summary.get('driver_commit') != driver_commit
@@ -200,8 +214,8 @@ def _native_readback(folder, root, expected_packet, source_commit, current):
             or key.get('label') != 'sqlite-commit-native-rejected' or key.get('command') != NATIVE_COMMAND
             or key.get('options') != {} or key.get('rust') != expected
             or key.get('rules', {}).get(str(HERE/'negative.py')) != driver_sha
-            or key.get('runtime', {}).get('platform') != 'linux' or key['runtime'].get('uid') != 1000
-            or key['runtime'].get('rustc', {}).get('version', '').splitlines()[:1] != [compiler]
+            or runtime.get('platform') != 'linux'
+            or runtime.get('rustc', {}).get('version', '').splitlines()[:1] != [compiler]
             or load_success(packet/'fault', key) != receipt or receipt.get('actual_exit') != 101
             or receipt.get('expected') != 101):
         raise ValueError('exact-source original native fault receipt differs; no new execution claimed')

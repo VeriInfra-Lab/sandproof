@@ -6,11 +6,13 @@ missing logs and interrupted executions never produce reusable success.
 """
 from contextlib import contextmanager
 from collections import Counter
+from contextvars import ContextVar
 import fcntl
 import hashlib
 import importlib.util
 import json
 import os
+import runpy
 import shutil
 import stat
 from pathlib import Path
@@ -41,6 +43,8 @@ SOURCE_ARCHIVES = ('SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE',
                    'SANDPROOF_WRITER_SOURCE_ARCHIVE',
                    'SANDPROOF_LIBRARY_SOURCE_ARCHIVE',
                    'SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE')
+_NATIVE_ADMISSION = ContextVar('registered_formal_native_admission', default=None)
+_ADMISSION_LIMIT = 4096
 
 
 def sha(path):
@@ -321,9 +325,12 @@ def native_key(label, command, source, root=ROOT, environment=None):
     return result
 
 
-def load_success(directory, key):
+def load_success(directory, key, *, receipt_sha256=None):
     try:
-        receipt = json.loads((directory / 'receipt.json').read_text())
+        raw = (directory / 'receipt.json').read_bytes()
+        if receipt_sha256 is not None and hashlib.sha256(raw).hexdigest() != receipt_sha256:
+            return None
+        receipt = json.loads(raw)
         if (not isinstance(receipt,dict) or receipt.get('complete') is not True or receipt.get('key') != key
                 or type(receipt.get('exit_code')) is not int or receipt.get('exit_code') != 0
                 or not isinstance(receipt.get('files'),dict) or not receipt.get('files')):
@@ -339,7 +346,7 @@ def load_success(directory, key):
         return None
 
 
-def validate_native(cache, *, scope='all'):
+def _validate_native_full(cache, *, scope='all'):
     check_native_scope(scope)
     cache = Path(cache)
     seal = json.loads((cache/'complete.json').read_text())
@@ -354,7 +361,7 @@ def validate_native(cache, *, scope='all'):
         if sha(entry/'receipt.json')!=expected:
             raise ValueError('changed native receipt: '+identity)
         receipt=json.loads((entry/'receipt.json').read_text())
-        if load_success(entry,receipt['key']) is None or digest(receipt['key'])!=identity:
+        if load_success(entry,receipt['key'],receipt_sha256=expected) is None or digest(receipt['key'])!=identity:
             raise ValueError('missing or corrupt native command evidence: '+identity)
         keys.append(receipt['key'])
     dispatch_parent = seal['scope'] in ('pause-dispatch', 'pause-receipt')
@@ -391,6 +398,98 @@ def validate_native(cache, *, scope='all'):
     check_native_components(keys, scope=scope,
                             allow_additional=seal['scope']=='all' or dispatch_parent)
     return seal
+
+
+def _native_header(cache, scope):
+    return dict(cache=str(cache.resolve()), scope=scope, seal_sha256=sha(cache/'complete.json'),
+                runtime_sha256=sha(cache/'runtime.json'))
+
+
+def _check_admitted_header(cache, admission):
+    raw = (cache/'complete.json').read_bytes()
+    if (hashlib.sha256(raw).hexdigest() != admission['seal_sha256']
+            or sha(cache/'runtime.json') != admission['runtime_sha256']):
+        raise ValueError('native seal or runtime changed after registered admission')
+    return json.loads(raw)
+
+
+def validate_native(cache, *, scope='all'):
+    check_native_scope(scope)
+    cache = Path(cache)
+    admission = _NATIVE_ADMISSION.get()
+    if (admission is not None and os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') == 'formal'
+            and admission['cache'] == str(cache.resolve()) and admission['scope'] == scope):
+        return _check_admitted_header(cache, admission)
+    return _validate_native_full(cache, scope=scope)
+
+
+@contextmanager
+def _native_admission_context(admission):
+    token = _NATIVE_ADMISSION.set(admission)
+    try:
+        yield
+    finally:
+        _NATIVE_ADMISSION.reset(token)
+
+
+def _admission_seals():
+    return fcntl.F_SEAL_WRITE | fcntl.F_SEAL_GROW | fcntl.F_SEAL_SHRINK | fcntl.F_SEAL_SEAL
+
+
+@contextmanager
+def registered_native_admission(cache, *, scope):
+    """Fully check one native packet and hold its identity for this formal caller."""
+    if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal':
+        raise ValueError('registered native admission requires the formal role')
+    cache = Path(cache).resolve()
+    admission = _native_header(cache, scope)
+    _validate_native_full(cache, scope=scope)
+    _check_admitted_header(cache, admission)
+    with _native_admission_context(admission):
+        yield admission['seal_sha256']
+
+
+@contextmanager
+def registered_native_child_descriptor():
+    """Only an active in-process admission can issue a private worker descriptor."""
+    admission = _NATIVE_ADMISSION.get()
+    if admission is None or not hasattr(os, 'memfd_create'):
+        yield None
+        return
+    _check_admitted_header(Path(admission['cache']), admission)
+    payload = json.dumps(dict(admission, issuer=os.getpid())).encode()
+    if len(payload) >= _ADMISSION_LIMIT:
+        raise ValueError('registered native admission descriptor exceeds the private transport limit')
+    fd = os.memfd_create('sandproof-native-admission', os.MFD_ALLOW_SEALING | os.MFD_CLOEXEC)
+    try:
+        with os.fdopen(os.dup(fd), 'wb') as stream:
+            stream.write(payload)
+        fcntl.fcntl(fd, fcntl.F_ADD_SEALS, _admission_seals())
+        yield fd
+    finally:
+        os.close(fd)
+
+
+def _run_registered_native_child(fd, argv):
+    """Private launcher protocol between the trusted local coordinator and its driver."""
+    try:
+        seals = _admission_seals()
+        if (not os.readlink(f'/proc/self/fd/{fd}').startswith('/memfd:sandproof-native-admission')
+                or fcntl.fcntl(fd, fcntl.F_GET_SEALS) & seals != seals):
+            raise ValueError('formal driver requires its private sealed native admission')
+        admission = json.loads(os.pread(fd, _ADMISSION_LIMIT, 0))
+    finally:
+        os.close(fd)
+    cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE']).resolve()
+    if (os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'formal'
+            or admission.pop('issuer') != os.getppid() or admission['cache'] != str(cache)):
+        raise ValueError('formal driver native admission belongs to another launcher or packet')
+    check_native_scope(admission['scope'])
+    _check_admitted_header(cache, admission)
+    sys.argv = argv
+    sys.path[0] = str(Path(argv[0]).parent)
+    with _native_admission_context(admission):
+        runpy.run_path(argv[0], run_name='__main__')
 
 
 def convergence_reuse_case(cache, label, key, *, reference=None):
@@ -551,7 +650,8 @@ def native_case(label, source, output, action=None, *, scope='all'):
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE', 'formal') == 'formal':
         seal = (validate_native(cache, scope=scope) if scope != 'all'
                 else json.loads((cache / 'complete.json').read_text()))
-        receipt = load_success(entry, key)
+        expected = seal['commands'].get(entry.name)
+        receipt = load_success(entry, key, receipt_sha256=expected) if expected is not None else None
         if (receipt is None and scope == 'stage1-protocol-convergence'
                 and label in seal.get('convergence_reuse', {})):
             receipt, entry = convergence_reuse_case(cache, label, key,

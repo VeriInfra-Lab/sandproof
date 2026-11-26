@@ -1,13 +1,15 @@
 """Finite V3 wiring around the original drivers and shared native receipts.
 
 The existing retained component and all original V0 targets remain separate.
+Full native runs can set SANDPROOF_STAGE1_NATIVE_JOBS to 1–16 (default 1).
+Only drivers with private builds run together, each on four exclusive CPUs.
 This module neither implements a proof nor issues a shared native seal.
 """
 import argparse
 import ast
 import copy
 import fcntl
-from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
+from concurrent.futures import FIRST_COMPLETED, FIRST_EXCEPTION, ThreadPoolExecutor, wait
 import hashlib
 import importlib.util
 import json
@@ -40,12 +42,33 @@ CPU_PINNED_UNLOAD_JOBS = (UNLOAD.LABEL, UNLOAD.PARENT_LABEL)
 PROFILES = ('full', 'create-delivery', CONVERGENCE.PROFILE)
 CREATE_SCOPE = 'stage1-create-delivery'
 CREATE_SOURCE_ENV = 'SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE'
-FULL_WORKERS = (1, 2, 4, 8)
+FORMAL_CPU_BUDGET = 64
+FULL_WORKERS = (1, 2, 4, 8, FORMAL_CPU_BUDGET)
 CREATE_WORKERS = (1, 2, 4, 8, 12)
 CREATE_CPUS_PER_JOB = 4
+# These original full-profile drivers have no minimum physical-affinity
+# contract. Keep their original tool threads, commands and timeouts. New
+# driver paths remain on four CPUs until their resource requirements are read.
+FORMAL_SINGLE_CPU_DRIVERS = frozenset(str(HERE/driver) for driver in (
+    'replay_formal.py', 'manifest_validation_formal.py',
+    'create-observation/conversion_candidate.py', 'create-observation/guard_candidate.py',
+    'serde-binding/admit.py', 'serde-binding/negative.py', 'parser-binding/negative.py',
+    'decode-assembly/admit.py', 'decode-assembly/negative.py',
+    *(f'{name}/formal.py' for name in (
+        'result-confirmation', 'observation-bindings', 'resume-observation', 'unload-observation',
+        'access-identity', 'renewal-confirmation', 'create-observation', 'json-wire',
+        'schema-leaves', 'envelope-schema', 'envelope-bytes', 'envelope-budget',
+        'envelope-writer', 'parser-binding', 'inbox-lookup', 'inbox-admission', 'inbox-record',
+        'inbox-record-total', 'inbox-state', 'inbox-position', 'inbox-lineage', 'inbox-retained',
+        'inbox-lifetimes', 'inbox-renewal-session', 'inbox-unload-resolution', 'inbox-entry-validation',
+        'inbox-retired-identities', 'inbox-origin-selection', 'inbox-config', 'inbox-config-validation',
+        'terminal-binding', 'retention-lane', 'native-retirement', 'session-shape', 'inbox-validation',
+        'inbox-save', 'inbox-record-validation', 'inbox-load')),
+))
 ROOT_PROVIDER_PACKAGES = (
     'digest-uses', 'record-reply', 'standard-blob', 'standard-digest', 'standard-save-digest',
 )
+SOURCE_GUARD_PACKAGES = frozenset(('lifetime-row', 'pause-request', 'source-origin', 'source-question'))
 
 
 def _original_reader(root=ROOT):
@@ -59,16 +82,22 @@ def _original_reader(root=ROOT):
 CPU_BOOTSTRAP = """import json, os, sys
 requested = [int(n) for n in sys.argv[1].split(',')]
 before = sorted(os.sched_getaffinity(0))
-if len(requested) != 4 or len(set(requested)) != 4 or not set(requested) <= set(before):
-    raise RuntimeError('invalid admitted four-CPU child slot')
+if (len(requested) not in (1, 4) or len(requested) != len(set(requested))
+        or not set(requested) <= set(before)):
+    raise RuntimeError('invalid admitted child CPU slot')
 os.sched_setaffinity(0, set(requested))
 actual = sorted(os.sched_getaffinity(0))
 if actual != sorted(requested):
     raise RuntimeError('child CPU affinity differs from admission')
 with open(sys.argv[2], 'x') as stream:
-    json.dump(dict(kind='stage1-create-four-cpu-admission', requested=sorted(requested),
+    kind = 'stage1-create-four-cpu-admission' if len(requested) == 4 else 'stage1-single-cpu-admission'
+    json.dump(dict(kind=kind, requested=sorted(requested),
                    actual=actual, parent_allowed=before, pid=os.getpid()), stream)
 os.execv(sys.argv[3], sys.argv[3:])
+"""
+NATIVE_ADMISSION_BOOTSTRAP = """import sys
+from tools.acceptance_receipts import _run_registered_native_child
+_run_registered_native_child(int(sys.argv[1]), sys.argv[2:])
 """
 CREATE_SOURCE_MEMBERS = tuple('aeneas/backends/lean/Aeneas/'+name for name in (
     'Std/Scalar/CoreConvertNum.lean', 'Std/Scalar/Ops/Mul.lean', 'Std/Scalar/Ops/Add.lean',
@@ -393,15 +422,19 @@ def _sha(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _invoke(root, driver, args, env=None, *, log=None, pass_fds=(), cpu_affinity=None, cpu_admission=None):
+def _invoke(root, driver, args, env=None, *, log=None, pass_fds=(), cpu_affinity=None, cpu_admission=None,
+            cpu_width=CREATE_CPUS_PER_JOB, native_admission_fd=None):
     # Inherit stdout: only the original actual_files checker emits Checked lines.
     argv = [sys.executable, str(root/driver), *map(str, args)]
+    if native_admission_fd is not None:
+        argv = [sys.executable, '-c', NATIVE_ADMISSION_BOOTSTRAP, str(native_admission_fd), *argv[1:]]
+        pass_fds = (*pass_fds, native_admission_fd)
     if cpu_affinity is not None:
-        if (len(cpu_affinity) != CREATE_CPUS_PER_JOB
-                or len(set(cpu_affinity)) != CREATE_CPUS_PER_JOB
+        if (cpu_width not in (1, CREATE_CPUS_PER_JOB) or len(cpu_affinity) != cpu_width
+                or len(set(cpu_affinity)) != cpu_width
                 or any(type(n) is not int or n < 0 for n in cpu_affinity)
                 or cpu_admission is None):
-            raise ValueError('Create child requires an explicit four-CPU slot and admission path')
+            raise ValueError('child requires an explicit CPU slot of the admitted width and an admission path')
         argv = [sys.executable, '-c', CPU_BOOTSTRAP, ','.join(map(str, cpu_affinity)),
                 str(cpu_admission), *argv]
     if log is None:
@@ -596,10 +629,18 @@ def validate_metadata_inputs(root=ROOT, *, profile='full'):
         fields = ('inputs', 'base_sources', 'production_inputs')
         if path.parent in {HERE/name for name in (*CREATE_CASES, *CONVERGENCE.CASES)}:
             fields += ('source_inputs',)
-        if path.name == 'inventory.json' and path.parent.parent == HERE and path.parent.name in ROOT_PROVIDER_PACKAGES:
-            if 'providers' not in data:
-                raise ValueError('missing reviewed providers in registered inventory: ' + name)
-            fields += ('providers',)
+        if path.name == 'inventory.json' and path.parent.parent == HERE:
+            package = path.parent.name
+            if package in ROOT_PROVIDER_PACKAGES or package in SOURCE_GUARD_PACKAGES:
+                if 'providers' not in data:
+                    raise ValueError('missing reviewed providers in registered inventory: ' + name)
+                fields += ('providers',)
+            if package in SOURCE_GUARD_PACKAGES:
+                # Match the active source guards in these four native drivers.
+                for field in ('inputs', 'templates', 'drivers'):
+                    if field not in data:
+                        raise ValueError('missing reviewed ' + field + ' in registered inventory: ' + name)
+                fields += ('templates', 'drivers')
         if path.name == 'frozen.json':
             fields += ('extraction_inputs', 'native_rust_inputs')
         for field in fields:
@@ -650,10 +691,80 @@ def validate_registration(root=ROOT, *, profile='full'):
     validate_metadata_inputs(root, profile=profile)
 
 
+# Each of these original drivers builds every variant under its own output
+# directory. Keep shared-target, locked and producer-dependent work in order.
+_PRIVATE_NATIVE_COMPONENTS = frozenset("""
+    inbox-lookup inbox-admission inbox-record inbox-append inbox-state inbox-position
+    inbox-lineage inbox-retained inbox-lifetimes inbox-renewal-session inbox-unload-resolution
+    inbox-entry-validation inbox-retired-identities inbox-origin-selection inbox-config
+    inbox-config-validation terminal-binding retention-lane native-retirement session-shape
+    inbox-validation inbox-save inbox-record-validation inbox-load
+""".split())
+
+
+def _native_worker_slots(profile):
+    setting = os.environ.get('SANDPROOF_STAGE1_NATIVE_JOBS', '1')
+    if not re.fullmatch(r'[1-9]|1[0-6]', setting):
+        raise ValueError('SANDPROOF_STAGE1_NATIVE_JOBS must be an integer from 1 to 16')
+    workers = int(setting)
+    if workers == 1 or profile != 'full':
+        return ()
+    allowed = sorted(os.sched_getaffinity(0))
+    needed = workers * CREATE_CPUS_PER_JOB
+    if len(allowed) < needed:
+        raise ValueError(f'{workers} native workers require {needed} admitted CPUs')
+    return _cpu_slots(profile, workers, allowed)
+
+
+def _native_batches(drivers, workers):
+    batch = []
+    for row in drivers:
+        label, driver, needs_archive = row
+        component = Path(driver).parent.name
+        if (workers == 1 or needs_archive or component not in _PRIVATE_NATIVE_COMPONENTS
+                or component in CONVERGENCE.LOCKED_NATIVE or component in CONVERGENCE.CASES
+                or label != 'stage1-' + component or Path(driver) != HERE/component/'native.py'):
+            if batch:
+                yield batch
+                batch = []
+            yield [row]
+            continue
+        batch.append(row)
+        if len(batch) == workers:
+            yield batch
+            batch = []
+    if batch:
+        yield batch
+
+
+def _run_native_drivers(drivers, slots, run_driver):
+    receipts = {}
+    workers = len(slots) or 1
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        for batch in _native_batches(drivers, workers):
+            if len(batch) == 1:
+                label, receipt = run_driver(batch[0])
+                receipts[label] = receipt
+                continue
+            futures = [pool.submit(run_driver, row, slot)
+                       for row, slot in zip(batch, slots[:len(batch)], strict=True)]
+            done, pending = wait(futures, return_when=FIRST_EXCEPTION)
+            for future in futures:
+                if future in done and future.exception() is not None:
+                    for remaining in pending:
+                        remaining.cancel()
+                    # Wait for running siblings on exit while propagating the
+                    # original failure. No later batch reaches submission.
+                    future.result()
+            receipts.update(future.result() for future in futures)
+    return receipts
+
+
 def run_native(root, work, *, profile='full', scope=None):
-    """Call after the retained stage1 case, inside the original ning suite."""
+    """Call after the retained Stage1 case, inside the original native suite."""
     if os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') != 'native':
         raise ValueError('native registration must execute on the native host')
+    slots = _native_worker_slots(profile)
     validate_registration(root, profile=profile)
     check_create_sources(root)
     scope = native_scope(profile) if scope is None else scope
@@ -670,10 +781,11 @@ def run_native(root, work, *, profile='full', scope=None):
             _invoke(root, HERE/'component.py', ['--native-only', '--output', work/'retained']), scope=scope)
         archive = _original_file(retained, 'source.tar')
     target = Path(os.environ['CARGO_TARGET_DIR'])/'stage1-protocol'
-    receipts = {}
     drivers = (CREATE_NATIVE_DRIVERS if profile == 'create-delivery' else
                CONVERGENCE.NATIVE_DRIVERS if profile == CONVERGENCE.PROFILE else NATIVE_DRIVERS)
-    for label, driver, needs_archive in drivers:
+
+    def run_driver(row, slot=None):
+        label, driver, needs_archive = row
         output = work/label
         args = ['--output', output]
         if label in ('stage1-sqlite-commit', 'source-live', *CPU_PINNED_UNLOAD_JOBS):
@@ -698,8 +810,8 @@ def run_native(root, work, *, profile='full', scope=None):
                          if accepted_parser else 'complete')
         def action(driver=Path(driver), args=args, output=output, pass_fds=native_pass_fds,
                    success_field=success_field, accepted_parser=accepted_parser):
-            affinity = None
-            admission = None
+            affinity = slot
+            admission = work/(output.name+'-cpu-admission.json') if slot is not None else None
             if accepted_parser or profile == CONVERGENCE.PROFILE or driver.parent.name in CONVERGENCE.CASES:
                 allowed = sorted(os.sched_getaffinity(0))
                 if len(allowed) < CREATE_CPUS_PER_JOB:
@@ -711,6 +823,10 @@ def run_native(root, work, *, profile='full', scope=None):
             result = _read(output/'result.json')
             if result.get(success_field) is not True:
                 raise ValueError('original native driver did not complete: ' + str(driver))
+            if slot is not None:
+                _check_cpu_admission(admission, expected=slot)
+                (output/'cpu-admission.json').hardlink_to(admission)
+                admission.unlink()
             if str(driver) in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
                 _check_create_native_result(root, Path(driver).parent.name, output, result)
             if driver == HERE/'sqlite_convergence.py':
@@ -718,6 +834,8 @@ def run_native(root, work, *, profile='full', scope=None):
 
         receipt = shared.native_case(label, root, output, action, scope=scope)
         original = _original_file(receipt, 'result.json')
+        if 'evidence/cpu-admission.json' in receipt['files']:
+            _check_cpu_admission(_original_file(receipt, 'cpu-admission.json'))
         if driver in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
             name = Path(driver).parent.name
             admitted = ({'native_receipt': receipt} if profile == CONVERGENCE.PROFILE
@@ -725,7 +843,9 @@ def run_native(root, work, *, profile='full', scope=None):
             _check_create_native_result(root, name, original.parent, _read(original), **admitted)
         if label == 'stage1-sqlite-commit':
             CONVERGENCE.extra(root, 'sqlite-commit').check_native(_read(original), root, original.parent)
-        receipts[label] = receipt
+        return label, receipt
+
+    receipts = _run_native_drivers(drivers, slots, run_driver)
     for name in CRATE_CASES if profile == 'full' else ():
         label = 'stage1-protocol-'+name
         output = work/label
@@ -1267,6 +1387,28 @@ def requires_formal_cpu_slot(job):
             or any(key in job for key in ('create_package', 'convergence_package', 'convergence_extra')))
 
 
+def _formal_cpu_width(job):
+    if not requires_formal_cpu_slot(job) and job['driver'] in FORMAL_SINGLE_CPU_DRIVERS:
+        return 1
+    return CREATE_CPUS_PER_JOB
+
+
+def _formal_cpu_budget():
+    allowed = sorted(os.sched_getaffinity(0))
+    if len(allowed) != FORMAL_CPU_BUDGET:
+        raise ValueError(f'full --jobs {FORMAL_CPU_BUDGET} requires exactly {FORMAL_CPU_BUDGET} admitted CPUs')
+    return allowed
+
+
+def _take_formal_slot(pending, free_slots, *, budgeted):
+    """Return the first fitting job index and its disjoint CPU allocation."""
+    for index, job in enumerate(pending):
+        width = _formal_cpu_width(job) if budgeted else 1
+        if width <= len(free_slots):
+            return index, tuple(free_slots[:width])
+    return None
+
+
 def _job_description(job):
     names = ('name', 'driver', 'args', 'native', 'cases', 'actual_files',
              'create_package', 'convergence_package', 'convergence_extra', 'profile', 'expected_kind', 'inventory_sha256', 'views')
@@ -1518,10 +1660,7 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                 evidence[str(origin)] = _sha(origin)
         evidence[str(result_path.resolve())] = _sha(result_path)
         evidence[str(log.resolve())] = _sha(log)
-        if requires_formal_cpu_slot(job):
-            admission = log.parent/'cpu-admission.json'
-            _check_cpu_admission(admission)
-            evidence[str(admission.resolve())] = _sha(admission)
+        _checkpoint_cpu_evidence(log, job, evidence)
         return evidence
     if 'create_package' in job and job['name'] != 'create-attachment-flow':
         rows = result['views' if job['name'] == 'adopted-create' else 'variants']
@@ -1581,26 +1720,32 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
     if log.is_symlink() or not log.is_file():
         raise ValueError('missing original command log')
     evidence[str(log.resolve())] = _sha(log)
-    if requires_formal_cpu_slot(job):
-        admission = log.parent/'cpu-admission.json'
-        _check_cpu_admission(admission)
-        evidence[str(admission.resolve())] = _sha(admission)
+    _checkpoint_cpu_evidence(log, job, evidence)
     return evidence
 
 
-def _check_cpu_admission(path, expected=None):
+def _checkpoint_cpu_evidence(log, job, evidence):
+    admission = log.parent/'cpu-admission.json'
+    if requires_formal_cpu_slot(job) or admission.exists() or admission.is_symlink():
+        _check_cpu_admission(admission, cpu_width=_formal_cpu_width(job))
+        evidence[str(admission.resolve())] = _sha(admission)
+
+
+def _check_cpu_admission(path, expected=None, *, cpu_width=CREATE_CPUS_PER_JOB):
     row = _read(path)
     cpus = row.get('actual')
     before = row.get('parent_allowed')
-    if (row.get('kind') != 'stage1-create-four-cpu-admission'
-            or not isinstance(cpus, list) or len(cpus) != CREATE_CPUS_PER_JOB
+    width = 'single' if cpu_width == 1 else 'four'
+    kind = 'stage1-single-cpu-admission' if cpu_width == 1 else 'stage1-create-four-cpu-admission'
+    if (cpu_width not in (1, CREATE_CPUS_PER_JOB) or row.get('kind') != kind
+            or not isinstance(cpus, list) or len(cpus) != cpu_width
             or any(type(n) is not int or n < 0 for n in cpus)
             or cpus != sorted(set(cpus)) or row.get('requested') != cpus
             or not isinstance(before, list) or any(type(n) is not int or n < 0 for n in before)
             or before != sorted(set(before)) or not set(cpus) <= set(before)
             or (expected is not None and cpus != sorted(expected))
             or type(row.get('pid')) is not int or row['pid'] <= 0):
-        raise ValueError('missing or changed original four-CPU child admission')
+        raise ValueError(f'missing or changed original {width}-CPU child admission')
     return row
 
 
@@ -1662,9 +1807,9 @@ def _reuse_job(helper, job, context, previous):
         if _checkpoint_evidence(helper, job, result, result_path,
                 Path(receipt['command_log'])) != receipt['evidence']:
             raise ValueError('original evidence inventory changed')
-        if requires_formal_cpu_slot(job):
-            admission = Path(receipt['command_log']).parent/'cpu-admission.json'
-            if (previous.get('cpu_admission') != _check_cpu_admission(admission)
+        admission = Path(receipt['command_log']).parent/'cpu-admission.json'
+        if str(admission.resolve()) in receipt['evidence']:
+            if (previous.get('cpu_admission') != _check_cpu_admission(admission, cpu_width=_formal_cpu_width(job))
                     or previous.get('cpu_admission_path') != str(admission)
                     or previous.get('cpu_admission_sha256') != _sha(admission)):
                 raise ValueError('original CPU placement record differs from its checkpoint evidence')
@@ -1675,7 +1820,7 @@ def _reuse_job(helper, job, context, previous):
 
 
 def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=None,
-                original_readback=False):
+                original_readback=False, *, budgeted=False, native_admission_fd=None):
     started = time.monotonic()
     directory.mkdir(mode=0o700, parents=True)
     for name in ('runtime-cache', 'cargo-target'):
@@ -1718,15 +1863,19 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
     env = dict(os.environ, SANDPROOF_FORMAL_CACHE=str(directory/'runtime-cache'),
                CARGO_TARGET_DIR=str(directory/'cargo-target'), PYTHONDONTWRITEBYTECODE='1')
     transport = dict(pass_fds=pass_fds) if pass_fds else {}
-    if requires_formal_cpu_slot(job):
+    if native_admission_fd is not None:
+        transport['native_admission_fd'] = native_admission_fd
+    if budgeted or requires_formal_cpu_slot(job):
         transport.update(cpu_affinity=cpu_affinity, cpu_admission=directory/'cpu-admission.json')
+        if budgeted:
+            transport['cpu_width'] = _formal_cpu_width(job)
     argv = _invoke(root, driver, args, env, log=directory/'command.log', **transport)
     row = dict(name=job['name'], argv=argv, result_path=str(Path(job['output'])/'result.json'),
                 seconds=time.monotonic()-started, command_log=str(directory/'command.log'),
                 runtime_seed_sha256=seed_sha256)
-    if requires_formal_cpu_slot(job):
+    if budgeted or requires_formal_cpu_slot(job):
         admission = directory/'cpu-admission.json'
-        row.update(cpu_admission=_check_cpu_admission(admission, cpu_affinity),
+        row.update(cpu_admission=_check_cpu_admission(admission, cpu_affinity, cpu_width=_formal_cpu_width(job)),
                    cpu_admission_path=str(admission), cpu_admission_sha256=_sha(admission))
     return row
 
@@ -1750,8 +1899,10 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
                 or Path(job['output']).resolve() != (output/job['name']).resolve()
                 or Path(job['output']).exists()):
             raise ValueError('job must use its original descriptor and new private output')
-    slots = (_cpu_slots(profile, jobs) if any(requires_formal_cpu_slot(job) for job in plan)
-             else [None]*jobs)
+    budgeted = jobs == FORMAL_CPU_BUDGET
+    allowed = _formal_cpu_budget() if budgeted else list(range(jobs))
+    slots = (_cpu_slots(profile, jobs) if not budgeted and any(requires_formal_cpu_slot(job) for job in plan)
+             else ())
     helper, shared = _execution_helper(root), _shared()
     context_path = output/'execution-inputs.json'
     shared.write_json(context_path, context)
@@ -1772,25 +1923,36 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
             progress([results[job['name']] for job in plan if job['name'] in results], dict(failures), dict(misses))
     publish()
     stopped = False
-    with ThreadPoolExecutor(max_workers=jobs) as executor:
+    with shared.registered_native_child_descriptor() as native_fd, ThreadPoolExecutor(max_workers=jobs) as executor:
         inflight = {}
-        free_slots = list(range(jobs))
+        free_slots = allowed.copy()
         while pending or inflight:
             while pending and len(inflight) < jobs and not stopped:
-                job = pending.pop(0)
-                slot = free_slots.pop(0)
-                options = dict(cpu_affinity=slots[slot]) if requires_formal_cpu_slot(job) else {}
+                # A four-CPU child does not block a one-CPU child that fits.
+                ready = _take_formal_slot(pending, free_slots, budgeted=budgeted)
+                if ready is None:
+                    break
+                index, placement = ready
+                job = pending.pop(index)
+                del free_slots[:len(placement)]
+                options = {}
+                if budgeted:
+                    options.update(cpu_affinity=placement, budgeted=True)
+                elif requires_formal_cpu_slot(job):
+                    options['cpu_affinity'] = slots[placement[0]]
+                if native_fd is not None:
+                    options['native_admission_fd'] = native_fd
                 if profile_is_convergence_job(job):
                     options['original_readback'] = not recompute
                 future = executor.submit(_launch_job, root, job, output/'execution'/job['name'], paths,
                                          runtime_seed, **options)
-                inflight[future] = (job, slot)
+                inflight[future] = (job, placement)
             if not inflight:
                 break
             done, _ = wait(inflight, return_when=FIRST_COMPLETED)
             for future in done:
-                job, slot = inflight.pop(future)
-                free_slots.append(slot)
+                job, placement = inflight.pop(future)
+                free_slots.extend(placement)
                 free_slots.sort()
                 directory = output/'execution'/job['name']
                 try:
@@ -1799,6 +1961,15 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
                     result = _read(result_path)
                     _check_actual(result, job)
                     evidence = _checkpoint_evidence(helper, job, result, result_path, Path(row['command_log']))
+                    if budgeted:
+                        admission = directory/'cpu-admission.json'
+                        admitted = _check_cpu_admission(admission, placement, cpu_width=len(placement))
+                        admission_sha = _sha(admission)
+                        if (admitted['parent_allowed'] != allowed or row.get('cpu_admission') != admitted
+                                or row.get('cpu_admission_path') != str(admission)
+                                or row.get('cpu_admission_sha256') != admission_sha
+                                or evidence.get(str(admission.resolve())) != admission_sha):
+                            raise ValueError('registered CPU budget placement differs from the actual evidence')
                     if source_guard is not None:
                         source_guard()
                     receipt = dict(schema=1, complete=True, exit_code=0, job=_job_description(job),
@@ -1818,6 +1989,11 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
                     results[job['name']] = row
                 except Exception as error:
                     stopped = True
+                    if budgeted:
+                        pending.clear()
+                        for waiting in tuple(inflight):
+                            if waiting.cancel():
+                                inflight.pop(waiting)
                     failures[job['name']] = dict(complete=False, error=repr(error), output=job['output'],
                         command_log=str(directory/'command.log'), context_sha256=_sha(context_path))
                     directory.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -1828,7 +2004,7 @@ def execute_formal_jobs(root, output, plan, context, paths, *, jobs=1, resume=No
 
 def _execution_options(jobs=None, resume_from=None, recompute=False, *, profile='full'):
     allowed = CREATE_WORKERS if check_profile(profile) in ('create-delivery', CONVERGENCE.PROFILE) else FULL_WORKERS
-    choices = '1, 2, 4, 8 or 12' if profile in ('create-delivery', CONVERGENCE.PROFILE) else '1, 2, 4 or 8'
+    choices = '1, 2, 4, 8 or 12' if profile in ('create-delivery', CONVERGENCE.PROFILE) else '1, 2, 4, 8 or 64'
     sources = dict(workers='argument' if jobs is not None else 'default',
                    resume_from='argument' if resume_from is not None else 'default')
     if jobs is None:
@@ -1860,13 +2036,21 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
         raise ValueError('formal registration consumes shared native receipts only')
     options = _execution_options(jobs, resume_from, recompute, profile=profile)
     jobs, resume_from = options['workers'], options['resume_from']
+    if jobs == FORMAL_CPU_BUDGET:
+        _formal_cpu_budget()
     validate_registration(root, profile=profile)
     if (profile == 'full') != (retained_result is not None):
         raise ValueError('only the full profile requires its original retained component result')
     shared = _shared()
     cache = Path(os.environ['SANDPROOF_NATIVE_EVIDENCE'])
     scope = native_scope(profile)
-    shared.validate_native(cache, scope=scope)
+    with shared.registered_native_admission(cache, scope=scope) as seal_sha256:
+        return _run_admitted_formal(output, retained_result, root, options, profile, cache, scope, seal_sha256)
+
+
+def _run_admitted_formal(output, retained_result, root, options, profile, cache, scope, seal_sha256):
+    shared = _shared()
+    jobs, resume_from = options['workers'], options['resume_from']
     # Validate the exact current source/rules/runtime of every prerequisite.
     labels = ('functional', *(('stage1-protocol',) if profile == 'full' else ()), *native_labels(profile))
     receipts = {name: shared.native_case(name, root, None, scope=scope) for name in labels}
@@ -1891,7 +2075,7 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
     record = dict(kind='registered-stage1-formal-drivers', complete=False, results=[], covered=[],
                   profile=profile, create_definition=create_profile(root),
                   whole_V3_acceptance=False,
-                  shared_seal_sha256=_sha(cache/'complete.json'),
+                  shared_seal_sha256=seal_sha256,
                   source_snapshot_sha256=shared.digest(source_before),
                   native_receipts={name: dict(path=str(paths[name].parent/'receipt.json'),
                       sha256=_sha(paths[name].parent/'receipt.json')) for name in receipts},
@@ -1918,6 +2102,9 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
         helper = _execution_helper(root)
         context = _execution_context(root, shared, helper, receipts, profile=profile)
         plan = formal_plan(output, root=root, profile=profile)
+        if jobs == FORMAL_CPU_BUDGET:
+            record['execution']['cpu_budget'] = FORMAL_CPU_BUDGET
+            record['execution']['cpu_width_by_job'] = {job['name']: _formal_cpu_width(job) for job in plan}
         rows, failures = execute_formal_jobs(root, output, plan, context, paths, jobs=jobs,
             resume=resume_from, recompute=options['recompute'],
             source_guard=source_guard, progress=progress, profile=profile,
@@ -1979,6 +2166,7 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
             record['retained_inventory_sha256'] = _sha(root/HERE/'retained-protocol.json')
         elif expected_audits != observed_audits:
             raise ValueError('unexpected fixed-profile audit declarations')
+        shared._validate_native_full(cache, scope=scope)
         shared.validate_native(cache, scope=scope)
         check_create_sources(root)
         source_guard()
@@ -1995,7 +2183,7 @@ def main():
     parser.add_argument('mode', choices=('native', 'formal', 'plan'))
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--retained-result', type=Path)
-    parser.add_argument('--jobs', type=int, choices=CREATE_WORKERS)
+    parser.add_argument('--jobs', type=int, choices=(*CREATE_WORKERS, FORMAL_CPU_BUDGET))
     parser.add_argument('--resume-from', type=Path)
     parser.add_argument('--recompute', action='store_true')
     parser.add_argument('--profile', choices=PROFILES, default='full')

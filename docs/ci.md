@@ -317,3 +317,109 @@ Rust envd 的受控验收阶段（#311）：
 给现有专用 App 增加 Checks 写入须由 owner 更新 App 及安装授权；私有仓库的自动源码获取另需 Contents 只读。普通执行器令牌仍仅请求 Actions 只读、Administration 写入、Metadata 只读，不自动获得 Checks 或 Contents 权限。E2E 检查客户端独立请求 Actions 只读、Checks 写入、Metadata 只读，不带 Administration；源码客户端仅请求 Contents/Metadata 只读。源码令牌仅进入一次 Git 网络调用的私有环境，不写入 argv、Git 配置或检出目录；不借用个人凭据。App 私钥只进入管理服务的 systemd 凭据目录，不进入独立准备/批次单元、来宾、产物或报告。原检查 ID 与回写意图先持久保存；丢终态回执只重试同一检查，不重跑题目。未授权 Checks 时只能执行 `--local-only`，不能称自动检查已回写。
 
 安装前审查源码及批准配置、保留原 CI 文件恢复副本，验证单元；只重启管理服务，不停止在途工作。门槛按 owner 授权启用并通过正常晋升 PR 实测，安装和通过证据记录在 #14。单次安装不代表永久运行的缓存/历史保留已验收；未知资源由管理员核对，不自动忘掉。不加入绿色占位工作流，不通过移除必需检查合入失败版本。
+
+### Stage1 手动分阶段验收
+
+在已准备的原生主机上，`scripts/run-stage1-host.sh` 通过同一 Stage1 锁运行原生和正式入口。
+`preflight`、`native` 和 `formal` 均接收干净的提交目录和完整提交哈希，
+`formal` 还接收原 `native/complete.json` 所在的目录。运维环境提供以下四项。
+
+- `SANDPROOF_STAGE1_STORAGE_ROOT` 指数据盘的私有 Stage1 根。候选必须位于它的
+  `runs/` 目录。构建共享缓存、原始收据和运行日志也留在这里。
+- `SANDPROOF_STAGE1_NATIVE_ROOT` 指同一目录的短且可信的绑定挂载路径。
+  `SANDPROOF_STAGE1_XFS_ROOT` 指专用临时 XFS 文件卷的短路径。原权限检查要求沿途目录
+  归 root 或本账号。数据盘上级归其他用户时，运维可单独绑定本账号的私有目录，
+  并保留原目录权限。XFS 卷从新建普通文件创建，启用项目配额，验证 reflink 和实际挂载身份。
+- `SANDPROOF_STAGE1_NATIVE_ENV` 指受信的主机配置。它提供固定 Rust、Python、
+  离线 Cargo、五份固定源码归档，以及 `SANDPROOF_REDIS_SERVER` 和
+  `SANDPROOF_STAGE1_REDIS_SHA256`。Redis 可在目标主机上以原配方从固定的 7.2.16
+  归档构建，记录实际二进制摘要。GitHub CI 继续使用已有的 root 封存材料。
+
+先运行 `preflight` 核对入口、CPU、内存、数据盘、固定材料和锁定依赖的离线解析。
+宿主在预检及形式阶段开始前，从已配置的 `RUSTUP_HOME` 核对 `1.97.0` 与
+`nightly-2026-02-07` 各四份 Rust 标准库源文件。摘要沿用 serde 绑定原清单，
+`admission.json` 记录核对结果。文件缺失、变更或 rustup 指向其它目录时立即退出。
+手动宿主关闭 rustup 自动安装，工具链材料由环境准备步骤统一提供。
+两种验收使用各自 systemd 单元，以操作者账号执行。宿主统一限制单元及其子进程只能
+使用实际可用集合中的最多 64 个 CPU，并读回系统生效值。原生与轻量检查默认 16 路和 64 路，
+由 `SANDPROOF_STAGE1_NATIVE_JOBS` 与 `SANDPROOF_STAGE1_LIGHT_JOBS` 设置。
+正式入口在支持该调度的候选上默认 64 路，由 `SANDPROOF_STAGE1_JOBS` 设置。候选
+不支持请求的并行数时预先退出。旧版本可显式选择其原已支持的路数。
+同主机的两阶段共用外层锁，等待者可根据退出码 75 稍后重试。正式入口先比对原
+完整原生结果的全仓输入摘要及标有确切提交的原运行记录，再执行
+`verify-stage1-protocol.sh` 的原收据准入。
+登记证明启动时完整读取原生包一次。随后每个证明进程核对当批封口、自己使用的收据、
+当前输入与原始文件，减少并发读同一批日志。收尾重新完整核验；独立调用保持原完整准入。
+有适用的独立来源保存结果时，可用 `SANDPROOF_STAGE1_SOURCE_SAVE_RESULT` 关联
+其原 `result.json`。将其登记为独立切片，完整 Stage1 仍按默认入口验收。
+
+从每次私有运行目录读取 `admission.json`、阶段日志、原始验收结果
+和 `resources.json`。资源采样分别报告 elapsed、单元的 `memory.peak` 和 OOM 事件、
+私有运行目录的实际分配字节、专用 XFS 的已用量及共享数据盘最少剩余空间。磁盘数字
+是定期采样，短时峰值可能落在采样点之间。确认单元只剩监控进程且原命令成功后，
+清理本次原生 XFS 临时目录。Cargo 私有目标按本页的原始清单和独立观察交接。
+失败或资源状态未知时保留原日志和现场，采样中路径消失时单独记录缺失值。
+
+#### 批次操作与交接
+
+隔离 CI 执行器承担 GitHub CI。证明机的手动批次以 `SANDPROOF_STAGE1_STORAGE_ROOT` 为根，
+`bin/stage1-host` 调用固定提交里的启动器。实际底层设备由 `findmnt` 核对。
+`runs/` 保存每批的私有检出、收据与日志，`cache/` 和固定工具目录共享已验证依赖。
+正式普通入口为 Redis 测试创建本批独占的持久数据盘目录，XFS 临时目录用于
+需要该文件系统语义的其它操作。工作区 Rust 测试同时运行至多两个独立用例，
+用例内部的并发、断言和时限继续由原测试决定。独立原生模块的调度预算单独计算。
+可信短挂载指向同一批数据，
+容量统计按设备去重。一个候选只启动一次相应的正式阶段。
+
+```sh
+host="$SANDPROOF_STAGE1_STORAGE_ROOT/bin/stage1-host"
+"$host" preflight "$checkout" "$commit"
+"$host" native "$checkout" "$commit"
+# native 成功后取其输出目录内的 native/，该目录包含 complete.json。
+"$host" formal "$checkout" "$commit" "$native_evidence"
+```
+
+64 路轻量检查是整机任务上限。实际并发取已审查的独立模块数量和资源预算；
+例如 34 个独立模块最多同时派发 34 个。单个任务可用的 CPU 数、同时派发的
+任务数、工具实际使用的线程数分别记录。资源预算按在途任务求和。
+
+开发期间先跑受影响的正反例。合入前由完整入口核对候选和全部必需义务。
+复用须满足原入口的源码、工具、依赖、合同和反例条件，并能读回原始文件和摘要。
+在 PR 或对应 issue 写清实际执行项、复用项与原收据、失败项及其原因。
+独立组件已有成功收据时按原规则核对；缺少整批封印时保留局部结果的适用范围。
+
+每批结束记录提交、退出码、耗时、进程组内存峰值、私有工作目录的采样磁盘峰值、
+专用卷占用和回收字节。原证据和在用共享缓存单独保存。执行者把已终止并已核对
+无进程或挂载引用的私有构建目录按[临时产物回收规则](#显式退休的临时产物)
+交接给回收工具。保留期从正式登记退休起算。失败现场记录仍需保留的文件、负责人和
+释放条件。准入空间不足时先检查已登记退休清单；提前删除需要对应批次的明确授权。
+
+单模块重任务支持独立的 [64 CPU 运行模式](../verification/experiments/stage1-protocol/inbox-lookup/README.md)。
+该模式将全文查找的四个真实 Rust 变体各分配 16 个 CPU 和 16 个 Cargo 构建槽，四组互不重叠。
+按原协调锁单独运行，结果保留原断言、命令、实际亲和性与提交。完整 Stage1 的多模块
+调度按各自已登记的条件执行。切换到独立模式时先核对原运行状态，避免重复派发。
+
+### Lean 模块增量编译
+
+在证明机的私有开发工程根目录中使用[模块构建脚本](../scripts/stage1-lean-build-dev.sh)。
+工程及开发缓存应位于已配置的 `SANDPROOF_STAGE1_STORAGE_ROOT` 下。固定 Lean 4.31.0
+由宿主准备，默认从该根的 `runtime/` 读取，可信宿主配置也可设
+`SANDPROOF_PROOF_RUNTIME_ROOT`。启动前需准备好工程的 `.lake/packages`。
+每个任务使用自己的工作目录，同一用户的可信开发任务可以指定
+同一个私有缓存目录（权限 0700）。缓存须与工程、依赖及工具目录分开，只存开发编译产物。
+
+```sh
+export SANDPROOF_DEV_LAKE_CACHE="$SANDPROOF_STAGE1_STORAGE_ROOT/cache/lean-dev-4.31"
+export SANDPROOF_DEV_LAKE_LIMIT_MIB=4096
+bash scripts/stage1-lean-build-dev.sh SandboxModel.Lifecycle.Protocol.RenewalResultTag
+```
+
+私有派生工程中没有仓库脚本时，可在相同工作目录使用宿主安装的入口
+`$SANDPROOF_STAGE1_STORAGE_ROOT/bin/stage1-lean-build-dev`。两者接受相同的模块名。
+Lake 按源码、导入依赖和构建配置决定哪些模块需要重编。入口只为 Sandproof 包启用
+缓存写入，第三方依赖和项目源码只读。每个项目的构建和配置输出位于自己的
+`.lake/build` 与 `.lake/config`，拒绝通过符号链接共用这些输出目录。
+
+示例的 4096 MiB 是启动前检查的阈值。单次或并发构建仍可能越过它。
+达到阈值时入口退出，由负责人盘点开发缓存和仍在使用它的任务。入口不会自动删除缓存。
+正式验收仍须完成原来的抽取、逐页 Lean 检查、定理审计和反例检查。
