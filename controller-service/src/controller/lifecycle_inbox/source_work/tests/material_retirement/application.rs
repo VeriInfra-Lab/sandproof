@@ -1,7 +1,65 @@
 //! The original application and controlled physical port, without VM or files.
 use super::*;
 use crate::application::{ApplicationError, DataKind};
+use sandproof_protocol::lifecycle::LifecycleAccessIdentity;
 use std::{sync::mpsc, time::Duration};
+
+#[test]
+fn historical_unload_keeps_resumed_route_current_unload_revokes_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let (mut journal, source) = unloaded_resume_source(&path);
+    let resume = resume_next(&mut journal, &source);
+    let sandbox = source.work.anchor.local.sandbox;
+    let token = next_token();
+    let mut state = State {
+        epoch: TestEpoch::Matching,
+        ..State::default()
+    };
+    state
+        .configurations
+        .insert((sandbox.0, 2), (token, journal.create_options(sandbox).unwrap()));
+    drop(journal);
+
+    let app = v3::application(&path, Arc::new(Mutex::new(state)), false);
+    let context = v3::context();
+    let LifecycleOperation::Resume {
+        target_incarnation, ..
+    } = resume.request.operation
+    else {
+        panic!("expected the completed Resume");
+    };
+    let access = LifecycleAccessIdentity {
+        protocol_version: resume.request.binding.protocol_version,
+        center: resume.center.clone(),
+        node: resume.request.binding.node.clone(),
+        session: resume.request.binding.session.clone(),
+        operation: resume.request.binding.key.clone(),
+        accepted_version: resume.accepted_version,
+        incarnation: target_incarnation,
+    };
+    let (permit, _) = app
+        .lifecycle_data_authorization(&access, &context, DataKind::FileRead)
+        .unwrap();
+    assert_eq!(permit.target.generation, 2);
+    assert!(!*permit.revocation.borrow());
+
+    let old_request = source.work.request();
+    let history = app.record_lifecycle_intent(old_request, &context).unwrap();
+    assert_eq!(&history.intent, old_request);
+    assert!(!history.current);
+    assert!(app.lifecycle_work_state(&resume, &context).unwrap().current);
+    assert!(
+        !*permit.revocation.borrow(),
+        "historical Unload revoked the resumed data route"
+    );
+
+    let current = app
+        .record_lifecycle_intent(&second_unload(&resume), &context)
+        .unwrap();
+    assert!(current.current);
+    assert!(*permit.revocation.borrow());
+}
 
 #[test]
 fn old_material_collection_does_not_revoke_or_wait_for_live_successor_routes() {
