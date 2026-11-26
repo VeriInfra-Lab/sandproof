@@ -380,7 +380,7 @@ class NativeScopeTests(unittest.TestCase):
                 lambda: self.fail('complete retained action executed twice'), scope=scope)
         with mock.patch.object(suite, 'ROOT', self.source), \
                 mock.patch.object(suite, 'rules', side_effect=receipts.rules), \
-                mock.patch.object(suite, 'runtime', return_value={'unit_test_fixture': True}), \
+                mock.patch.object(suite, 'runtime', return_value=fixtures.fixture_runtime()), \
                 mock.patch.object(suite, 'functional', side_effect=self.functional_fixture), \
                 mock.patch.object(suite, 'run_stage1_native', side_effect=actions), \
                 mock.patch.object(suite, 'command', side_effect=AssertionError('global command in limited run')):
@@ -396,7 +396,7 @@ class NativeScopeTests(unittest.TestCase):
         self.addCleanup(self.cleanup_workflow_temporary_root)
         with mock.patch.object(suite, 'ROOT', self.source), \
                 mock.patch.object(suite, 'rules', side_effect=receipts.rules), \
-                mock.patch.object(suite, 'runtime', return_value={'unit_test_fixture': True}), \
+                mock.patch.object(suite, 'runtime', return_value=fixtures.fixture_runtime()), \
                 mock.patch.object(suite, 'functional', side_effect=self.functional_fixture), \
                 mock.patch.object(suite, 'run_stage1_native', side_effect=RuntimeError('action failed')):
             with self.assertRaisesRegex(RuntimeError, 'action failed'):
@@ -564,7 +564,7 @@ class CaptureCallerScopeTests(unittest.TestCase):
             self.component('capture-caller', work/'capture-caller', scope=scope)
         with mock.patch.object(suite, 'ROOT', self.source), \
                 mock.patch.object(suite, 'rules', side_effect=receipts.rules), \
-                mock.patch.object(suite, 'runtime', return_value={'unit_test_fixture': True}), \
+                mock.patch.object(suite, 'runtime', return_value=fixtures.fixture_runtime()), \
                 mock.patch.object(suite, 'functional', side_effect=self.functional_fixture), \
                 mock.patch.object(suite, 'run_capture_caller_native', side_effect=capture) as current, \
                 mock.patch.object(suite, 'run_stage1_native', side_effect=AssertionError('V3 in capture scope')), \

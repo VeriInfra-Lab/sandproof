@@ -273,9 +273,10 @@ class Stage1ReceiptReuseTests(unittest.TestCase):
 
     def test_old_functional_rejects_current_readme_until_current_functional_is_provided(self):
         from tools import acceptance_receipts, proof_batch
+        from tools.tests.test_acceptance_receipts import fixture_runtime
         cache = self.base/'native-evidence'
         cache.mkdir()
-        runtime = {'unit_test_fixture': True}
+        runtime = fixture_runtime()
         (cache/'runtime.json').write_text(json.dumps(runtime))
         stage_calls = []
 
