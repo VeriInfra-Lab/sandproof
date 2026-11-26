@@ -6,6 +6,7 @@ Pass only a one-job encoded JIT configuration on stdin. Runtime files are privat
 to this installation; only files created by this invocation are removed.
 """
 import argparse
+from contextlib import ExitStack
 import base64
 from contextlib import contextmanager
 import fcntl
@@ -25,8 +26,13 @@ import sys
 import time
 import uuid
 
+if __package__:
+    from . import ci_source_cache
+else:
+    import ci_source_cache
+
 ROOT = Path('/var/lib/sandproof-ci')
-ROLES = {'rust': (4096, 4, 32), 'sdk': (3072, 4, 32),
+ROLES = {'rust': (4096, 4, 32), 'sdk': (6144, 8, 32),
          'harbor': (2048, 2, 32), 'title': (768, 1, 32),
          'policy': (768, 1, 32), 'bootstrap': (4096, 4, 32),
          'preheat': (4096, 4, 32)}
@@ -62,7 +68,7 @@ def lock_slot(role, slot):
     return lock
 
 
-def qemu_command(directory, role):
+def qemu_command(directory, role, source_disk=None):
     memory, cpus, _ = ROLES[role]
     # restrict disables ordinary guest-to-host/external connectivity. Only this
     # fixed guestfwd can reach the host's domain/port restricted CI proxy.
@@ -74,6 +80,7 @@ def qemu_command(directory, role):
             '-serial', 'stdio',
             '-drive', 'file=' + str(directory / 'work.qcow2') + ',if=virtio,format=qcow2',
             '-drive', 'file=' + str(directory / 'seed.img') + ',if=virtio,format=raw,readonly=on',
+            *(['-drive', f'file={source_disk.image},if=virtio,format=raw,readonly=on'] if source_disk else []),
             '-netdev', network, '-device', 'virtio-net-pci,netdev=ci',
             # guestfwd invokes a fixed socat helper. exec must remain allowed;
             # setpriv below supplies OS-enforced no-new-privileges instead.
@@ -210,11 +217,14 @@ if __name__ == '__main__':
 """
 
 
-def cloud_config(role, jit='', pins=None, dependency_bundle=None, completion_nonce=None):
+def cloud_config(role, jit='', pins=None, dependency_bundle=None, completion_nonce=None, source_disk=None):
+    if source_disk is not None and role in PREPARATION_ROLES:
+        raise ValueError('PR source is only for ordinary job disks')
+    cargo_jobs = 4 if role == 'sdk' else 2
     env = ('http_proxy=' + PROXY + '\nhttps_proxy=' + PROXY + '\n'
            'HTTP_PROXY=' + PROXY + '\nHTTPS_PROXY=' + PROXY + '\n'
            'no_proxy=localhost,127.0.0.1\nNO_PROXY=localhost,127.0.0.1\n'
-           'CARGO_BUILD_JOBS=2\nRUST_TEST_THREADS=2\n'
+           f'CARGO_BUILD_JOBS={cargo_jobs}\nRUST_TEST_THREADS=2\n'
            'PATH=/home/runner/.cargo/bin:/home/runner/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n')
     result = {'hostname': 'sandproof-ci-' + role, 'ssh_pwauth': False,
               'disable_root': True,
@@ -385,6 +395,14 @@ if processes():
             result['write_files'].append(file_entry('/root/ci-cow-scratch.py',
                                                    COW_SCRATCH_SETUP, '0500'))
             preparation = '/usr/bin/python3 -I /root/ci-cow-scratch.py && '
+        if source_disk:
+            mount = ci_source_cache.MOUNT
+            git_bin = ci_source_cache.GUEST_BIN
+            result['write_files'][0]['content'] = result['write_files'][0]['content'].replace('PATH=', f'PATH={git_bin}:', 1)
+            result['write_files'].append(file_entry(git_bin+'/git',ci_source_cache.guest_wrapper(source_disk),'0555'))
+            preparation += (f'{{ /usr/bin/install -d -m0755 {mount} && '
+                            f'/usr/bin/mount -t iso9660 -o ro,nosuid,nodev,noexec LABEL={ci_source_cache.LABEL} {mount} '
+                            '|| echo "Sandproof CI source mount unavailable; using GitHub checkout"; } && ')
         result['runcmd'] = [['chown', '-R', 'runner:runner', '/opt/actions-runner'],
             ['systemctl', 'daemon-reload'], ['bash', '-c',
             'if ' + preparation + 'runuser -u runner -- python3 /opt/sandproof-ci/check-isolation.py; then '
@@ -625,7 +643,7 @@ def cleanup_work(directory):
             path.unlink()
 
 
-def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None):
+def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None, source_disk=None):
     slot = valid_slot(role, slot or role)
     if os.geteuid() != 0:
         raise ValueError('host provisioning must run as root; guest jobs never do')
@@ -662,7 +680,7 @@ def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None
     nonce = secrets.token_hex(32) if role == 'preheat' else None
     started = time.time()
     try:
-        config = cloud_config(role, jit, pins, dependency_bundle, nonce)
+        config = cloud_config(role, jit, pins, dependency_bundle, nonce, source_disk)
         (directory / 'user-data').write_text('#cloud-config\n' + json.dumps(config))
         (directory / 'user-data').chmod(0o600)
         (directory / 'meta-data').write_text('instance-id: ci-' + run_id + '\n')
@@ -676,7 +694,7 @@ def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None
             os.chown(directory / name, account.pw_uid, account.pw_gid)
             (directory / name).chmod(0o600)
         command = ['/usr/sbin/runuser', '-u', 'sandproof-ci-vm', '--',
-                   '/usr/bin/setpriv', '--no-new-privs'] + qemu_command(directory, role)
+                   '/usr/bin/setpriv', '--no-new-privs'] + qemu_command(directory, role, source_disk)
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         wait_with_bounded_logs(process, directory, timeout, job_name=RUNNER_JOBS.get(role))
@@ -721,6 +739,8 @@ def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None
         if role == 'preheat':
             report['dependency_input_sha256'] = dependency_bundle['input_sha256']
             report['candidate_pins'] = str(candidate_path) if candidate_path is not None else None
+        if source_disk:
+            report['available_source_merge'] = source_disk.merge
         (directory / 'report.json').write_text(json.dumps(report) + '\n')
         cleanup_work(directory)
         print(json.dumps(report), flush=True)
@@ -741,6 +761,7 @@ def main():
     parser.add_argument('--run-id', type=valid_run_id)
     parser.add_argument('--slot')
     parser.add_argument('--dependency-input', type=Path)
+    parser.add_argument('--source-request', type=json.loads)
     args = parser.parse_args()
     if not 60 <= args.timeout <= 7200:
         parser.error('timeout must be between 60 and 7200 seconds')
@@ -748,6 +769,8 @@ def main():
         parser.error('job VMs require exactly one private JIT source')
     if (args.role == 'preheat') != (args.dependency_input is not None):
         parser.error('only preheat requires --dependency-input')
+    if args.source_request is not None and args.role in PREPARATION_ROLES:
+        parser.error('PR source is only for ordinary job disks')
     try:
         pins = json.loads(args.pins.read_text())
         jit = sys.stdin.read(131073).strip() if args.jit_stdin else ''
@@ -767,7 +790,17 @@ def main():
             with preparation_guard(identity):
                 run(args.role, jit, pins, args.timeout, identity, args.slot, bundle)
         else:
-            run(args.role, jit, pins, args.timeout, args.run_id, args.slot)
+            with ExitStack() as lifetime:
+                disk=None
+                if args.source_request is not None:
+                    try:
+                        source=ci_source_cache.PullSource(**args.source_request)
+                        settings=ci_source_cache.load_settings()
+                        if settings:
+                            disk=lifetime.enter_context(ci_source_cache.SourceCache().acquire(source,settings))
+                    except (ValueError,TypeError,OSError,subprocess.SubprocessError) as error:
+                        print('CI PR source unavailable: '+type(error).__name__,flush=True)
+                run(args.role, jit, pins, args.timeout, args.run_id, args.slot, source_disk=disk)
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         print('CI VM provisioning failed: ' + str(error), file=sys.stderr)
         return 1
