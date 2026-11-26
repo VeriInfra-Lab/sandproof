@@ -125,6 +125,55 @@ class ReceiptTests(unittest.TestCase):
         (entry/'command.log').unlink()
         with self.assertRaises(ValueError):receipts.validate_native(self.cache)
 
+    @unittest.skipUnless(hasattr(os, 'memfd_create'), 'Linux sealed subprocess descriptor required')
+    def test_registered_child_inherits_admission_but_direct_entry_still_checks_entire_packet(self):
+        _, _, other = self.publish()
+        output = self.base/'own'
+        output.mkdir()
+        (output/'page.log').write_text('original per-component page\n')
+        own = receipts.native_case('own', self.source, output, lambda: None)
+        own_entry = self.cache/'commands'/receipts.digest(own['key'])
+        marker = self.cache/'complete.json'
+        seal = json.loads(marker.read_bytes())
+        seal['commands'][own_entry.name] = receipts.sha(own_entry/'receipt.json')
+        receipts.write_json(marker, seal)
+        os.environ['SANDPROOF_ACCEPTANCE_ROLE'] = 'formal'
+        driver = self.base/'child.py'
+        driver.write_text('import os, sys\nfrom pathlib import Path\n'
+            'from tools.acceptance_receipts import native_case, validate_native\n'
+            'validate_native(Path(os.environ["SANDPROOF_NATIVE_EVIDENCE"]))\n'
+            'assert native_case("own", Path(sys.argv[1]), None)["key"]["label"] == "own"\n')
+        registered = receipts.stage1_registration()
+        bootstrap = registered.NATIVE_ADMISSION_BOOTSTRAP
+        with receipts.registered_native_admission(self.cache, scope='all'):
+            (other/'command.log').unlink()
+            with receipts.registered_native_child_descriptor() as fd:
+                command = [sys.executable, '-c', bootstrap, str(fd), str(driver), str(self.source)]
+                registered._invoke(receipts.ROOT, driver, [self.source],
+                                   native_admission_fd=fd, log=self.base/'child.log')
+                receipt_file = own_entry/'receipt.json'
+                receipt_original = receipt_file.read_bytes()
+                receipt_file.write_bytes(receipt_original+b'\n')
+                swapped = subprocess.run(command, cwd=receipts.ROOT, text=True,
+                                         capture_output=True, pass_fds=(fd,))
+                self.assertNotEqual(swapped.returncode, 0)
+                self.assertIn('changed native component: own', swapped.stderr)
+                receipt_file.write_bytes(receipt_original)
+                (own_entry/'evidence/page.log').write_text('replacement page\n')
+                rejected = subprocess.run(command, cwd=receipts.ROOT, text=True, capture_output=True, pass_fds=(fd,))
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn('changed native component: own', rejected.stderr)
+            with open(marker, 'rb') as ordinary:
+                rejected = subprocess.run([sys.executable, '-c', bootstrap, str(ordinary.fileno()),
+                    str(driver), str(self.source)], cwd=receipts.ROOT, text=True,
+                    capture_output=True, pass_fds=(ordinary.fileno(),))
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn('requires its private sealed native admission', rejected.stderr)
+            with self.assertRaises(ValueError):
+                receipts.finish_registered_native_admission(self.cache, scope='all')
+        with self.assertRaises(ValueError):
+            receipts.validate_native(self.cache)
+
     def test_failure_or_interruption_never_publishes_success(self):
         command=[sys.executable,'-c','raise SystemExit(17)']
         with self.assertRaises(ValueError):receipts.native_run('bad',command,self.source,self.log)
