@@ -95,7 +95,7 @@ class PauseStopScopeTests(unittest.TestCase):
             self.component('pause-stop', work/'pause-stop', scope=scope)
         with mock.patch.object(suite, 'ROOT', self.source), \
                 mock.patch.object(suite, 'rules', side_effect=receipts.rules), \
-                mock.patch.object(suite, 'runtime', return_value={'unit_test_fixture': True}), \
+                mock.patch.object(suite, 'runtime', return_value=fixtures.fixture_runtime()), \
                 mock.patch.object(suite, 'functional', side_effect=self.functional_fixture), \
                 mock.patch.object(suite, 'run_pause_stop_native', side_effect=publication) as current, \
                 mock.patch.object(suite, 'run_capture_caller_native', side_effect=AssertionError('capture in stop scope')), \
