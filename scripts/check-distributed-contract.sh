@@ -5,6 +5,11 @@ umask 022
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+if [[ ${GITHUB_ACTIONS:-} != true && -n ${SANDPROOF_STAGE1_NATIVE_ENV:-} &&
+      ${SANDPROOF_REDIS_SYSTEM_TMP_ACTIVE:-} != 1 ]]; then
+  exec bash scripts/with-system-redis-test-tmp.sh bash scripts/check-distributed-contract.sh "$@"
+fi
+
 if [[ -z "${SANDPROOF_REDIS_SERVER:-}" || "${SANDPROOF_REDIS_SERVER}" != /* || ! -x "${SANDPROOF_REDIS_SERVER}" ]]; then
   echo 'Set SANDPROOF_REDIS_SERVER to the absolute executable of the locked Redis test build; no skip/fallback.' >&2
   exit 2

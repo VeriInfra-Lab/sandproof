@@ -120,3 +120,45 @@ class CiDistributedWorkflowTests(unittest.TestCase):
 
     def test_sealed_engine_gate_fails_before_full_function_entry_and_runs_offline(self):
         self.check_gate('rust-ci.yml', 'scripts/check-function.sh')
+
+
+class ManualRedisScratchTests(unittest.TestCase):
+    def test_private_directory_and_original_status(self):
+        script = Path(__file__).resolve().parents[2] / 'scripts/with-system-redis-test-tmp.sh'
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            findmnt = directory / 'findmnt'
+            findmnt.write_text('#!/bin/bash\n'
+                'if [[ ${!#} == /var/tmp ]]; then echo "${REDIS_TEST_MOUNT}"; else echo "8:1 ext4"; fi\n')
+            mktemp = directory / 'mktemp'
+            mktemp.write_text('#!/bin/bash\n'
+                '[[ $* == "-d /var/tmp/sandproof-redis-tests.XXXXXXXX" ]] || exit 2\n'
+                '/usr/bin/mktemp -d "${REDIS_TEST_DIRECTORY}/redis.XXXXXXXX"\n')
+            for program in (findmnt, mktemp):
+                program.chmod(0o700)
+            env = os.environ | {'PATH': temporary + os.pathsep + os.environ['PATH'],
+                'REDIS_TEST_MOUNT': '8:1 ext4', 'REDIS_TEST_DIRECTORY': temporary,
+                'TMPDIR': str(directory / 'workspace'),
+                'SANDPROOF_REDIS_TEST_TMPDIR': str(directory / 'operator-default')}
+            children = []
+            for command_status, leave_file in ((0, False), (37, False), (0, True), (37, True)):
+                with self.subTest(command_status=command_status, leave_file=leave_file):
+                    result = subprocess.run(['/bin/bash', str(script), sys.executable, '-c',
+                        'import os,stat,sys; from pathlib import Path\n'
+                        'root = Path(os.environ["SANDPROOF_REDIS_TEST_TMPDIR"])\n'
+                        'assert root.parent == Path(os.environ["REDIS_TEST_DIRECTORY"])\n'
+                        'assert stat.S_IMODE(root.stat().st_mode) == 0o700\n'
+                        'assert os.environ["TMPDIR"] == str(root.parent / "workspace")\n'
+                        'if int(sys.argv[2]): (root / "leftover").touch()\n'
+                        'print(root); sys.exit(int(sys.argv[1]))',
+                        str(command_status), str(int(leave_file))],
+                        env=env, capture_output=True, text=True, timeout=10)
+                    self.assertEqual(result.returncode, command_status or int(leave_file), result.stderr)
+                    child = Path(result.stdout.strip())
+                    self.assertNotIn(child, children)
+                    children.append(child)
+                    self.assertEqual(child.exists(), leave_file)
+            result = subprocess.run(['/bin/bash', str(script), '/bin/echo', 'should not run'],
+                env=env | {'REDIS_TEST_MOUNT': '8:2 ext4'}, capture_output=True, text=True, timeout=10)
+            self.assertEqual(result.returncode, 2, result.stderr)
+            self.assertEqual(result.stdout, '')

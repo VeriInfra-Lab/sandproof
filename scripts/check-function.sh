@@ -17,6 +17,11 @@ elif [[ "$#" != 0 ]]; then
   exit 2
 fi
 
+if [[ "$check_mode" == linux && ${GITHUB_ACTIONS:-} != true &&
+      -n ${SANDPROOF_STAGE1_NATIVE_ENV:-} && ${SANDPROOF_REDIS_SYSTEM_TMP_ACTIVE:-} != 1 ]]; then
+  exec bash scripts/with-system-redis-test-tmp.sh bash scripts/check-function.sh "$@"
+fi
+
 # Managed manual runs may set a libtest worker budget for the two full suites.
 rust_test_thread_arg=''
 if [[ ${SANDPROOF_CHECK_RUST_THREADS+x} ]]; then

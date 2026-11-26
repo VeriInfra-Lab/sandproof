@@ -73,13 +73,18 @@ SDK 来宾中的中心服务 Redis 组件测试单独在 runner 私有的 ext4 `
 固定 Redis、AOF 同步、测试并行度和请求期限均保持原设置。
 其他组件继续使用原临时目录，普通非 Actions 调用也沿用调用方的设置。
 
-普通完整入口同时包含 Redis 和 XFS 保存包测试时，可显式设置
-`SANDPROOF_REDIS_TEST_TMPDIR`，指向本轮账号独占、已存在的绝对目录，放在支持真实
-持久写入的宿主磁盘上（例如 ext4，不用 tmpfs）。只有共享 Redis 测试夹具在其下
-创建私有 AOF/写者目录，其它临时文件仍使用原 `TMPDIR`。显式目录不可用即失败，
-不回退；未设置时保持原临时目录行为。固定 Redis、`appendfsync always`、并行度、
-断言与期限均不变。执行者记录两个目录的实际文件系统，结束后确认本轮私有目录
-为空再删除；环境对照通过不能覆盖原失败或代替同候选的完整入口结果。
+使用托管手动环境（启动器设置 `SANDPROOF_STAGE1_NATIVE_ENV`）运行 Linux 基础检查或
+分布式组件检查时，[Redis 临时目录入口](../scripts/with-system-redis-test-tmp.sh)在
+系统盘 ext4 的 `/var/tmp` 下创建本轮独占的目录，通过 `SANDPROOF_REDIS_TEST_TMPDIR`
+交给共享 Redis 夹具。存储、中心服务和中心产物测试都使用这个夹具，只有其私有
+AOF、日志和写者临时文件进入该目录。构建、验收证据和其它临时文件继续使用原路径。
+直接跑定向测试可用 `bash scripts/with-system-redis-test-tmp.sh cargo test …`。
+入口报告实际设备，结束后删除本轮空目录。发现残留时报告具体路径，保留原失败状态；
+若原命令成功但目录未清空，入口报失败。强制杀死整轮后需核对本轮进程和残留。
+
+普通开发调用仍可显式设置 `SANDPROOF_REDIS_TEST_TMPDIR` 到账号独占的绝对路径；
+显式目录不可用时测试失败。固定 Redis、`appendfsync always`、原断言与期限继续使用。
+KVM 实机入口单独启动 Redis 并按各角色的独立目录做存储计量和收尾，沿用其原路径。
 
 共享 Rust Redis 夹具在首次构造、尚无客户端或写者租约时，最多分配三个私有端点。
 只有自己的子进程已确定退出1，且有界原日志确认同一 PID、同一端点的
