@@ -283,6 +283,20 @@ def current_native_seal(seal, runtime, *, scope='all'):
             and seal.get('source_archives') == source_archive_inputs())
 
 
+def native_test_configuration(environment):
+    """Settings inherited by native tests, independent of per-run scratch names."""
+    return dict(
+        check_rust_threads=environment.get('SANDPROOF_CHECK_RUST_THREADS'),
+        rust_test_threads=environment.get('RUST_TEST_THREADS'),
+        redis_test_tmpdir=environment.get('SANDPROOF_REDIS_TEST_TMPDIR'),
+        use_system_redis_tmp=(
+            environment.get('GITHUB_ACTIONS') != 'true'
+            and bool(environment.get('SANDPROOF_STAGE1_NATIVE_ENV'))
+            and environment.get('SANDPROOF_REDIS_SYSTEM_TMP_ACTIVE') != '1'
+        ),
+    )
+
+
 def native_key(label, command, source, root=ROOT, environment=None):
     # Absolute scratch paths do not change semantics, but argument order does.
     normalized = [str(c).replace(str(source), '$SOURCE') for c in command]
@@ -317,6 +331,12 @@ def native_key(label, command, source, root=ROOT, environment=None):
                 metadata[role][name] = dict(kind='regular', executable=bool(info.st_mode & stat.S_IXUSR))
         result['input_metadata'] = metadata
     if label == 'functional':
+        configuration = result['runtime'].get('test_configuration')
+        if configuration is None:
+            raise ValueError('native test configuration is missing from the runtime record')
+        if (env.get('SANDPROOF_ACCEPTANCE_ROLE') == 'native'
+                and configuration != native_test_configuration(env)):
+            raise ValueError('native test configuration changed since runtime capture')
         result['repository']=repository_inputs(source)
     return result
 

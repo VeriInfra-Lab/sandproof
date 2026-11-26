@@ -16,7 +16,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from tools.acceptance_receipts import (ROOT, digest, native_case, native_run,
     rules, rust_inputs, sha, write_json, tree_digest, locked, repository_inputs, load_success,
     contract_inputs, source_archive_inputs, NATIVE_SCHEMA, NATIVE_SCOPES,
-    check_native_scope, check_native_components, convergence_reuse_publication)
+    check_native_scope, check_native_components, convergence_reuse_publication,
+    native_test_configuration)
 from tools.ci_retention import NativeBuildRun
 
 JSON_NEGATIVE_DRIVERS = ('check_json_request_negative.py',
@@ -53,6 +54,7 @@ def runtime(*, temporary_parent=None):
     result['platform'] = sys.platform
     result['uid'] = os.getuid()
     result['gid'] = os.getgid()
+    result['test_configuration'] = native_test_configuration(os.environ)
     if temporary_parent is not None:
         result['temporary_parent'] = temporary_parent_identity(temporary_parent)
     cargo_home=Path(os.environ.get('CARGO_HOME',str(Path.home()/'.cargo')))

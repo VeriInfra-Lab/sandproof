@@ -371,7 +371,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
     }
 
     /// Record through the original lock and writer. Reception grants no host
-    /// permission; mapped Destroy also withdraws the original live data routes.
+    /// permission. A current Unload or Destroy withdraws its live data routes.
     /// # Errors
     /// Conflicts, corrupt authority and uncertain commits remain explicit.
     pub fn record_lifecycle_intent(
@@ -392,7 +392,9 @@ impl<H: ControllerHost> ControllerApplication<H> {
         ) {
             match &result {
                 Ok(state) => {
-                    if let Some(local) = state.local {
+                    if state.current
+                        && let Some(local) = state.local
+                    {
                         inner.revoke_data(local.sandbox);
                     }
                 }
