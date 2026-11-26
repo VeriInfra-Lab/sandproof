@@ -220,7 +220,7 @@ if sys.argv[1] == 'tree':
         env = os.environ | {'SANDPROOF_CHECK_EVENTS': str(events), 'CHECK_TRACE': str(directory / 'trace'),
                             'PATH': str(directory / 'bin') + os.pathsep + os.environ['PATH']}
         for name in ('CHECK_FAIL_CARGO', 'CHECK_FAIL_TOOLS', 'CHECK_BAD_DEPENDENCY',
-                     'SANDPROOF_CHECK_RUST_THREADS'):
+                     'SANDPROOF_CHECK_RUST_THREADS', 'SANDPROOF_STAGE1_NATIVE_ENV'):
             env.pop(name, None)
         env.update(extra or {})
         command = ['bash', 'scripts/check-function.sh'] + (['--portable'] if mode == 'portable' else [])
