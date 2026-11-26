@@ -200,7 +200,7 @@ def _native_readback(folder, root, expected_packet, source_commit, current):
             or key.get('label') != 'sqlite-commit-native-rejected' or key.get('command') != NATIVE_COMMAND
             or key.get('options') != {} or key.get('rust') != expected
             or key.get('rules', {}).get(str(HERE/'negative.py')) != driver_sha
-            or key.get('runtime', {}).get('platform') != 'linux' or key['runtime'].get('uid') != 1000
+            or not original(root).native_runtime_matches(key.get('runtime', {}), current=current)
             or key['runtime'].get('rustc', {}).get('version', '').splitlines()[:1] != [compiler]
             or load_success(packet/'fault', key) != receipt or receipt.get('actual_exit') != 101
             or receipt.get('expected') != 101):

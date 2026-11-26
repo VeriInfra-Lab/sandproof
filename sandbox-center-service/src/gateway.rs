@@ -69,7 +69,7 @@ struct Gateway {
     limits: TransferLimits,
 }
 type AuthorizedRoute = (
-    sandproof_protocol::lifecycle::LifecycleAccessIdentity,
+    DataRoute,
     sandproof_internal::InternalClient,
     tokio::time::Instant,
     Arc<RequestLease>,
@@ -97,7 +97,7 @@ async fn authorize(
         // Return the same entry permit: successful authentication does not
         // remove bounded body preparation and dispatch from R1. Cancellation
         // still leaves actual blocking work owning it until that work exits.
-        Ok((route.identity, client, deadline, lease))
+        Ok((route, client, deadline, lease))
     })
     .await
     .map_err(|_| PortError::Busy)?
@@ -182,7 +182,7 @@ impl Gateway {
         let hosts = self.hosts.clone();
         let headers = request.headers().clone();
         let route = authorize(routes, hosts, headers, token, lease).await;
-        let (identity, client, deadline, _request_lease) = match route {
+        let (route, client, deadline, _request_lease) = match route {
             Ok(route) => route,
             Err(PortError::NotFound | PortError::Invalid) => {
                 return response(StatusCode::UNAUTHORIZED);
@@ -197,6 +197,7 @@ impl Gateway {
                 return response(StatusCode::SERVICE_UNAVAILABLE);
             }
         };
+        let identity = route.identity;
         let instance = (
             identity.node.node_id.as_str().to_owned(),
             identity.node.node_generation.get(),
@@ -216,10 +217,24 @@ impl Gateway {
             Ok(request) => request,
             Err(rejection) => return rejection,
         };
-        match client
-            .stream_data(&identity, request, lease, deadline)
-            .await
-        {
+        let response_result = match route.branch {
+            Some(selector) => {
+                let access =
+                    sandproof_controller_service::application::branching::BranchAccessIdentity {
+                        parent: identity,
+                        selector,
+                    };
+                client
+                    .stream_branch_data(&access, request, lease, deadline)
+                    .await
+            }
+            None => {
+                client
+                    .stream_data(&identity, request, lease, deadline)
+                    .await
+            }
+        };
+        match response_result {
             Ok(response) => response,
             Err(TransportError::Overloaded) => response(StatusCode::TOO_MANY_REQUESTS),
             Err(TransportError::Rejected) => response(StatusCode::UNAUTHORIZED),

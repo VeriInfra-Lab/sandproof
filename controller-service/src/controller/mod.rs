@@ -19,6 +19,7 @@ mod admission;
 mod admission_usage;
 mod allocators;
 mod bounded;
+mod branching;
 mod capture;
 mod checkpoint;
 mod identity;
@@ -43,6 +44,10 @@ mod transaction;
 pub use private_build::{BuildAnchor, BuildRetryConfig};
 
 pub use bounded::{BoundedHostConfig, ConsolePolicy, HostSlotContext};
+pub use branching::{
+    HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits, HostBranchParent,
+    HostBranchRoute, HostGuestBranch,
+};
 pub use checkpoint::{
     CheckpointInfo, CheckpointProgress, HostReleaseWitness, MaintenanceConfig, RetirementCandidate,
 };

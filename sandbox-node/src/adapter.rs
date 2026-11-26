@@ -3,6 +3,7 @@
 use crate::fault::{busy, project};
 use crate::{HostObservation, LinuxWorker, PhysicalProfileLease, ProtectedHostEpochSource};
 use sandbox_controller_core as core;
+use sandproof_controller_service::application::branching::BranchRelayPort;
 use sandproof_controller_service::application::fault::{FaultContext, FaultStage};
 use sandproof_controller_service::application::{
     ApplicationError, DataRelay, HostCapacity, HostSlots, LaunchConfiguration, TemplateArtifacts,
@@ -12,7 +13,7 @@ use sandproof_controller_service::{
     CreateOptions, HostSlotContext, WorkerTransportError, template_registry::CandidateVerification,
     templates::TemplateBinding,
 };
-use sandproof_protocol::{WorkAction, WorkReceipt};
+use sandproof_protocol::{ResourceId, WorkAction, WorkReceipt};
 use std::sync::Arc;
 #[cfg(debug_assertions)]
 pub(crate) mod faults;
@@ -51,6 +52,22 @@ impl NodeHost {
 }
 
 impl NodeHost {
+    /// Pin the registered VM's protected checkpoint before native branch work.
+    /// The caller independently holds its original native management gate.
+    /// # Errors
+    /// Unknown provenance, source identity or configured capacity refuses.
+    pub fn prepare_branch_control(
+        &self,
+        sandbox: core::SandboxId,
+        vm: core::VmId,
+        generation: core::Generation,
+        checkpoint: &ResourceId,
+        count: usize,
+    ) -> Result<Option<crate::NativeBranchControl>, ApplicationError> {
+        self.worker
+            .prepare_branch_control(sandbox, vm, generation, checkpoint, count)
+    }
+
     /// Pause only the source of an already committed and claimed `FreezeVm`.
     /// The service independently binds the full external operation to this
     /// native action and supplies the requirement from the original saved work.
@@ -804,6 +821,37 @@ impl HostSlots for NodeHost {
     }
 }
 
+fn relay_launch_error(
+    error: &(dyn std::error::Error + 'static),
+    sandbox: core::SandboxId,
+    vm: core::VmId,
+    generation: core::Generation,
+) -> ApplicationError {
+    project(
+        FaultStage::Relay,
+        FaultContext {
+            vm: Some(vm.0),
+            generation: Some(generation),
+            ..FaultContext::instance(sandbox, None)
+        },
+        error,
+    )
+    .emit();
+    if error
+        .downcast_ref::<crate::RouteCapacityExceeded>()
+        .is_some()
+    {
+        ApplicationError::QuotaExceeded
+    } else if matches!(
+        error.downcast_ref::<sandbox_runtime::RuntimeError>(),
+        Some(sandbox_runtime::RuntimeError::HelperGateBusy)
+    ) {
+        ApplicationError::DataGateBusy
+    } else {
+        ApplicationError::Busy
+    }
+}
+
 impl DataRelay for NodeHost {
     fn acquire_data_gate(
         &self,
@@ -845,30 +893,48 @@ impl DataRelay for NodeHost {
     ) -> Result<std::process::Child, ApplicationError> {
         self.worker
             .spawn_data_relay(sandbox, vm, generation, control, &self.relay_executable)
+            .map_err(|error| relay_launch_error(error.as_ref(), sandbox, vm, generation))
+    }
+
+    fn spawn_branch_data_relay(
+        &self,
+        sandbox: core::SandboxId,
+        vm: core::VmId,
+        generation: core::Generation,
+        port: BranchRelayPort,
+        control: bool,
+    ) -> Result<std::process::Child, ApplicationError> {
+        self.worker
+            .spawn_branch_data_relay(
+                sandbox,
+                vm,
+                generation,
+                port,
+                control,
+                &self.relay_executable,
+            )
+            .map_err(|error| relay_launch_error(error.as_ref(), sandbox, vm, generation))
+    }
+
+    fn branch_data_gate_drained(
+        &self,
+        sandbox: core::SandboxId,
+        vm: core::VmId,
+        generation: core::Generation,
+        port: BranchRelayPort,
+    ) -> Result<bool, ApplicationError> {
+        self.worker
+            .branch_data_gate_drained(sandbox, vm, generation, port)
             .map_err(|error| {
-                project(
-                    FaultStage::Relay,
+                busy(
+                    error.as_ref(),
+                    FaultStage::DataGate,
                     FaultContext {
                         vm: Some(vm.0),
                         generation: Some(generation),
                         ..FaultContext::instance(sandbox, None)
                     },
-                    error.as_ref(),
                 )
-                .emit();
-                if error
-                    .downcast_ref::<crate::RouteCapacityExceeded>()
-                    .is_some()
-                {
-                    ApplicationError::QuotaExceeded
-                } else if matches!(
-                    error.downcast_ref::<sandbox_runtime::RuntimeError>(),
-                    Some(sandbox_runtime::RuntimeError::HelperGateBusy)
-                ) {
-                    ApplicationError::DataGateBusy
-                } else {
-                    ApplicationError::Busy
-                }
             })
     }
 

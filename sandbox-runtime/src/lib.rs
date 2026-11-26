@@ -16,6 +16,9 @@ mod uplink;
 #[cfg(target_os = "linux")]
 pub use uplink::UplinkState;
 
+#[cfg(any(target_os = "linux", all(unix, test)))]
+mod hot_fanout_wire;
+
 #[cfg(target_os = "linux")]
 mod linux;
 

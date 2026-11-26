@@ -5,7 +5,7 @@
   "source_files": {
     "controller-service/src/controller/transaction.rs": "100391ccee63bd0e481ac7828971c2ac8eb97e781330fc6eb92a399c9d5f6bde",
     "controller-service/src/controller/storage.rs": "d08831d001d582702defdd328f0178039cec70ee7e49c64c6b9f2b1fdb2dccb3",
-    "controller-service/src/controller/mod.rs": "3108ade2ef3bc126f469094170db9d058f6a729fe4923c38cc7f414fa1f507ca",
+    "controller-service/src/controller/mod.rs": "f0e58e1d27e1fe2513c2a1bc1d6618817fafea52f2960a97de63909d47f939ca",
     "controller-service/src/controller/cache_tests.rs": "d4336427e823558e1615807099bd46e024d9c4c1ac23f98b66b8037d7cedd9ab",
     "controller-service/src/journal.rs": "acafe478e78973e7be97723cc103bbe1e7dfe4a167167446e1b40a4fb4201b6f",
     "Cargo.lock": "9a396f80ee12c627e488a60fff9ea89d05c50f4ac9c257de076358b9beec1a99",

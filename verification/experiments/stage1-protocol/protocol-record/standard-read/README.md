@@ -70,6 +70,9 @@ sandbox 比较和 Releasing 判断由 `actual_slot_callback` 证明，没有放�
 保留原始 LLBC、生成物及同提交源码归档。证明直接使用此次生成的 Funs／Types。
 九项审计含八条读取定理和原 CaptureHandoff 克隆引理。
 
+热分支候选修改父录入事务的提交前检查和模块登记。两条只读方法正文、转发根、外部调用和冻结生成标记继续沿用原范围。
+候选收据须从当前干净源码抽取两条真实方法，再经原内核和实际文件服务检查。旧录入调用方的执行结果保留原版本。
+
 ```sh
 python3 verification/experiments/stage1-protocol/protocol-record/standard-read/formal.py \
   --output /private/new-read-proof

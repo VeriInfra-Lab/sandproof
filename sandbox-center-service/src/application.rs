@@ -214,6 +214,11 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         let tenant = tenant_id(tenant)?;
         let sandbox: SandboxId = sandbox.try_into().map_err(|_| PortError::NotFound)?;
         let duration = normalized_duration(command.timeout, &self.config)?;
+        if sandbox.as_str().starts_with("branch-") {
+            return self
+                .branch_session_attempt(&tenant, &sandbox)?
+                .ok_or(PortError::NotFound);
+        }
         let deadline = self.reply_deadline()?;
         self.confirm_prior_sdk_renewal_before(
             &tenant,
@@ -270,6 +275,13 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
     pub fn kill(&self, tenant: &str, sandbox: &str) -> Result<(), PortError> {
         let tenant = tenant_id(tenant)?;
         let sandbox: SandboxId = sandbox.try_into().map_err(|_| PortError::NotFound)?;
+        if sandbox.as_str().starts_with("branch-") {
+            return self
+                .authority
+                .lock()
+                .map_err(|_| PortError::OutcomeUnknown)?
+                .revoke_training_branch(&tenant, &sandbox);
+        }
         let request = {
             let mut authority = self
                 .authority

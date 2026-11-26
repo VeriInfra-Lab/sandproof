@@ -69,7 +69,8 @@ theorem update_requires_live {D : Type} (codec : SourceCodec D) (before : OldHol
 theorem transfer_of_live {D : Type} (before : IOOwnerTransport.Holder D) (sourceAfter : OldHolder D)
     (sourceLive : (toSource before).tx.transaction ≠ none) :
     ∃ after, returnedHolder before sourceAfter = .ok after ∧
-      toSource after = sourceAfter ∧ after.tx.terminate = before.tx.terminate := by
+      toSource after = sourceAfter ∧ after.tx.terminate = before.tx.terminate ∧
+      after.tx.checkParentUnload = before.tx.checkParentUnload := by
   cases slot : before.tx.parent.transaction with
   | none => exact False.elim (sourceLive (by simp [toSource,
       SandproofParentCommitRust.CurrentViews.ownerToSource, slot]))
@@ -167,19 +168,23 @@ theorem lift_reply_preserves_normal {D A : Type} (before : IOOwnerTransport.Hold
     (returned : call = .ok (reply, sourceAfter)) :
     ∃ after, liftReply before call =
       .ok (SandproofParentCommitRust.ErrorTransport.fromRequestRustResult reply, after) ∧
-      toSource after = sourceAfter ∧ after.tx.terminate = before.tx.terminate := by
+      toSource after = sourceAfter ∧ after.tx.terminate = before.tx.terminate ∧
+      after.tx.checkParentUnload = before.tx.checkParentUnload := by
   obtain ⟨raw, live⟩ := requires (reply, sourceAfter) returned
-  obtain ⟨after, transfer, mapped, observed⟩ := transfer_of_live before sourceAfter (by simp [live])
-  exact ⟨after, by simp [liftReply, returned, transfer], mapped, observed⟩
+  obtain ⟨after, transfer, mapped, terminate, checkParentUnload⟩ :=
+    transfer_of_live before sourceAfter (by simp [live])
+  exact ⟨after, by simp [liftReply, returned, transfer], mapped, terminate, checkParentUnload⟩
 
 theorem lift_value_preserves_normal {D A : Type} (before : IOOwnerTransport.Holder D)
     (call : Result (A × OldHolder D)) (requires : RequiresLive (toSource before) call)
     (reply : A) (sourceAfter : OldHolder D) (returned : call = .ok (reply, sourceAfter)) :
     ∃ after, liftValue before call = .ok (reply, after) ∧
-      toSource after = sourceAfter ∧ after.tx.terminate = before.tx.terminate := by
+      toSource after = sourceAfter ∧ after.tx.terminate = before.tx.terminate ∧
+      after.tx.checkParentUnload = before.tx.checkParentUnload := by
   obtain ⟨raw, live⟩ := requires (reply, sourceAfter) returned
-  obtain ⟨after, transfer, mapped, observed⟩ := transfer_of_live before sourceAfter (by simp [live])
-  exact ⟨after, by simp [liftValue, returned, transfer], mapped, observed⟩
+  obtain ⟨after, transfer, mapped, terminate, checkParentUnload⟩ :=
+    transfer_of_live before sourceAfter (by simp [live])
+  exact ⟨after, by simp [liftValue, returned, transfer], mapped, terminate, checkParentUnload⟩
 
 end
 end SandproofActualRecordRust.IOAdmissible

@@ -24,6 +24,42 @@ registered = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(registered)
 
 
+class SQLiteNativeRuntime(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.cache = Path(self.temporary.name)
+        adapter = registered.CONVERGENCE.extra(registered.ROOT, 'sqlite-commit')
+        self.matches = adapter.original(registered.ROOT).native_runtime_matches
+        self.runtime = {'platform': 'linux', 'uid': 1002, 'gid': 1002,
+                        'test_configuration': {'check_rust_threads': '32'}}
+        (self.cache/'runtime.json').write_text(json.dumps(self.runtime))
+
+    def test_archive_still_requires_the_original_shell_identity(self):
+        self.assertTrue(self.matches(dict(self.runtime, uid=1000), current=False))
+        self.assertFalse(self.matches(self.runtime, current=False))
+
+    def test_current_native_runtime_matches_the_record_and_live_identity(self):
+        with patch.dict(os.environ, SANDPROOF_NATIVE_EVIDENCE=str(self.cache),
+                        SANDPROOF_ACCEPTANCE_ROLE='native'), \
+             patch('os.getuid', return_value=1002), patch('os.getgid', return_value=1002):
+            self.assertTrue(self.matches(self.runtime, current=True))
+            self.assertFalse(self.matches(dict(self.runtime, uid=1000), current=True))
+            with patch('os.getgid', return_value=1000):
+                self.assertFalse(self.matches(self.runtime, current=True))
+
+    def test_formal_reader_compares_the_current_runtime_to_the_native_seal(self):
+        (self.cache/'complete.json').write_text('{"scope":"stage1-protocol"}')
+        with patch.dict(os.environ, SANDPROOF_NATIVE_EVIDENCE=str(self.cache),
+                        SANDPROOF_ACCEPTANCE_ROLE='formal'), \
+             patch('tools.acceptance_receipts.validate_native') as validate:
+            validate.return_value = {'runtime': self.runtime}
+            self.assertTrue(self.matches(self.runtime, current=True))
+            validate.assert_called_once_with(self.cache, scope='stage1-protocol')
+            validate.return_value = {'runtime': dict(self.runtime, uid=1000)}
+            self.assertFalse(self.matches(self.runtime, current=True))
+
+
 class OriginalReadPlanFixture(unittest.TestCase):
     """Scheduling shape uses the captured original, never current admission."""
     def setUp(self):

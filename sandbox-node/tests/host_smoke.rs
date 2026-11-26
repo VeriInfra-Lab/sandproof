@@ -50,6 +50,7 @@ fn test_config() -> NodeConfig {
             .map(|value| serde_json::from_str(&value).expect("valid host resource configuration")),
         enable_memory_diff: false,
         file_policy_digest: core::PolicyDigest(1),
+        hot_fanout_template: None,
     }
 }
 

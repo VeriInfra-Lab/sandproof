@@ -364,3 +364,59 @@ fn bounded_configuration_rejects_missing_unknown_untyped_and_invalid_limits() {
     value["bounded_host"]["maintenance"]["max_host_slots"] = json!(1_048_577);
     assert!(check(value).is_err());
 }
+
+#[test]
+fn hot_fanout_requires_one_complete_pin_with_matching_journal_capacity() {
+    let mut value = settings();
+    let ordinary: NativeSettings = serde_json::from_value(value.clone()).unwrap();
+    assert!(
+        DeploymentContract::validate(&ordinary)
+            .unwrap()
+            .hot_branch_limits
+            .is_none()
+    );
+    value["hot_fanout"] = json!({
+        "template": {
+            "descriptor_digest": vec![9; 32], "checkpoint_id": "warm0", "max_branches": 4
+        },
+        "max_batches": 32,
+        "max_branches_per_vm": 4,
+    });
+    let enabled: NativeSettings = serde_json::from_value(value.clone()).unwrap();
+    let contract = DeploymentContract::validate(&enabled).unwrap();
+    assert_eq!(
+        contract.hot_branch_limits,
+        Some(HostBranchLimits {
+            max_batches: 32,
+            max_branches_per_vm: 4,
+        })
+    );
+    assert_eq!(
+        node_configuration(&enabled, contract.bounded)
+            .hot_fanout_template
+            .unwrap()
+            .checkpoint_id,
+        "warm0"
+    );
+    for (key, invalid) in [
+        ("max_batches", json!(0)),
+        ("max_batches", json!(1025)),
+        ("max_branches_per_vm", json!(8)),
+    ] {
+        let mut bad = value.clone();
+        bad["hot_fanout"][key] = invalid;
+        let config: NativeSettings = serde_json::from_value(bad).unwrap();
+        assert!(
+            DeploymentContract::validate(&config).is_err(),
+            "accepted {key}"
+        );
+    }
+    for key in ["template", "max_batches", "max_branches_per_vm"] {
+        let mut incomplete = value.clone();
+        incomplete["hot_fanout"]
+            .as_object_mut()
+            .unwrap()
+            .remove(key);
+        assert!(serde_json::from_value::<NativeSettings>(incomplete).is_err());
+    }
+}

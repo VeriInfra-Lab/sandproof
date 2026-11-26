@@ -5,11 +5,17 @@ use axum::{
 };
 use http_body_util::BodyExt;
 use hyper::body::{Bytes, Frame};
-use sandproof_internal::{
-    ClientTls, DataReceiver, InternalClient, InternalServer, LifecycleReceiver, Limits,
-    ReceiveError, RegisteredEndpoint, ServerTls, TransportError,
+use sandproof_controller_service::application::branching::{
+    BRANCH_DATA_SELECTOR_HEADER, BranchAccessIdentity, BranchAccessSelector, BranchBatchIdentity,
+    BranchControlAction, BranchControlReply, BranchControlRequest, BranchControlStatus,
+    BranchTarget,
 };
-use sandproof_protocol::internal::{NodeIdentity, ProbeRequest};
+use sandproof_internal::{
+    CertificatePin, ClientTls, DataReceiver, InternalClient, InternalServer, LifecycleReceiver,
+    Limits, ProtectedHttp, ProtectedServer, ReceiveError, RegisteredEndpoint, ServerTls,
+    TransportError,
+};
+use sandproof_protocol::internal::{DATA_PATH_PREFIX, NodeIdentity, ProbeRequest};
 use sandproof_protocol::lifecycle::{
     AuthenticatedCenterContext, CenterIdentity, LifecycleAccessIdentity, OperationKey,
 };
@@ -57,6 +63,19 @@ impl sandproof_internal::ValidationReceiver for Streams {
     }
 }
 impl LifecycleReceiver for Streams {
+    async fn branch_control(
+        &self,
+        request: BranchControlRequest,
+        context: AuthenticatedCenterContext,
+    ) -> Result<BranchControlReply, ReceiveError> {
+        assert!(request.valid_for(&context));
+        assert_eq!(request.parent, identity());
+        Ok(BranchControlReply {
+            original: request,
+            status: BranchControlStatus::Ready {},
+        })
+    }
+
     async fn observe_resume(
         &self,
         _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
@@ -80,12 +99,45 @@ impl DataReceiver for Streams {
             "x-api-key",
             "x-access-token",
             "x-sandproof-control-identity",
+            BRANCH_DATA_SELECTOR_HEADER,
         ] {
             assert!(!request.headers().contains_key(secret));
         }
         let (sender, receiver) = mpsc::channel(1);
         self.0.lock().unwrap().push(sender);
         Response::new(Body::new(Frames(receiver)))
+    }
+
+    async fn receive_branch_data(
+        &self,
+        access: BranchAccessIdentity,
+        context: AuthenticatedCenterContext,
+        request: Request<Body>,
+    ) -> Response<Body> {
+        assert_eq!(access, branch_identity());
+        assert!(access.valid_for(&context));
+        assert_eq!(request.uri(), "/process.Process/Start?fixture=1");
+        for name in [
+            "x-api-key",
+            "x-access-token",
+            "x-sandproof-control-identity",
+            BRANCH_DATA_SELECTOR_HEADER,
+        ] {
+            assert!(!request.headers().contains_key(name));
+        }
+        if request.headers().contains_key("connect-protocol-version") {
+            for name in ["e2b-sandbox-id", "e2b-sandbox-port"] {
+                assert!(!request.headers().contains_key(name));
+            }
+            for (name, value) in SDK_START_RPC_HEADERS {
+                assert_eq!(request.headers()[name], value);
+            }
+            assert_eq!(
+                request.into_body().collect().await.unwrap().to_bytes(),
+                sdk_start_frame()
+            );
+        }
+        Response::new(Body::from("exact branch route"))
     }
 }
 
@@ -161,6 +213,11 @@ fn data_request() -> Request<Body> {
         .uri("/process.Process/Start?fixture=1")
         .header("x-api-key", "never-forward-public-key")
         .header("x-access-token", "never-forward-center-token")
+        .header(BRANCH_DATA_SELECTOR_HEADER, "never-forward-caller-selector")
+        .header(
+            BRANCH_DATA_SELECTOR_HEADER,
+            "never-forward-duplicate-selector",
+        )
         .header(
             "x-sandproof-control-identity",
             "never-forward-caller-identity",
@@ -191,6 +248,215 @@ fn identity() -> LifecycleAccessIdentity {
         incarnation: 1.try_into().unwrap(),
     }
 }
+fn branch_identity() -> BranchAccessIdentity {
+    let parent = identity();
+    let mut operation = parent.operation.clone();
+    operation.sequence = 2.try_into().unwrap();
+    BranchAccessIdentity {
+        selector: BranchAccessSelector {
+            batch: BranchBatchIdentity {
+                parent: parent.session.clone(),
+                incarnation: parent.incarnation,
+                checkpoint: "checkpoint".try_into().unwrap(),
+                batch: "batch".try_into().unwrap(),
+            },
+            operation,
+            branch: "branch".try_into().unwrap(),
+        },
+        parent,
+    }
+}
+
+#[tokio::test]
+async fn branch_stream_only_forwards_protected_typed_selector() {
+    let f = Fixture::new().await;
+    let exact = branch_identity();
+    let mut foreign_owner = exact.clone();
+    foreign_owner.selector.operation.owner = "tenant-b".try_into().unwrap();
+    let mut stale_incarnation = exact.clone();
+    stale_incarnation.selector.batch.incarnation = 2.try_into().unwrap();
+    for mismatched in [foreign_owner, stale_incarnation] {
+        assert!(matches!(
+            f.client
+                .stream_branch_data(&mismatched, data_request(), Arc::new(()), max_deadline())
+                .await,
+            Err(TransportError::Rejected)
+        ));
+    }
+    let response = f
+        .client
+        .stream_branch_data(&exact, data_request(), Arc::new(()), max_deadline())
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.into_body().collect().await.unwrap().to_bytes(),
+        Bytes::from_static(b"exact branch route")
+    );
+    assert!(f.senders.lock().unwrap().is_empty());
+    idle_client(&f.client).await;
+    f.stop().await;
+}
+
+const SDK_START_RPC_HEADERS: [(&str, &str); 7] = [
+    ("authorization", "Basic cm9vdDo="),
+    ("connect-accept-encoding", ""),
+    ("connect-content-encoding", "identity"),
+    ("connect-protocol-version", "1"),
+    ("connect-timeout-ms", "15000"),
+    ("content-type", "application/connect+json"),
+    ("keepalive-ping-interval", "30"),
+];
+
+fn sdk_start_frame() -> Bytes {
+    let json = br#"{"process":{"cmd":"/bin/bash","args":["-l","-c","printf fixture"]}}"#;
+    let mut frame = vec![0];
+    frame.extend_from_slice(&u32::try_from(json.len()).unwrap().to_be_bytes());
+    frame.extend_from_slice(json);
+    Bytes::from(frame)
+}
+
+fn sdk_start_request() -> Request<Body> {
+    // The pinned SDK has 15 HTTP fields on the wire. The internal hop strips
+    // its public bearer, then adds both identities and Connection: close.
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri("/process.Process/Start?fixture=1")
+        .header("accept", "*/*")
+        .header("accept-encoding", "gzip, br")
+        .header("e2b-sandbox-id", "branch")
+        .header("e2b-sandbox-port", "49983")
+        .header("host", "center.test")
+        .header("transfer-encoding", "chunked")
+        .header("user-agent", "e2b-python")
+        .header("x-access-token", "public-branch-token");
+    for (name, value) in SDK_START_RPC_HEADERS {
+        builder = builder.header(name, value);
+    }
+    builder.body(Body::from(sdk_start_frame())).unwrap()
+}
+
+#[tokio::test]
+async fn branch_start_preserves_original_sdk_rpc_under_the_internal_header_bound() {
+    let f = Fixture::new().await;
+    let response = f
+        .client
+        .stream_branch_data(
+            &branch_identity(),
+            sdk_start_request(),
+            Arc::new(()),
+            max_deadline(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.into_body().collect().await.unwrap().to_bytes(),
+        Bytes::from_static(b"exact branch route")
+    );
+    idle_client(&f.client).await;
+
+    let mut excess = sdk_start_request();
+    for name in ["x-extra-one", "x-extra-two", "x-extra-three"] {
+        excess.headers_mut().insert(name, "extra".parse().unwrap());
+    }
+    let response = f
+        .client
+        .stream_branch_data(&branch_identity(), excess, Arc::new(()), max_deadline())
+        .await
+        .unwrap();
+    assert_eq!(
+        response.status(),
+        StatusCode::REQUEST_HEADER_FIELDS_TOO_LARGE
+    );
+    response.into_body().collect().await.unwrap();
+    idle_client(&f.client).await;
+    f.stop().await;
+}
+
+struct ParentOnlyPaths;
+impl ProtectedHttp for ParentOnlyPaths {
+    async fn respond(
+        &self,
+        _: CertificatePin,
+        request: Request<hyper::body::Incoming>,
+        _: tokio::sync::watch::Sender<bool>,
+    ) -> Result<Response<Body>, std::convert::Infallible> {
+        // Preserve the deployed parent path recognizer from before branching.
+        let response = if request.uri().path().starts_with(DATA_PATH_PREFIX) {
+            Response::new(Body::from("parent"))
+        } else {
+            sandproof_data_transport::response(StatusCode::NOT_FOUND)
+        };
+        Ok(response)
+    }
+}
+
+#[tokio::test]
+async fn legacy_host_with_matching_tls_cannot_treat_branch_stream_as_parent_data() {
+    let certs = tls::certificates();
+    let limits = Limits::new(3, Duration::from_secs(1), Duration::from_secs(2)).unwrap();
+    let server = ProtectedServer::new(
+        ServerTls::new(
+            certs.host.material(),
+            vec![certs.ca.der().clone()],
+            vec![certs.center.pin()],
+        )
+        .unwrap(),
+        limits,
+        ParentOnlyPaths,
+    );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let client = InternalClient::new(
+        ClientTls::new(
+            certs.center.material(),
+            vec![certs.ca.der().clone()],
+            vec![certs.host.pin()],
+        )
+        .unwrap(),
+        RegisteredEndpoint::new(
+            listener.local_addr().unwrap(),
+            "host.test".into(),
+            wire::node("host-a"),
+        )
+        .unwrap(),
+        limits,
+    );
+    let (stop, shutdown) = oneshot::channel();
+    let task = tokio::spawn(async move { server.serve(listener, shutdown).await });
+    let parent = client
+        .stream_data(&identity(), data_request(), Arc::new(()), max_deadline())
+        .await
+        .unwrap();
+    assert_eq!(parent.status(), StatusCode::OK);
+    assert_eq!(
+        parent.into_body().collect().await.unwrap().to_bytes(),
+        "parent"
+    );
+    let branch = client
+        .stream_branch_data(
+            &branch_identity(),
+            data_request(),
+            Arc::new(()),
+            max_deadline(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(branch.status(), StatusCode::NOT_FOUND);
+    assert!(
+        branch
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .is_empty()
+    );
+    idle_client(&client).await;
+    stop.send(()).unwrap();
+    task.await.unwrap().unwrap();
+}
+
 fn max_deadline() -> tokio::time::Instant {
     tokio::time::Instant::now() + Duration::from_mins(1)
 }
@@ -461,4 +727,37 @@ async fn silent_return_black_hole_fails_at_original_maximum_lifetime_without_eof
     idle_client(&f.client).await;
     assert_eq!(Arc::strong_count(&lease), 1);
     f.stop().await;
+}
+
+#[tokio::test]
+async fn branch_control_authenticates_the_exact_plan_and_checks_its_status() {
+    let fixture = Fixture::new().await;
+    let access = branch_identity();
+    let request = BranchControlRequest {
+        parent: access.parent,
+        operation: access.selector.operation,
+        batch: access.selector.batch,
+        targets: vec![BranchTarget {
+            sandbox: access.selector.branch,
+            port: 31_000_u16.try_into().unwrap(),
+        }],
+        action: BranchControlAction::Start {},
+    };
+    let reply = fixture.client.branch_control(&request).await.unwrap();
+    assert_eq!(reply.status, BranchControlStatus::Ready {});
+    assert!(reply.matches(&request));
+
+    let mut invalid = request.clone();
+    invalid.batch.incarnation = 99_u64.try_into().unwrap();
+    assert_eq!(
+        fixture.client.branch_control(&invalid).await,
+        Err(TransportError::Rejected)
+    );
+
+    let mut release = request;
+    release.action = BranchControlAction::Release { branch: None };
+    // The controlled receiver deliberately returns Ready for the release. A
+    // signed peer's wrong result is not a cleanup receipt.
+    assert!(fixture.client.branch_control(&release).await.is_err());
+    fixture.stop().await;
 }

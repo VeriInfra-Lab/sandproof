@@ -316,6 +316,18 @@ pub trait HostPort: Send + Sync + 'static {
 /// Tests inject storage faults while using the same pure `CenterState`
 /// decisions, not a second model.
 pub trait AuthorityPort: Send + 'static {
+    /// Fence this branch in the common authority. Resource retirement has
+    /// independent work and remains charged until the original host confirms.
+    /// # Errors
+    /// Unsupported, foreign and stale branches cannot publish a revocation.
+    fn revoke_training_branch(
+        &mut self,
+        _owner: &TenantId,
+        _sandbox: &SandboxId,
+    ) -> Result<(), PortError> {
+        Err(PortError::NotFound)
+    }
+
     /// # Errors
     /// The same durable authority checks source, target and original lifetime.
     fn accept_lifecycle_resume_observation(

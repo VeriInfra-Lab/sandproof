@@ -1,5 +1,6 @@
 //! Application-owned host and data-route contracts: no SDK DTOs or Linux commands.
 //! Lifecycle preserves the original serial decision/effect boundary.
+pub mod branching;
 #[cfg(feature = "durable")]
 mod data;
 #[cfg(feature = "durable")]
@@ -9,6 +10,11 @@ pub mod fault;
 mod host;
 #[cfg(feature = "durable")]
 mod relay_child;
+#[cfg(feature = "durable")]
+pub use crate::controller::{
+    HostBranchBatchKey, HostBranchBatchPhase, HostBranchClose, HostBranchLimits, HostBranchParent,
+    HostBranchRoute, HostGuestBranch,
+};
 #[cfg(feature = "durable")]
 pub use data::{DataAccessPort, DataAuthorization, DataKind, DataTarget};
 #[cfg(feature = "durable")]
@@ -47,8 +53,8 @@ pub use clock::{Clock, SystemClock};
 pub use coordinator::recovery::can_install_host_slot_binding;
 #[cfg(feature = "durable")]
 pub use coordinator::{
-    ApplicationConfig, ControllerApplication, DataPermit, ExpiryReport, MaintenanceReport,
-    RecoveryReport,
+    ApplicationConfig, ControllerApplication, DataPermit, ExpiryReport, HostBranchControl,
+    HostBranchPermit, MaintenanceReport, RecoveryReport,
 };
 pub use listing::{InstancePage, ListCursor, ListSelection, Order};
 pub use models::*;

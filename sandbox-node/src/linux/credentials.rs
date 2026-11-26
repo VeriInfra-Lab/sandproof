@@ -1,8 +1,9 @@
 //! Bound launch credentials and immutable template validation.
 use super::{
     ArtifactStamp, BTreeMap, CandidateVerification, CreateOptions, File, GuestSecret,
-    LaunchCredentialStatus, LinuxWorker, NodeResult, PathBuf, TemplateArtifact, TemplateBinding,
-    artifact_file_digest, check_trusted_path, core, fs, hash_token, launch_observation,
+    HotFanoutTemplate, LaunchCredentialStatus, LinuxWorker, NodeResult, PathBuf, TemplateArtifact,
+    TemplateBinding, artifact_file_digest, check_trusted_path, core, fs, hash_token,
+    launch_observation,
 };
 use sandbox_runtime::RuntimeError;
 
@@ -12,6 +13,32 @@ pub(super) fn secret_file_name(
     generation: core::Generation,
 ) -> String {
     format!("sb-{namespace}-{}-{generation}", sandbox.0)
+}
+
+fn approved_hot_template<'a>(
+    configured: Option<&'a HotFanoutTemplate>,
+    template: Option<&TemplateBinding>,
+) -> NodeResult<Option<&'a HotFanoutTemplate>> {
+    let (Some(pin), Some(template)) = (configured, template) else {
+        return Ok(None);
+    };
+    let digest = template
+        .canonical_digest()
+        .map_err(|_| "invalid protected template descriptor")?;
+    if digest != pin.descriptor_digest {
+        return Ok(None);
+    }
+    if !pin.is_valid()
+        || template.guest.is_some()
+        || template.envd_version != "0.9.0"
+        || template
+            .startup
+            .as_ref()
+            .is_some_and(|startup| !startup.argv.is_empty())
+    {
+        return Err("unsupported hot fan-out template descriptor".into());
+    }
+    Ok(Some(pin))
 }
 
 impl LinuxWorker {
@@ -87,6 +114,11 @@ impl LinuxWorker {
             sha512,
             env_vars: env_vars.clone(),
             template: options.template.clone(),
+            hot_fanout: approved_hot_template(
+                self.config.hot_fanout_template.as_ref(),
+                options.template.as_ref(),
+            )?
+            .cloned(),
         };
         let path = self.secret_path(sandbox, generation);
         self.write_node_json(&path, &value)
@@ -167,6 +199,7 @@ impl LinuxWorker {
         if stored.env_vars != options.env_vars || stored.template != options.template {
             return Err("stored template or initialization differs from admitted create".into());
         }
+        self.require_hot_fanout_pin(&stored)?;
         Ok(true)
     }
 
@@ -188,6 +221,37 @@ impl LinuxWorker {
             options,
             original_digest,
         )
+    }
+
+    /// Read the approved checkpoint bound to an existing local generation.
+    /// Header fields and caller-supplied template aliases cannot select it.
+    /// # Errors
+    /// Rejects an unknown generation or replaced protected approval.
+    pub fn hot_fanout_template_for_generation(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> NodeResult<Option<HotFanoutTemplate>> {
+        self.credential_context(sandbox, generation)?;
+        let secret = self.secret(sandbox, generation)?;
+        Ok(self.require_hot_fanout_pin(&secret)?.cloned())
+    }
+
+    pub(super) fn require_hot_fanout_pin<'a>(
+        &self,
+        secret: &'a GuestSecret,
+    ) -> NodeResult<Option<&'a HotFanoutTemplate>> {
+        let Some(accepted) = secret.hot_fanout.as_ref() else {
+            return Ok(None);
+        };
+        let current = approved_hot_template(
+            self.config.hot_fanout_template.as_ref(),
+            secret.template.as_ref(),
+        )?;
+        if current != Some(accepted) {
+            return Err("original hot fan-out template approval changed".into());
+        }
+        Ok(Some(accepted))
     }
 
     /// Check protected inputs and cgroup limits before controller admission.
@@ -348,5 +412,98 @@ mod tests {
         let maximum = secret_file_name("0123456789abcdef", core::SandboxId(u64::MAX), u64::MAX);
         assert!(maximum.len() <= 64);
         assert!(sandproof_protocol::ResourceId::try_from(maximum).is_ok());
+    }
+}
+
+#[cfg(test)]
+mod hot_fanout_tests {
+    use super::*;
+    use sandproof_controller_service::templates::ResourceShape;
+
+    fn descriptor() -> TemplateBinding {
+        TemplateBinding {
+            template_id: "agent".into(),
+            revision: "v1".into(),
+            owner: Some(1),
+            kernel: TemplateArtifact {
+                path: "/protected/vmlinux".into(),
+                sha256: "a".repeat(64),
+                size_bytes: 4096,
+            },
+            rootfs: TemplateArtifact {
+                path: "/protected/rootfs".into(),
+                sha256: "b".repeat(64),
+                size_bytes: 1024 * 1024,
+            },
+            resources: ResourceShape {
+                cpu_count: 2,
+                memory_mib: 128,
+                disk_bytes: 1024 * 1024,
+                host_memory_bytes: 256 * 1024 * 1024,
+            },
+            envd_version: "0.9.0".into(),
+            guest: None,
+            startup: None,
+        }
+    }
+
+    #[test]
+    fn pin_checks_exact_local_owner_artifacts_and_revision() {
+        let mut template = descriptor();
+        let pin = HotFanoutTemplate {
+            descriptor_digest: template.canonical_digest().unwrap(),
+            checkpoint_id: "trained".into(),
+            max_branches: 4,
+        };
+        assert!(
+            approved_hot_template(None, Some(&template))
+                .unwrap()
+                .is_none()
+        );
+        assert!(approved_hot_template(Some(&pin), None).unwrap().is_none());
+        assert_eq!(
+            approved_hot_template(Some(&pin), Some(&template)).unwrap(),
+            Some(&pin)
+        );
+        template.owner = Some(2);
+        assert!(
+            approved_hot_template(Some(&pin), Some(&template))
+                .unwrap()
+                .is_none()
+        );
+        template.owner = Some(1);
+        template.rootfs.sha256 = "c".repeat(64);
+        assert!(
+            approved_hot_template(Some(&pin), Some(&template))
+                .unwrap()
+                .is_none()
+        );
+        let mut template = descriptor();
+        template.revision = "v2".into();
+        assert!(
+            approved_hot_template(Some(&pin), Some(&template))
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn narrower_guest_and_checkpoint_limits_do_not_accept_unprepared_modes() {
+        let mut template = descriptor();
+        template.envd_version = "0.9.1".into();
+        let pin = HotFanoutTemplate {
+            descriptor_digest: template.canonical_digest().unwrap(),
+            checkpoint_id: "trained".into(),
+            max_branches: 4,
+        };
+        assert!(approved_hot_template(Some(&pin), Some(&template)).is_err());
+        for (checkpoint, count) in [("", 4), ("a/b", 4), ("trained", 0), ("trained", 65)] {
+            let pin = HotFanoutTemplate {
+                checkpoint_id: checkpoint.into(),
+                max_branches: count,
+                ..pin.clone()
+            };
+            assert!(!pin.is_valid());
+        }
     }
 }

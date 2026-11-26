@@ -107,6 +107,13 @@ struct NodeFile {
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
+struct BranchingFile {
+    limits: crate::BranchBatchLimits,
+    template_revisions: Vec<sandproof_protocol::ResourceId>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DeploymentFile {
     deployment_id: DeploymentId,
     center_id: CenterId,
@@ -138,6 +145,7 @@ struct DeploymentFile {
     templates: TemplateCatalog,
     template_registrations: Vec<TemplateRegistration>,
     artifact_service: artifacts::ArtifactFile,
+    branching: Option<BranchingFile>,
 }
 
 /// Validated ingredients only. No `Debug`/`Serialize` exposes user/Redis keys.
@@ -145,6 +153,7 @@ struct DeploymentFile {
 /// gateway remain mandatory dependencies of the executable assembly.
 pub struct CenterAssemblyInputs {
     pub application: CenterConfig,
+    pub branching_enabled: bool,
     pub bind: SocketAddr,
     pub credentials: Vec<ApiCredential>,
     pub admission: Arc<RequestAdmission>,
@@ -443,20 +452,15 @@ impl CenterAssemblyInputs {
         check_protected_directory(&file.redis.writer_root, owner)
             .map_err(|_| AssemblyError::ProtectedInput)?;
         check_registry_directories(&file.template_registry, owner)?;
-        validate_templates(
-            &file.template_registrations,
-            &file.templates,
-            &file.nodes,
-            file.template_registry.max_templates_global,
-        )?;
-        let metadata = RegistryMetadata::new(
+        let (metadata, branching_enabled) = registry_metadata(
             file.templates,
             file.template_registrations,
             file.template_registry,
             file.metadata_budget,
             private_builds,
-        )
-        .map_err(|_| invalid())?;
+            file.branching,
+            &file.nodes,
+        )?;
         let provisioning = BusinessEnvelope {
             center: registration,
             metadata,
@@ -471,6 +475,7 @@ impl CenterAssemblyInputs {
         let hosts = clients(&file.tls, &file.nodes, owner)?;
         Ok(Self {
             application,
+            branching_enabled,
             bind: file.bind,
             credentials,
             admission,
@@ -486,6 +491,43 @@ impl CenterAssemblyInputs {
             artifacts,
             private_build_boundary,
         })
+    }
+}
+
+fn registry_metadata(
+    templates: TemplateCatalog,
+    registrations: Vec<TemplateRegistration>,
+    registry: RegistryConfig,
+    budget: MetadataBudget,
+    private_builds: Option<crate::business::PrivateBuildConfig>,
+    branching: Option<BranchingFile>,
+    nodes: &[NodeFile],
+) -> Result<(RegistryMetadata, bool), AssemblyError> {
+    validate_templates(
+        &registrations,
+        &templates,
+        nodes,
+        registry.max_templates_global,
+    )?;
+    let invalid = || AssemblyError::InvalidConfiguration;
+    if branching.as_ref().is_some_and(|branching| {
+        branching.template_revisions.iter().any(|revision| {
+            !registrations
+                .iter()
+                .any(|known| &known.revision == revision)
+        })
+    }) {
+        return Err(invalid());
+    }
+    let metadata =
+        RegistryMetadata::new(templates, registrations, registry, budget, private_builds)
+            .map_err(|_| invalid())?;
+    match branching {
+        Some(config) => metadata
+            .with_branch_batches(config.limits, config.template_revisions)
+            .map(|metadata| (metadata, true))
+            .map_err(|_| invalid()),
+        None => Ok((metadata, false)),
     }
 }
 

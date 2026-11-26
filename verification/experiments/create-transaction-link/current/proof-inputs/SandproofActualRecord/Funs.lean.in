@@ -23,7 +23,7 @@ noncomputable section
 namespace SandproofActualRecordRust
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::record_transaction_using]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 58:0-81:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 65:0-89:1 -/
 def controller.lifecycle_inbox.recording.record_transaction_using
   {R : Type} {T : Type} {N : Type} {U : Type} {B : Type} {E : Type} {C : Type}
   (native_retirementRetirementEncodingInst :
@@ -56,27 +56,38 @@ def controller.lifecycle_inbox.recording.record_transaction_using
     | controller.lifecycle_inbox.recording.RecordOutcome.Replay state =>
       ok (core.result.Result.Ok state, crashes)
     | controller.lifecycle_inbox.recording.RecordOutcome.Recorded state =>
-      let (r1, crashes1) ←
-        CrashInjectorInst.hit crashes CrashPoint.BeforeCommit
+      let (r1, transaction2) ←
+        RecordTransactionInst.check_before_commit transaction1 intent
       let cf1 ← core.result.Result.Insts.CoreOpsTry.branch r1
       match cf1 with
       | core.ops.control_flow.ControlFlow.Continue _ =>
-        let r2 ← RecordTransactionInst.commit transaction1
+        let (r2, crashes1) ←
+          CrashInjectorInst.hit crashes CrashPoint.BeforeCommit
         let cf2 ← core.result.Result.Insts.CoreOpsTry.branch r2
         match cf2 with
         | core.ops.control_flow.ControlFlow.Continue _ =>
-          let (r3, crashes2) ←
-            CrashInjectorInst.hit crashes1 CrashPoint.AfterCommit
+          let r3 ← RecordTransactionInst.commit transaction2
           let cf3 ← core.result.Result.Insts.CoreOpsTry.branch r3
           match cf3 with
           | core.ops.control_flow.ControlFlow.Continue _ =>
-            ok (core.result.Result.Ok state, crashes2)
+            let (r4, crashes2) ←
+              CrashInjectorInst.hit crashes1 CrashPoint.AfterCommit
+            let cf4 ← core.result.Result.Insts.CoreOpsTry.branch r4
+            match cf4 with
+            | core.ops.control_flow.ControlFlow.Continue _ =>
+              ok (core.result.Result.Ok state, crashes2)
+            | core.ops.control_flow.ControlFlow.Break residual =>
+              let r5 ←
+                core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
+                  controller.lifecycle_inbox.model.LifecycleWorkState
+                  (core.convert.FromSame JournalError) residual
+              ok (r5, crashes2)
           | core.ops.control_flow.ControlFlow.Break residual =>
             let r4 ←
               core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
                 controller.lifecycle_inbox.model.LifecycleWorkState
                 (core.convert.FromSame JournalError) residual
-            ok (r4, crashes2)
+            ok (r4, crashes1)
         | core.ops.control_flow.ControlFlow.Break residual =>
           let r3 ←
             core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
@@ -88,7 +99,7 @@ def controller.lifecycle_inbox.recording.record_transaction_using
           core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
             controller.lifecycle_inbox.model.LifecycleWorkState
             (core.convert.FromSame JournalError) residual
-        ok (r2, crashes1)
+        ok (r2, crashes)
   | core.ops.control_flow.ControlFlow.Break residual =>
     let r1 ←
       core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual
@@ -97,7 +108,7 @@ def controller.lifecycle_inbox.recording.record_transaction_using
     ok (r1, crashes)
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::checkpoint::config::ReadConfigEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 172:0-189:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 180:0-197:1 -/
 @[reducible]
 def
   controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects
@@ -117,7 +128,7 @@ def
 }
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxLoadEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 191:0-226:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 199:0-234:1 -/
 @[reducible]
 def
   controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects
@@ -149,7 +160,7 @@ def
 }
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::codec::InboxSaveEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 228:0-249:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 236:0-257:1 -/
 @[reducible]
 def
   controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects
@@ -169,7 +180,7 @@ def
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::current_operation::{impl core::ops::function::FnOnce<(sandbox_controller_core::model::Operation,), sandbox_controller_core::ids::OperationId> for sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::current_operation::{closure#1}<'_0, '_1, D>}::call_once]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 268:17-268:41 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 276:17-276:41 -/
 def
   controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.current_operation.closure_1.Insts.CoreOpsFunctionFnOnceTupleOperationOperationId.call_once
   {D : Type} (RecordCodecInst :
@@ -182,7 +193,7 @@ def
   ok tupled_args.id
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::current_operation::{impl core::ops::function::FnOnce<(sandbox_controller_core::model::Operation,), sandbox_controller_core::ids::OperationId> for sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::current_operation::{closure#1}<'_0, '_1, D>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 268:17-268:41 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 276:17-276:41 -/
 @[reducible]
 def
   controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.current_operation.closure_1.Insts.CoreOpsFunctionFnOnceTupleOperationOperationId
@@ -198,7 +209,7 @@ def
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::current_operation::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::model::SandboxRecord,), core::option::Option<sandbox_controller_core::model::Operation>> for sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::current_operation::{closure}<'_0, '_1, D>}::call_once]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 267:22-267:55 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 275:22-275:55 -/
 def
   controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.current_operation.closure.Insts.CoreOpsFunctionFnOnceTupleSharedSandboxRecordOptionOperation.call_once
   {D : Type} (RecordCodecInst :
@@ -211,7 +222,7 @@ def
   ok tupled_args.current_operation
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::current_operation::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::model::SandboxRecord,), core::option::Option<sandbox_controller_core::model::Operation>> for sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::current_operation::{closure}<'_0, '_1, D>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 267:22-267:55 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 275:22-275:55 -/
 @[reducible]
 def
   controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.current_operation.closure.Insts.CoreOpsFunctionFnOnceTupleSharedSandboxRecordOptionOperation
@@ -227,7 +238,7 @@ def
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::current_operation]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 263:4-269:5 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 271:4-277:5 -/
 def
   controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.current_operation
   {D : Type} (RecordCodecInst :
@@ -250,7 +261,7 @@ def
   ok (o2, self)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::terminate_local]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 260:4-262:5 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 268:4-270:5 -/
 def
   controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.terminate_local
   {D : Type} (RecordCodecInst :
@@ -266,7 +277,7 @@ def
   ok (r, self)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}::{impl core::ops::function::FnMut<(&'_ (sandbox_controller_core::maintenance::slots::HostSlotId, sandbox_controller_core::maintenance::slots::HostSlotRecord),), bool> for sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}::{closure}<'_0, '_1, '_2, D>}::call_mut]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 254:42-257:13 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 262:42-265:13 -/
 def
   controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairHostSlotIdHostSlotRecordBool.call_mut
   {D : Type} (RecordCodecInst :
@@ -294,7 +305,7 @@ def
   else ok (false, c)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}::{impl core::ops::function::FnOnce<(&'_ (sandbox_controller_core::maintenance::slots::HostSlotId, sandbox_controller_core::maintenance::slots::HostSlotRecord),), bool> for sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}::{closure}<'_0, '_1, '_2, D>}::call_once]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 254:42-257:13 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 262:42-265:13 -/
 def
   controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.closure.Insts.CoreOpsFunctionFnOnceTupleSharedPairHostSlotIdHostSlotRecordBool.call_once
   {D : Type} (RecordCodecInst :
@@ -312,7 +323,7 @@ def
   ok b
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}::{impl core::ops::function::FnOnce<(&'_ (sandbox_controller_core::maintenance::slots::HostSlotId, sandbox_controller_core::maintenance::slots::HostSlotRecord),), bool> for sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}::{closure}<'_0, '_1, '_2, D>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 254:42-257:13 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 262:42-265:13 -/
 @[reducible]
 def
   controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.closure.Insts.CoreOpsFunctionFnOnceTupleSharedPairHostSlotIdHostSlotRecordBool
@@ -328,7 +339,7 @@ def
 }
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}::{impl core::ops::function::FnMut<(&'_ (sandbox_controller_core::maintenance::slots::HostSlotId, sandbox_controller_core::maintenance::slots::HostSlotRecord),), bool> for sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}::{closure}<'_0, '_1, '_2, D>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 254:42-257:13 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 262:42-265:13 -/
 @[reducible]
 def
   controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.closure.Insts.CoreOpsFunctionFnMutTupleSharedPairHostSlotIdHostSlotRecordBool
@@ -346,7 +357,7 @@ def
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::maintenance::MaintenanceState,), bool> for sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}<'_0, '_1, '_2, D>}::call_once]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 253:56-258:9 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 261:56-266:9 -/
 def
   controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool.call_once
   {D : Type} (RecordCodecInst :
@@ -366,7 +377,7 @@ def
   ok b
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{impl core::ops::function::FnOnce<(&'_ sandbox_controller_core::maintenance::MaintenanceState,), bool> for sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}<'_0, '_1, '_2, D>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 253:56-258:9 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 261:56-266:9 -/
 @[reducible]
 def
   controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedMaintenanceStateBool
@@ -381,7 +392,7 @@ def
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 252:4-259:5 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 260:4-267:5 -/
 def
   controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects.releasing
   {D : Type} (RecordCodecInst :
@@ -399,7 +410,7 @@ def
   ok (b, self)
 
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 251:0-270:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 259:0-278:1 -/
 @[reducible]
 def
   controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects
@@ -425,7 +436,7 @@ def
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordTransaction for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::commit]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 273:4-275:5 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 295:4-297:5 -/
 def
   controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordTransaction.commit
   {D : Type} (RecordCodecInst :
@@ -435,8 +446,27 @@ def
   := do
   controller.transaction.WorldTransaction.commit self.tx
 
+/-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordTransaction for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::check_before_commit]:
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 281:4-293:5 -/
+def
+  controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordTransaction.check_before_commit
+  {D : Type} (RecordCodecInst :
+  controller.lifecycle_inbox.recording.RecordCodec D)
+  (self : controller.lifecycle_inbox.recording.StandardRecord D)
+  (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent) :
+  Result ((core.result.Result Unit JournalError) ×
+    (controller.lifecycle_inbox.recording.StandardRecord D))
+  := do
+  let o ← controller.lifecycle_inbox.recording.unload_branch_scope intent
+  match o with
+  | none => ok (core.result.Result.Ok (), self)
+  | some p =>
+    let (binding, source) := p
+    let r ← controller.branching.check_parent_unload self.tx binding source
+    ok (r, self)
+
 /-- Trait implementation: [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordTransaction for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 272:0-276:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 280:0-298:1 -/
 @[reducible]
 def
   controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordTransaction
@@ -447,13 +477,16 @@ def
   RecordEffectsInst :=
     controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordEffects
     RecordCodecInst
+  check_before_commit :=
+    controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordTransaction.check_before_commit
+    RecordCodecInst
   commit :=
     controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordTransaction.commit
     RecordCodecInst
 }
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::proof_record_actual_parent]:
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 280:0-299:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 313:0-332:1 -/
 def controller.lifecycle_inbox.recording.proof_record_actual_parent
   {R : Type} {T : Type} {N : Type} {U : Type} {B : Type} {D : Type} {C : Type}
   (native_retirementRetirementEncodingInst :

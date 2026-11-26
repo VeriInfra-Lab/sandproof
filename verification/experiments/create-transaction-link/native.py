@@ -18,9 +18,14 @@ sys.path.insert(0, str(ROOT))
 from tools.acceptance_receipts import sha, write_json
 
 TRANSACTION = Path('controller-service/src/controller/transaction.rs')
+RECORDING = Path('controller-service/src/controller/lifecycle_inbox/recording.rs')
 CELLS = 'controller::cache_tests::uncertain_commit_reconciles_both_durable_outcomes_for_every_write_family'
 CODEC = ('controller::lifecycle_inbox::tests::'
          'record_codec_keeps_full_inputs_state_and_first_error_on_the_original_connection')
+GATE = ('controller::lifecycle_inbox::recording::branching_tests::'
+        'native_unload_preserves_original_errors_and_replay_with_damaged_branch_ledger')
+GATE_CALL = b'    transaction.check_before_commit(intent)?;\n'
+RECORD_CALL = b'    let outcome = record_using::<R, T, N, U, B, E>(&mut transaction, intent, context)?;\n'
 ORIGINAL = b'            committed: &self.committed.value,\n            candidate: &self.candidate,'
 SWAPPED = b'            committed: &self.candidate,\n            candidate: &self.committed.value,'
 
@@ -60,16 +65,16 @@ def run(output):
         require(child.returncode == expected, 'unexpected command result: '+label)
         return log
 
-    def exact(phase, program, test, reject=False):
-        log = command(phase, [program, test, '--exact', '--test-threads=1'], 101 if reject else 0)
+    def exact(phase, program, test, rejection=()):
+        log = command(phase, [program, test, '--exact', '--test-threads=1'], 101 if rejection else 0)
         text = log.read_text()
-        expected = 'FAILED' if reject else 'ok'
+        expected = 'FAILED' if rejection else 'ok'
         require(re.findall(r'^test \S+ \.\.\. .*$', text, re.M) == [f'test {test} ... {expected}'],
                 'exact assertion result differs: '+phase)
-        if reject:
-            require('assertion `left == right` failed' in text and 'controller/cache_tests.rs:' in text
+        if rejection:
+            require(all(witness in text for witness in rejection)
                     and 'test result: FAILED. 0 passed; 1 failed; 0 ignored;' in text,
-                    'wrong program did not fail the original cache assertion')
+                    'wrong program did not reach its original assertion: '+phase)
         else:
             require('test result: ok. 1 passed; 0 failed; 0 ignored;' in text,
                     'exact assertion did not pass once: '+phase)
@@ -84,6 +89,12 @@ def run(output):
         original = transaction.read_bytes()
         require(original.count(ORIGINAL) == 2, 'original commit/drop references differ')
         wrong = original.replace(ORIGINAL, SWAPPED, 1)
+        recording = project/RECORDING
+        original_recording = recording.read_bytes()
+        require(original_recording.count(GATE_CALL) == 1 and original_recording.count(RECORD_CALL) == 1
+                and original_recording.index(RECORD_CALL) < original_recording.index(GATE_CALL),
+                'original Unload gate order differs')
+        early_gate = original_recording.replace(GATE_CALL, b'').replace(RECORD_CALL, GATE_CALL+RECORD_CALL)
         libraries = registry.registry()
         tools = {name: Path(subprocess.check_output(['rustup', 'which', name], cwd=project,
                      env=env, text=True).strip()) for name in ('cargo', 'rustc', 'clippy-driver')}
@@ -91,8 +102,15 @@ def run(output):
         cargo = ['--locked', '--offline', '-p', 'sandproof-controller-service', '--all-features', '--lib']
         result.update(source_head=source['commit'], source_tree=source['tree'],
                       source_archive_sha256=source['archive_sha256'], libraries=libraries, tools=tool_hashes)
-        for phase, body in (('correct', original), ('swapped-cells', wrong), ('restored', original)):
+        variants = (
+            ('correct', original, original_recording),
+            ('swapped-cells', wrong, original_recording),
+            ('guard-before-auth', original, early_gate),
+            ('restored', original, original_recording),
+        )
+        for phase, body, recording_body in variants:
             transaction.write_bytes(body)
+            recording.write_bytes(recording_body)
             built = command(phase+'-build', ['cargo', 'test', *cargo, '--no-run', '--message-format=json'])
             if phase == 'correct':
                 rows = legacy.artifacts(built, project, target)
@@ -122,13 +140,20 @@ def run(output):
             program_hash = sha(program)
             listing = command(phase+'-list', [program, '--list']).read_text().splitlines()
             require(listing.count(CELLS+': test') == 1, 'original cache assertion missing')
-            exact(phase+'-cells', program, CELLS, phase == 'swapped-cells')
+            cache_rejection = ('assertion `left == right` failed', 'controller/cache_tests.rs:')
+            exact(phase+'-cells', program, CELLS, cache_rejection if phase == 'swapped-cells' else ())
+            gate_rejection = ('branching_tests.rs:', 'record_lifecycle_intent(&unload, &foreign',
+                              'Err(JournalError::Conflict)')
+            require(listing.count(GATE+': test') == 1, 'original Unload error-order assertion missing')
+            exact(phase+'-gate', program, GATE, gate_rejection if phase == 'guard-before-auth' else ())
             if phase == 'correct':
                 require(listing.count(CODEC+': test') == 1, 'original codec assertion missing')
                 exact('correct-codec', program, CODEC)
-            require(sha(program) == program_hash and transaction.read_bytes() == body,
+            require(sha(program) == program_hash and transaction.read_bytes() == body
+                    and recording.read_bytes() == recording_body,
                     'compiled test or its input changed')
-            result['cases'][phase] = dict(executable=program_hash, source=hashlib.sha256(body).hexdigest())
+            result['cases'][phase] = dict(executable=program_hash, source=hashlib.sha256(body).hexdigest(),
+                                          recording=hashlib.sha256(recording_body).hexdigest())
         command('strict-clippy', ['cargo', 'clippy', '--locked', '--offline', '-p',
             'sandproof-controller-service', '--all-features', '--all-targets', '--', '-D', 'warnings'])
         current, _ = archive.committed_inputs(ROOT)

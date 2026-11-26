@@ -3,6 +3,7 @@
 Development evidence only; ning owns shared native acceptance.
 """
 import argparse
+import hashlib
 import importlib.util
 import json
 import os
@@ -37,7 +38,32 @@ preparation = module('protocol-record_prepare', ROOT / HERE / 'prepare.py')
 sha = base.sha
 
 
-def check_clippy(row, text, source, variant, inventory):
+def replay_lint_location(source, expected, mutation):
+    source_sha = sha(source)
+    if source_sha == expected['source_sha256']:
+        return expected['line'], expected['column']
+    # The same mutation can move to a later source line after an unrelated
+    # import or implementation change. Bind the diagnostic to the uniquely
+    # located Replay variant in the exact prepared mutant, not to a new lint.
+    planned = preparation.MUTATIONS['replay-falls-through']
+    old, new = planned['old'], planned['new']
+    if (not mutation or mutation['path'] != expected['source']
+            or mutation['path'] != planned['path'] or mutation['scope'] is not None
+            or mutation['edits'] != [[old, new]] or mutation['after'] != source_sha):
+        raise ValueError('unregistered original Replay mutant diagnostic source')
+    content = source.read_text()
+    if (content.count(new) != 1 or old in content
+            or hashlib.sha256(content.replace(new, old, 1).encode()).hexdigest() != mutation['before']):
+        raise ValueError('unregistered original Replay mutant edit')
+    sites = list(re.finditer(r'^pub\(super\) enum RecordOutcome \{\n( +)Replay\(LifecycleWorkState\),$',
+                             content, re.M))
+    if len(sites) != 1:
+        raise ValueError('unregistered original Replay mutant diagnostic location')
+    site, = sites
+    return content.count('\n', 0, site.start(1)) + 1, len(site[1]) + 1
+
+
+def check_clippy(row, text, source, variant, inventory, *, mutation=None):
     if variant != 'replay-falls-through':
         if row['exit_code'] != 0:
             raise ValueError('clippy failed: '+variant)
@@ -48,9 +74,9 @@ def check_clippy(row, text, source, variant, inventory):
     warnings = [n for n in text.splitlines() if n.startswith('warning:')
                 and n != 'warning: build failed, waiting for other jobs to finish...']
     wanted = ['error: '+expected['message']]*expected['primary_count'] + expected['cargo_errors']
-    location = f"{expected['source']}:{expected['line']}:{expected['column']}"
+    line, column = replay_lint_location(source, expected, mutation)
+    location = f"{expected['source']}:{line}:{column}"
     if (row['exit_code'] != 101 or expected['code'] != 'dead_code'
-            or sha(source) != expected['source_sha256']
             or sorted(errors) != sorted(wanted)
             or locations != [location]*expected['primary_count'] or warnings
             or text.count('= note: `-D dead-code` implied by `-D warnings`') != expected['primary_count']):
@@ -171,7 +197,8 @@ def run(output):
                     elif done.returncode or f'{count} passed; 0 failed; 0 ignored;' not in text:
                         raise ValueError('protocol-record original/candidate/restored assertions failed')
                 elif label == 'clippy':
-                    check_clippy(row, text, project/preparation.SOURCE, variant, inventory)
+                    check_clippy(row, text, project/preparation.SOURCE, variant, inventory,
+                                 mutation=mutation)
                 elif done.returncode:
                     raise ValueError(label+' failed: '+variant)
             if any(sha(project / name) != digest for name, digest in expected.items()):

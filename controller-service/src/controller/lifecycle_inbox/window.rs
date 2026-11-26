@@ -141,14 +141,15 @@ impl ControllerJournal {
         {
             return Err(JournalError::UnresolvedAction);
         }
-        if let Some(local) = inbox.sessions[s].local
-            && !super::native_retirement::cleaned(&inbox.sessions[s], &world)?
-        {
-            sandbox_controller_core::maintenance::retirement::validate_terminal_cleanup(
-                &world,
-                local.sandbox,
-            )
-            .map_err(|_| JournalError::UnresolvedAction)?;
+        if let Some(local) = inbox.sessions[s].local {
+            if !super::native_retirement::cleaned(&inbox.sessions[s], &world)? {
+                sandbox_controller_core::maintenance::retirement::validate_terminal_cleanup(
+                    &world,
+                    local.sandbox,
+                )
+                .map_err(|_| JournalError::UnresolvedAction)?;
+            }
+            super::super::branching::retire_closed_parent(&tx, local, &terminal.request)?;
         }
         let lane = inbox
             .lanes

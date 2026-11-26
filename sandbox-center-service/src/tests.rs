@@ -338,6 +338,7 @@ impl AuthorityPort for MemoryAuthority {
             None => {}
         }
         Ok(PublicSnapshot {
+            branch_routes: Vec::new(),
             state: self.snapshot()?,
             hidden_sandboxes: self.hidden_sandboxes.clone(),
             templates: self.query_templates.clone(),

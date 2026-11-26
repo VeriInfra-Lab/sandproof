@@ -10,8 +10,13 @@ use super::unload_resolution::UnloadEncoding;
 use crate::{CrashInjector, CrashPoint, InternalLocalBinding, JournalError};
 use sandbox_controller_core as core;
 use sandproof_protocol::lifecycle::{
-    AcceptedLifecycleIntent, AuthenticatedCenterContext, LifecycleOperation,
+    AcceptedLifecycleIntent, AuthenticatedCenterContext, IncarnationId, LifecycleOperation,
+    OperationBinding,
 };
+
+#[cfg(test)]
+#[path = "branching_tests.rs"]
+mod branching_tests;
 
 pub(super) enum RecordOutcome {
     Replay(LifecycleWorkState),
@@ -25,6 +30,8 @@ pub(super) trait RecordEffects: InboxLoadEffects + InboxSaveEffects {
 }
 
 pub(super) trait RecordTransaction: RecordEffects {
+    fn check_before_commit(&mut self, intent: &AcceptedLifecycleIntent)
+    -> Result<(), JournalError>;
     fn commit(self) -> Result<(), JournalError>;
 }
 
@@ -74,6 +81,7 @@ pub(super) fn record_transaction_using<
         RecordOutcome::Replay(state) => return Ok(state),
         RecordOutcome::Recorded(state) => state,
     };
+    transaction.check_before_commit(intent)?;
     crashes.hit(CrashPoint::BeforeCommit)?;
     transaction.commit()?;
     crashes.hit(CrashPoint::AfterCommit)?;
@@ -270,7 +278,32 @@ impl<D: RecordCodec> RecordEffects for StandardRecord<'_, '_, D> {
 }
 
 impl<D: RecordCodec> RecordTransaction for StandardRecord<'_, '_, D> {
+    fn check_before_commit(
+        &mut self,
+        intent: &AcceptedLifecycleIntent,
+    ) -> Result<(), JournalError> {
+        // The original write is still tentative under the same world transaction.
+        // Rejection drops the transaction before any new intent can be observed.
+        match unload_branch_scope(intent) {
+            Some((binding, source)) => {
+                super::super::branching::check_parent_unload(&self.tx, binding, source)
+            }
+            None => Ok(()),
+        }
+    }
+
     fn commit(self) -> Result<(), JournalError> {
         self.tx.commit()
+    }
+}
+
+fn unload_branch_scope(
+    intent: &AcceptedLifecycleIntent,
+) -> Option<(&OperationBinding, IncarnationId)> {
+    match intent.request.operation {
+        LifecycleOperation::Unload {
+            source_incarnation, ..
+        } => Some((&intent.request.binding, source_incarnation)),
+        _ => None,
     }
 }

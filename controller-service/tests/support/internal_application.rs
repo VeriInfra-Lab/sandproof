@@ -14,7 +14,7 @@ use sandproof_controller_service::{
     application::{
         ApplicationConfig, ApplicationError, Clock, ControllerApplication, DataRelay, HostCapacity,
         HostSlots, LaunchConfiguration, TemplateArtifacts, WorkEvidence, WorkExecution,
-        WorkRecovery,
+        WorkRecovery, branching::BranchRelayPort,
     },
     physical_storage::{PhysicalPool, PhysicalStorageProfile},
     template_registry::CandidateVerification,
@@ -60,6 +60,8 @@ pub type SourceProbe = Box<
 
 #[derive(Default)]
 pub struct State {
+    pub live_branch_relay: Option<u16>,
+    pub branch_data_secrets: BTreeMap<u16, String>,
     pub material_plan: Option<Vec<u8>>,
     pub material_observation:
         Option<sandproof_controller_service::capture::MaterialRetirementObservation>,
@@ -391,6 +393,62 @@ impl DataRelay for TestHost {
         gate.try_lock_shared().map_err(|_| ApplicationError::Busy)?;
         Ok(Some(gate))
     }
+    fn spawn_branch_data_relay(
+        &self,
+        _: core::SandboxId,
+        _: core::VmId,
+        _: core::Generation,
+        port: BranchRelayPort,
+        _: bool,
+    ) -> Result<std::process::Child, ApplicationError> {
+        use std::process::{Command, Stdio};
+
+        let token = self
+            .0
+            .lock()
+            .unwrap()
+            .branch_data_secrets
+            .get(&port.get())
+            .cloned()
+            .ok_or(ApplicationError::NotFound)?;
+        let script = r#"
+            cr=$(printf '\r')
+            ok=no
+            while IFS= read -r line; do
+                [ "$line" = "x-access-token: $2$cr" ] && ok=yes
+                [ "$line" = "$cr" ] && break
+            done
+            if [ "$ok" = yes ]; then
+                printf 'HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\n%s' "$1"
+            else
+                printf 'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'
+            fi
+        "#;
+        Command::new("/bin/sh")
+            .args([
+                "-c",
+                script,
+                "branch fixture",
+                &port.get().to_string(),
+                &token,
+            ])
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|_| ApplicationError::Busy)
+    }
+
+    fn branch_data_gate_drained(
+        &self,
+        _: core::SandboxId,
+        _: core::VmId,
+        _: core::Generation,
+        port: BranchRelayPort,
+    ) -> Result<bool, ApplicationError> {
+        Ok(self.0.lock().unwrap().live_branch_relay != Some(port.get()))
+    }
+
     fn data_gate_drained(&self, _: &HostSlotContext) -> Result<bool, ApplicationError> {
         Ok(true)
     }

@@ -7,6 +7,10 @@ from pathlib import Path
 NAMESPACE = 'SandboxModel.Stage1Protocol.ProtocolRecord.'
 PROOFS = Path('SandboxModel/Lifecycle/Protocol')
 HERE = Path('verification/experiments/stage1-protocol/protocol-record')
+GENERATED_VIEWS = {
+    'request': ('request', 'SandproofStage1Request'),
+    'primitive': ('graphic', 'SandproofStage1Graphic'),
+}
 CONTRACTS = {
     'correct': ('InboxProtocolRecord', 'full_flow_contract', ()),
     'skip-independent-context': (
@@ -85,6 +89,19 @@ def check_native_assertion(native, result, case, mutations):
     return variant, test['log_sha256']
 
 
+def check_generated_capture(label, capture, actual_files):
+    view, namespace = GENERATED_VIEWS[label]
+    generated = ('Types.lean', 'Funs.lean')
+    expected = {'translation.json', *(f'{namespace}/{name}' for name in (
+        *generated, 'TypesExternal_Template.lean', 'FunsExternal_Template.lean'))}
+    if set(capture) != expected:
+        raise ValueError('incomplete raw ProtocolRecord generated files: '+label)
+    base = f'verification/aeneas/stage1-protocol/{view}/{namespace}'
+    if any(actual_files.get(f'{base}/{name}') != capture[f'{namespace}/{name}']
+           for name in generated):
+        raise ValueError('ProtocolRecord physical generated source differs from raw capture: '+label)
+
+
 def check_physical(root, job, result, folder, evidence, shared, sealed_file):
     inventory = json.loads((root/HERE/'inventory.json').read_bytes())
     page, declaration, theorem = certificate(result, job, inventory)
@@ -119,13 +136,15 @@ def check_physical(root, job, result, folder, evidence, shared, sealed_file):
                 'primitive-charon', 'primitive-aeneas', 'primitive-admission-regressions'}
     if not required <= labels:
         raise ValueError('missing current ProtocolRecord extraction or build command')
-    if set(result['llbc']) != {'request', 'primitive'} or set(result['raw_generated']) != {'request', 'primitive'}:
+    if set(result['llbc']) != set(GENERATED_VIEWS) or set(result['raw_generated']) != set(GENERATED_VIEWS):
         raise ValueError('missing current ProtocolRecord extraction layers')
     for label, ir in result['llbc'].items():
         if ir['path'] != f'artifacts/{label}.llbc':
             raise ValueError('current ProtocolRecord extraction path differs: ' + label)
         checked(project/ir['path'], ir['sha256'])
-        for name, digest in result['raw_generated'][label].items():
+        captured = result['raw_generated'][label]
+        check_generated_capture(label, captured, actual['files'])
+        for name, digest in captured.items():
             checked(folder/('generated-'+label)/name, digest)
 
     args = job['args']

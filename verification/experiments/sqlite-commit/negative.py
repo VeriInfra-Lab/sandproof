@@ -58,9 +58,36 @@ def consume_current_replay(root, replay, readback):
     return baseline
 
 
+def native_runtime_matches(runtime, *, current):
+    """Use the original UID for the archive and the parent runtime for a fresh run."""
+    uid = runtime.get("uid")
+    if runtime.get("platform") != "linux" or type(uid) is not int:
+        return False
+    if not current:
+        return uid == 1000
+    cache_name = os.environ.get("SANDPROOF_NATIVE_EVIDENCE")
+    if uid <= 0 or not cache_name:
+        return False
+    cache = Path(cache_name)
+    path = cache / "runtime.json"
+    if path.is_symlink() or not path.is_file():
+        return False
+    expected = json.loads(path.read_bytes())
+    role = os.environ.get("SANDPROOF_ACCEPTANCE_ROLE")
+    if role == "native":
+        return runtime == expected and uid == os.getuid() and runtime.get("gid") == os.getgid()
+    if role == "formal":
+        from tools.acceptance_receipts import validate_native
+        scope = json.loads((cache / "complete.json").read_bytes()).get("scope")
+        if scope not in ("all", "stage1-protocol", "stage1-protocol-convergence"):
+            return False
+        return runtime == expected == validate_native(cache, scope=scope)["runtime"]
+    return False
+
+
 def consume_native_fault(root, source, directory, output, profile, command):
-    """Read one exact Ning component receipt; this never runs ordinary tests."""
-    from tools.acceptance_receipts import load_success, rust_inputs, digest
+    """Read one exact original or current native fault receipt."""
+    from tools.acceptance_receipts import load_success, native_case, rust_inputs, digest
     from tools.check_sqlite_extraction import read_json
     directory = directory.resolve(strict=True)
     for name in ("summary.json", "receipt.json", "command.log"):
@@ -75,7 +102,10 @@ def consume_native_fault(root, source, directory, output, profile, command):
     production_commit = profile["current_capture_source_commit"]
     driver_commit = profile["native_reference_driver_commit"]
     driver_sha = profile["native_reference_driver_sha256"]
-    if "historical_capture_source_commit" in profile:
+    current = "historical_capture_source_commit" in profile
+    if current:
+        if os.environ.get("SANDPROOF_ACCEPTANCE_ROLE") != "formal":
+            raise ValueError("current native fault evidence requires the formal reader")
         production_commit = subprocess.check_output(
             ["git", "rev-parse", "HEAD"], cwd=source, text=True).strip()
         driver_commit = production_commit
@@ -94,12 +124,19 @@ def consume_native_fault(root, source, directory, output, profile, command):
             or key.get("command") != command or key.get("options") != {}
             or key.get("rust") != rust_inputs(source)
             or key.get("rules", {}).get("verification/experiments/sqlite-commit/negative.py") != driver_sha
-            or runtime.get("platform") != "linux" or runtime.get("uid") != 1000
+            or not native_runtime_matches(runtime, current=current)
             or runtime.get("rustc", {}).get("version", "").splitlines()[:1] != [compiler]
             or load_success(directory, key) != receipt
             or receipt.get("expected") != 101 or receipt.get("actual_exit") != 101
             or summary.get("log_sha256") != sha(directory/"command.log")):
         raise ValueError("missing or different exact-source native fault evidence")
+    if current:
+        cache = Path(os.environ["SANDPROOF_NATIVE_EVIDENCE"]).resolve()
+        scope = read_json(cache/"complete.json")["scope"]
+        component = native_case("stage1-sqlite-commit", root, None, scope=scope)
+        admitted = cache/"commands"/digest(component["key"])/"evidence/native-packet/fault"
+        if directory != admitted.resolve(strict=True):
+            raise ValueError("current native fault is outside the admitted SQLite component")
     output.write_bytes((directory/"command.log").read_bytes())
     return dict(native_executed_here=False, original_production_commit=summary["production_commit"],
         native_driver_commit=summary["driver_commit"], receipt_sha256=sha(directory/"receipt.json"),
@@ -116,7 +153,7 @@ def main():
     parser.add_argument("--charon-target", type=Path)
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--native-only", action="store_true")
-    modes.add_argument("--formal-only", action="store_true", help="consume exact Ning fault evidence; never run cargo tests")
+    modes.add_argument("--formal-only", action="store_true", help="consume exact native fault evidence; never run cargo tests")
     parser.add_argument("--native-evidence", type=Path)
     parser.add_argument("--current-registry-readback", type=Path)
     args = parser.parse_args()

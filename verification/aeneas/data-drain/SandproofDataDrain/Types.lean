@@ -31,10 +31,12 @@ inductive core.sync.atomic.Ordering where
 | SeqCst : core.sync.atomic.Ordering
 
 /-- [sandproof_data_drain_extract::data_drain::DataLease]
-    Source: 'verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs', lines 8:0-10:1
+    Source: 'verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs', lines 8:0-11:1
     Visibility: public -/
 structure data_drain.DataLease where
   unknown : alloc.sync.Arc (core.sync.atomic.Atomic Bool
     (core.sync.atomic.private.Align1 Std.U8))
+  parent : Option (alloc.sync.Arc (core.sync.atomic.Atomic Bool
+    (core.sync.atomic.private.Align1 Std.U8)))
 
 end SandproofDataDrainRust

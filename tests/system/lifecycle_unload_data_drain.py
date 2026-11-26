@@ -94,7 +94,7 @@ def _route_key(source):
     return source['pid'], source['start_time_ticks'], source['boot_id']
 
 
-def _live_routes(native, running):
+def _live_routes(native, running, *, branch_port=None):
     from lifecycle_unload_runtime import original_json
     from tools.template_build_config import bounded_data_route_limits
     position = running['context']['position']
@@ -108,8 +108,12 @@ def _live_routes(native, running):
             record = original_json(marker, 16384)
         except FileNotFoundError:
             continue
-        if (set(record) != {'version', 'context', 'process', 'command_digest',
-                            'route_index', 'control'} or record['version'] != 1
+        port = record.get('branch_port')
+        fields = {'version', 'context', 'process', 'command_digest', 'route_index', 'control'}
+        if port is not None:
+            fields.add('branch_port')
+        if (set(record) != fields or record['version'] != 1
+                or (port is not None and (type(port) is not int or not 31000 <= port <= 31099))
                 or record['route_index'] != index
                 or record['context']['position'] != position
                 or record['context']['vm'] != binding['vm']
@@ -124,7 +128,7 @@ def _live_routes(native, running):
                 or not stat.S_ISREG(meta.st_mode) or meta.st_uid != 0 or meta.st_nlink != 1
                 or meta.st_mode & 0o077):
             raise ValueError('original route helper gate/physical position differs')
-        if record['control'] is False and _alive(record['process']):
+        if port == branch_port and record['control'] is False and _alive(record['process']):
             result[_route_key(record['process'])] = (marker, record)
     return result
 

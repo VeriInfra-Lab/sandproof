@@ -23,6 +23,16 @@ fn helper(name: &str, root: &Path) -> Command {
 fn root() -> PathBuf {
     PathBuf::from(std::env::var_os(ROOT).expect("isolated subprocess fixture only"))
 }
+
+fn restart_tempdir(parent: &Path) -> tempfile::TempDir {
+    // The nested worker gate uses a Unix pathname socket. Keep fixture names
+    // short while retaining the selected filesystem and normal random suffix.
+    tempfile::Builder::new()
+        .prefix("r")
+        .tempdir_in(parent)
+        .unwrap()
+}
+
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -167,7 +177,7 @@ async fn expire_new_command(fixture: &Fixture, registry: &PidRegistry, command: 
 
 #[test]
 fn process_death_keeps_command_alive_and_restart_refuses_old_public_pid() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = restart_tempdir(&std::env::temp_dir());
     std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let result = helper("supervisor_process", directory.path())
         .output()
@@ -259,7 +269,7 @@ fn supervisor_process() {
             ));
             // The empty registry is not evidence that the original process exited.
             assert_original_alive(&original);
-            let fixture = Fixture::in_directory(tempfile::tempdir_in(&root).unwrap()).await;
+            let fixture = Fixture::in_directory(restart_tempdir(&root)).await;
             let registrar = PidRegistrar::new(reopened);
             let (new, mut output) = publish(
                 &fixture,
@@ -308,7 +318,7 @@ fn owner_process() {
     runtime().block_on(async {
         let root = root();
         let mut channel = UnixStream::connect(root.join("owner.sock")).await.unwrap();
-        let fixture = Fixture::in_directory(tempfile::tempdir_in(&root).unwrap()).await;
+        let fixture = Fixture::in_directory(restart_tempdir(&root)).await;
         let registrar = PidRegistrar::new(claims(&root, false));
         let registry = registry(1);
         let (command, mut output) = publish(

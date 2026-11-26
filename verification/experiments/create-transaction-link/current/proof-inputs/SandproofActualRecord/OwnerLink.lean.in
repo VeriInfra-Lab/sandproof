@@ -1,7 +1,7 @@
 import SandproofActualRecord.ScopeTransport
 import SandproofParentCommit.Funs
 
-open Aeneas Aeneas.Std
+open Aeneas Aeneas.Std Result
 set_option autoImplicit false
 
 namespace SandproofActualRecordRust
@@ -23,6 +23,33 @@ def controller.transaction.WorldTransaction.commit
     (view : controller.transaction.WorldTransaction) :
     Result (core.result.Result Unit JournalError) :=
   SandproofParentCommitRust.controller.transaction.WorldTransaction.commit view.parent
+
+-- The scan result is supplied on the original transaction owner and exact
+-- binding. SQLite row and physical resource contents are separate providers.
+def controller.branching.check_parent_unload
+    (view : controller.transaction.WorldTransaction)
+    (binding : sandproof_protocol.lifecycle.identity.OperationBinding)
+    (source : sandproof_protocol.lifecycle.identity.IncarnationId) :
+    Result (core.result.Result Unit JournalError) :=
+  view.checkParentUnload view.parent binding source
+
+-- This definition is compared to the independently extracted classifier.
+def controller.lifecycle_inbox.recording.unload_branch_scope
+  (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent) :
+  Result (Option (sandproof_protocol.lifecycle.identity.OperationBinding ×
+    sandproof_protocol.lifecycle.identity.IncarnationId))
+  := do
+  match intent.request.operation with
+  | sandproof_protocol.lifecycle.request.LifecycleOperation.Create _ _ =>
+    ok none
+  | sandproof_protocol.lifecycle.request.LifecycleOperation.Unload
+    source_incarnation _ =>
+    ok (some (intent.request.binding, source_incarnation))
+  | sandproof_protocol.lifecycle.request.LifecycleOperation.Resume _ _ _ _ =>
+    ok none
+  | sandproof_protocol.lifecycle.request.LifecycleOperation.Renew _ _ _ =>
+    ok none
+  | sandproof_protocol.lifecycle.request.LifecycleOperation.Destroy => ok none
 
 end
 

@@ -62,8 +62,8 @@
       "is_local": true,
       "source": {
         "file": "verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs",
-        "begin_line": 23,
-        "end_line": 25
+        "begin_line": 31,
+        "end_line": 33
       },
       "is_opaque": false,
       "can_fail": true,
@@ -79,8 +79,8 @@
       "is_local": true,
       "source": {
         "file": "verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs",
-        "begin_line": 16,
-        "end_line": 18
+        "begin_line": 24,
+        "end_line": 26
       },
       "is_opaque": false,
       "can_fail": true,
@@ -181,7 +181,7 @@
       "source": {
         "file": "verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs",
         "begin_line": 8,
-        "end_line": 10
+        "end_line": 11
       }
     }
   ],

@@ -62,7 +62,12 @@
     "sandbox-protocol/src/lifecycle/terminal.rs": "5daf92c2ea486d187b91f8c2e38e863353ff55bc373b819a3ede9af3792f7396"
   },
   "current_file_overrides": {
+    "controller-service/src/application/coordinator/lifecycle_intent.rs": "1d4ed5f12d462cc493a2c09dea8790010782cec5607c9ac42144bd3cc9eb1404",
+    "controller-service/src/controller/lifecycle_inbox/recording.rs": "dc28175e1f72b6d482b75452d2903b949f3d97dfc0546f77ecc414dd273cedfa",
     "controller-service/src/host_contract.rs": "5b94f7e4b3e7e3bf140462e7f43462af7aec698e524a3c9e58eff13001bb2d5d"
+  },
+  "additional_current_files": {
+    "controller-service/src/controller/branching.rs": "74df2ce73bc26fe6484788fecc3b309d69e45df64d550a56ca2b40cf8a681ac3"
   },
   "entry": "ControllerJournal::record_lifecycle_intent",
   "after_begin": "same WorldTransaction, original namespace, unit StandardRecordCodec",

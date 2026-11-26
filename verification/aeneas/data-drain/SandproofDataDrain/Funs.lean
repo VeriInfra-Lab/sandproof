@@ -23,7 +23,7 @@ noncomputable section
 namespace SandproofDataDrainRust
 
 /-- [sandproof_data_drain_extract::data_drain::{sandproof_data_drain_extract::data_drain::DataLease}::routes_dropped]:
-    Source: 'verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs', lines 23:4-25:5
+    Source: 'verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs', lines 31:4-33:5
     Visibility: public -/
 def data_drain.DataLease.routes_dropped
   (self : data_drain.DataLease) : Result Bool := do
@@ -31,7 +31,7 @@ def data_drain.DataLease.routes_dropped
   ok (i = 1#usize)
 
 /-- [sandproof_data_drain_extract::data_drain::{sandproof_data_drain_extract::data_drain::DataLease}::drained]:
-    Source: 'verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs', lines 16:4-18:5
+    Source: 'verification/extract-data-drain/src/../../../controller-service/src/application/data_drain.rs', lines 24:4-26:5
     Visibility: public -/
 def data_drain.DataLease.drained
   (self : data_drain.DataLease) : Result Bool := do

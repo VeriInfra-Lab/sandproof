@@ -113,7 +113,7 @@ import SandproofDataDrain.Funs
 import SandboxModel.ProofAuditCommand
 namespace DataDrainNegative
 open Aeneas Aeneas.Std SandboxModel.Boundaries.DataDrain
-def witness : SandproofDataDrainRust.data_drain.DataLease := ⟨⟨0, 1#usize, true⟩⟩
+def witness : SandproofDataDrainRust.data_drain.DataLease := ⟨⟨0, 1#usize, true⟩, none⟩
 theorem mutant_returns_true : SandproofDataDrainRust.read_drained witness = .ok true := by
   simp [SandproofDataDrainRust.read_drained, SandproofDataDrainRust.data_drain.DataLease.drained,
     SandproofDataDrainRust.data_drain.DataLease.routes_dropped, alloc.sync.Arc.strong_count, witness]

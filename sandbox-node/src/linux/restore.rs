@@ -375,8 +375,11 @@ impl LinuxWorker {
                 || context.observe(),
             )?
         } else {
-            let template = self
-                .secret(context.sandbox, context.generation)?
+            let launch = self.secret(context.sandbox, context.generation)?;
+            if launch.hot_fanout.is_some() {
+                return Err("whole-VM restore is not enabled for hot fan-out parents".into());
+            }
+            let template = launch
                 .template
                 .ok_or("restore lacks original sealed template")?;
             self.validate_template(&template)?;

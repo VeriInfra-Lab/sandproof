@@ -274,7 +274,7 @@ impl<H: HostPort, T: TemplateProvider> CenterApplication<SharedBusinessAuthority
                 continue;
             }
             let record = anchored(&state, anchor)?;
-            let route = match Self::route_for_record(&state.center, record, now) {
+            let route = match crate::projection::route_for_record(&state.center, record, now) {
                 Ok(route) => route,
                 Err(PortError::NotFound) => continue,
                 Err(error) => return Err(error),

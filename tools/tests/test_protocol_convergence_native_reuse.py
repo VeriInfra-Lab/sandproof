@@ -187,3 +187,29 @@ class OriginalReplayDiagnosticTests(unittest.TestCase):
                                              dict(native_replay_lint=expected))
             with self.assertRaisesRegex(ValueError, 'clippy failed'):
                 self.reader.check_clippy(dict(exit_code=101),text,source,'original',{})
+
+    def test_moved_replay_site_requires_the_exact_current_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            variant = 'replay-falls-through'
+            plan = self.reader.preparation.MUTATIONS[variant]
+            source = root/plan['path']
+            source.parent.mkdir(parents=True)
+            source.write_text('// unrelated source lines\n\n'
+                              'pub(super) enum RecordOutcome {\n'
+                              '    Replay(LifecycleWorkState),\n}\n'+plan['old']+'\n')
+            expected = dict(code='dead_code', message='variant `Replay` is never constructed',
+                            source=plan['path'], line=17, column=5, source_sha256='0'*64,
+                            primary_count=1, cargo_errors=[])
+            mutation = self.reader.preparation.views.edit(root, plan['path'], [(plan['old'], plan['new'])])
+            text = ('error: '+expected['message']+'\n  --> '+expected['source']+':4:5\n'
+                    '= note: `-D dead-code` implied by `-D warnings`\n')
+            inventory = dict(native_replay_lint=expected)
+            row = dict(exit_code=101)
+            self.reader.check_clippy(row,text,source,variant,inventory,mutation=mutation)
+            self.assertTrue(row['expected_mutant_lint_rejection'])
+            self.assertNotIn('property_rejected', row)
+            for observed, edits in ((text.replace(':4:5', ':17:5'), mutation),
+                                    (text, dict(mutation, before='1'*64)), (text, None)):
+                with self.assertRaisesRegex(ValueError, 'unregistered'):
+                    self.reader.check_clippy(dict(exit_code=101),observed,source,variant,inventory,mutation=edits)

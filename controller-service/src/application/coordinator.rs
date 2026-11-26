@@ -46,6 +46,8 @@ use super::models::{
 use super::{ApplicationError, Clock, SystemClock};
 use recovery::{recover_locked, release_reclaimed_slots};
 
+mod branching;
+pub use branching::{HostBranchControl, HostBranchPermit};
 mod data_access;
 mod data_credentials;
 mod execution;
@@ -131,10 +133,33 @@ struct Inner<H: ControllerHost> {
     active_sessions: BTreeSet<String>,
     data_revocations: BTreeMap<u64, Vec<watch::Sender<bool>>>,
     data_drains: BTreeMap<u64, DataLease>,
+    branch_data_pins: BTreeMap<u64, BTreeMap<String, branching::BranchPins>>,
 }
 
 impl<H: ControllerHost> Inner<H> {
+    fn revoke_branch_data(&self, sandbox: core::SandboxId) {
+        if let Some(handles) = self.branch_data_pins.get(&sandbox.0) {
+            for branch in handles.values() {
+                branch.revoke();
+            }
+        }
+    }
+
+    fn revoke_all_data(&self) {
+        for signals in self.data_revocations.values() {
+            for signal in signals {
+                signal.send_replace(true);
+            }
+        }
+        for handles in self.branch_data_pins.values() {
+            for branch in handles.values() {
+                branch.revoke();
+            }
+        }
+    }
+
     fn revoke_data(&mut self, sandbox: core::SandboxId) {
+        self.revoke_branch_data(sandbox);
         if let Some(signals) = self.data_revocations.get(&sandbox.0) {
             for signal in signals {
                 signal.send_replace(true);
@@ -308,6 +333,7 @@ impl<H: ControllerHost> ControllerApplication<H> {
                 active_sessions: BTreeSet::new(),
                 data_revocations: BTreeMap::new(),
                 data_drains: BTreeMap::new(),
+                branch_data_pins: BTreeMap::new(),
             }),
             config,
             templates: None,

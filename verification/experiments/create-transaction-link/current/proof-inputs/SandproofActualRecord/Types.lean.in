@@ -154,7 +154,7 @@ structure controller.lifecycle_inbox.native_retirement.RetirementEncoding (Self
     Result (core.result.Result (alloc.vec.Vec Std.U8) serde_json.error.Error)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::RecordOutcome]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 16:0-19:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 21:0-24:1 -/
 @[discriminant isize]
 inductive controller.lifecycle_inbox.recording.RecordOutcome where
 | Replay :
@@ -165,7 +165,7 @@ inductive controller.lifecycle_inbox.recording.RecordOutcome where
   controller.lifecycle_inbox.recording.RecordOutcome
 
 /-- Trait declaration: [sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 21:0-25:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 26:0-30:1 -/
 structure controller.lifecycle_inbox.recording.RecordEffects (Self : Type)
   where
   codecInboxLoadEffectsInst : controller.lifecycle_inbox.codec.InboxLoadEffects
@@ -181,10 +181,13 @@ structure controller.lifecycle_inbox.recording.RecordEffects (Self : Type)
     ((Option sandbox_controller_core.ids.OperationId) × Self)
 
 /-- Trait declaration: [sandproof_controller_service::controller::lifecycle_inbox::recording::RecordTransaction]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 27:0-29:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 32:0-36:1 -/
 structure controller.lifecycle_inbox.recording.RecordTransaction (Self : Type)
   where
   RecordEffectsInst : controller.lifecycle_inbox.recording.RecordEffects Self
+  check_before_commit : Self →
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent → Result
+    ((core.result.Result Unit JournalError) × Self)
   commit : Self → Result (core.result.Result Unit JournalError)
 
 /-- Trait declaration: [sandproof_controller_service::controller::lifecycle_inbox::unload_resolution::UnloadEncoding]
@@ -221,7 +224,7 @@ structure CrashInjector (Self : Type) where
     × Self)
 
 /-- Trait declaration: [sandproof_controller_service::controller::lifecycle_inbox::recording::RecordCodec]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 120:0-136:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 128:0-144:1 -/
 structure controller.lifecycle_inbox.recording.RecordCodec (Self : Type) where
   decode_maintenance : Self → rusqlite.Connection → Slice Std.U8 → Result
     ((core.result.Result controller.checkpoint.config.MaintenanceConfig
@@ -234,35 +237,35 @@ structure controller.lifecycle_inbox.recording.RecordCodec (Self : Type) where
     (alloc.vec.Vec Std.U8) serde_json.error.Error) × Self)
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 166:0-170:1 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 174:0-178:1 -/
 structure controller.lifecycle_inbox.recording.StandardRecord (D : Type) where
   tx : controller.transaction.WorldTransaction
   «namespace» : Str
   codec : D
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::current_operation::{closure#1}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 268:17-268:41 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 276:17-276:41 -/
 @[reducible]
 def controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.current_operation.closure_1
   (D : Type) :=
 Unit
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::current_operation::{closure}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 267:22-267:55 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 275:22-275:55 -/
 @[reducible]
 def controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.current_operation.closure
   (D : Type) :=
 Unit
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 253:56-258:9 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 261:56-266:9 -/
 @[reducible]
 def controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure
   (D : Type) :=
   sandbox_controller_core.ids.SandboxId
 
 /-- [sandproof_controller_service::controller::lifecycle_inbox::recording::{impl sandproof_controller_service::controller::lifecycle_inbox::recording::RecordEffects for sandproof_controller_service::controller::lifecycle_inbox::recording::StandardRecord<'_0, '_1, D>}::releasing::{closure}::{closure}]
-    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 254:42-257:13 -/
+    Source: 'controller-service/src/controller/lifecycle_inbox/recording.rs', lines 262:42-265:13 -/
 @[reducible]
 def controller.lifecycle_inbox.recording.RecordEffectsStandardRecord.releasing.closure.closure
   (D : Type) :=

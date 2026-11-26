@@ -238,6 +238,14 @@ fn assemble(path: &Path) -> Result<ActivatedHost, Box<dyn Error>> {
     if journal.build_retry_config()?.is_some() || journal.has_template_registry()? {
         return Err("host cannot adopt a removed local build or publication authority".into());
     }
+    if journal
+        .registered_host_branching()?
+        .is_some_and(|original| Some(original) != contract.hot_branch_limits)
+    {
+        return Err(
+            "original host branching budget differs from protected startup configuration".into(),
+        );
+    }
     audit_host_inventory(&node, &journal)?;
     let application = application(&config, journal, node, physical, disk_bytes)?;
     // Re-establish against the registration already stored by initialize.
@@ -245,6 +253,11 @@ fn assemble(path: &Path) -> Result<ActivatedHost, Box<dyn Error>> {
     application.check_lifecycle_authority(&config.inbox)?;
     application.check_lifecycle_source_observations(&config.source_observation)?;
     application.establish_lifecycle_host_epoch()?;
+    if let Some(limits) = contract.hot_branch_limits {
+        application
+            .configure_host_branching(limits)
+            .map_err(|_| "failed to establish original host branching budget")?;
+    }
     // Register due termination/revocation in short transactions only. Slow
     // recovery belongs to the bounded per-session driver after assembly; one
     // unknown or large VM must not delay every other session's control path.

@@ -34,7 +34,7 @@
     "controller-service/src/controller/lifecycle_inbox/source_work/retirement.rs": "adae46047f72df39496e9d8e1f32619c7b74a85ae2b9a8a48a8407021457a3c3",
     "controller-service/src/controller/lifecycle_inbox/source_work/tests.rs": "77c06c23da0d136e07be206ea2df71a2182697490805a2b2b19cbef6cc28d0bb",
     "controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement.rs": "477516343515960273e5c6e56522a0231c5f0fb1bbaac13802c95ff5cb57bf5d",
-    "controller-service/src/controller/mod.rs": "3108ade2ef3bc126f469094170db9d058f6a729fe4923c38cc7f414fa1f507ca",
+    "controller-service/src/controller/mod.rs": "f0e58e1d27e1fe2513c2a1bc1d6618817fafea52f2960a97de63909d47f939ca",
     "controller-service/src/host_contract.rs": "5b94f7e4b3e7e3bf140462e7f43462af7aec698e524a3c9e58eff13001bb2d5d",
     "controller-service/src/lib.rs": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73",
     "sandbox-protocol/Cargo.toml": "665794eca333c7bb4f5a04bb17858b0e76f32014c0f7e7c6a072d8c0dd84b7b7",

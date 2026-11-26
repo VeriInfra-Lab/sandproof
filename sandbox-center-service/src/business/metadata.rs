@@ -1,7 +1,7 @@
 //! Pure bounded template metadata and lifecycle cross-reference checks.
 use super::private_builds::{PrivateBuildConfig, PrivateBuilds};
 use super::publication::GlobalPublication;
-use crate::PublicTemplate;
+use crate::{BranchBatchLimits, PublicTemplate, branch_batch::BranchBatchLedger};
 use sandproof_api::PortError;
 use sandproof_center_core::{CenterState, LanePhase};
 use sandproof_center_store::business::BusinessMetadata;
@@ -61,6 +61,8 @@ pub struct RegistryMetadata {
     pub(super) registry: RegistryState<GlobalPublication>,
     budget: MetadataBudget,
     pub(super) private_builds: Option<PrivateBuilds>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) branch_batches: Option<BranchBatchLedger>,
 }
 impl RegistryMetadata {
     /// Attaching a deployment preserves dynamic records, windows and cache
@@ -82,6 +84,9 @@ impl RegistryMetadata {
             self.registry.config(),
             &self.budget,
             self.private_build_config(),
+            self.branch_batches
+                .as_ref()
+                .map(|ledger| (ledger.limits(), ledger.templates())),
         ))
     }
     /// Internal validation remains hidden even after its active pin settles.
@@ -125,11 +130,34 @@ impl RegistryMetadata {
             registry: RegistryState::new(config).map_err(|_| PortError::Invalid)?,
             budget,
             private_builds: private_builds.map(PrivateBuilds::new).transpose()?,
+            branch_batches: None,
         };
         if !value.structurally_valid() {
             return Err(PortError::Invalid);
         }
         Ok(value)
+    }
+    pub(super) fn has_branch_key(&self, key: &sandproof_protocol::lifecycle::OperationKey) -> bool {
+        self.branch_batches
+            .as_ref()
+            .and_then(|ledger| ledger.find(key))
+            .is_some()
+    }
+
+    /// Explicitly provision bounded training metadata with the original center state.
+    /// # Errors
+    /// Rejects impossible capacity or port ranges.
+    pub fn with_branch_batches(
+        mut self,
+        limits: BranchBatchLimits,
+        templates: Vec<ResourceId>,
+    ) -> Result<Self, PortError> {
+        if self.branch_batches.is_some() {
+            return Err(PortError::Conflict);
+        }
+        self.branch_batches =
+            Some(BranchBatchLedger::new(limits, templates).map_err(|_| PortError::Invalid)?);
+        Ok(self)
     }
     #[must_use]
     pub fn registry(&self) -> &RegistryState<GlobalPublication> {
@@ -259,6 +287,10 @@ impl RegistryMetadata {
             || !self.registry.is_valid()
             || self.registrations.len() != self.catalog.templates.len()
             || self
+                .branch_batches
+                .as_ref()
+                .is_some_and(|batches| !batches.is_valid())
+            || self
                 .private_builds
                 .as_ref()
                 .is_some_and(|builds| !builds.config.valid())
@@ -342,6 +374,9 @@ impl RegistryMetadata {
 impl BusinessMetadata for RegistryMetadata {
     fn with_center(&self, center: &CenterState) -> Self {
         let mut next = self.clone();
+        if let Some(batches) = &mut next.branch_batches {
+            batches.retire_cleaned_parents(center);
+        }
         next.private_builds = self
             .private_builds
             .as_ref()
@@ -402,6 +437,11 @@ impl BusinessMetadata for RegistryMetadata {
                 self.private_builds
                     .as_ref()
                     .map_or(0, PrivateBuilds::required_bytes),
+            )
+            .saturating_add(
+                self.branch_batches
+                    .as_ref()
+                    .map_or(0, BranchBatchLedger::required_bytes),
             )
             .saturating_add(8192)
             .saturating_add(
