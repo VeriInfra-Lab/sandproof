@@ -185,7 +185,7 @@
     "sandbox-internal/src/lib.rs": "5f7892147b835443ab166b6ab782de3e70ab9c3d271b588ed2fe72775bd5f8f1",
     "sandbox-internal/src/lifecycle.rs": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7",
     "sandbox-internal/src/lifecycle/peer.rs": "7f130f3e951511576ebd0064df379310b4cd791a52323555f9e0c955fe552cc9",
-    "sandbox-internal/src/protected_files.rs": "7c3db03d1d04b89d641208776bf12e890f43299e8325cb15aa87e031a926b801",
+    "sandbox-internal/src/protected_files.rs": "1088c10770a006059713d08ab52542703eb61e0d3546d7d8a3791346605d5f19",
     "sandbox-internal/src/protected_server.rs": "385cd30615731a7c452d26c999fb72c4caad5275f09696d4fe3f3f9d584e8225",
     "sandbox-internal/src/server.rs": "8e46a23776716d7b42e8107d29d454626230e540881ba1a11c59ed275b4dd620",
     "sandbox-internal/src/server/lifecycle.rs": "6fc17f26567697c601f3430891ed61436f64b426790977222e0212a33811c669",
