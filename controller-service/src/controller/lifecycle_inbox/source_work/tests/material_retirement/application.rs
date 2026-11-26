@@ -16,9 +16,10 @@ fn historical_unload_keeps_resumed_route_current_unload_revokes_it() {
         epoch: TestEpoch::Matching,
         ..State::default()
     };
+    let options = journal.create_options(sandbox).unwrap();
     state
         .configurations
-        .insert((sandbox.0, 2), (token, journal.create_options(sandbox).unwrap()));
+        .insert((sandbox.0, 2), (token, options));
     drop(journal);
 
     let app = v3::application(&path, Arc::new(Mutex::new(state)), false);
