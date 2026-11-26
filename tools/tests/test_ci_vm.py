@@ -62,6 +62,11 @@ class CowScratchTests(unittest.TestCase):
                 config = ci_vm.cloud_config(role, jit)
                 files = {item['path']: item for item in config['write_files']}
                 shell = config['runcmd'][-1][-1]
+                cargo_jobs = 4 if role == 'sdk' else 2
+                self.assertIn(f'CARGO_BUILD_JOBS={cargo_jobs}\nRUST_TEST_THREADS=2\n',
+                              files['/etc/sandproof-ci.env']['content'])
+                if role == 'sdk':
+                    self.assertEqual(ci_vm.ROLES[role], (6144, 8, 32))
                 if role in {'rust', 'sdk'}:
                     self.assertIn('TMPDIR=/var/lib/sandproof-ci-cow/mount/tmp\n',
                                   files['/etc/sandproof-ci.env']['content'])
@@ -306,7 +311,9 @@ class CiVmTests(unittest.TestCase):
 
     def test_roles_fit_current_host_with_reserve(self):
         self.assertEqual(len(ci_vm.ROLES) - len(ci_vm.PREPARATION_ROLES), 5)
-        self.assertLess(sum(v[0] for k, v in ci_vm.ROLES.items() if k not in ci_vm.PREPARATION_ROLES), 12 * 1024)
+        first_slots_mib = sum(ci_vm.ROLES[role][0] for role in ci_vm.RUNNER_JOBS)
+        self.assertEqual(first_slots_mib, 13824)
+        self.assertLess(first_slots_mib + 5 * 256 + 2048, 31 * 1024)
 
     def test_restricted_network_and_no_host_sharing(self):
         args = ci_vm.qemu_command(Path('/var/lib/sandproof-ci/runs/owned'), 'rust')

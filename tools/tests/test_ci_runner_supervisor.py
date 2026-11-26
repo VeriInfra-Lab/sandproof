@@ -111,6 +111,18 @@ class SupervisorTests(unittest.TestCase):
 
     def test_pending_workflow_admits_only_four_qualified_queued_pr_jobs(self):
         self.api.run_statuses = ('pending',)
+        request = self.api.request
+
+        def with_pull_source(method, path, body=None):
+            result = request(method, path, body)
+            if 'workflow_runs' in result:
+                for run in result['workflow_runs']:
+                    run.update(head_sha='a' * 40, pull_requests=[{
+                        'number': 1043, 'head': {'sha': 'a' * 40}, 'base': {'sha': 'b' * 40},
+                    }])
+            return result
+
+        self.api.request = with_pull_source
         self.api.jobs = [job for job in self.api.jobs if job['name'] != 'rust']
         self.api.jobs += [
             dict(self.api.jobs[0], id=10, status='in_progress'),
@@ -122,6 +134,9 @@ class SupervisorTests(unittest.TestCase):
         self.service.tick()
         self.service.tick()
         self.assertEqual(set(self.state.leases), roles)
+        self.assertEqual(set(list(self.state.leases)[:2]), {'title', 'policy'})
+        for lease in self.state.leases.values():
+            self.assertEqual(lease['source_request'], {'number': 1043, 'head': 'a' * 40, 'base': 'b' * 40})
         self.assertEqual(len(self.api.posts), 4)
         self.assertEqual(len(self.runtime.starts), 4)
 
@@ -180,7 +195,7 @@ class SupervisorTests(unittest.TestCase):
         self.assertEqual(len(self.api.posts), 10)
         self.assertEqual(len(set(self.runtime.starts)), 10)
         self.assertEqual([lease['role'] for lease in self.state.leases.values()],
-                         list(ci.JOBS.values()) * 2)
+                         ['title', 'policy', 'rust', 'sdk', 'harbor'] * 2)
         self.assertEqual(ci.State(self.root).leases, self.state.leases)
         # A restart observes all ten existing units, not just the legacy five.
         ci.Supervisor(self.api, ci.State(self.root), self.runtime, 20).tick()
@@ -220,7 +235,7 @@ class SupervisorTests(unittest.TestCase):
         self.service.tick()
         self.service.tick()
         self.assertEqual(len(self.api.posts), 6)
-        self.assertEqual(list(self.state.leases)[-1], 'rust-2')
+        self.assertEqual(list(self.state.leases)[-1], 'title-2')
 
     def test_legacy_state_without_slot_survives_upgrade(self):
         self.service.tick()
@@ -268,7 +283,7 @@ class SupervisorTests(unittest.TestCase):
         with self.assertRaises(auth.APIError):
             self.service.tick()
         self.assertEqual(len(self.api.runners), 1)
-        self.assertEqual(self.state.leases['rust']['phase'], 'registering')
+        self.assertEqual(self.state.leases['title']['phase'], 'registering')
         self.api.jobs = []
         self.service.tick()
         self.assertFalse(self.state.leases)
