@@ -207,7 +207,7 @@
     "controller-service/src/controller/lifecycle_inbox/source_work/full/drain/question.rs": "4d4571ea6fe75f0c26499f4e3e40a8b9e2123d10acc7bed08f702fde3715e41b",
     "controller-service/src/controller/lifecycle_inbox/source_work/full/continuation/publish.rs": "8124c4ae293557f6175dccd11b5b489a4efd9f4e192c4869ad8ea4595ad54518",
     "controller-service/src/controller/lifecycle_inbox/source_work/full/end/prepare.rs": "5dc14f928c9bdc80bb63789a50ad82a17f52a2a49dbfe18ca1de2ccdf17d9c9e",
-    "controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement/application.rs": "585045e95be5a2ae42f316e392d02d0b737ddef9c99d930deac5e2c9c7154772",
+    "controller-service/src/controller/lifecycle_inbox/source_work/tests/material_retirement/application.rs": "44c24ffe73199e627290c59224376279deed1bb8f80935fd3c9c61a7d98294f9",
     "controller-service/tests/support/complete_fixture.rs": "8c28a7e061e05c5c4862fe9ccb00bfbb1a74a7056a47a879d2bedc8697762ff8",
     "controller-service/tests/support/mod.rs": "a74139f0628cd43e6d8ae2c0bfc526a6cff04700f77fc562f9c2049a8b582578",
     "controller-service/tests/support/lifecycle_application.rs": "949368eb65330a874ddc52837c8b71625084a4ac6e8a60e1012e7f1a4555b54d",
