@@ -16,6 +16,10 @@ from tools import proof_batch
 from tools import proof_native_suite
 
 
+def fixture_runtime():
+    return dict(unit_test_fixture=True, test_configuration=receipts.native_test_configuration(os.environ))
+
+
 class ReceiptTests(unittest.TestCase):
     def setUp(self):
         temp=tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
@@ -26,11 +30,12 @@ class ReceiptTests(unittest.TestCase):
         subprocess.run(['git','init','--quiet',str(self.source)],check=True)
         subprocess.run(['git','add','.'],cwd=self.source,check=True)
         self.cache=self.base/'evidence';self.cache.mkdir()
-        receipts.write_json(self.cache/'runtime.json',{'unit_test_fixture':True})
         self.env=mock.patch.dict(os.environ,{'SANDPROOF_NATIVE_EVIDENCE':str(self.cache),
             'SANDPROOF_ACCEPTANCE_ROLE':'native',
             **{name:'' for name in receipts.SOURCE_ARCHIVES}})
         self.env.start();self.addCleanup(self.env.stop)
+        self.runtime = fixture_runtime()
+        receipts.write_json(self.cache/'runtime.json', self.runtime)
         self.command=[sys.executable,'-c','print("actual native fixture ran")']
         self.log=self.base/'command.log'
 
@@ -41,7 +46,7 @@ class ReceiptTests(unittest.TestCase):
         entry=self.cache/'commands'/receipts.digest(key)
         receipts.write_json(self.cache/'complete.json',dict(schema=receipts.NATIVE_SCHEMA,
             scope='all',scope_complete=True,full_native_suite_complete=True,complete=True,exit_code=0,
-            rules=receipts.rules(),runtime={'unit_test_fixture':True},
+            rules=receipts.rules(),runtime=self.runtime,
             contracts=receipts.contract_inputs(receipts.ROOT),source_archives=receipts.source_archive_inputs(),
             commands={entry.name:receipts.sha(entry/'receipt.json')}))
         return command,key,entry
@@ -237,9 +242,79 @@ class ReceiptTests(unittest.TestCase):
         subprocess.run(['git','add','.'],cwd=self.source,check=True)
         self.assertEqual(key,receipts.native_key('fixture',self.command,self.source,root=self.source))
 
+    def record_test_configuration(self):
+        runtime = {'test_configuration': receipts.native_test_configuration(os.environ)}
+        receipts.write_json(self.cache/'runtime.json', runtime)
+        return runtime
+
+    def test_functional_receipt_is_bound_to_test_configuration(self):
+        output = self.base/'functional'
+        output.mkdir()
+        action = mock.Mock(side_effect=lambda: (output/'test.log').write_text('fresh check'))
+        with mock.patch.dict(os.environ, {'SANDPROOF_CHECK_RUST_THREADS': '2',
+                              'RUST_TEST_THREADS': '3', 'SANDPROOF_REDIS_TEST_TMPDIR': '/tmp',
+                              'SANDPROOF_STAGE1_NATIVE_ENV': 'managed',
+                              'SANDPROOF_REDIS_SYSTEM_TMP_ACTIVE': '0', 'GITHUB_ACTIONS': 'false'}):
+            self.record_test_configuration()
+            first = receipts.native_case('functional', self.source, output, action)
+            self.assertEqual(receipts.native_case('functional', self.source, output, action), first)
+            action.assert_called_once()
+            for setting, value in [('SANDPROOF_CHECK_RUST_THREADS', '32'), ('RUST_TEST_THREADS', '4'),
+                                   ('SANDPROOF_REDIS_TEST_TMPDIR', '/var/tmp'), ('GITHUB_ACTIONS', 'true')]:
+                with self.subTest(setting=setting), mock.patch.dict(os.environ, {setting: value}):
+                    with self.assertRaisesRegex(ValueError, 'test configuration changed'):
+                        receipts.native_case('functional', self.source, output, action)
+                    self.record_test_configuration()
+                    changed = receipts.native_case('functional', self.source, output, action)
+                    self.assertNotEqual(first['key'], changed['key'])
+                self.record_test_configuration()
+            self.assertEqual(action.call_count, 5)
+
+    def test_invalid_worker_setting_does_not_reuse_functional_success(self):
+        output = self.base/'functional'
+        output.mkdir()
+        with mock.patch.dict(os.environ, {'SANDPROOF_CHECK_RUST_THREADS': '2',
+                                          'SANDPROOF_STAGE1_NATIVE_ENV': ''}):
+            self.record_test_configuration()
+            receipts.native_case('functional', self.source, output,
+                                 lambda: (output/'test.log').write_text('valid check'))
+        with mock.patch.dict(os.environ, {'SANDPROOF_CHECK_RUST_THREADS': '0',
+                                          'SANDPROOF_STAGE1_NATIVE_ENV': ''}):
+            self.record_test_configuration()
+            # The actual checker rejects the setting before it can start Cargo.
+            def invalid():
+                subprocess.run(['bash', 'scripts/check-function.sh'], cwd=receipts.ROOT,
+                               check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            with self.assertRaises(subprocess.CalledProcessError) as error:
+                receipts.native_case('functional', self.source, output, invalid)
+            self.assertEqual(error.exception.returncode, 2)
+            self.assertIn(b'SANDPROOF_CHECK_RUST_THREADS must be a positive integer', error.exception.stderr)
+
+    def test_formal_functional_receipt_uses_recorded_native_configuration(self):
+        output = self.base/'functional'
+        output.mkdir()
+        with mock.patch.dict(os.environ, {'SANDPROOF_CHECK_RUST_THREADS': '2',
+                                          'SANDPROOF_REDIS_TEST_TMPDIR': '/native-only'}):
+            runtime = self.record_test_configuration()
+            receipt = receipts.native_case('functional', self.source, output,
+                                           lambda: (output/'test.log').write_text('valid check'))
+        entry = self.cache/'commands'/receipts.digest(receipt['key'])
+        receipts.write_json(self.cache/'complete.json', dict(schema=receipts.NATIVE_SCHEMA,
+            scope='all', scope_complete=True, full_native_suite_complete=True, complete=True, exit_code=0,
+            rules=receipts.rules(), runtime=runtime, contracts=receipts.contract_inputs(receipts.ROOT),
+            source_archives=receipts.source_archive_inputs(), commands={entry.name: receipts.sha(entry/'receipt.json')}))
+        with mock.patch.dict(os.environ, {'SANDPROOF_ACCEPTANCE_ROLE': 'formal',
+                                          'SANDPROOF_CHECK_RUST_THREADS': '64',
+                                          'SANDPROOF_REDIS_TEST_TMPDIR': '/formal-only'}):
+            self.assertEqual(receipts.native_case('functional', self.source, None), receipt)
+            receipts.write_json(self.cache/'runtime.json', {})
+            with self.assertRaisesRegex(ValueError, 'test configuration is missing'):
+                receipts.native_case('functional', self.source, None)
+
     def test_functional_acceptance_cannot_reuse_stale_documents(self):
         doc=self.source/'README.md';doc.write_text('[valid](Cargo.toml)\n')
         subprocess.run(['git','add','README.md'],cwd=self.source,check=True)
+        self.record_test_configuration()
         before=receipts.native_key('functional',['component-case'],self.source)
         native_before=receipts.native_key('fixture',self.command,self.source)
         doc.write_text('[broken](missing.md)\n')
