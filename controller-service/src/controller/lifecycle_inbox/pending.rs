@@ -19,8 +19,7 @@ impl ControllerJournal {
         let world = self.world()?;
         let tx = self.journal.connection.unchecked_transaction()?;
         self.committed_world.check_identity(&tx)?;
-        codec::validate(&tx, &world)?;
-        let inbox = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        let inbox = codec::validate_and_load(&tx, &world)?.ok_or(JournalError::UnsupportedStore)?;
         if &inbox.config.node != node {
             return Err(JournalError::Conflict);
         }
@@ -132,8 +131,7 @@ impl ControllerJournal {
         let world = self.world()?;
         let tx = self.journal.connection.unchecked_transaction()?;
         self.committed_world.check_identity(&tx)?;
-        codec::validate(&tx, &world)?;
-        let inbox = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        let inbox = codec::validate_and_load(&tx, &world)?.ok_or(JournalError::UnsupportedStore)?;
         if &inbox.config.node != node {
             return Err(JournalError::Conflict);
         }
@@ -173,8 +171,7 @@ impl ControllerJournal {
         let world = self.world()?;
         let tx = self.journal.connection.unchecked_transaction()?;
         self.committed_world.check_identity(&tx)?;
-        codec::validate(&tx, &world)?;
-        let inbox = codec::load(&tx)?.ok_or(JournalError::UnsupportedStore)?;
+        let inbox = codec::validate_and_load(&tx, &world)?.ok_or(JournalError::UnsupportedStore)?;
         if &inbox.config.node != node {
             return Err(JournalError::Conflict);
         }
