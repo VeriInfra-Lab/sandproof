@@ -698,41 +698,8 @@ fn close_window_rejects_branch_ledger_above_configured_limit() {
             ..LIMITS
         })
     );
-    let read_ledger = |journal: &ControllerJournal| -> Vec<[Vec<u8>; 5]> {
-        let mut statement = journal
-            .journal
-            .connection
-            .prepare(
-                "SELECT operation,parent,execution,record,sha256
-                 FROM controller_host_branch_batches ORDER BY operation",
-            )
-            .unwrap();
-        let rows = statement
-            .query_map([], |row| {
-                Ok([
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                ])
-            })
-            .unwrap();
-        rows.collect::<rusqlite::Result<Vec<_>>>().unwrap()
-    };
-    let read_inbox = |journal: &ControllerJournal| -> (Vec<u8>, Vec<u8>, i64) {
-        journal
-            .journal
-            .connection
-            .query_row(
-                "SELECT state_json,sha256,reserve_bytes FROM controller_lifecycle_inbox WHERE id=1",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .unwrap()
-    };
-    let ledger = read_ledger(&journal);
-    let inbox = read_inbox(&journal);
+    let ledger = branch_ledger_rows(&journal);
+    let inbox = branch_inbox_row(&journal);
     assert_eq!(ledger.len(), usize::from(max_batches) + 1);
 
     let closed = journal.close_lifecycle_window(&close, &context, &mut NeverCrash);
@@ -745,13 +712,48 @@ fn close_window_rejects_branch_ledger_above_configured_limit() {
     drop(journal);
     let mut journal = fixture::open(&path);
     assert!(
-        read_ledger(&journal) == ledger,
+        branch_ledger_rows(&journal) == ledger,
         "retirement changed branch records"
     );
     assert!(
-        read_inbox(&journal) == inbox,
+        branch_inbox_row(&journal) == inbox,
         "retirement changed the inbox"
     );
     fixture::refresh_epoch(&mut journal);
     must_retain_quota(&mut journal);
+}
+
+fn branch_ledger_rows(journal: &ControllerJournal) -> Vec<[Vec<u8>; 5]> {
+    let mut statement = journal
+        .journal
+        .connection
+        .prepare(
+            "SELECT operation,parent,execution,record,sha256
+             FROM controller_host_branch_batches ORDER BY operation",
+        )
+        .unwrap();
+    let rows = statement
+        .query_map([], |row| {
+            Ok([
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ])
+        })
+        .unwrap();
+    rows.collect::<rusqlite::Result<Vec<_>>>().unwrap()
+}
+
+fn branch_inbox_row(journal: &ControllerJournal) -> (Vec<u8>, Vec<u8>, i64) {
+    journal
+        .journal
+        .connection
+        .query_row(
+            "SELECT state_json,sha256,reserve_bytes FROM controller_lifecycle_inbox WHERE id=1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .unwrap()
 }
