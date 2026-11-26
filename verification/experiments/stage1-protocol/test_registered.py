@@ -1,5 +1,6 @@
 """Admission and scheduling regressions; no compiler, VM or proof is launched."""
 import ast
+from contextlib import contextmanager, nullcontext
 import copy
 import fcntl
 import io
@@ -746,14 +747,16 @@ class Registration(OriginalReadPlanFixture):
 
     def test_formal_refuses_missing_seal_or_native_case_before_driver(self):
         for failure in ('seal', 'case'):
-            def validate_native(cache, *, scope):
+            @contextmanager
+            def registered_native_admission(cache, *, scope):
                 self.assertEqual(scope, 'stage1-protocol')
                 if failure == 'seal':
                     raise ValueError('changed seal')
+                yield 'controlled seal'
             def native_case(*args, scope):
                 self.assertEqual(scope, 'stage1-protocol')
                 raise ValueError('missing native case')
-            shared = SimpleNamespace(validate_native=validate_native, native_case=native_case)
+            shared = SimpleNamespace(registered_native_admission=registered_native_admission, native_case=native_case)
             # This fixture tests seal admission after structural registration.
             # Historical full-package input migration has its own real guard;
             # it must not intercept this synthetic missing-seal/case boundary.
@@ -1683,7 +1686,7 @@ class CheckpointExecution(unittest.TestCase):
             self.assertEqual(name, 'result.json')
             return sqlite_result if receipt['key']['label'] == 'stage1-sqlite-commit' else retained
         output = self.directory/'public'
-        shared = SimpleNamespace(validate_native=lambda *a,**k: None,
+        shared = SimpleNamespace(registered_native_admission=lambda *a,**k: nullcontext(registered._sha(cache/'complete.json')),
             native_case=lambda *a,**k: {'key':{'label':a[0]}},
             repository_inputs=lambda root: {'fixture':'original'}, digest=registered._object_sha,
             write_json=self.shared.write_json)
