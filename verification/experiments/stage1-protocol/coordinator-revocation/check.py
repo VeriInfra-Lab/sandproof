@@ -51,10 +51,13 @@ def unpack(ref, directory):
 
 
 def run(project, folder, label, argv):
-    (folder / (label + '.argv.json')).write_text(json.dumps(list(map(str, argv))) + '\n')
-    with (folder / (label + '.log')).open('xb') as log:
-        subprocess.run(argv, cwd=project, check=True, stdin=subprocess.DEVNULL,
-                       stdout=log, stderr=subprocess.STDOUT)
+    argv = list(map(str, argv))
+    (folder / (label + '.argv.json')).write_text(json.dumps(argv) + '\n')
+    logfile = folder / (label + '.log')
+    with logfile.open('xb') as log:
+        completed = subprocess.run(argv, cwd=project, check=True, stdin=subprocess.DEVNULL,
+                                   stdout=log, stderr=subprocess.STDOUT)
+    return dict(argv=argv, cwd=str(project), exit_code=completed.returncode, log_sha256=sha(logfile))
 
 
 def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
@@ -185,7 +188,13 @@ def check(args, report):
     run(project, args.output, 'build', ['lake', 'build',
         'SandboxModel.Lifecycle.Protocol.CoordinatorRevocation'])
     checker = load(project/AREA/'formal.py')
-    report['physical'] = checker.actual_files(project, files, args.output, os.environ, run)
+    commands = []
+
+    def kernel(project, folder, label, argv):
+        commands.append(run(project, folder, label, argv))
+
+    report['physical'] = checker.actual_files(project, files, args.output, os.environ, kernel)
+    report['kernel_commands'] = commands
     require(before == dependencies(project, args.packages), 'dependencies changed during checking')
     report.update(dependencies=before, complete=True)
 
@@ -194,6 +203,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     for key in ('tools', 'packages', 'lock', 'output'):
         parser.add_argument('--'+key, required=True, type=lambda path: Path(path).resolve())
+    parser.add_argument('--lock-fd', type=int)
     args = parser.parse_args()
     require(os.environ.get('SANDPROOF_ACCEPTANCE_ROLE') == 'formal', 'formal role required')
     os.umask(0o077)
@@ -203,10 +213,16 @@ if __name__ == '__main__':
     for opt in ('RUSTFLAGS', 'CARGO_ENCODED_RUSTFLAGS'):
         os.environ.pop(opt, None)
     args.output.mkdir(mode=0o700)
-    report = {'complete': False, 'native_acceptance': False, 'gateway_verified': False}
+    report = {'kind': 'coordinator-revocation', 'complete': False, 'native_acceptance': False, 'gateway_verified': False}
     try:
-        with args.lock.open('r+') as lock:
-            fcntl.flock(lock, fcntl.LOCK_EX)
+        if args.lock_fd is not None or 'SANDPROOF_LOCK_FD' in os.environ:
+            fd, identity = load(ROOT/AREA/'registered.py').inherited_lock()
+            require(args.lock_fd in (None, fd) and args.lock.samefile(identity['path']),
+                    'coordinator lock differs from the inherited batch lock')
             check(args, report)
+        else:
+            with args.lock.open('r+') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                check(args, report)
     finally:
         (args.output/'result.json').write_text(json.dumps(report, indent=2)+'\n')

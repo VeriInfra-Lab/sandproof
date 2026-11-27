@@ -1,0 +1,182 @@
+diff --git a/verification/experiments/stage1-protocol/registered.py b/verification/experiments/stage1-protocol/registered.py
+index eb47df75..1651f5fc 100644
+--- a/verification/experiments/stage1-protocol/registered.py
++++ b/verification/experiments/stage1-protocol/registered.py
+@@ -364,8 +364,8 @@ NATIVE_DRIVERS = (
+ CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
+ NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
+     'stage1-protocol-'+name for name in CRATE_CASES)
+-AUDIT_TEMPLATE_COUNT = 676
+-AUDIT_DECLARATION_COUNT = 2952
++AUDIT_TEMPLATE_COUNT = 677
++AUDIT_DECLARATION_COUNT = 2956
+
+
+ def native_labels(profile='full'):
+@@ -850,6 +850,9 @@ def formal_plan(output, *, root=ROOT, profile='full'):
+         _append_create_jobs(jobs, output, root, profile,
+                             names=('create-attachment-flow',))
+         return CONVERGENCE.append_extra_jobs(jobs, output, root, profile=profile)
++    add('coordinator-revocation', HERE/'coordinator-revocation/check.py',
++        ['--tools', root/'.tools', '--packages', root/'.lake/packages'],
++        native=('stage1-inbox-state',), cases=('correct',))
+     for prop, wrong in [('replay', 'key-only-replay'), ('validation', 'same-incarnation'),
+                         ('envelope', 'session-only-envelope')]:
+         add('replay-'+prop, HERE/'replay_formal.py', ['--property', prop], cases=('correct', wrong))
+@@ -910,6 +913,8 @@ def formal_plan(output, *, root=ROOT, profile='full'):
+
+
+ def _actuals(result):
++    if result.get('kind') == 'coordinator-revocation':
++        return [result['physical']]
+     if result.get('kind') == 'source-live-four-view-proof-component':
+         return [row['actual'] for row in result['views'].values()]
+     if result.get('kind') == 'fixed-original-proof-readback':
+@@ -979,6 +984,11 @@ def _check_fixed_protocol_record(original, job):
+ def _check_actual(result, job):
+     if result.get('complete') is not True:
+         raise ValueError('original formal driver incomplete: ' + job['name'])
++    if job['name'] == 'coordinator-revocation':
++        if (result.get('kind') != job['name']
++                or result.get('candidate') != subprocess.check_output(
++                    ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()):
++            raise ValueError('coordinator result belongs to another candidate')
+     if job['name'] == UNLOAD.PARENT_LABEL:
+         if any(not re.fullmatch(r'[0-9a-f]{64}', result.get(key, ''))
+                for key in ('source_sha256', 'native_result_sha256')):
+@@ -1221,7 +1231,7 @@ def compute_retained_coverage(root, record):
+             actual = result['cases']['correct']
+             folder = result_path.parent/'correct'
+         elif job['cases'] == ['correct']:
+-            actual = result['actual']
++            actual = result['physical'] if job['name'] == 'coordinator-revocation' else result['actual']
+             folder = result_path.parent
+         else:
+             continue
+@@ -1263,7 +1273,7 @@ def profile_is_convergence_job(job):
+
+
+ def requires_formal_cpu_slot(job):
+-    return (job['name'] in ('source-live', 'v3-transaction-source', *CPU_PINNED_UNLOAD_JOBS)
++    return (job['name'] in ('source-live', 'v3-transaction-source', 'coordinator-revocation', *CPU_PINNED_UNLOAD_JOBS)
+             or any(key in job for key in ('create_package', 'convergence_package', 'convergence_extra')))
+
+
+@@ -1545,7 +1555,13 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
+                 if path.is_symlink() or not path.is_file():
+                     raise ValueError('linked original proof input')
+                 evidence[str(path.resolve())] = _sha(path)
+-    if not any(Path(name).suffix == '.llbc' and 'artifacts' in Path(name).relative_to(folder).parts
++    if job['name'] == 'coordinator-revocation':
++        for key, directory in [('original_parent', 'original-parent'), ('candidate_parent', 'candidate-parent'),
++                               ('joint', 'joint')]:
++            wanted = result[key]['ir']
++            if not re.fullmatch('[a-f0-9]{64}', wanted) or evidence.get(str(folder/directory/'actual.llbc')) != wanted:
++                raise ValueError('missing or changed coordinator capture: ' + directory)
++    elif not any(Path(name).suffix == '.llbc' and 'artifacts' in Path(name).relative_to(folder).parts
+                for name in evidence):
+         raise ValueError('missing original raw LLBC evidence')
+     if job['name'] == UNLOAD.LABEL:
+@@ -1704,7 +1720,7 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
+     if retained or job['name'] in CPU_PINNED_UNLOAD_JOBS:
+         fd, _ = inherited_lock()
+         pass_fds = (fd,)
+-    elif (job['name'] in ('source-live', 'v3-transaction-source') or 'create_package' in job
++    elif (job['name'] in ('source-live', 'v3-transaction-source', 'coordinator-revocation') or 'create_package' in job
+             or job.get('convergence_package') in CONVERGENCE.LOCKED_FORMAL):
+         fd, lock = inherited_lock()
+         pass_fds = (fd,)
+@@ -1871,6 +1887,8 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
+     labels = ('functional', *(('stage1-protocol',) if profile == 'full' else ()), *native_labels(profile))
+     receipts = {name: shared.native_case(name, root, None, scope=scope) for name in labels}
+     paths = {name: _evidence(receipt) for name, receipt in receipts.items()}
++    if profile == 'full':
++        check_coordinator_functional(_original_file(receipts['functional'], 'check-function.log'))
+     for name in native_labels(profile):
+         _original_file(receipts[name], 'result.json')
+     if 'stage1-sqlite-commit' in receipts:
+@@ -1990,6 +2008,19 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
+     return record
+
+
++def check_coordinator_functional(log):
++    required = {
++        'test controller::lifecycle_inbox::source_work::tests::material_retirement::application::'
++        'historical_unload_keeps_resumed_route_current_unload_revokes_it ... ok',
++        'test application::coordinator::lifecycle_intent::tests::'
++        'uncertain_commit_selects_broadcast_only_for_access_ending_operations ... ok',
++    }
++    with log.open() as stream:
++        seen = required.intersection(line.strip() for line in stream)
++    if seen != required:
++        raise ValueError('missing coordinator test in the admitted Linux functional log: ' + repr(sorted(required-seen)))
++
++
+ def main():
+     parser = argparse.ArgumentParser(description=__doc__)
+     parser.add_argument('mode', choices=('native', 'formal', 'plan'))
+diff --git a/verification/experiments/stage1-protocol/test_registered.py b/verification/experiments/stage1-protocol/test_registered.py
+index 372742d6..9f19ab54 100644
+--- a/verification/experiments/stage1-protocol/test_registered.py
++++ b/verification/experiments/stage1-protocol/test_registered.py
+@@ -60,7 +60,7 @@ class CreateDelivery(OriginalReadPlanFixture):
+         with patch.dict(os.environ, SANDPROOF_STAGE1_PROFILE='create-delivery',
+                         SANDPROOF_STAGE1_ONLY='create-selection'):
+             full = registered.formal_plan(Path('/unused'))
+-            self.assertEqual(len(full), 168)
++            self.assertEqual(len(full), 169)
+             self.assertEqual(len(registered.native_labels()), 79)
+         jobs = self.plan()
+         definition = registered.create_profile()
+@@ -596,8 +596,13 @@ class Registration(OriginalReadPlanFixture):
+     def test_full_independent_positive_and_negative_schedule(self):
+         jobs = registered.formal_plan(Path('/unused'))
+         names = {job['name'] for job in jobs}
+-        self.assertEqual(len(jobs), 168)
++        self.assertEqual(len(jobs), 169)
+         self.assertEqual(len(jobs), len(names))
++        coordinator, = [j for j in jobs if j['name'] == 'coordinator-revocation']
++        self.assertEqual(coordinator['native'], ['stage1-inbox-state'])
++        self.assertTrue(registered.requires_formal_cpu_slot(coordinator))
++        for profile in ('create-delivery', registered.CONVERGENCE.PROFILE):
++            self.assertNotIn(coordinator['name'], {j['name'] for j in registered.formal_plan(Path('/unused'), profile=profile)})
+         self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
+             'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
+             'create-guard', 'envelope-writer-correct', 'envelope-writer-swallow-error',
+@@ -615,6 +620,20 @@ class Registration(OriginalReadPlanFixture):
+         self.assertEqual(parent['cases'], [
+             'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision', 'parent-link'])
+
++    def test_coordinator_requires_both_exact_functional_successes(self):
++        first = ('test controller::lifecycle_inbox::source_work::tests::material_retirement::application::'
++                 'historical_unload_keeps_resumed_route_current_unload_revokes_it ... ok')
++        second = ('test application::coordinator::lifecycle_intent::tests::'
++                  'uncertain_commit_selects_broadcast_only_for_access_ending_operations ... ok')
++        with tempfile.TemporaryDirectory() as tmp:
++            log = Path(tmp)/'check-function.log'
++            log.write_text(first+'\n'+second+'\n')
++            registered.check_coordinator_functional(log)
++            for remaining in ('', first, second, first+'\n'+second.replace('... ok', '... ignored')):
++                log.write_text(remaining+'\n')
++                with self.assertRaisesRegex(ValueError, 'missing coordinator test'):
++                    registered.check_coordinator_functional(log)
++
+     def test_full_dispatch_assigns_convergence_children_disjoint_four_cpu_slots(self):
+         with tempfile.TemporaryDirectory() as directory:
+             output = Path(directory)
+@@ -1680,6 +1699,15 @@ class CheckpointExecution(unittest.TestCase):
+         sqlite_readback_inputs = (sqlite_result.parent, registered.ROOT, sqlite_packet,
+                                   sqlite_commit, current_sqlite)
+         def original_file(receipt, name):
++            if receipt['key']['label'] == 'functional':
++                self.assertEqual(name, 'check-function.log')
++                log = self.directory/name
++                log.write_text(
++                    'test controller::lifecycle_inbox::source_work::tests::material_retirement::application::'
++                    'historical_unload_keeps_resumed_route_current_unload_revokes_it ... ok\n'
++                    'test application::coordinator::lifecycle_intent::tests::'
++                    'uncertain_commit_selects_broadcast_only_for_access_ending_operations ... ok\n')
++                return log
+             self.assertEqual(name, 'result.json')
+             return sqlite_result if receipt['key']['label'] == 'stage1-sqlite-commit' else retained
+         output = self.directory/'public'
