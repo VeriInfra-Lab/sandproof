@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  checks: read
 
 concurrency:
   group: rust-ci-${{ github.ref }}
@@ -21,8 +22,17 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Check for an exact pre-merge promotion run
+        id: promotion
+        if: github.event_name == 'push' && github.ref == 'refs/heads/test'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          already_checked="$(bash scripts/python-entry.sh -m tools.ci_promotion_acceptance reused-push "$GITHUB_EVENT_PATH")" || already_checked=false
+          printf 'checked=%s\n' "$already_checked" >> "$GITHUB_OUTPUT"
       - name: Check pinned Rust workspace
         id: workspace
+        if: steps.promotion.outputs.checked != 'true'
         env:
           SANDPROOF_CHECK_EVENTS: ${{ runner.temp }}/rust-check-events.jsonl
         # The full workspace includes real Redis-backed component contracts.

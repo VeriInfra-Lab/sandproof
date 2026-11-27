@@ -62,7 +62,7 @@ def admission(output, observer):
     return row
 
 
-def launch(output, argv, *, pass_fds=()):
+def launch(output, argv, *, pass_fds=(), cwd=None, env=None):
     """Record the actually waited-for child status, including cancellation."""
     child = None
     pending = None
@@ -79,7 +79,7 @@ def launch(output, argv, *, pass_fds=()):
     old = {sig: signal.signal(sig, cancel) for sig in SIGNALS}
     try:
         with (output / 'native-task.log').open('xb') as log:
-            with subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT,
+            with subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, cwd=cwd, env=env,
                                   pass_fds=pass_fds, start_new_session=True) as child:
                 if pending is not None:
                     cancel(pending, None)

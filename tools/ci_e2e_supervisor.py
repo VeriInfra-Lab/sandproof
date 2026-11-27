@@ -24,7 +24,7 @@ from tools.benchmark_tasks import canonical, digest, verify, pin_for
 from tools.ci_github_app import (APIError, CHECK_PERMISSIONS, SOURCE_PERMISSIONS,
                                GitHubApp, REPOSITORY, Transport)
 from tools.ci_runner_supervisor import atomic_json
-from tools.system_acceptance import json_file, write_once
+from tools.system_acceptance import digest as file_digest, json_file, write_once
 from tools.check_kvm_host import trusted_path
 from tools.bounded_acceptance import prepared_ci_physical_profile
 from tools.capture_acceptance import bind_settings as bind_capture_settings, validate_profile as validate_capture_profile
@@ -201,20 +201,32 @@ class Checks:
 
     def ordinary_ready(self, candidate, app_id):
         """Do not pause the shared host before the promotion's ordinary CI."""
+        return self.ordinary_receipts(candidate, app_id) is not None
+
+    def ordinary_receipts(self, candidate, app_id, *, pull=None, base=None):
         if type(app_id) is not int or app_id <= 0:
             raise ValueError('ordinary CI App identity is not approved')
         found = self.api.request('GET', PREFIX + 'commits/' + candidate + '/check-runs?per_page=100&filter=all')
-        if found['total_count'] > 100:
+        if found['total_count'] > 100 or found['total_count'] != len(found['check_runs']):
             raise ValueError('check inventory exceeds fixed limit')
+        receipts, suites = {}, set()
         for name in ('sdk-contract', 'harbor-inputs', 'pr-title', 'pr-policy'):
             matches = [r for r in found['check_runs'] if r.get('name') == name
-                       and r.get('head_sha') == candidate and r.get('app', {}).get('id') == app_id]
+                       and r.get('head_sha') == candidate and (r.get('app') or {}).get('id') == app_id]
+            if pull is not None:
+                matches = [r for r in matches if any(p.get('number') == pull
+                    and p['head'].get('sha') == candidate and p['base'].get('sha') == base
+                    for p in r.get('pull_requests', []))]
             if not matches:
-                return False
+                return None
             latest = max(matches, key=lambda r: r['id'])
             if latest.get('status') != 'completed' or latest.get('conclusion') != 'success':
-                return False
-        return True
+                return None
+            receipts[name] = latest['id']
+            suites.add((latest.get('check_suite') or {}).get('id'))
+        if pull is not None and (len(suites) != 1 or None in suites):
+            return None
+        return receipts
 
     def ensure(self, state, save):
         if state.get('check_id') is not None:
@@ -254,9 +266,13 @@ class Checks:
         rows.extend(r['name'] + ': ' + str(r['status']) + ' (' + r.get('oracle_mode', 'original') + ')' for r in result['tasks'])
         if 'rust_envd' in result:
             rows.append('同候选 Rust envd 实机阶段：通过；原 SDK 双端/输入/PTY/期限、文件及所选故障组和精确清理均已确认。默认 Go 模板未因此切换。')
+        output = dict(title='配置题集验收通过' if result['passed'] else '配置题集验收未通过',
+                      summary='\n\n'.join(rows))
+        if state.get('promotion') and state.get('candidate_tree'):
+            output['text'] = json.dumps(dict(schema=1, head=state['candidate'], base=state['base'],
+                tree=state['candidate_tree'], **state['promotion']), sort_keys=True)
         self.api.request('PATCH', PREFIX + 'check-runs/' + str(state['check_id']), dict(
-            status='completed', conclusion=conclusion, output=dict(
-                title='配置题集验收通过' if result['passed'] else '配置题集验收未通过', summary='\n\n'.join(rows))))
+            status='completed', conclusion=conclusion, output=output))
 
 
 @contextmanager
@@ -399,7 +415,7 @@ class Supervisor:
         return service_artifacts.load(expected, candidate=self.state['candidate'],
             paths=paths, versions=manifest['versions'])
 
-    def begin(self, candidate, base, observed_promotion=None):
+    def begin(self, candidate, base, observed_promotion=None, *, recovery=None):
         if observed_promotion is not None and self.config.get('auto_promotions') is not True:
             raise ValueError('automatic promotion policy is not enabled')
         authorize(candidate, approved_commits=self.config['approved_commits'],
@@ -435,15 +451,18 @@ class Supervisor:
         if self.state:
             if self.state.get('check_publish_pending'):
                 raise ValueError('original check completion receipt remains unresolved')
-            if self.state['id'] != identity and self.state['phase'] != 'done':
+            if self.state['id'] != identity and self.state['phase'] != 'done' and recovery is None:
                 raise ValueError('unresolved original run; cannot admit a replacement')
             if self.state['id'] == identity:
+                if recovery is not None:
+                    raise ValueError('recovery cannot restart the same original run')
                 return  # Never repeat the same candidate/base/config identity.
             archive = self.root / (self.state['id'] + '.json')
             if not archive.exists():
                 write_once(archive, self.state)
         self.state = dict(id=identity, architecture=service_artifacts.ARCHITECTURE,
             candidate=candidate, base=base, phase='waiting', configuration=self.config,
+            candidate_tree=git('rev-parse', 'HEAD^{tree}', cwd=checkout),
             dataset=dataset,
             promotion=dict(source=observed_promotion[0], target=observed_promotion[1]) if observed_promotion else None,
             dk=dict(phase='new'),
@@ -453,6 +472,8 @@ class Supervisor:
             all_tasks=[row['name'] for row in lock['tasks']],
             task_inputs={t['name']: dict(files_sha256=t['files_sha256'], requirements=t['requirements'])
                          for t in lock['tasks'] if t['name'] in {n for b in batches for n in b}})
+        if recovery is not None:
+            self.state['operator_recovery'] = recovery
         self.save()
 
     def prepare_dk(self):
@@ -904,6 +925,127 @@ def checkout_candidate(config, candidate, source_client=None):
     return dict(config, checkout=str(root))
 
 
+def check_recovery_origin(supervisor, original, new, api):
+    """A missing prepare unit never authorizes deleting or re-running the old candidate."""
+    from tools.ci_promotion_acceptance import check_runs
+
+    state = supervisor.state
+    keys = ('id', 'candidate', 'base', 'prepare_unit', 'check_id')
+    if not state:
+        raise ValueError('original blocked E2E state is absent')
+    expected = {key: state.get(key) for key in keys}
+    expected['state_sha256'] = file_digest(private_path(supervisor.path))
+    identity = state.get('id', '')
+    if re.fullmatch(r'[0-9a-f]{64}', identity) is None:
+        raise ValueError('original blocked admission identity invalid')
+    intent = private_path(supervisor.root / (identity + '-prepare.json'))
+    expected['prepare_intent_sha256'] = file_digest(intent)
+    result = state.get('result', {})
+    if (original != expected or state.get('phase') != 'blocked'
+            or state.get('reason') != 'candidate_preparation_identity_unknown'
+            or state.get('check_publish_pending') is not False
+            or result.get('candidate') != state['candidate'] or result.get('passed') is not False
+            or result.get('tasks') != [] or result.get('executed_task_count') != 0
+            or state['candidate'] != new.base
+            or state.get('dk') != {'phase': 'new'} or 'envd' in state
+            or not state.get('batches')
+            or any(batch.get('phase') != 'new' or set(batch) != {'names', 'oracle_mode', 'phase'}
+                   for batch in state['batches'])):
+        raise ValueError('original published failed preparation or unstarted batches not confirmed')
+    prepare_unit = state['prepare_unit']
+    if not re.fullmatch(r'sandproof-e2e-prepare-[0-9a-f]{32}\.service', prepare_unit):
+        raise ValueError('original prepare unit identity invalid')
+    manifest = supervisor.root / (state['id'] + '-candidate-artifacts.json')
+    prepared = json_file(intent, limit=4 * 1024 * 1024)
+    if (state.get('candidate_manifest') != str(manifest)
+            or state['configuration'].get('ci_state_root') != supervisor.config['ci_state_root']
+            or prepared != dict(state['configuration'], candidate=state['candidate'],
+                                candidate_manifest=str(manifest))):
+        raise ValueError('original preparation intent does not match the blocked state')
+    failed = [row for row in check_runs(api, state['candidate']) if (
+        row.get('id') == state['check_id'] and row.get('name') == state.get('check_name', CHECK_NAME)
+        and row.get('head_sha') == state['candidate'] and row.get('external_id') == state['id']
+        and (row.get('app') or {}).get('id') == api.app_id)]
+    if len(failed) != 1 or failed[0].get('status') != 'completed' or failed[0].get('conclusion') != 'failure':
+        raise ValueError('original GitHub failure publication not confirmed')
+    return expected['prepare_intent_sha256']
+
+
+def require_stopped_preparation(unit, ci_root):
+    status = subprocess.check_output(['systemctl', 'show', 'sandproof-e2e-supervisor.service',
+        '--property=ActiveState', '--value'], text=True, timeout=20)
+    if status.strip() != 'inactive':
+        raise ValueError('stop the E2E supervisor before rearming its exact next candidate')
+    response = subprocess.check_output(['systemctl', 'list-units', '--all', '--plain',
+        '--no-legend', '--full', unit], text=True, timeout=20)
+    cgroup = Path('/sys/fs/cgroup/system.slice') / unit
+    if response.strip() or os.path.lexists(cgroup):
+        raise ValueError('original preparation unit or cgroup still exists')
+    units = subprocess.check_output(['systemctl', 'list-units', '--all', '--plain',
+        '--no-legend', '--state=active,activating,deactivating', 'sandproof-e2e-batch-*.service',
+        'sandproof-e2e-prepare-*.service'], text=True, timeout=20)
+    if (units.strip() or json_file(private_path(ci_root/'state.json')) != {}
+            or any(os.path.lexists(ci_root/name) for name in ('paused', 'exclusive-host'))):
+        raise ValueError('E2E work units, host pause, or ordinary runner registry are not empty')
+
+
+def recovery_ready(candidate, checks, config, source_client):
+    candidate.observe(source_client=source_client, proxy=config.get('proxy'))
+    return checks.ordinary_receipts(candidate.head, config['ordinary_check_app_id'],
+                                    pull=candidate.pull, base=candidate.base) is not None
+
+
+def recover_stopped_preparation(supervisor, approval, source_client):
+    """Archive exact old state and save the one approved waiting candidate; launch nothing."""
+    from dataclasses import asdict
+    from tools.ci_promotion_acceptance import Candidate
+
+    if set(approval) != {'original', 'next_promotion'}:
+        raise ValueError('exact original state and next promotion approval required')
+    config, checks = supervisor.config, supervisor.checks
+    new = Candidate(**approval['next_promotion'])
+    original = approval['original']
+    intent_sha = check_recovery_origin(supervisor, original, new, checks.api)
+    if not recovery_ready(new, checks, config, source_client):
+        raise ValueError('approved next promotion has no successful ordinary checks')
+    repository = private_path(config['repository'], directory=True)
+    if git('remote', 'get-url', 'origin', cwd=repository) != REPO:
+        raise ValueError('promotion repository origin mismatch')
+    git('fetch', '--no-tags', 'origin', new.refs()[-1], cwd=repository,
+        source_client=source_client, proxy=config.get('proxy'))
+    prepared = checkout_candidate(config, new.head, source_client)
+    checkout = private_path(prepared['checkout'], directory=True)
+    new.check_checkout(checkout)
+    if not is_ancestor(config['promotion_floor'], new.head, cwd=checkout):
+        raise ValueError('approved next promotion predates the installed promotion policy')
+    if not recovery_ready(new, checks, config, source_client):
+        raise ValueError('approved next promotion changed during recovery')
+    ci_root = private_path(config['ci_state_root'], directory=True)
+    with admission_guard(ci_root):
+        require_stopped_preparation(original['prepare_unit'], ci_root)
+        # The supervisor lock excludes another state writer. A hard link keeps
+        # the exact old bytes/inode while begin atomically changes state.json.
+        state_file = private_path(supervisor.path)
+        old_intent = private_path(supervisor.root / (original['id'] + '-prepare.json'))
+        archive = supervisor.root / (original['id'] + '.json')
+        if (file_digest(state_file) != original['state_sha256']
+                or file_digest(old_intent) != intent_sha):
+            raise ValueError('original state or preparation intent changed during recovery')
+        if not os.path.lexists(archive):
+            os.link(state_file, archive, follow_symlinks=False)
+            fd = os.open(supervisor.root, os.O_DIRECTORY)
+            try:
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        if file_digest(private_path(archive)) != original['state_sha256']:
+            raise ValueError('old failure archive already exists with a different identity')
+        supervisor.config = prepared
+        supervisor.begin(new.head, new.base, observed_promotion=(new.source, 'test', new.head),
+                         recovery=dict(original=original, original_intent_sha256=intent_sha,
+                                       next_promotion=asdict(new)))
+
+
 def main():
     os.umask(0o077)
     parser = argparse.ArgumentParser(description=__doc__)
@@ -912,6 +1054,8 @@ def main():
     parser.add_argument('--base')
     parser.add_argument('--follow-promotions', action='store_true',
                            help='protected promotions and legal main→test sync only')
+    parser.add_argument('--recover-stopped-preparation', type=Path,
+                        help='operator-approved old failure and exact next promotion; queue only')
     parser.add_argument('--local-only', action='store_true', help='no GitHub check write; not automatic CI acceptance')
     selected = parser.add_mutually_exclusive_group()
     selected.add_argument('--profile', help='reviewed task profile from the frozen catalog')
@@ -923,6 +1067,8 @@ def main():
     config = json_file(private_path(args.config))
     if args.follow_promotions and (args.profile or args.task or args.batch_size is not None):
         parser.error('automatic selection comes only from the protected host policy')
+    if args.recover_stopped_preparation is not None and not args.follow_promotions:
+        parser.error('preparation recovery only serves the protected promotion policy')
     if args.profile or args.task or args.batch_size is not None:
         config['selection'] = dict(config['selection'])
         # A one-task diagnostic must never satisfy the default promotion gate.
@@ -960,6 +1106,11 @@ def main():
         api.verify_installation()
         checks = Checks(api)
     supervisor = Supervisor(config, checks)
+    if args.recover_stopped_preparation is not None:
+        recover_stopped_preparation(supervisor, json_file(private_path(args.recover_stopped_preparation)),
+                                    source_client)
+        print(json.dumps({'phase': supervisor.state['phase'], 'candidate': supervisor.state['candidate']}))
+        return 0
     observed_refs = None
     while True:
         try:
@@ -995,6 +1146,12 @@ def main():
                 supervisor.begin(candidate, base, observed_promotion=observed_promotion)
             if supervisor.state['phase'] == 'blocked':
                 break
+            if supervisor.state['phase'] == 'waiting' and supervisor.state.get('operator_recovery'):
+                from tools.ci_promotion_acceptance import Candidate
+                candidate = Candidate(**supervisor.state['operator_recovery']['next_promotion'])
+                if not recovery_ready(candidate, checks, supervisor.config, source_client):
+                    time.sleep(15)
+                    continue
             supervisor.tick()
             if not args.follow_promotions and supervisor.state['phase'] == 'done':
                 break
