@@ -1,5 +1,6 @@
 """Reject business replacement and missing mutations in adopted-source views."""
 import importlib.util
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -80,6 +81,32 @@ class AdoptedSourceViews(unittest.TestCase):
             stream.write('\n// changed input\n')
         with self.assertRaisesRegex(ValueError, 'adopted source input differs'):
             self.views.inputs(self.project, AREA / 'inbox-load')
+
+    def test_current_input_takes_precedence_over_historical_capture(self):
+        self.restore()
+        package = AREA / 'binding-fixture'
+        manifest = self.project / package / 'inventory.json'
+        manifest.parent.mkdir(exist_ok=True)
+        current = self.project / 'current.rs'
+        capture_only = self.project / 'capture-only.rs'
+        current.write_bytes(b'current')
+        capture_only.write_bytes(b'capture-only')
+        manifest.write_text(json.dumps({
+            'production_inputs': {current.name: self.views.sha(current)},
+            'original_inputs': {
+                current.name: sha256(b'historical').hexdigest(),
+                capture_only.name: self.views.sha(capture_only),
+            },
+        }))
+        self.assertEqual(self.views.inputs(self.project, package)[current.name],
+                         self.views.sha(current))
+        current.write_bytes(b'historical')
+        with self.assertRaisesRegex(ValueError, r'input differs: current\.rs'):
+            self.views.inputs(self.project, package)
+        current.write_bytes(b'current')
+        capture_only.write_bytes(b'drift')
+        with self.assertRaisesRegex(ValueError, r'input differs: capture-only\.rs'):
+            self.views.inputs(self.project, package)
 
     def test_mutation_requires_a_unique_expression_in_its_named_function(self):
         path = self.project / 'mutation.rs'

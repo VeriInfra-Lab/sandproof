@@ -1,5 +1,6 @@
 """Admission and scheduling regressions; no compiler, VM or proof is launched."""
 import ast
+from contextlib import contextmanager, nullcontext
 import copy
 import fcntl
 import io
@@ -39,6 +40,28 @@ class OriginalReadPlanFixture(unittest.TestCase):
         patcher = patch.object(registered.CONVERGENCE, 'extra', side_effect=extra)
         patcher.start()
         self.addCleanup(patcher.stop)
+
+
+class SqliteNativeRuntime(unittest.TestCase):
+    def test_current_receipt_requires_its_batch_runtime(self):
+        adapter = registered.CONVERGENCE.extra(registered.ROOT, 'sqlite-commit')
+        check = adapter.original(registered.ROOT).matches_native_runtime
+        with tempfile.TemporaryDirectory() as directory, patch.dict(
+                os.environ, SANDPROOF_NATIVE_EVIDENCE=directory):
+            record = Path(directory)/'runtime.json'
+            msra = dict(platform='linux', uid=1002, gid=1002, rustc={'sha256': 'fixed'})
+            record.write_text(json.dumps(msra))
+            self.assertTrue(check(msra, current=True))
+            self.assertFalse(check(dict(msra, uid=1000), current=True))
+            self.assertFalse(check(dict(msra, gid=1001), current=True))
+            self.assertFalse(check(msra, current=False))
+            self.assertTrue(check(dict(msra, uid=1000), current=False))
+            root = dict(msra, uid=0)
+            record.write_text(json.dumps(root))
+            self.assertFalse(check(root, current=True))
+            record.unlink()
+            with self.assertRaisesRegex(ValueError, 'missing'):
+                check(msra, current=True)
 
 
 class CreateDelivery(OriginalReadPlanFixture):
@@ -746,14 +769,16 @@ class Registration(OriginalReadPlanFixture):
 
     def test_formal_refuses_missing_seal_or_native_case_before_driver(self):
         for failure in ('seal', 'case'):
-            def validate_native(cache, *, scope):
+            @contextmanager
+            def registered_native_admission(cache, *, scope):
                 self.assertEqual(scope, 'stage1-protocol')
                 if failure == 'seal':
                     raise ValueError('changed seal')
+                yield 'controlled seal'
             def native_case(*args, scope):
                 self.assertEqual(scope, 'stage1-protocol')
                 raise ValueError('missing native case')
-            shared = SimpleNamespace(validate_native=validate_native, native_case=native_case)
+            shared = SimpleNamespace(registered_native_admission=registered_native_admission, native_case=native_case)
             # This fixture tests seal admission after structural registration.
             # Historical full-package input migration has its own real guard;
             # it must not intercept this synthetic missing-seal/case boundary.
@@ -1683,7 +1708,7 @@ class CheckpointExecution(unittest.TestCase):
             self.assertEqual(name, 'result.json')
             return sqlite_result if receipt['key']['label'] == 'stage1-sqlite-commit' else retained
         output = self.directory/'public'
-        shared = SimpleNamespace(validate_native=lambda *a,**k: None,
+        shared = SimpleNamespace(registered_native_admission=lambda *a,**k: nullcontext(registered._sha(cache/'complete.json')),
             native_case=lambda *a,**k: {'key':{'label':a[0]}},
             repository_inputs=lambda root: {'fixture':'original'}, digest=registered._object_sha,
             write_json=self.shared.write_json)

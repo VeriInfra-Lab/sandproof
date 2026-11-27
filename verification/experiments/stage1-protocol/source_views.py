@@ -16,8 +16,10 @@ def sha(path):
 
 def inputs(project, package):
     inventory = json.loads((project / package / 'inventory.json').read_text())
-    expected = dict(inventory['production_inputs'])
-    expected.update(inventory.get('original_inputs', {}))
+    # Historical captures retain their own source hashes. A current view binds
+    # an overlapping input to its registered production hash.
+    expected = dict(inventory.get('original_inputs', {}))
+    expected.update(inventory['production_inputs'])
     for name, digest in expected.items():
         if sha(project / name) != digest:
             raise ValueError('adopted source input differs: ' + name)
