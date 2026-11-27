@@ -1,0 +1,137 @@
+import SandproofActualRecord.PublicReplay
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol SandproofParentCommitRust.ErrorTransport
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model (Session Entry)
+namespace SandproofActualRecordRust.PublicLoaded
+open controller.lifecycle_inbox recording PublicBegin PublicReplay SourceFlowLink
+noncomputable section
+set_option autoImplicit false
+
+variable [FileHandle] [env : PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+variable (journal : controller.ControllerJournal) (intent : Intent) (context : Context)
+    (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (after : UnloadWorldBegin.Conn) (ns : Str)
+    (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+
+/-- The original Rust loader called by record_using, on the same BEGIN owner's concrete
+holder, public standard dictionaries and effect implementation. -/
+abbrev originalLoad (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction) (ns : Str) :=
+  JournalLoadExit.originalLoad retirement terminal renewal unload graphic
+    (CallerBranches.actualEffects codec) (holder begun ns)
+
+variable (afterLoad : StandardRecord Unit) (inbox : model.Inbox)
+  (loaded : originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+
+local notation "sourceRecord" =>
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+local notation "admits" =>
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated
+
+include loaded
+omit [FileHandle] in
+/-- The recording body returns the entire post-load holder and the outer transaction returns the selected work state. -/
+theorem replay_return (si ei : Usize) (value : model.LifecycleWorkState)
+    (admitted : admits inbox intent context = .ok (.Ok ()))
+    (found : inbox.find intent = .ok (.Ok (some (si,ei))))
+    (read : inbox.state si ei = .ok value) :
+    record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
+      .ok (.Ok (.Replay value), afterLoad) ∧
+    proof_record_actual_parent retirement terminal renewal unload graphic codec hook
+      (holder begun ns).tx ns () intent context () = .ok (.Ok value, ()) := by
+  have recorded : record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
+      .ok (.Ok (.Replay value),afterLoad) := by
+    change liftResult transferOutcome (sourceRecord (oldRetirement retirement) (oldTerminal terminal)
+      (oldRenewal renewal) (oldUnload unload) (oldGraphic graphic) (ScopeTransport.recordEffects reads)
+      (holder begun ns) intent context) = _
+    unfold SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+    unfold originalLoad JournalLoadExit.originalLoad JournalLoadExit.sourceIO at loaded
+    simp only [reads]
+    rw [loaded]
+    simp [liftResult, admitted, found, read, core.option.Option.ok_or,
+      core.result.Result.Insts.CoreOpsTry.branch, transferOutcome, convertOutcome, ScopeTransport.outcomeFromSource]
+  refine ⟨recorded, ?_⟩
+  rw [CallerBranches.extraction_root_uses_real_constructor_and_dictionary]
+  exact CallerBranches.actual_replay_return retirement terminal renewal unload graphic
+    (CallerBranches.actualEffects codec) hook (holder begun ns) afterLoad intent context () value recorded
+
+include started borrowed
+/-- Once the actual loader has returned this inbox, the immediate authenticated replay needs
+no observations of other decodes, validation, encoding or a later write. -/
+theorem retained (config : InboxAdmission.ContextMatches inbox context) (valid : Validation.ValidEnvelope intent context)
+    (s e : Nat) (found : InboxLookup.inboxSpec intent inbox.sessions.val 0 = .found s e) :
+    ∃ (session : Session) (entry : Entry),
+      inbox.sessions.val[s]? = some session ∧ session.entries.val[e]? = some entry ∧ entry.intent = intent ∧
+      journalDecision journal intent context = .ok
+        ((.Ok (InboxState.workState session entry), {journal with journal := ⟨after.base⟩}, ()),
+          CoordinatorRevocation.selected intent.request.operation
+            (decide (intent.accepted_version = session.current_version)) session.local) := by
+  have indices := InboxLookup.find_outcome inbox intent
+  rw [found] at indices
+  obtain ⟨si,ei,spos,epos,hit⟩ := indices
+  obtain ⟨session, entry, hs, he, full, read, decision⟩ := CoordinatorRevocation.replay_decision inbox intent si ei hit
+  have recorded := replay_return intent context begun ns afterLoad inbox loaded si ei _
+    ((InboxAdmission.accepts_iff inbox intent context).mpr ⟨config,valid⟩) hit read
+  have reply := started_reply hook journal intent context () begun after ns started borrowed _ () recorded.2
+  simp [read] at decision
+  refine ⟨session,entry,by simpa [spos] using hs,by simpa [epos] using he,full,?_⟩
+  simp [journalDecision, reply, toRequestRustResult, decision]
+
+theorem conflict
+    (refused : (¬ InboxAdmission.ContextMatches inbox context ∨ ¬ Validation.ValidEnvelope intent context) ∨
+      (InboxAdmission.ContextMatches inbox context ∧ Validation.ValidEnvelope intent context ∧
+        InboxLookup.inboxSpec intent inbox.sessions.val 0 = .conflict)) :
+    journalDecision journal intent context =
+      .ok ((.Err .Conflict, {journal with journal := ⟨after.base⟩}, ()), .None) := by
+  have recorded : record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
+      .ok (.Err .Conflict, afterLoad) := by
+    change liftResult transferOutcome (sourceRecord (oldRetirement retirement) (oldTerminal terminal)
+      (oldRenewal renewal) (oldUnload unload) (oldGraphic graphic) (ScopeTransport.recordEffects reads)
+      (holder begun ns) intent context) = _
+    unfold SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+    unfold originalLoad JournalLoadExit.originalLoad JournalLoadExit.sourceIO at loaded
+    simp only [reads]
+    rw [loaded]
+    rcases refused with invalid | ⟨config, valid, conflict⟩
+    · have denied := (InboxAdmission.refuses_iff inbox intent context).mpr invalid
+      simp [liftResult, denied, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        transferOutcome, convertOutcome, fromRequest]
+    · have accepted := (InboxAdmission.accepts_iff inbox intent context).mpr ⟨config,valid⟩
+      have denied := InboxLookup.find_outcome inbox intent
+      rw [conflict] at denied
+      simp [liftResult, accepted, denied, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        transferOutcome, convertOutcome, fromRequest]
+  have original : proof_record_actual_parent retirement terminal renewal unload graphic codec hook
+      (holder begun ns).tx ns () intent context () = .ok (.Err .Conflict, ()) := by
+    rw [CallerBranches.extraction_root_uses_real_constructor_and_dictionary]
+    simp [record_transaction_using, recorded, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  exact journal_error journal intent context .Conflict _ (started_reply hook journal intent context ()
+    begun after ns started borrowed _ () original)
+
+omit loaded
+/-- The actual load's first ordinary error, or UnsupportedStore on an empty load,
+reaches the same error dispatch even though there is no inbox to authenticate. -/
+theorem load_refusal (error : JournalError)
+    (stops : originalLoad begun ns = .ok (.Err (toRequest error), afterLoad) ∨
+      (originalLoad begun ns = .ok (.Ok none, afterLoad) ∧ error = .UnsupportedStore)) :
+    journalDecision journal intent context =
+      .ok ((.Err error, {journal with journal := ⟨after.base⟩}, ()), match toRequest error with
+        | .CommitUncertain _ => if CoordinatorRevocation.endsAccess intent.request.operation then .All else .None
+        | _ => .None) := by
+  have refused := JournalLoadExit.standard_record_reply (retirement := retirement) (terminal := terminal)
+    (renewal := renewal) (unload := unload) (graphic := graphic) (crash := hook) (intent := intent)
+    (context := context) (crashes := ()) (error := error) codec (holder begun ns).tx ns () afterLoad stops
+  exact journal_error journal intent context error _ (started_reply hook journal intent context ()
+    begun after ns started borrowed _ () refused)
+
+end
+end SandproofActualRecordRust.PublicLoaded
+
+#audit_controller_proof SandproofActualRecordRust.PublicLoaded.replay_return
+#audit_controller_proof SandproofActualRecordRust.PublicLoaded.retained
+#audit_controller_proof SandproofActualRecordRust.PublicLoaded.conflict
+#audit_controller_proof SandproofActualRecordRust.PublicLoaded.load_refusal

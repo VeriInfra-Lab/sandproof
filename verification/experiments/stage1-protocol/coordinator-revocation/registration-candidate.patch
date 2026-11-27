@@ -1,5 +1,5 @@
 diff --git a/verification/experiments/stage1-protocol/registered.py b/verification/experiments/stage1-protocol/registered.py
-index eb47df75..624d4dc0 100644
+index eb47df75..c609c688 100644
 --- a/verification/experiments/stage1-protocol/registered.py
 +++ b/verification/experiments/stage1-protocol/registered.py
 @@ -364,8 +364,8 @@ NATIVE_DRIVERS = (
@@ -8,8 +8,8 @@ index eb47df75..624d4dc0 100644
      'stage1-protocol-'+name for name in CRATE_CASES)
 -AUDIT_TEMPLATE_COUNT = 676
 -AUDIT_DECLARATION_COUNT = 2952
-+AUDIT_TEMPLATE_COUNT = 684
-+AUDIT_DECLARATION_COUNT = 2992
++AUDIT_TEMPLATE_COUNT = 685
++AUDIT_DECLARATION_COUNT = 2996
 
 
  def native_labels(profile='full'):

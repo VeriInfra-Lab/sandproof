@@ -19,15 +19,17 @@ import journal_decision
 from wiring import require
 
 RECORD = Path('verification/aeneas/actual-record/SandproofActualRecord')
-PAGE = str(RECORD/'PublicReplay.lean')
-MODULE = 'SandproofActualRecord.PublicReplay'
+PAGE = str(RECORD/'PublicLoaded.lean')
+MODULE = 'SandproofActualRecord.PublicLoaded'
 PKG = codec.PACKAGE/'public-begin'
-NEW = ('PublicHandle', 'PublicCalls', 'PublicBegin', 'PublicReplay')
+NEW = ('PublicHandle', 'PublicCalls', 'PublicBegin', 'PublicReplay', 'PublicLoaded')
 AUDITS = {'SandproofActualRecordRust.PublicBegin.'+n for n in (
     'begin_refusal', 'world_refusal', 'preparation_refusal', 'sqlite_refusal', 'allocator_refusal',
     'changed_version_refusal', 'started_reply', 'first_record_read_refusal')}
 AUDITS.update('SandproofActualRecordRust.PublicReplay.'+n for n in (
     'hook_return', 'retained', 'conflict', 'mapped_unloads', 'changed_capture', 'journal_error'))
+AUDITS.update('SandproofActualRecordRust.PublicLoaded.'+n for n in (
+    'replay_return', 'retained', 'conflict', 'load_refusal'))
 SHA = {'Types': '6c311fa06db63d48c43ca33fe50f096d186e65165a847fd2e7532df29aa05113',
        'Funs': '126609d05e094ecfa445c512bfccd4e11a85c2cc796a67df09b14a5d43f861af'}
 BINDERS = {'Types': b'variable [FileHandle]',
