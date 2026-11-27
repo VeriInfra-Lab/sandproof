@@ -1,0 +1,50 @@
+import SandproofActualRecord.OwnerLink
+import SandproofActualRecord.RecordUsingLink
+import SandproofActualRecord.IOProviderLink
+import SandproofActualRecord.ReadonlyLink
+import SandproofStandardRecordCodec.Funs
+import UnloadWorldBegin
+import SandproofStage1Graphic.Funs
+
+open Aeneas Aeneas.Std
+namespace SandproofActualRecordRust
+open SandproofParentCommitRust.CurrentViews
+noncomputable section
+
+abbrev alloc.string.String.Insts.CoreOpsDerefDerefStr.deref :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref
+abbrev capture.graphic_bytes := SandproofStage1GraphicRust.sandproof_controller_service.capture.graphic_bytes
+
+/-- The original BEGIN supplies the owner. All later codec and transaction call observations
+are quantified, including calls that are unreachable after an earlier refusal. -/
+class PublicCalls where
+  observation : SandproofUnloadWorldBegin.BeginCalls
+  onOwner : (source : SourceOwner) → { value : CallerOwnerView // ownerToSource value.parent = source }
+  terminal : controller.lifecycle_inbox.model.TerminalEncoding Unit
+  retirement : controller.lifecycle_inbox.native_retirement.RetirementEncoding Unit
+  unload : controller.lifecycle_inbox.unload_resolution.UnloadEncoding Unit
+  renewal : controller.lifecycle_inbox.renewal_confirmation.RenewalEncoding Unit
+  encodeInbox : Unit → rusqlite.Connection → controller.lifecycle_inbox.model.Inbox →
+    Result ((core.result.Result (alloc.vec.Vec U8) serde_json.error.Error) × Unit)
+
+variable [env : PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+
+def controller.transaction.WorldTransaction.begin (conn : rusqlite.Connection)
+    (memo : controller.transaction.CommittedWorld) :
+    Result (core.result.Result CallerOwnerView JournalError × rusqlite.Connection) := do
+  let (reply, after) ← SandboxModel.Stage1Protocol.UnloadWorldBegin.begin ⟨conn, env.observation⟩ memo
+  match reply with
+  | .Ok owner => .ok (.Ok (env.onOwner (SandproofUnloadWorldBegin.originalOwner owner)).val, after.base)
+  | .Err error => .ok (.Err (SandproofParentCommitRust.ErrorTransport.fromRequest error), after.base)
+
+abbrev controller.lifecycle_inbox.model.StandardTerminalEncoding.Insts.Sandproof_controller_serviceControllerLifecycle_inboxModelTerminalEncoding.encode := env.terminal.encode
+abbrev controller.lifecycle_inbox.native_retirement.StandardRetirementEncoding.Insts.Sandproof_controller_serviceControllerLifecycle_inboxNative_retirementRetirementEncoding.encode_intent := env.retirement.encode_intent
+abbrev controller.lifecycle_inbox.native_retirement.StandardRetirementEncoding.Insts.Sandproof_controller_serviceControllerLifecycle_inboxNative_retirementRetirementEncoding.encode_receipt := env.retirement.encode_receipt
+abbrev controller.lifecycle_inbox.native_retirement.StandardRetirementEncoding.Insts.Sandproof_controller_serviceControllerLifecycle_inboxNative_retirementRetirementEncoding.digest := env.retirement.digest
+abbrev controller.lifecycle_inbox.renewal_confirmation.StandardRenewalEncoding.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRenewal_confirmationRenewalEncoding.encode := env.renewal.encode
+abbrev controller.lifecycle_inbox.unload_resolution.StandardUnloadEncoding.Insts.Sandproof_controller_serviceControllerLifecycle_inboxUnload_resolutionUnloadEncoding.encode := env.unload.encode
+abbrev controller.lifecycle_inbox.recording.StandardRecordCodec.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordCodec.encode_inbox := env.encodeInbox
+abbrev controller.lifecycle_inbox.recording.StandardRecordCodec.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordCodec.decode_maintenance := SandproofStandardRecordCodec.controller.lifecycle_inbox.recording.StandardRecordCodec.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordCodec.decode_maintenance
+abbrev controller.lifecycle_inbox.recording.StandardRecordCodec.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordCodec.decode_inbox := SandproofStandardRecordCodec.controller.lifecycle_inbox.recording.StandardRecordCodec.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordCodec.decode_inbox
+end
+end SandproofActualRecordRust

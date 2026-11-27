@@ -190,7 +190,7 @@ def capture_parent(source, evidence, tools, fixed, *, refactored=False):
     return result
 
 
-def capture_public(source, folder, tools, fixed):
+def capture_public(source, folder, tools, fixed, *, include_lease=False):
     folder.mkdir(mode=0o700)
     os.environ['CARGO_TARGET_DIR'] = str(folder/'target')
     ir = folder/'actual.llbc'
@@ -198,6 +198,13 @@ def capture_public(source, folder, tools, fixed):
     with transaction_roots(source, public=True) as (profile, inputs):
         profile['roots'].append(wrapper)
         profile['include'].extend([INBOX+'::*::record_lifecycle_intent', CONTROLLER, DATABASE, CODEC, wrapper])
+        if include_lease:
+            graphic = SERVICE+'::capture::StandardGraphicBytes'
+            profile['include'].extend([INBOX+'::'+name for name in (
+                'native_retirement::StandardRetirementEncoding', 'model::StandardTerminalEncoding',
+                'renewal_confirmation::StandardRenewalEncoding', 'unload_resolution::StandardUnloadEncoding')])
+            profile['include'].extend([graphic, SERVICE+'::capture::{impl '+SERVICE+'::capture::GraphicBytes for '+
+                                       graphic+'}::all_graphic', SERVICE+'::controller::ControllerLease'])
         options = [arg for k in ('include', 'opaque', 'exclude', 'roots') for value in profile[k]
                    for arg in ('--start-from' if k == 'roots' else '--'+k, value)]
         run(source, folder, 'charon', [tools/'aeneas/charon/bin/charon', 'cargo', '--preset=aeneas', '--error-on-warnings',
