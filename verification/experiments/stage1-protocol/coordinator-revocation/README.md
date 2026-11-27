@@ -38,6 +38,24 @@
 
 本片从已解码收件值及进入查找的完整意图开始。调用前的认证、未命中后的写入和事务仍有各自的合同。日志事务的实际行来源、未知提交的耐久结局由 V5 提供。真实 watch 送达、网关撤销与在途 I/O 收尾由数据通路提供。上表描述此入口作出的选择；任何成功返回均不能单独说明实际连接已经断开。互斥锁、进程取消和错误载荷沿用[逐符号依赖](../../../../docs/formal/dependencies.md)。
 
+## 从公开 journal 进入事务
+
+基线和候选的协调器抽取都包含真实的 `ControllerJournal::record_lifecycle_intent`、`record_transaction_using` 和事务提供方的原 `proof_record_actual_parent`。检查器只在解包源码中追加提供方冻结的薄根，按同一份类型化 LLBC 核对下列正常控制流。
+
+- 公开方法把本接收者的 `journal.connection` 与 `committed_world` 交给 `WorldTransaction::begin`。若结果进入 `Break`，它用本次残余和标准库同型 `From<JournalError>` 转换返回。该边不取命名空间，不构造 `StandardRecord`，也不调用录入。
+- 成功边读取本接收者的 `namespace`，用本次事务、解引用后的命名空间和 `StandardRecordCodec` 构造 `StandardRecord`。它将原 intent、认证上下文和可变故障钩子按序传给录入函数，并直接返回该次调用结果。
+- 两个调用点使用同一个录入定义和同一个 `StandardRecord` 事务实现。公开方法选择实际的 retirement、terminal、renewal、unload、graphic 五个实现和具体 codec。提供方薄根在相应位置传入自己的类型与字典参数。五个检查器回归各自断开一处操作数、错误返回边、构造字段、编码类型或提供方参数，均要求具体诊断命中。
+
+候选还以四参数转发薄根单独抽取公开 journal。固定 Aeneas 为公开方法、该薄根、通用录入和原提供方薄根生成透明方法体。入口核对该视图与协调器视图的源码和调用选择，保留生成体、映射及外部符号清单。此视图的验收层级为 Rust 抽取与 Aeneas 翻译；下节的内核定理仍在已开始事务的原提供方工程检查。
+
+与原事务视图相比，公开视图多出 12 个外部函数和 8 个类型。接入 Lean 时需要以下逐符号连接。
+
+| 提供方 | 需要连接的内容 |
+| --- | --- |
+| V5 事务与应用状态 | 将 `WorldTransaction::begin` 的连接、`CommittedWorld`、成功事务与返回连接接到原录入证明的 owner 表示。接收者还携带 `ControllerLease`、`HostEpochObservation`。 |
+| V0 字符串、V3 编码 | 连接 `String::deref`、`StandardGraphicBytes::all_graphic`、retirement 的 `digest/encode_intent/encode_receipt` 及 terminal、renewal、unload 各自的 `encode`，并落实五个具体实现类型。 |
+| V3 收件、V5 持久化 | 将 `StandardRecordCodec` 的 `decode_maintenance/decode_inbox/encode_inbox` 接到各自现有值与字节合同。 |
+
 ## 从已开始的事务取得重放返回值
 
 原事务证明的输入包含实际查找结果、两个机器索引和查询返回值。这里在该提供方自己的 Lake 视图中复用 `actual_root_replays_full_authenticated_request`、`InboxAdmission.accepts_iff` 和完整查找、状态合同，从载入后的值推出这些输入。父函数接收已经开始的原事务、命名空间、codec 和故障钩子。
@@ -60,14 +78,14 @@ SANDPROOF_ACCEPTANCE_ROLE=formal PYTHONDONTWRITEBYTECODE=1 \
   --tools "$proof_tools" --packages "$fixed_lake_packages" --lock "$shared_proof_lock" --output "$new_output"
 ```
 
-`--tools` 下应有原 `aeneas` 与 `lean-mcp`。入口从 Git 解包源树，保留三份 Charon 产物、联合 Lean 生成体、隔离的 Lake 构建、实际文件诊断和审计。两份 `*_Template.lean` 只由翻译器输出，实际工程使用已登记的五个函数绑定和四个类型绑定。
+`--tools` 下应有原 `aeneas` 与 `lean-mcp`。入口从 Git 解包源树，保留四份 Charon 产物、公开 journal 和联合视图的 Lean 生成体、隔离的 Lake 构建、实际文件诊断和审计。联合视图的两份 `*_Template.lean` 只由翻译器输出，实际联合工程使用已登记的五个函数绑定和四个类型绑定。
 
 交主控登记这个形式入口及 `SandboxModel.Lifecycle.Protocol.CoordinatorRevocation` 的九条审计。覆盖记录可登记“在已解码 `Result` 上证明应用撤销选择，全文重放命中给出实际查询和选择，原父函数接线经实际 Charon 核对”，适用版本取通过对应检查的候选。生产协调器是现有原生输入，相关登记与冻结由主控结合 #1061 逐闭包复核。
 
 [公共登记候选](registration-candidate.patch)供主控在包含本包的候选上审阅、试套。[覆盖记录候选](coverage-candidate.patch)注明已实测的源码和边界。登记通过 `scripts/verify-stage1-protocol.sh` 默认使用的 `full` 计划调用同一检查器。其原生前提包括已封口的完整 Linux `functional` 日志中的两个指定测试，以及原 `stage1-inbox-lookup` 和 `stage1-inbox-state` 两份收据。单项命令和缺少封口的日志可用于开发复核。
 
-[默认入口的新增输入候选](inputs-candidate.patch)向 `verification/stage1-protocol-inputs.sha256` 增列本包七份 Python 检查文件、Rust 薄根、两份 Lean 定理模板及生产协调器，共十一项。生产行取追加抽取薄根前的 Rust 全文。主控在接入登记补丁后还需核对原清单已有行、各提供方清单及同一候选的原生封口。
+[默认入口的新增输入候选](inputs-candidate.patch)向 `verification/stage1-protocol-inputs.sha256` 增列本包九份 Python 检查文件、两份 Rust 薄根、两份 Lean 定理模板、三份生产 Rust 源码以及原事务提供方的 profile 和薄根，共十八项。该补丁以主控 #1061 的清单为基线，保留其 SQLite 检查输入；尚未叠入 #1061 的分支可按补丁中的十八个路径和 SHA 逐项核对。生产行取追加抽取薄根前的 Rust 全文。主控在接入登记补丁后还需核对原清单已有行、各提供方清单及同一候选的原生封口。
 
-登记子任务在分配的四核内继承并核对原协调锁描述符。检查点读取三份指定 LLBC、真实内核命令的退出状态与日志、物理文件和原服务回执。收敛与 Create 有限计划继续按各自的原任务清单验收。主控合入时需重新校验受影响的公共冻结和完整原生输入。
+登记子任务在分配的四核内继承并核对原协调锁描述符。检查点读取四份指定 LLBC、公开 journal 的五份生成产物、真实内核命令的退出状态与日志、物理文件和原服务回执。收敛与 Create 有限计划继续按各自的原任务清单验收。主控合入时需重新校验受影响的公共冻结和完整原生输入。
 
 ning 在同一候选运行普通完整检查，核对现有 `historical_unload_keeps_resumed_route_current_unload_revokes_it` 与新增 `uncertain_commit_selects_broadcast_only_for_access_ending_operations` 两个原生断言组。前者通过原应用和受控端口观察实际通知，后者覆盖不确定提交和普通拒绝的决策边界。完整公共入口和实际网关分别验收。
