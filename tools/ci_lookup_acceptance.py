@@ -176,14 +176,17 @@ def stage_files(output, invocation, terminal, module):
 
 
 def closeout(output, observer, *, checkout=None):
-    module = lookup(checkout)
     _, enrollment, targets = formal_builds.admission(output)
     invocation = json_file(private_path(output/INVOCATION))
+    module = lookup()
+    candidate = module.clean_candidate() if checkout is None else module.clean_candidate(checkout)
     schema = invocation.get('schema')
-    if (schema not in (1, 2) or invocation['candidate'] != module.clean_candidate()
+    if (schema not in (1, 2) or invocation['candidate'] != candidate
             or type(invocation.get('lookup_only', False)) is not bool
             or enrollment['candidate'] != invocation['candidate']['commit']):
         raise ValueError('original Lookup candidate and build enrollment required')
+    if checkout is not None:
+        module = lookup(checkout)
     expected = TARGETS if schema == 1 else build_targets(module, invocation['native'])
     if targets != [output/target for target in expected]:
         raise ValueError('original Lookup build paths differ from the enrolled execution')

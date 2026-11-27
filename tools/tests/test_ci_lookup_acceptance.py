@@ -254,6 +254,19 @@ raise SystemExit({terminal})
             module.load_native_reuse.assert_not_called()
             self.assertEqual(proofs.call_count, 2)
 
+    def test_closeout_checks_original_git_identity_before_loading_its_driver(self):
+        output = self.root/'recovered-evidence'
+        output.mkdir()
+        write_once(output/wrapper.INVOCATION, dict(schema=2, candidate=self.candidate, native=None))
+        reader = Mock(return_value=dict(commit='c'*40, tree='d'*40))
+        enrolled = (None, {'candidate': self.candidate['commit']}, [])
+        with (patch.object(formal_builds, 'admission', return_value=enrolled),
+              patch.object(wrapper, 'lookup', return_value=SimpleNamespace(clean_candidate=reader)) as lookup):
+            with self.assertRaisesRegex(ValueError, 'original Lookup candidate'):
+                wrapper.closeout(output, self.observer, checkout=self.checkout)
+        reader.assert_called_once_with(self.checkout)
+        lookup.assert_called_once_with()
+
     def test_saved_proof_readback_rejects_changed_type_and_llbc(self):
         folder = self.root/'formal-key-only'
         project = folder/'source'
