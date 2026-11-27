@@ -160,7 +160,8 @@ def project_files(project, generated):
     for package, stem in [('inbox-state', 'FunsExternal'), ('inbox-lookup', 'TypesExternal')]:
         shutil.copy2(project/AREA/package/(stem+'.lean.in'), project/GENERATED/(stem+'.lean'))
     for package, stem in [('inbox-record', 'InboxRecordCloning'), ('inbox-state', 'InboxStateModel'),
-                          ('inbox-state', 'InboxState'), ('inbox-lookup', 'InboxLookupModel'),
+                          ('inbox-state', 'InboxState'), ('inbox-state', 'InboxStateValues'),
+                          ('inbox-lookup', 'InboxLookupModel'),
                           ('inbox-lookup', 'InboxLookupSupport'), ('inbox-lookup', 'InboxLookupValues'),
                           ('inbox-lookup', 'InboxLookup'), ('inbox-position', 'InboxPositionLookup'),
                           ('coordinator-revocation', 'CoordinatorRevocation')]:
