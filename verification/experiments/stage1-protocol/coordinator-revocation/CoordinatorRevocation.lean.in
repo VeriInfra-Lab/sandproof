@@ -8,6 +8,11 @@ open sandproof_controller_service.application.coordinator.lifecycle_intent
 
 namespace SandboxModel.Stage1Protocol.CoordinatorRevocation
 
+/-- The concrete production injector returns Rust success and preserves its receiver at every point. -/
+theorem never_crash_hit (hook : NeverCrash) (point : CrashPoint) :
+    NeverCrash.Insts.Sandproof_controller_serviceCrashInjector.hit hook point =
+      .ok (.Ok (), hook) := rfl
+
 /-- Only these two operation kinds end existing data access. -/
 def endsAccess : LifecycleOperation → Bool
   | .Unload .. | .Destroy => true
@@ -62,3 +67,4 @@ end SandboxModel.Stage1Protocol.CoordinatorRevocation
 #audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.failure
 #audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.from_indexed_state
 #audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.other_version
+#audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.never_crash_hit

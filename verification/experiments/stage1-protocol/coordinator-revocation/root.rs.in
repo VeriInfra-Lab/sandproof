@@ -5,3 +5,11 @@ fn proof_data_revocation(
 ) -> DataRevocation {
     data_revocation(op, result)
 }
+
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_never_crash(
+    hook: &mut crate::NeverCrash,
+    point: crate::CrashPoint,
+) -> Result<(), JournalError> {
+    crate::CrashInjector::hit(hook, point)
+}
