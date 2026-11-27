@@ -228,9 +228,16 @@ pub(in crate::controller) fn validate(
     connection: &Connection,
     world: &sandbox_controller_core::World,
 ) -> Result<(), JournalError> {
+    validate_and_load(connection, world).map(drop)
+}
+
+pub(in crate::controller) fn validate_and_load(
+    connection: &Connection,
+    world: &sandbox_controller_core::World,
+) -> Result<Option<Inbox>, JournalError> {
     super::source_work::validate(connection, world)?;
     let Some(inbox) = load(connection)? else {
-        return Ok(());
+        return Ok(None);
     };
     validate_confirmed(connection, world, &inbox)?;
     super::refusal::validate(connection, &inbox)?;
@@ -327,7 +334,7 @@ pub(in crate::controller) fn validate(
             super::renewal_confirmation::validate_lifetimes(session, lifetime)?;
         }
     }
-    Ok(())
+    Ok(Some(inbox))
 }
 
 fn validate_confirmed(

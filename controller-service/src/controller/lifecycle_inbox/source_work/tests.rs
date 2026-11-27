@@ -1369,6 +1369,39 @@ fn resume_request() -> AcceptedLifecycleIntent {
 }
 
 #[test]
+fn pending_lists_use_only_a_valid_inbox() {
+    let dir = tempfile::tempdir().unwrap();
+    let (journal, _) = ready(&dir.path().join("db"));
+    let request = unload();
+    let node = &request.request.binding.node;
+    assert_eq!(
+        journal.lifecycle_pending_unloads(node).unwrap(),
+        vec![request.clone()]
+    );
+    assert!(journal.lifecycle_pending_renewals(node).unwrap().is_empty());
+    assert!(journal.lifecycle_pending_resumes(node).unwrap().is_empty());
+
+    journal
+        .journal
+        .connection
+        .execute(
+            "UPDATE controller_lifecycle_inbox SET sha256 = zeroblob(32) WHERE id=1",
+            [],
+        )
+        .unwrap();
+    for list in [
+        ControllerJournal::lifecycle_pending_renewals,
+        ControllerJournal::lifecycle_pending_unloads,
+        ControllerJournal::lifecycle_pending_resumes,
+    ] {
+        assert!(matches!(
+            list(&journal, node),
+            Err(JournalError::CorruptStore)
+        ));
+    }
+}
+
+#[test]
 fn recording_resume_does_not_mint_a_source_pin_or_change_native_incarnation() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("db");
