@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -347,6 +348,47 @@ class CiVmTests(unittest.TestCase):
         self.assertNotIn(jit, unit)
         for forbidden in ('GH_TOKEN=', 'GITHUB_APP_PRIVATE_KEY=', 'BEGIN PRIVATE KEY'):
             self.assertNotIn(forbidden, str(config))
+
+    def test_optional_checkout_archive_verifies_protected_fixed_content(self):
+        content = b'pinned checkout archive fixture'
+        with tempfile.TemporaryDirectory() as temp, patch.object(ci_vm, 'ROOT', Path(temp)), \
+                patch.object(ci_vm, 'CHECKOUT_ARCHIVE_BYTES', len(content)), \
+                patch.object(ci_vm, 'CHECKOUT_ARCHIVE_SHA256', hashlib.sha256(content).hexdigest()):
+            self.assertIsNone(ci_vm.load_checkout_archive())
+            path = Path(temp) / ci_vm.CHECKOUT_ARCHIVE_NAME
+            path.write_bytes(content)
+            path.chmod(0o444)
+            protected = SimpleNamespace(st_mode=stat.S_IFREG | 0o444, st_uid=0, st_size=len(content))
+            with patch.object(ci_vm.os, 'fstat', return_value=protected):
+                self.assertEqual(ci_vm.load_checkout_archive(), content)
+                protected.st_mode = stat.S_IFREG | 0o644
+                with self.assertRaisesRegex(ValueError, 'root-owned, read-only'):
+                    ci_vm.load_checkout_archive()
+                protected.st_mode = stat.S_IFREG | 0o444
+                with patch.object(ci_vm, 'CHECKOUT_ARCHIVE_SHA256', '0' * 64), \
+                        self.assertRaisesRegex(ValueError, 'pinned SHA256'):
+                    ci_vm.load_checkout_archive()
+
+    def test_checkout_archive_uses_upstream_layout_alongside_source_disk(self):
+        jit = base64.b64encode(b'opaque-test-jit-configuration').decode()
+        cache = ci_vm.ci_source_cache
+        disk = cache.SourceDisk(Path('/private/source.iso'), cache.PullSource(1, 'a' * 40, 'b' * 40),
+                                'c' * 40, 'd' * 40)
+        original = ci_vm.cloud_config('sdk', jit, source_disk=disk)
+        payload = b'reviewed checkout archive'
+        config = ci_vm.cloud_config('sdk', jit, source_disk=disk, checkout_archive=payload)
+        files = {entry['path']: entry for entry in config['write_files']}
+        env = files['/etc/sandproof-ci.env']['content']
+        archive_path = f'{ci_vm.ACTION_ARCHIVE_CACHE}/actions_checkout/{ci_vm.CHECKOUT_REF}.tar.gz'
+        archive = files[archive_path]
+        self.assertIn(f'ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE={ci_vm.ACTION_ARCHIVE_CACHE}\n', env)
+        self.assertEqual((archive['owner'], archive['permissions'], archive['encoding']), ('root:root', '0444', 'b64'))
+        self.assertEqual(base64.b64decode(archive['content'], validate=True), payload)
+        self.assertIn(cache.GUEST_BIN + '/git', files)
+        self.assertEqual(config['runcmd'], original['runcmd'])
+        self.assertNotIn('ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE', str(original))
+        with self.assertRaisesRegex(ValueError, 'only for ordinary job disks'):
+            ci_vm.cloud_config('preheat', checkout_archive=payload)
 
     def test_invalid_jit_rejected(self):
         for value in ('', 'bad secret', 'x' * 131073, 'invalid-length-jit='):
