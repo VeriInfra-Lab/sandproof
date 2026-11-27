@@ -160,15 +160,17 @@ bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-look
 变化时，依计划中的模块扩大检查；未映射路径先查清范围再验收。计划本身不记录通过。
 
 ```sh
-# 使用现有的固定 Rust、Python、离线 Cargo 和真实 Redis 环境。
+# 在原协调锁下使用固定 Rust、Python、离线 Cargo 和真实 Redis。
 export CARGO_NET_OFFLINE=true
 export SANDPROOF_REDIS_SERVER=/path/to/fixed/redis-server
 export SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE=/private/acceptance/sqlite-original.tar
 export SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE=/private/acceptance/child-original.tar
 export SANDPROOF_WRITER_SOURCE_ARCHIVE=/private/acceptance/writer-original.tar.gz
 export SANDPROOF_LIBRARY_SOURCE_ARCHIVE=/private/acceptance/library-original.tar
-bash scripts/python-entry.sh tools/proof_native_suite.py run \
-  --output /private/acceptance/native-evidence
+bash scripts/python-entry.sh tools/native_task.py run \
+  --candidate "$(git rev-parse HEAD)" --scope all \
+  --output /private/acceptance/native-evidence \
+  --observer "$SANDPROOF_NATIVE_OBSERVER"
 ```
 
 这个入口包含完整 Linux `check-function.sh`，并运行原证明入口中的独立抽取
@@ -189,7 +191,9 @@ SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这�
 工作区或共享父目录。权限不符合原用例要求时，在昂贵测试前失败。
 
 原始工作目录、二进制摘要和日志保存在验收证据目录。形式检查消费完整的 `commands/`、
-`runtime.json` 和 `complete.json`。Cargo target 按私有构建规则回收。只有全部子检查成功后才写
+`runtime.json` 和 `complete.json`。Cargo target 按私有构建规则回收。宿主从已安装的原生环境提供
+`SANDPROOF_NATIVE_OBSERVER`。回收失败后沿用同一路径，以该命令的 `resume` 续办，
+先查原退出记录和收据再决定是否启动新验收。只有全部子检查成功后才写
 `complete.json`。证明机必须检查完整记录及其所有日志摘要，缺一个、被修改或
 未完成都拒绝入场，不能只信文件名或一个 `success` 字段。
 
@@ -241,9 +245,11 @@ Charon 或 Aeneas。原生入口在完整 `functional` 前核对整包和每个�
 并纳入此组件一次。形式入口只接当前六字段的真实 caller，不调用历史四字段值层 replay：
 
 ```sh
-# ning：同一干净提交及本节固定普通环境。
-bash scripts/python-entry.sh tools/proof_native_suite.py run \
-  --scope capture-caller --output /private/acceptance/capture-caller-native
+# 同一手动验收宿主、同一干净提交及本节固定普通环境。
+bash scripts/python-entry.sh tools/native_task.py run \
+  --candidate "$(git rev-parse HEAD)" --scope capture-caller \
+  --output /private/acceptance/capture-caller-native \
+  --observer "$SANDPROOF_NATIVE_OBSERVER"
 # 证明机：保留全部原 commands、runtime、complete 和 source.tar/源清单；不传 target。
 export SANDPROOF_ACCEPTANCE_ROLE=formal
 export SANDPROOF_NATIVE_EVIDENCE=/private/acceptance/capture-caller-native
