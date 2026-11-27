@@ -146,21 +146,6 @@ GitHub CI 使用现有的隔离 runner。手动验收宿主执行 Rust/Python �
 某条证明需要本次新抽取或原生结果时，等对应的前置任务通过后再运行。
 晋升所需的完整原生验收和登记范围内的 Stage1 使用同一个固定候选。
 
-收件查找提供[定向验收入口](../verification/experiments/stage1-protocol/inbox-lookup/module_acceptance.py)。
-先从提交干净的检出读取计划，确认受影响的下游：
-
-```sh
-bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-lookup/module_acceptance.py \
-  --base <已核对的基线提交> --plan
-```
-
-计划允许定向运行时，以 `--output <新建私有证据路径>` 和
-`--formal-lock <现有证明锁路径>` 替代 `--plan`。入口复用原 Rust 测试和两份原 Lean
-检查，输出 `module-result.json`；结果适用于报告中的候选与范围。共享生产入口或合同
-变化时，依计划中的模块扩大检查；未映射路径先查清范围再验收。计划本身不记录通过。
-
-只修改没有下游消费者的 `InboxLookupWrong.lean.in` 时，可以按这一模块的独立收据复用原生检查。先在基线用 `--prepare-native` 写入 `lookup-native-receipt.json`，并保留原始结果和命令日志。随后从新提交运行定向入口，用 `--base` 指向收据对应的实际原提交，传入 `--reuse-native` 和 `--reuse-native-sha256`。仅接纳该证明页及其两个派生摘要表的精确更新；Rust、工具、配置、原生结果、日志或下游关系发生未登记变化时停止。两份原 Lean 证明仍实际检查。原生收据不代表 Lean 或整批验收通过。
-
 ```sh
 # 在原协调锁下使用固定 Rust、Python、离线 Cargo 和真实 Redis。
 export CARGO_NET_OFFLINE=true
