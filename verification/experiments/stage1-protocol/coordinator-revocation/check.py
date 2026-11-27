@@ -1,5 +1,6 @@
 """Extract both coordinator callers and check the joint Inbox/decision Lean project."""
 import argparse
+from contextlib import contextmanager
 import fcntl
 import hashlib
 import importlib.util
@@ -12,6 +13,8 @@ import sys
 import tarfile
 
 from guard_binding import check_guard
+from journal_entry import CODEC, CONTROLLER, DATABASE, INBOX, PROVIDER, RECORD, RECORDING, TRANSACTION, check_entry, translated_entry
+from journal_entry_regressions import check_entry_rejections
 from journal_hook import check_joint_hook, check_journal_hook
 from hook_regressions import check_parent_rejections, check_joint_rejection
 from sender_binding import inspect_senders
@@ -27,6 +30,9 @@ STATE = Path('controller-service/src/controller/lifecycle_inbox/model.rs')
 PROOFS = Path('SandboxModel/Lifecycle/Protocol')
 GENERATED = Path('verification/aeneas/stage1-protocol/request/SandproofStage1Request')
 SEED = PROOFS / 'CoordinatorRevocation.lean'
+TRANSACTION_PROVIDER = Path('verification/experiments/create-transaction-link/current')
+RECORD_SOURCE = Path('controller-service/src/controller/lifecycle_inbox/recording.rs')
+JOURNAL_SOURCE = RECORD_SOURCE.parent.with_suffix('.rs')
 
 
 def sha(path):
@@ -74,9 +80,10 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
         retain = []
         manifest = AREA / 'inbox-record/Cargo.toml'
     else:
-        roots = [COORD + '::ControllerApplication::record_lifecycle_intent']
+        roots = [COORD + '::ControllerApplication::record_lifecycle_intent', PROVIDER]
         retain = [MODULE + '::*::record_lifecycle_intent']
-        include = [*retain, COORD + '::*::revoke_data', 'sandbox_controller_core::ids::SandboxId',
+        include = [*retain, INBOX+'::*::record_lifecycle_intent', CONTROLLER, DATABASE, RECORD, CODEC, PROVIDER, TRANSACTION,
+                   RECORDING+'::RecordOutcome', COORD + '::*::revoke_data', 'sandbox_controller_core::ids::SandboxId',
                    SERVICE + '::NeverCrash', SERVICE + '::CrashInjector', SERVICE + '::CrashPoint',
                    SERVICE + '::*::hit', COORD + '::ControllerApplication', COORD + '::Inner', MODEL + '::LifecycleWorkState',
                    SERVICE + '::JournalError', 'sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent',
@@ -105,11 +112,13 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
         broadcast = inspect_parent(raw, refactored=refactored, guard=guard)
         senders = inspect_senders(view, broadcast)
         report = {'ir': sha(ir), 'caller': sha(source/CALLER), 'senders': senders, 'guard_local': guard,
-                  'journal_hook': check_journal_hook(view, source), 'coordinator': sha(source/'controller-service/src/application/coordinator.rs')}
+                  'journal_entry': check_entry(view), 'journal_hook': check_journal_hook(view, source),
+                  'coordinator': sha(source/'controller-service/src/application/coordinator.rs')}
         if refactored:
             senders['rejected_metadata'] = check_rejections(view, broadcast)
             report['rejected_guard_metadata'] = check_guard_rejections(view)
             report['rejected_hook_metadata'] = check_parent_rejections(view, source)
+            report['rejected_entry_metadata'] = check_entry_rejections(view)
         return report
     load(source/AREA/'inbox-lookup/journal_binding.py').admit(raw)
     dest = evidence/'generated'
@@ -154,6 +163,66 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
             'rejected_hook_metadata': check_joint_rejection(view, mapping, source)}
 
 
+@contextmanager
+def transaction_roots(source, *, public=False):
+    provider = source/TRANSACTION_PROVIDER
+    profile = json.loads((provider/'caller-profile.json').read_bytes())
+    root = provider/'caller-root.rs.in'
+    path = source/RECORD_SOURCE
+    require(profile['roots'] == [PROVIDER] and profile['append_only'] ==
+            {'path': str(RECORD_SOURCE), 'sha256': sha(root)}, 'unexpected transaction proof root')
+    original = path.read_bytes()
+    inputs = dict(root_sha256=sha(root), recording_sha256=sha(path), journal_sha256=sha(source/JOURNAL_SOURCE))
+    fragment = (source/PKG/'public-journal-root.rs.in').read_bytes() if public else b''
+    try:
+        path.write_bytes(original+root.read_bytes()+fragment)
+        yield profile, inputs
+    finally:
+        path.write_bytes(original)
+
+
+def capture_parent(source, evidence, tools, fixed, *, refactored=False):
+    with transaction_roots(source) as (_, inputs):
+        result = capture(source, evidence, tools, fixed, refactored=refactored)
+    result['journal_entry'].update(inputs)
+    return result
+
+
+def capture_public(source, folder, tools, fixed):
+    folder.mkdir(mode=0o700)
+    os.environ['CARGO_TARGET_DIR'] = str(folder/'target')
+    ir = folder/'actual.llbc'
+    wrapper = RECORDING+'::proof_public_journal'
+    with transaction_roots(source, public=True) as (profile, inputs):
+        profile['roots'].append(wrapper)
+        profile['include'].extend([INBOX+'::*::record_lifecycle_intent', CONTROLLER, DATABASE, CODEC, wrapper])
+        options = [arg for k in ('include', 'opaque', 'exclude', 'roots') for value in profile[k]
+                   for arg in ('--start-from' if k == 'roots' else '--'+k, value)]
+        run(source, folder, 'charon', [tools/'aeneas/charon/bin/charon', 'cargo', '--preset=aeneas', '--error-on-warnings',
+            '--sysroot', 'default', *options, '--dest-file', ir, '--', '--manifest-path', 'controller-service/Cargo.toml',
+            '--lib', '--locked', '--offline', '--target', fixed['target']])
+    raw = json.loads(ir.read_bytes())
+    trans = raw['translated']
+    opts = trans['options']
+    require(raw['has_errors'] is False and [t['key'] for t in trans['target_information']] == [fixed['target']]
+            and opts['start_from'] == profile['roots'] and all(opts[k] == profile[k] for k in ('include', 'opaque', 'exclude'))
+            and not any(opts[k] for k in ('start_from_if_exists', 'skip_borrowck', 'no_typecheck', 'monomorphize')),
+            'unexpected public journal extraction')
+    view = load(source/AREA/'serde-binding/binding.py').Original(raw)
+    dest = folder/'generated'
+    run(source, folder, 'aeneas', [tools/'aeneas/bin/aeneas', '-backend', 'lean', '-abort-on-error', '-warnings-as-errors',
+        '-split-files', '-emit-json', '-namespace', 'SandproofActualRecordRust', '-subdir', 'SandproofActualRecord',
+        '-dest', dest, ir])
+    mapping = json.loads((dest/'translation.json').read_bytes())
+    generated = translated_entry(view, mapping, wrapper)
+    files = ['translation.json', 'SandproofActualRecord/Funs.lean', 'SandproofActualRecord/Types.lean',
+             'SandproofActualRecord/FunsExternal_Template.lean', 'SandproofActualRecord/TypesExternal_Template.lean']
+    return {'ir': sha(ir), 'journal_entry': check_entry(view) | inputs, 'translated': generated,
+            'generated': {n: sha(dest/n) for n in files}, 'external': {
+                k: sorted(row['lean_name'] for row in mapping[k] if row['lean_file'].endswith('External_Template.lean'))
+                for k in ('functions', 'types')}, 'kernel_checked': False}
+
+
 def project_files(project, generated):
     for n in ('Funs.lean', 'Types.lean'):
         shutil.copy2(generated/'SandproofStage1Request'/n, project/GENERATED/n)
@@ -192,9 +261,12 @@ def check(args, report):
     old, project = args.output/'original', args.output/'project'
     unpack(BASE, old)
     unpack(current, project)
-    report['original_parent'] = capture(old, args.output/'original-parent', args.tools, fixed)
-    report['candidate_parent'] = capture(
+    report['original_parent'] = capture_parent(old, args.output/'original-parent', args.tools, fixed)
+    report['candidate_parent'] = capture_parent(
         project, args.output/'candidate-parent', args.tools, fixed, refactored=True)
+    report['public_journal'] = capture_public(project, args.output/'public-journal', args.tools, fixed)
+    require(report['candidate_parent']['journal_entry'] == report['public_journal']['journal_entry'],
+            'public translation differs from the real coordinator journal capture')
     for path, fragment in [(STATE, AREA/'inbox-state/roots.rs.in'), (STATE, AREA/'inbox-lookup/extract-root.rs.in'),
                            (CALLER, PKG/'root.rs.in')]:
         with (project/path).open('ab') as stream:

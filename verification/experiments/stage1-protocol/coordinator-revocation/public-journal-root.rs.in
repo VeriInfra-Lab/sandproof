@@ -1,0 +1,10 @@
+
+#[expect(dead_code, reason = "selected by the fixed Charon")]
+pub(super) fn proof_public_journal<C: CrashInjector>(
+    journal: &mut crate::controller::ControllerJournal,
+    intent: &AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+    crashes: &mut C,
+) -> Result<LifecycleWorkState, JournalError> {
+    journal.record_lifecycle_intent(intent, context, crashes)
+}
