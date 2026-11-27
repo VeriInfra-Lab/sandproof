@@ -38,6 +38,18 @@
 
 本片从已解码收件值及进入查找的完整意图开始。调用前的认证、未命中后的写入和事务仍有各自的合同。日志事务的实际行来源、未知提交的耐久结局由 V5 提供。真实 watch 送达、网关撤销与在途 I/O 收尾由数据通路提供。上表描述此入口作出的选择；任何成功返回均不能单独说明实际连接已经断开。互斥锁、进程取消和错误载荷沿用[逐符号依赖](../../../../docs/formal/dependencies.md)。
 
+## 从已开始的事务取得重放返回值
+
+原事务证明的输入包含实际查找结果、两个机器索引和查询返回值。这里在该提供方自己的 Lake 视图中复用 `actual_root_replays_full_authenticated_request`、`InboxAdmission.accepts_iff` 和完整查找、状态合同，从载入后的值推出这些输入。父函数接收已经开始的原事务、命名空间、codec 和故障钩子。
+
+- `JournalReplayState.retained_state` 适用于任意已载入收件箱。若配置与认证上下文匹配、封套有效且全文查找规范首次命中，实际父调用返回该会话和条目构成的完整工作状态以及原故障钩子状态。其 `current` 精确比较入参接受版本与命中会话当前版本，`local` 取自同一会话。定理内部用实际查找取得索引及界限。
+- `JournalReplayState.refused_before_commit` 覆盖配置或封套拒绝，以及二者通过后查找遇到冲突。实际父调用在相应分支返回 `Conflict` 和原故障钩子状态。认证拒绝对收件箱的查找结果无任何要求。
+- `JournalReplayState.same_key_capture_replies` 用原查找包的两份合法 Unload 封套作对照。同一来件遇到完全相同的存储条目时返回完整状态，仅改变存储的 capture 而保留键时返回 `Conflict`。每个分支只要求该次实际载入自己的样例。
+
+这三条定理在原事务提供方的生成类型上检查；上节协调器的查找与决策在自己的联合抽取中检查。两处共同使用原 `InboxLookup` 与 `InboxState.workState` 规格。载入结果、字节可表示和 Graphic 字符检查沿用提供方的具名条件。实际 BEGIN、自动析构和物理回滚仍交由事务提供方。
+
+[事务包登记候选](journal-provider-candidate.patch)以 #1061 的 `de37231d` 为补丁基线，供主控在叠入本生产版本的候选上接入。补丁将新页面加入现有事务入口的构建根与逐文件检查清单，用 `current_file_overrides` 记录本版协调器，保留原冻结。事务独立入口的既有输入漂移仍需按各自提供方回执核对。
+
 ## 复验与登记候选
 
 在证明机干净候选上使用固定工具和现有重锁，给出新的私有输出目录。
@@ -54,7 +66,7 @@ SANDPROOF_ACCEPTANCE_ROLE=formal PYTHONDONTWRITEBYTECODE=1 \
 
 [公共登记候选](registration-candidate.patch)供主控在包含本包的候选上审阅、试套。[覆盖记录候选](coverage-candidate.patch)注明已实测的源码和边界。登记通过 `scripts/verify-stage1-protocol.sh` 默认使用的 `full` 计划调用同一检查器。其原生前提包括已封口的完整 Linux `functional` 日志中的两个指定测试，以及原 `stage1-inbox-lookup` 和 `stage1-inbox-state` 两份收据。单项命令和缺少封口的日志可用于开发复核。
 
-[默认入口的新增输入候选](inputs-candidate.patch)向 `verification/stage1-protocol-inputs.sha256` 增列本包七份 Python 检查文件、Rust 薄根、Lean 定理模板及生产协调器，共十项。生产行取追加抽取薄根前的 Rust 全文。主控在接入登记补丁后还需核对原清单已有行、各提供方清单及同一候选的原生封口。
+[默认入口的新增输入候选](inputs-candidate.patch)向 `verification/stage1-protocol-inputs.sha256` 增列本包七份 Python 检查文件、Rust 薄根、两份 Lean 定理模板及生产协调器，共十一项。生产行取追加抽取薄根前的 Rust 全文。主控在接入登记补丁后还需核对原清单已有行、各提供方清单及同一候选的原生封口。
 
 登记子任务在分配的四核内继承并核对原协调锁描述符。检查点读取三份指定 LLBC、真实内核命令的退出状态与日志、物理文件和原服务回执。收敛与 Create 有限计划继续按各自的原任务清单验收。主控合入时需重新校验受影响的公共冻结和完整原生输入。
 

@@ -1,0 +1,122 @@
+import SandproofActualRecord.ActualRootLink
+import SandboxModel.Lifecycle.Protocol.InboxAdmission
+import SandboxModel.Lifecycle.Protocol.InboxLookup
+import SandboxModel.Lifecycle.Protocol.InboxPositionLookup
+import SandboxModel.Lifecycle.Protocol.InboxState
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model (Session Entry)
+
+namespace SandproofActualRecordRust.JournalReplayState
+open controller.lifecycle_inbox recording
+open SourceFlowLink CallerBranches
+noncomputable section
+set_option autoImplicit false
+
+variable {R T N U B D C : Type}
+variable (retirement : native_retirement.RetirementEncoding R)
+  (terminal : model.TerminalEncoding T)
+  (renewal : renewal_confirmation.RenewalEncoding N)
+  (unload : unload_resolution.UnloadEncoding U)
+  (graphic : capture.GraphicBytes B) (codecEffects : RecordCodec D)
+  (crash : CrashInjector C) (intent : CallerBranches.Intent) (context : CallerBranches.Context)
+  (graphicLaw : ComposedConfig.FullGraphicContract (oldGraphic graphic))
+  (represented : InboxLoad.DecodedStringsRepresentable
+    (ScopeTransport.recordEffects (actualEffects codecEffects).RecordEffectsInst).codecInboxLoadEffectsInst)
+  (owner : CallerOwnerView) (namespaceName : Str) (codec : D) (crashes : C)
+  (afterLoad : StandardRecord D) (inbox : model.Inbox)
+  (loaded : loadPrefix retirement terminal renewal unload (actualEffects codecEffects).RecordEffectsInst
+    ⟨owner, namespaceName, codec⟩ = .ok (.Ok (some inbox), afterLoad))
+
+include graphicLaw represented loaded
+
+/-- From a checked load, matching context and first full lookup, the real transaction returns
+the whole selected work state and original crash state. The two positions are natural numbers
+from the specification. Their machine representations and both bounds come from the real lookup. -/
+theorem retained_state (config : InboxAdmission.ContextMatches inbox context)
+    (envelope : Validation.ValidEnvelope intent context) (s e : Nat)
+    (found : InboxLookup.inboxSpec intent inbox.sessions.val 0 = .found s e) :
+    ∃ (session : Session) (entry : Entry) (value : model.LifecycleWorkState),
+      inbox.sessions.val[s]? = some session ∧ session.entries.val[e]? = some entry ∧
+      entry.intent = intent ∧ value = InboxState.workState session entry ∧
+      value.current = decide (intent.accepted_version = session.current_version) ∧
+      value.local = session.local ∧
+      proof_record_actual_parent retirement terminal renewal unload graphic codecEffects crash
+        owner namespaceName codec intent context crashes = .ok (.Ok value, crashes) := by
+  have outcome := InboxLookup.find_outcome inbox intent
+  rw [found] at outcome
+  obtain ⟨si, ei, spos, epos, hit⟩ := outcome
+  obtain ⟨session, entry, hs, he, full⟩ := InboxPosition.inbox_found_reads _ _ _ _ found
+  refine ⟨session, entry, _, hs, he, full, rfl, ?_, rfl, ?_⟩
+  · simp [InboxState.workState, full]
+  · apply ActualRootLink.actual_root_replays_full_authenticated_request retirement terminal renewal
+      unload graphic codecEffects crash intent context graphicLaw represented owner namespaceName
+      codec crashes afterLoad inbox si ei _ loaded
+      ((InboxAdmission.accepts_iff inbox intent context).mpr ⟨config, envelope⟩) hit
+    rw [← spos] at hs
+    rw [← epos] at he
+    obtain ⟨sb, rfl⟩ := List.getElem?_eq_some_iff.mp hs
+    obtain ⟨eb, rfl⟩ := List.getElem?_eq_some_iff.mp he
+    exact InboxState.state_contract inbox si ei sb eb
+
+/-- The same parent rejects an invalid context/envelope before lookup, or a first-key conflict
+after admission. Both carry the original crash state out of the transaction. -/
+theorem refused_before_commit
+    (refused : (¬ InboxAdmission.ContextMatches inbox context ∨ ¬ Validation.ValidEnvelope intent context) ∨
+      (InboxAdmission.ContextMatches inbox context ∧ Validation.ValidEnvelope intent context ∧
+        InboxLookup.inboxSpec intent inbox.sessions.val 0 = .conflict)) :
+    proof_record_actual_parent retirement terminal renewal unload graphic codecEffects crash
+      owner namespaceName codec intent context crashes = .ok (.Err .Conflict, crashes) := by
+  have recorded : record_using retirement terminal renewal unload graphic
+      (actualEffects codecEffects).RecordEffectsInst ⟨owner, namespaceName, codec⟩ intent context =
+      .ok (.Err .Conflict, afterLoad) := by
+    rw [actual_record_using_checked_flow retirement terminal renewal unload graphic
+      (actualEffects codecEffects).RecordEffectsInst graphicLaw represented]
+    unfold loadPrefix at loaded
+    rcases refused with invalid | ⟨config, envelope, conflict⟩
+    · have rejected := (InboxAdmission.refuses_iff inbox intent context).mpr invalid
+      simp [ProtocolRecord.flowView, loaded, ProtocolRecord.loadedView, rejected,
+        transferOutcome, convertOutcome, SandproofParentCommitRust.ErrorTransport.fromRequest]
+    · have accepted := (InboxAdmission.accepts_iff inbox intent context).mpr ⟨config, envelope⟩
+      have rejected := InboxLookup.find_outcome inbox intent
+      rw [conflict] at rejected
+      simp [ProtocolRecord.flowView, loaded, ProtocolRecord.loadedView, accepted, rejected,
+        transferOutcome, convertOutcome, SandproofParentCommitRust.ErrorTransport.fromRequest]
+  rw [extraction_root_uses_real_constructor_and_dictionary]
+  simp [record_transaction_using, recorded, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+omit loaded
+open InboxLookup.Witness in
+/-- Both original stored intents validate. With the same incoming key, changing only the
+Unload capture yields Conflict, while the exact match returns the original complete state. -/
+theorem same_key_capture_replies (capture : U64) (fixture : capture = 1#u64 ∨ capture = 2#u64)
+    (observed : loadPrefix retirement terminal renewal unload (actualEffects codecEffects).RecordEffectsInst
+      ⟨owner, namespaceName, codec⟩ = .ok (.Ok (some (InboxLookup.Witness.inbox capture)), afterLoad)) :
+    proof_record_actual_parent retirement terminal renewal unload graphic codecEffects crash
+      owner namespaceName codec (EnvelopeValues.intent 1#u64) EnvelopeValues.context crashes =
+      .ok ((if capture = 1#u64 then .Ok (InboxState.workState (session 1#u64) (entry 1#u64))
+            else .Err .Conflict), crashes) := by
+  rcases fixture with rfl | rfl
+  · obtain ⟨ss, ee, _, hs, he, _, rfl, _, _, reply⟩ := retained_state retirement terminal renewal
+      unload graphic codecEffects crash (EnvelopeValues.intent 1#u64) EnvelopeValues.context
+      graphicLaw represented owner namespaceName codec crashes afterLoad (InboxLookup.Witness.inbox 1#u64)
+      observed ⟨rfl, rfl⟩ normal_shape.1 0 0 normal_spec
+    have session_eq : ss = session 1#u64 := by
+      simpa [InboxLookup.Witness.inbox, InboxLookup.Witness.singleton] using hs.symm
+    subst ss
+    have entry_eq : ee = entry 1#u64 := by simpa [session, InboxLookup.Witness.singleton] using he.symm
+    simpa [entry_eq] using reply
+  · rw [if_neg (by decide)]
+    exact refused_before_commit retirement terminal renewal unload graphic codecEffects crash
+      (EnvelopeValues.intent 1#u64) EnvelopeValues.context graphicLaw represented owner namespaceName
+      codec crashes afterLoad (InboxLookup.Witness.inbox 2#u64) observed
+      (Or.inr ⟨⟨rfl, rfl⟩, normal_shape.1, conflicting_spec⟩)
+
+end
+end SandproofActualRecordRust.JournalReplayState
+
+#audit_controller_proof SandproofActualRecordRust.JournalReplayState.retained_state
+#audit_controller_proof SandproofActualRecordRust.JournalReplayState.refused_before_commit
+#audit_controller_proof SandproofActualRecordRust.JournalReplayState.same_key_capture_replies
