@@ -1,6 +1,9 @@
 import importlib.util
+from copy import deepcopy
 from pathlib import Path
+import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -87,6 +90,80 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
         self.assertEqual(acceptance.refreshed_inputs(before, {path: 'c' * 64}),
                          {'modules': {'InboxLookup': {'repository': path, 'sha256': 'c' * 64},
                                       'Independent': {'repository': 'other', 'sha256': 'b' * 64}}})
+
+    def test_only_the_declared_lean_page_and_derived_tables_can_reuse_native(self):
+        paths = sorted({acceptance.WRONG_PAGE, *acceptance.WRONG_FREEZES})
+        with patch.object(acceptance, 'reviewed_refresh', return_value=True), \
+                patch.object(acceptance, 'lean_consumers', return_value={'inbox-lookup'}) as consumers:
+            self.assertEqual(acceptance.native_reuse_paths(paths, 'old', root=ROOT), paths)
+            with self.assertRaisesRegex(ValueError, 'requires only'):
+                acceptance.native_reuse_paths([*paths, acceptance.MODEL], 'old', root=ROOT)
+            consumers.return_value = {'inbox-lookup', 'new-consumer'}
+            with self.assertRaisesRegex(ValueError, 'unreviewed downstream'):
+                acceptance.native_reuse_paths(paths, 'old', root=ROOT)
+
+    def test_original_native_key_rejects_tool_config_argv_or_production_drift(self):
+        paths = sorted({acceptance.WRONG_PAGE, *acceptance.WRONG_FREEZES})
+        original = {'kind': 'inbox-lookup-native-key-v1',
+                    'source': dict.fromkeys([*paths, acceptance.MODEL], 'old'),
+                    'rules': {acceptance.WRONG_PAGE: 'old'},
+                    'runtime': {'tools': {'cargo': 'original'}, 'test_configuration': {'threads': 4}},
+                    'commands': {'test': ['cargo', 'test']}}
+        current = deepcopy(original)
+        current['source'].update(dict.fromkeys(paths, 'new'))
+        current['rules'][acceptance.WRONG_PAGE] = 'new'
+        acceptance.compare_native_keys(original, current, paths)
+        variants = [
+            ('runtime', {'tools': {'cargo': 'new'}, 'test_configuration': {'threads': 4}}),
+            ('runtime', {'tools': {'cargo': 'original'}, 'test_configuration': {'threads': 8}}),
+            ('commands', {'test': ['cargo', 'clippy']}),
+            ('source', {**current['source'], acceptance.MODEL: 'drift'}),
+        ]
+        for key, value in variants:
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                acceptance.compare_native_keys(original, {**current, key: value}, paths)
+
+    def test_standalone_receipt_requires_its_original_result_and_every_command_log(self):
+        paths = sorted({acceptance.WRONG_PAGE, *acceptance.WRONG_FREEZES})
+        base = {'commit': 'a' * 40, 'tree': 'b' * 40}
+        tools = {name: {'sha256': 'c' * 64, 'version': name} for name in ('cargo', 'rustc', 'clippy-driver')}
+        original = {'kind': 'inbox-lookup-native-key-v1', 'source': dict.fromkeys(paths, 'old'),
+                    'rules': {}, 'runtime': {'tools': {'rustup:' + name: row for name, row in tools.items()}}}
+        current = {**original, 'source': dict.fromkeys(paths, 'new')}
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            folder = root / 'original-native'
+            folder.mkdir()
+            (root / 'original-native.log').write_text('fixture launcher log\n')
+            record = dict(kind='inbox-lookup-native-development', complete=True, inputs=original['source'],
+                          source_commit=base['commit'], variants={name: {'complete': True}
+                          for name in acceptance.NATIVE_VARIANTS}, registry={'test': {}}, tools=tools,
+                          commands=[], seconds=1)
+            for variant in acceptance.NATIVE_VARIANTS:
+                (folder / variant).mkdir()
+                for label in acceptance.NATIVE_COMMANDS:
+                    log = folder / variant / (label + '.log')
+                    log.write_text('fixture original command log\n')
+                    mutant = (variant, label) == ('key-only', 'test')
+                    record['commands'].append(dict(variant=variant, label=label, argv=acceptance.native_argv(label),
+                        exit_code=101 if mutant else 0, property_rejected=mutant, log_sha256=acceptance.sha(log)))
+            result = folder / 'result.json'
+            acceptance.write_json(result, record)
+            original_status = acceptance.publish_native_receipt(root, base, original, record)
+            path = Path(original_status['receipt'])
+            sha = original_status['receipt_sha256']
+            loaded, report = acceptance.load_native_reuse(path, sha, base, current, paths)
+            self.assertEqual(loaded, record)
+            self.assertEqual(report['use'], 'REUSE')
+            self.assertEqual(acceptance.sha(path), sha)
+            self.assertFalse((root / 'complete.json').exists())
+            missing = folder / 'key-only/test.log'
+            missing.unlink()
+            with self.assertRaisesRegex(ValueError, 'invalid original Rust command evidence'):
+                acceptance.load_native_reuse(path, sha, base, current, paths)
+            result.unlink()
+            with self.assertRaisesRegex(ValueError, 'missing or changed original native result'):
+                acceptance.load_native_reuse(path, sha, base, current, paths)
 
 
 if __name__ == '__main__':

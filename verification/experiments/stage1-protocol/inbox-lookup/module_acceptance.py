@@ -9,9 +9,11 @@ import os
 from pathlib import Path
 import platform
 import re
+import shutil
 import subprocess
 import sys
 import time
+import tomllib
 
 ROOT = Path(__file__).resolve().parents[4]
 STAGE1 = Path('verification/experiments/stage1-protocol')
@@ -30,11 +32,20 @@ VARIANTS = {
 THEOREM_TYPE = 'SandboxModel.Stage1Protocol.InboxLookup.FullLookupContract '
 LOOKUP = 'SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.find'
 FREEZE = 'verification/stage1-protocol-inputs.sha256'
+WRONG_PAGE = str(HERE / 'InboxLookupWrong.lean.in')
+WRONG_FREEZES = {FREEZE, 'verification/protocol-convergence-inputs.sha256'}
+NATIVE_RECEIPT = 'lookup-native-receipt.json'
+NATIVE_VARIANTS = ('original', 'candidate', 'key-only', 'restored')
+NATIVE_COMMANDS = {
+    'test': ['--lib', '--message-format=json', 'proof_lookup::', '--', '--nocapture'],
+    'clippy': ['--lib', '--tests', '--', '-D', 'warnings'],
+}
 METADATA_FILES = {'inventory.json', 'frozen.json', 'candidate.json', 'package-inputs.json',
                   'sources.json', 'input-closure.json'}
 
 sys.path.insert(0, str(ROOT))
-from tools.acceptance_receipts import native_test_configuration, sha, write_json
+from tools.acceptance_receipts import (contract_inputs, digest, native_test_configuration,
+                                       repository_inputs, rules, rust_inputs, sha, tree_digest, write_json)
 
 
 def read(path):
@@ -171,7 +182,7 @@ def reviewed_refresh(root, base, name, hashes):
     if not (root / name).is_file():
         return False
     old = git('show', f'{base}:{name}', root=root)
-    if name == FREEZE:
+    if name in WRONG_FREEZES:
         revised = re.sub(r'^([0-9a-f]{64})(  )([^\n]+)$',
                          lambda m: hashes.get(m[3], m[1]) + m[2] + m[3], old.decode(), flags=re.M)
         return revised != old.decode() and revised == (root / name).read_text()
@@ -210,6 +221,84 @@ def lean_consumers(root, seeds):
             if any(name.rsplit('.', 1)[-1] in modules for line in imports for name in line.split()):
                 consumers.add(str(path.relative_to(root)))
     return consumers
+
+
+def native_reuse_paths(paths, base, root=ROOT):
+    """The one reviewed Lean page and its deterministic checksum updates."""
+    if set(paths) != {WRONG_PAGE, *WRONG_FREEZES}:
+        raise ValueError('native reuse requires only InboxLookupWrong.lean.in and its two exact freeze updates')
+    for name in paths:
+        if (root / name).is_symlink() or not (root / name).is_file():
+            raise ValueError('native reuse requires regular tracked inputs: ' + name)
+    hashes = {WRONG_PAGE: sha(root / WRONG_PAGE)}
+    if any(not reviewed_refresh(root, base, name, hashes) for name in WRONG_FREEZES):
+        raise ValueError('freeze edit is not the exact checksum refresh for InboxLookupWrong.lean.in')
+    if lean_consumers(root, {WRONG_PAGE}) - {MODULE}:
+        raise ValueError('InboxLookupWrong.lean.in has an unreviewed downstream consumer')
+    return sorted(paths)
+
+
+def native_argv(label):
+    return ['cargo', label, '-p', 'sandproof-controller-service', '--locked', '--offline', *NATIVE_COMMANDS[label]]
+
+
+def native_component_key(root=ROOT):
+    """Only a live invocation can capture this standalone native input key."""
+    tools = {}
+    for name in ('cargo', 'rustup', 'rustc', 'cc', 'ld', 'ar'):
+        path = shutil.which(name)
+        if path is None:
+            raise ValueError('missing native command tool: ' + name)
+        tools[name] = sha(Path(path).resolve(strict=True))
+    for name, argv in [('cargo', ['-V']), ('rustc', ['-Vv']), ('clippy-driver', ['--version'])]:
+        binary = Path(subprocess.check_output(['rustup', 'which', name], cwd=root, text=True).strip())
+        tools['rustup:' + name] = dict(sha256=sha(binary),
+            version=subprocess.check_output([str(binary), *argv], cwd=root, text=True))
+    sysroot = Path(subprocess.check_output(['rustc', '--print', 'sysroot'], cwd=root, text=True).strip())
+    cargo = Path(os.environ.get('CARGO_HOME', str(Path.home() / '.cargo')))
+    # Values are bound, never published. These process/session placeholders
+    # do not enter the Rust driver, compiler, or its assertion configuration.
+    runtime_env = {k: v for k, v in os.environ.items()
+                   if k not in {'PWD', 'OLDPWD', 'SHLVL', '_', 'SSH_CLIENT', 'SSH_CONNECTION', 'SSH_TTY'}}
+    rust = rust_inputs(root)
+    local_config = '@configuration:' + str(root) + '/'
+    rust = {('@configuration:$SOURCE/' + k.removeprefix(local_config) if k.startswith(local_config) else k): v
+            for k, v in rust.items()}
+    modes = {}
+    for entry in git('ls-files', '--stage', '-z', root=root).decode().split('\0'):
+        if entry:
+            metadata, name = entry.split('\t', 1)
+            mode, _, stage = metadata.split()
+            path = root / name
+            if (stage != '0' or mode not in ('100644', '100755') or path.is_symlink() or not path.is_file()
+                    or bool(path.stat().st_mode & 0o100) != (mode == '100755')):
+                raise ValueError('invalid original native source kind or mode: ' + name)
+            modes[name] = mode
+    return dict(kind='inbox-lookup-native-key-v1', source=repository_inputs(root), modes=modes,
+                rust=rust, rules=rules(root), contracts=contract_inputs(root),
+                runtime=dict(tools=tools, python_sha256=sha(Path(sys.executable).resolve()),
+                             environment_sha256=digest(runtime_env), test_configuration=native_test_configuration(os.environ),
+                             rust_libraries=tree_digest(sysroot/'lib'),
+                             cargo_config={str(p): sha(p) for p in (cargo/'config', cargo/'config.toml') if p.is_file()},
+                             platform=sys.platform, uid=os.getuid(), gid=os.getgid()),
+                commands={label: native_argv(label) for label in NATIVE_COMMANDS})
+
+
+def compare_native_keys(original, current, permitted):
+    if (original.get('kind') != 'inbox-lookup-native-key-v1' or original.keys() != current.keys()
+            or proposed_changes(original['source'], current['source']) != set(permitted)):
+        raise ValueError('original native key does not bind the exact documented proof-only change')
+    for field in original:
+        before, after = original[field], current[field]
+        if field in ('source', 'rules'):
+            if before.keys() != after.keys() or not proposed_changes(before, after) <= set(permitted):
+                raise ValueError('undeclared native input changed: ' + field)
+        elif before != after:
+            raise ValueError('native key changed: ' + field)
+
+
+def proposed_changes(before, after):
+    return {name for name in before.keys() | after.keys() if before.get(name) != after.get(name)}
 
 
 def registered_impact(paths, root=ROOT, base=None):
@@ -308,7 +397,7 @@ def run_driver(output, tool, *args):
 
 
 def admit_native(record, folder, commit):
-    expected = {'original', 'candidate', 'key-only', 'restored'}
+    expected = set(NATIVE_VARIANTS)
     if (record['kind'] != 'inbox-lookup-native-development' or record['complete'] is not True
             or record['source_commit'] != commit or set(record['variants']) != expected
             or any(row['complete'] is not True for row in record['variants'].values())):
@@ -317,27 +406,84 @@ def admit_native(record, folder, commit):
     for row in record['commands']:
         variant, label = key = (row['variant'], row['label'])
         mutant = key == ('key-only', 'test')
+        log = folder / variant / (label + '.log')
         if (variant not in expected or label not in ('test', 'clippy') or key in seen
-                or row['exit_code'] != (101 if mutant else 0)
+                or row['argv'] != native_argv(label)
+                or type(row['exit_code']) is not int or row['exit_code'] != (101 if mutant else 0)
                 or row.get('property_rejected', False) is not mutant
-                or sha(folder / variant / (label + '.log')) != row['log_sha256']):
+                or log.is_symlink() or log.parent.is_symlink() or not log.is_file()
+                or sha(log) != row['log_sha256']):
             raise ValueError('invalid original Rust command evidence: ' + repr(key))
         seen.add(key)
     if len(seen) != 2 * len(expected):
         raise ValueError('missing original Rust test or Clippy evidence')
 
 
-def admit_formal(native, record, folder, variant, commit):
+def checked_native_payload(receipt, directory, candidate):
+    folder = directory / 'original-native'
+    result_path = folder / 'result.json'
+    launcher_log = directory / 'original-native.log'
+    for path, field in ((result_path, 'result_sha256'), (launcher_log, 'launcher_log_sha256')):
+        if folder.is_symlink() or path.is_symlink() or not path.is_file() or sha(path) != receipt[field]:
+            raise ValueError('missing or changed original native result or launcher log: ' + str(path))
+    native = read(result_path)
+    admit_native(native, folder, candidate['commit'])
+    key = receipt['key']
+    if (native['inputs'] != key['source'] or receipt['native_registry_sha256'] != digest(native['registry'])
+            or any({field: native['tools'][name][field] for field in ('sha256', 'version')}
+                   != key['runtime']['tools']['rustup:' + name]
+                   for name in ('cargo', 'rustc', 'clippy-driver'))):
+        raise ValueError('original native case does not bind its captured key')
+    return native
+
+
+def publish_native_receipt(output, candidate, key, native):
+    receipt = dict(schema=1, kind='inbox-lookup-standalone-native-receipt', candidate=candidate,
+                   key=key, result_sha256=sha(output/'original-native/result.json'),
+                   launcher_log_sha256=sha(output/'original-native.log'),
+                   native_registry_sha256=digest(native['registry']))
+    checked_native_payload(receipt, output, candidate)
+    path = output / NATIVE_RECEIPT
+    write_json(path, receipt)
+    return dict(use='RUN', seconds=native['seconds'], result_sha256=receipt['result_sha256'],
+                receipt=str(path), receipt_sha256=sha(path))
+
+
+def load_native_reuse(path, expected_sha, base, key, permitted):
+    if (path.name != NATIVE_RECEIPT or path.is_symlink() or not path.is_file()
+            or not re.fullmatch('[0-9a-f]{64}', expected_sha) or sha(path) != expected_sha):
+        raise ValueError('missing or changed standalone original native receipt')
+    receipt = read(path)
+    if (receipt.get('schema') != 1 or receipt.get('kind') != 'inbox-lookup-standalone-native-receipt'
+            or receipt.get('candidate') != base):
+        raise ValueError('native proof-only reuse requires its exact original candidate receipt')
+    compare_native_keys(receipt['key'], key, permitted)
+    native = checked_native_payload(receipt, path.parent, base)
+    return native, dict(use='REUSE', seconds=0, original_seconds=native['seconds'],
+                        result_sha256=receipt['result_sha256'], receipt=str(path), receipt_sha256=expected_sha,
+                        original_candidate=base, source_differences=permitted)
+
+
+def admit_formal(native, record, folder, variant, commit, permitted=()):
     # Apply the same original component source and registry admission as the
     # full driver, with the narrow original-native record created in this run.
-    from native_admission import admit
+    from native_admission import admit, registry_identity
 
     rust_variant, module, theorem = VARIANTS[variant]
     if (record['kind'] != 'inbox-lookup-formal-development' or record['complete'] is not True
             or record['source_commit'] != commit or record['variant'] != variant):
         raise ValueError('missing current complete original Lean view: ' + variant)
     binding = {}
-    admit(binding, native, record['inputs'], record['registry'], ROOT, HERE / 'Cargo.lock')
+    if permitted:
+        if proposed_changes(native['inputs'], record['inputs']) != set(permitted):
+            raise ValueError('formal source differs from original native beyond the admitted Lean page and freezes')
+        lock = ROOT / HERE / 'Cargo.lock'
+        if sha(lock) != record['inputs'][str(HERE/'Cargo.lock')]:
+            raise ValueError('registry Cargo.lock differs from admitted source input')
+        registry_identity.require_same_content(native['registry'], record['registry'], tomllib.loads(lock.read_text()))
+        binding.update(native_inputs_match=True, registry_content_match=True)
+    else:
+        admit(binding, native, record['inputs'], record['registry'], ROOT, HERE / 'Cargo.lock')
     source_hash = record['candidate_model_sha256']
     source = folder / 'source'
     if (native['variants'][rust_variant]['inputs'][MODEL] != source_hash
@@ -360,6 +506,7 @@ def admit_formal(native, record, folder, variant, commit):
             raise ValueError('LLBC evidence changed')
     return dict(theorem=full_theorem, property_rejected=variant == 'key-only',
                 rust_formal_inputs_match=binding['native_inputs_match'],
+                rust_formal_documented_source_differences=list(permitted),
                 registry_content_match=binding['registry_content_match'],
                 candidate_model_sha256=source_hash, seconds=record['seconds'],
                 result_sha256=sha(folder / 'result.json'), **check_contract_type(folder, variant))
@@ -391,14 +538,14 @@ def check_contract_type(folder, variant, evidence=None):
     return dict(contract_type_log_sha256=sha(log), contract_type_source_sha256=sha(check))
 
 
-def execute(output, plan, candidate, formal_lock):
+def execute(output, plan, candidate, formal_lock, reuse=None):
     output = output.resolve()
-    if output.is_relative_to(ROOT):
+    if output.is_relative_to(ROOT) or (reuse is not None and output.is_relative_to(reuse[0].parent.resolve())):
         raise ValueError('use a fresh private output and caches outside the source checkout')
     output.mkdir(mode=0o700)
     started = time.monotonic()
     report = dict(schema=1, kind='stage1-module-acceptance', module=MODULE, complete=False,
-                  candidate=candidate, plan=plan, fresh_runs=True, full_stage1_acceptance=False,
+                  candidate=candidate, plan=plan, fresh_runs=reuse is None, full_stage1_acceptance=False,
                   host=platform.node(), native_test_configuration=native_test_configuration(os.environ),
                   input_inventory_sha256=sha(ROOT / HERE / 'inventory.json'), formal={})
     if hasattr(os, 'sched_getaffinity'):
@@ -410,10 +557,19 @@ def execute(output, plan, candidate, formal_lock):
                 raise ValueError('reviewed Inbox Lookup input differs before running checks: ' + name)
         from formal import execution
         execution.tool_bind(ROOT)
-        native = run_driver(output, 'original-native')
-        native_dir = output / 'original-native'
-        admit_native(native, native_dir, candidate['commit'])
-        report['native'] = dict(seconds=native['seconds'], result_sha256=sha(native_dir / 'result.json'))
+        key = native_component_key()
+        permitted = plan.get('native_reuse_paths', [])
+        if reuse is None:
+            native = run_driver(output, 'original-native')
+            if clean_candidate() != candidate or native_component_key() != key:
+                raise ValueError('native inputs, tools or environment changed during execution')
+            report['native'] = publish_native_receipt(output, candidate, key, native)
+        else:
+            base = dict(commit=plan['base_commit'], tree=git('rev-parse', plan['base_commit']+'^{tree}').decode().strip())
+            native, report['native'] = load_native_reuse(*reuse, base, key, permitted)
+            from native import registry_module
+            if registry_module.registry() != native['registry']:
+                raise ValueError('current verified locked registry differs from the original native receipt')
         waiting = time.monotonic()
         print('Original Rust views admitted; waiting for the existing formal lock.', flush=True)
         with formal_lock.open('rb') as lock:
@@ -422,7 +578,9 @@ def execute(output, plan, candidate, formal_lock):
             for variant in VARIANTS:
                 phase = 'formal-' + variant
                 result = run_driver(output, phase, '--variant', variant)
-                report['formal'][variant] = admit_formal(native, result, output / phase, variant, candidate['commit'])
+                report['formal'][variant] = admit_formal(native, result, output / phase, variant, candidate['commit'], permitted)
+        if reuse is not None:
+            load_native_reuse(*reuse, base, native_component_key(), permitted)
         if clean_candidate() != candidate or native_test_configuration(os.environ) != report['native_test_configuration']:
             raise ValueError('candidate or native test configuration changed during checking')
         report['complete'] = True
@@ -517,12 +675,23 @@ def main(argv=None):
     parser.add_argument('--formal-lock', type=Path, help='existing operator formal.lock for execution')
     parser.add_argument('--registered-native', type=Path,
                         help='original current Stage1 native-evidence path for a mapped registered selection')
+    parser.add_argument('--reuse-native', type=Path, help='original standalone Inbox Lookup native receipt')
+    parser.add_argument('--reuse-native-sha256', help='published SHA256 of that original standalone receipt')
     args = parser.parse_args(argv)
     os.umask(0o077)
     try:
         candidate = clean_candidate()
         base, paths = changed_files(args.base, candidate['commit'])
         plan = dict(select(paths), base_commit=base)
+        reuse = None
+        if args.reuse_native is not None or args.reuse_native_sha256 is not None:
+            if not (args.reuse_native and args.reuse_native_sha256 and args.output) or args.registered_native:
+                raise ValueError('standalone native reuse requires --output, --reuse-native and --reuse-native-sha256')
+            permitted = native_reuse_paths(paths, base)
+            reuse = (args.reuse_native.absolute(), args.reuse_native_sha256)
+            plan = dict(select([WRONG_PAGE]), base_commit=base, changed_paths=paths,
+                        native_reuse_paths=permitted,
+                        checks=['reuse-original-native', 'formal-correct', 'formal-key-only'])
         impact = registered_impact(paths, base=base) if plan['status'] == 'review-required' else None
         if impact is not None:
             plan['registered_impact'] = impact
@@ -539,7 +708,7 @@ def main(argv=None):
             if impact is None:
                 raise ValueError('registered evidence cannot be supplied for an unmapped or isolated selection')
             return execute_registered(args.output, plan, candidate, args.formal_lock, args.registered_native)
-        return execute(args.output, plan, candidate, args.formal_lock)
+        return execute(args.output, plan, candidate, args.formal_lock, reuse)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         parser.exit(2, str(exc) + '\n')
 
