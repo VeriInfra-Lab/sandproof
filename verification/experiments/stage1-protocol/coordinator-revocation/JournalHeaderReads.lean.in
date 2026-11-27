@@ -1,0 +1,113 @@
+import SandproofActualRecord.JournalLoadExit
+import SandboxModel.InboxTransaction.IOTransfer
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+open SandproofParentCommitRust.ErrorTransport
+open SandproofParentCommitRust.CurrentViews (rawToSource ownerToSource)
+
+namespace SandproofActualRecordRust.JournalHeaderReads
+open controller.lifecycle_inbox recording CallerBranches IOOwnerTransport
+noncomputable section
+set_option autoImplicit false
+
+/-- Borrowed reads return the representation of the same complete caller object,
+including its termination observation and the connection's commit observations. -/
+theorem returned_borrowed_holder {D : Type} (before : Holder D) :
+    returnedHolder before (toSource before) = .ok before := by
+  obtain ⟨⟨parent, terminate⟩, ns, codec⟩ := before
+  obtain ⟨slot, committed, candidate, input⟩ := parent
+  cases slot <;> simp [returnedHolder, returnedOwner, toSource, ownerToSource, returnedRaw, rawToSource]
+
+variable {D : Type} (codec : RecordCodec D) (before : Holder D) (raw : ParentRaw)
+  (live : before.tx.parent.transaction = some raw)
+
+include live
+
+private theorem source_live :
+    (toSource before).tx.transaction = some (rawToSource raw) := by
+  simp [toSource, ownerToSource, live]
+
+theorem bool_read (sql : Str) (reply : SandproofSqliteSession.SqlReply Bool)
+    (read : SandproofSqliteSession.queryBool raw.conn.base.reads.current.single sql () = .ok reply) :
+    (actualEffects codec).RecordEffectsInst.codecInboxLoadEffectsInst.query_bool before sql =
+      .ok (fromRequestRustResult (SandboxModel.StandardRecordIO.mapSql reply), before) := by
+  change liftReply before
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bool
+      (codecToSource codec) (toSource before) sql) = _
+  rw [SandboxModel.StandardRecordIO.actual_query_bool_call_contract]
+  calc
+    _ = liftReply before (.ok (SandboxModel.StandardRecordIO.mapSql reply, toSource before)) := by
+      apply congrArg (liftReply before)
+      apply SandboxModel.StandardRecordIO.observed_borrow_returns_original_owner
+        (raw := rawToSource raw) (returnedReader := ⟨raw.conn.base⟩)
+      · exact source_live before raw live
+      · cases reply <;> simp [SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bool,
+          rawToSource, read, SandboxModel.StandardRecordIO.mapSql]
+    _ = _ := by simp [liftReply, returned_borrowed_holder]
+
+theorem version_read (sql : Str) (reply : SandproofSqliteSession.SqlReply I64)
+    (read : SandproofSqliteSession.queryI64 raw.conn.base.reads.current.single sql () = .ok reply) :
+    (actualEffects codec).RecordEffectsInst.codecInboxLoadEffectsInst.checkpointconfigReadConfigEffectsInst.query_i64
+      before sql = .ok (fromRequestRustResult (SandboxModel.StandardRecordIO.mapSql reply), before) := by
+  change liftReply before
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_i64
+      (codecToSource codec) (toSource before) sql) = _
+  rw [SandboxModel.StandardRecordIO.actual_query_i64_call_contract]
+  calc
+    _ = liftReply before (.ok (SandboxModel.StandardRecordIO.mapSql reply, toSource before)) := by
+      apply congrArg (liftReply before)
+      apply SandboxModel.StandardRecordIO.observed_borrow_returns_original_owner
+        (raw := rawToSource raw) (returnedReader := ⟨raw.conn.base⟩)
+      · exact source_live before raw live
+      · cases reply <;> simp [SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_i64,
+          rawToSource, read, SandboxModel.StandardRecordIO.mapSql]
+    _ = _ := by simp [liftReply, returned_borrowed_holder]
+
+variable {R T N U B C : Type} (retirement : native_retirement.RetirementEncoding R)
+  (terminal : model.TerminalEncoding T) (renewal : renewal_confirmation.RenewalEncoding N)
+  (unload : unload_resolution.UnloadEncoding U) (graphic : capture.GraphicBytes B)
+  (crash : CrashInjector C) (intent : SourceFlowLink.Intent) (context : SourceFlowLink.Context) (crashes : C)
+
+/-- A preparation error on the first issued statement carries the original Sqlite payload
+out of the recording transaction. No observation of a bound statement or a row is needed. -/
+theorem first_prepare_refusal (error : SandproofSqliteSession.SqlError)
+    (prepared : raw.conn.base.reads.current.single.canonical.prepare InboxLoad.existsStatement =
+      .ok (.Err error)) :
+    JournalLoadExit.ReturnsBeforeCommit retirement terminal renewal unload graphic (actualEffects codec) crash
+      before before intent context crashes (.Sqlite error) := by
+  apply JournalLoadExit.first_header_error
+  apply JournalLoadExit.HeaderQueryFailure.inboxTable
+  apply bool_read codec before raw live _ (.Err error)
+  simp [SandproofSqliteSession.queryBool, SandproofSqliteSession.queryRow, prepared]
+
+/-- Every stopping three-query layout on one live connection carries its exact ordinary
+error back through the recording body and transaction, with the original caller and hook. -/
+theorem read_layout (hasInbox hasSource : Bool) (version : I64)
+    (stops : ¬ (version = SandproofStage1RequestRust.sandproof_controller_service.LIFECYCLE_STORE_FORMAT_VERSION
+      ∧ hasInbox = true ∧ hasSource = true))
+    (inboxTable : SandproofSqliteSession.queryBool raw.conn.base.reads.current.single InboxLoad.existsStatement () =
+      .ok (.Ok hasInbox))
+    (format : SandproofSqliteSession.queryI64 raw.conn.base.reads.current.single InboxLoad.versionStatement () =
+      .ok (.Ok version))
+    (sourceTable : SandproofSqliteSession.queryBool raw.conn.base.reads.current.single InboxLoad.sourceStatement () =
+      .ok (.Ok hasSource)) :
+    JournalLoadExit.ReturnsBeforeCommit retirement terminal renewal unload graphic (actualEffects codec) crash
+      before before intent context crashes
+        (if version = SandproofStage1RequestRust.sandproof_controller_service.LIFECYCLE_STORE_FORMAT_VERSION
+          then .CorruptStore else if hasSource || hasInbox then .CorruptStore else .UnsupportedStore) := by
+  apply JournalLoadExit.header_layout (one := before) (two := before) (hasInbox := hasInbox)
+    (hasSource := hasSource) (version := version)
+  · exact stops
+  · exact bool_read codec before raw live _ (.Ok hasInbox) inboxTable
+  · exact version_read codec before raw live _ (.Ok version) format
+  · exact bool_read codec before raw live _ (.Ok hasSource) sourceTable
+
+end
+end SandproofActualRecordRust.JournalHeaderReads
+
+#audit_controller_proof SandproofActualRecordRust.JournalHeaderReads.returned_borrowed_holder
+#audit_controller_proof SandproofActualRecordRust.JournalHeaderReads.bool_read
+#audit_controller_proof SandproofActualRecordRust.JournalHeaderReads.version_read
+#audit_controller_proof SandproofActualRecordRust.JournalHeaderReads.first_prepare_refusal
+#audit_controller_proof SandproofActualRecordRust.JournalHeaderReads.read_layout
