@@ -40,6 +40,10 @@ NATIVE_COMMANDS = {
     'test': ['--lib', '--message-format=json', 'proof_lookup::', '--', '--nocapture'],
     'clippy': ['--lib', '--tests', '--', '-D', 'warnings'],
 }
+COMPILER_OVERRIDE = re.compile(r'(?:(?:CARGO_BUILD_)?(?:RUSTC(?:_WORKSPACE_WRAPPER|_WRAPPER)?|RUSTDOC)'
+                               r'|(?:HOST_|TARGET_)?(?:CC|CXX|AR|LD)(?:_[a-zA-Z0-9_-]+)?'
+                               r'|CARGO_TARGET_[A-Z0-9_]+_LINKER)')
+LINKER_FLAGS = re.compile(r'(?:^|[\s\x1f])-C\s*(?:linker(?:-flavor)?|link-args?)(?=[=\s\x1f]|$)')
 METADATA_FILES = {'inventory.json', 'frozen.json', 'candidate.json', 'package-inputs.json',
                   'sources.json', 'input-closure.json'}
 
@@ -240,25 +244,85 @@ def native_argv(label):
     return ['cargo', label, '-p', 'sandproof-controller-service', '--locked', '--offline', *NATIVE_COMMANDS[label]]
 
 
-def native_component_key(root=ROOT):
+def check_native_tool_overrides(environment, configurations, pinned):
+    """Reuse only compiler tools independently fingerprinted by this native key."""
+    def tool(name, value, defaults=()):
+        if value:
+            simple = isinstance(value, str) and (os.path.isabs(value) or '/' not in value)
+            selected = shutil.which(value, path=environment.get('PATH')) if simple else None
+            if selected is None or Path(selected).resolve() not in pinned_paths(defaults):
+                raise ValueError('unregistered native compiler or linker override: ' + name)
+
+    def pinned_paths(names):
+        return {path for name in names for path in pinned.get(name, ())}
+
+    def env_tool(name, setting):
+        value = setting.get('value') if isinstance(setting, dict) else setting
+        if COMPILER_OVERRIDE.fullmatch(name):
+            if value and isinstance(setting, dict) and setting.get('relative'):
+                raise ValueError('unregistered native compiler or linker override: ' + name)
+            if name in ('RUSTC', 'CARGO_BUILD_RUSTC'):
+                defaults = ('rustc',)
+            elif name.endswith('_LINKER'):
+                defaults = ('cc', 'ld')
+            else:
+                args = re.fullmatch(r'(?:HOST_|TARGET_)?(CC|AR|LD)(?:_[a-zA-Z0-9_-]+)?', name)
+                defaults = (args[1].lower(),) if args else ()
+            tool(name, value, defaults)
+        if name.endswith('RUSTFLAGS'):
+            flags(name, value)
+
+    def flags(name, value):
+        text = ' '.join(value) if isinstance(value, list) else value
+        if text and LINKER_FLAGS.search(text):
+            raise ValueError('unregistered native linker override: ' + name)
+
+    for name, value in environment.items():
+        env_tool(name, value)
+    for path in configurations:
+        options = tomllib.loads(path.read_text())
+        for name, value in options.get('build', {}).items():
+            if name in ('rustc', 'rustdoc', 'rustc-wrapper', 'rustc-workspace-wrapper'):
+                tool(f'{path}:build.{name}', value, ('rustc',) if name == 'rustc' else ())
+            elif name == 'rustflags':
+                flags(f'{path}:build.{name}', value)
+        for target, value in options.get('target', {}).items():
+            tool(f'{path}:target.{target}.linker', value.get('linker'), ('cc', 'ld'))
+            flags(f'{path}:target.{target}.rustflags', value.get('rustflags'))
+        for name, value in options.get('env', {}).items():
+            env_tool(name, value)
+
+
+def native_component_key(root=ROOT, *, scoped_output=None):
     """Only a live invocation can capture this standalone native input key."""
-    tools = {}
+    tools, pinned = {}, {}
     for name in ('cargo', 'rustup', 'rustc', 'cc', 'ld', 'ar'):
         path = shutil.which(name)
         if path is None:
             raise ValueError('missing native command tool: ' + name)
-        tools[name] = sha(Path(path).resolve(strict=True))
+        actual = Path(path).resolve(strict=True)
+        tools[name] = sha(actual)
+        pinned[name] = {actual}
     for name, argv in [('cargo', ['-V']), ('rustc', ['-Vv']), ('clippy-driver', ['--version'])]:
         binary = Path(subprocess.check_output(['rustup', 'which', name], cwd=root, text=True).strip())
         tools['rustup:' + name] = dict(sha256=sha(binary),
             version=subprocess.check_output([str(binary), *argv], cwd=root, text=True))
+        pinned.setdefault(name, set()).add(binary.resolve(strict=True))
     sysroot = Path(subprocess.check_output(['rustc', '--print', 'sysroot'], cwd=root, text=True).strip())
     cargo = Path(os.environ.get('CARGO_HOME', str(Path.home() / '.cargo')))
+    cargo_config = {str(p): sha(p) for p in (cargo/'config', cargo/'config.toml') if p.is_file()}
     # Values are bound, never published. These process/session placeholders
     # do not enter the Rust driver, compiler, or its assertion configuration.
     runtime_env = {k: v for k, v in os.environ.items()
                    if k not in {'PWD', 'OLDPWD', 'SHLVL', '_', 'SSH_CLIENT', 'SSH_CONNECTION', 'SSH_TTY'}}
     rust = rust_inputs(root)
+    if scoped_output is not None:
+        configs = {Path(p) for p in cargo_config}
+        configs.update(Path(p.removeprefix('@configuration:')) for p in rust
+                       if p.startswith('@configuration:') and Path(p).name in ('config', 'config.toml'))
+        configs.update(p for parent in (scoped_output, *scoped_output.parents)
+                       for suffix in ('config', 'config.toml') if (p := parent/'.cargo'/suffix).is_file())
+        check_native_tool_overrides(os.environ, sorted(configs), pinned)
     local_config = '@configuration:' + str(root) + '/'
     rust = {('@configuration:$SOURCE/' + k.removeprefix(local_config) if k.startswith(local_config) else k): v
             for k, v in rust.items()}
@@ -272,12 +336,13 @@ def native_component_key(root=ROOT):
                     or bool(path.stat().st_mode & 0o100) != (mode == '100755')):
                 raise ValueError('invalid original native source kind or mode: ' + name)
             modes[name] = mode
-    return dict(kind='inbox-lookup-native-key-v1', source=repository_inputs(root), modes=modes,
+    return dict(kind='inbox-lookup-native-key-v1', scoped_native_tools=scoped_output is not None,
+                source=repository_inputs(root), modes=modes,
                 rust=rust, rules=rules(root), contracts=contract_inputs(root),
                 runtime=dict(tools=tools, python_sha256=sha(Path(sys.executable).resolve()),
                              environment_sha256=digest(runtime_env), test_configuration=native_test_configuration(os.environ),
                              rust_libraries=tree_digest(sysroot/'lib'),
-                             cargo_config={str(p): sha(p) for p in (cargo/'config', cargo/'config.toml') if p.is_file()},
+                             cargo_config=cargo_config,
                              platform=sys.platform, uid=os.getuid(), gid=os.getgid()),
                 commands={label: native_argv(label) for label in NATIVE_COMMANDS})
 
@@ -286,6 +351,8 @@ def compare_native_keys(original, current, permitted):
     if (original.get('kind') != 'inbox-lookup-native-key-v1' or original.keys() != current.keys()
             or proposed_changes(original['source'], current['source']) != set(permitted)):
         raise ValueError('original native key does not bind the exact documented proof-only change')
+    if original.get('scoped_native_tools') is not True or current.get('scoped_native_tools') is not True:
+        raise ValueError('standalone native reuse requires a scoped tool-checked original preparation')
     for field in original:
         before, after = original[field], current[field]
         if field in ('source', 'rules'):
@@ -551,10 +618,11 @@ def check_lookup_sources():
             raise ValueError('reviewed Inbox Lookup input differs before running checks: ' + name)
 
 
-def prepare_native(output, candidate):
-    key = native_component_key()
+def prepare_native(output, candidate, *, scoped=False):
+    native_output = output if scoped else None
+    key = native_component_key(scoped_output=native_output)
     native = run_driver(output, 'original-native')
-    if clean_candidate() != candidate or native_component_key() != key:
+    if clean_candidate() != candidate or native_component_key(scoped_output=native_output) != key:
         raise ValueError('native inputs, tools or environment changed during execution')
     return native, publish_native_receipt(output, candidate, key, native)
 
@@ -565,7 +633,7 @@ def execute_native_preparation(output, candidate):
     result = dict(kind='inbox-lookup-native-preparation', candidate=candidate, status='failed')
     try:
         check_lookup_sources()
-        _, result['native'] = prepare_native(output, candidate)
+        _, result['native'] = prepare_native(output, candidate, scoped=True)
         result['status'] = 'passed'
     except Exception as exc:
         result['error'] = str(exc)
@@ -593,7 +661,7 @@ def execute(output, plan, candidate, formal_lock, reuse=None):
             native, report['native'] = prepare_native(output, candidate)
         else:
             base = dict(commit=plan['base_commit'], tree=git('rev-parse', plan['base_commit']+'^{tree}').decode().strip())
-            native, report['native'] = load_native_reuse(*reuse, base, native_component_key(), permitted)
+            native, report['native'] = load_native_reuse(*reuse, base, native_component_key(scoped_output=output), permitted)
             from native import registry_module
             if registry_module.registry() != native['registry']:
                 raise ValueError('current verified locked registry differs from the original native receipt')
@@ -607,7 +675,7 @@ def execute(output, plan, candidate, formal_lock, reuse=None):
                 result = run_driver(output, phase, '--variant', variant)
                 report['formal'][variant] = admit_formal(native, result, output / phase, variant, candidate['commit'], permitted)
         if reuse is not None:
-            load_native_reuse(*reuse, base, native_component_key(), permitted)
+            load_native_reuse(*reuse, base, native_component_key(scoped_output=output), permitted)
         if clean_candidate() != candidate or native_test_configuration(os.environ) != report['native_test_configuration']:
             raise ValueError('candidate or native test configuration changed during checking')
         report['complete'] = True

@@ -125,7 +125,7 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
 
     def test_original_native_key_rejects_tool_config_argv_or_production_drift(self):
         paths = sorted({acceptance.WRONG_PAGE, *acceptance.WRONG_FREEZES})
-        original = {'kind': 'inbox-lookup-native-key-v1',
+        original = {'kind': 'inbox-lookup-native-key-v1', 'scoped_native_tools': True,
                     'source': dict.fromkeys([*paths, acceptance.MODEL], 'old'),
                     'rules': {acceptance.WRONG_PAGE: 'old'},
                     'runtime': {'tools': {'cargo': 'original'}, 'test_configuration': {'threads': 4}},
@@ -134,6 +134,8 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
         current['source'].update(dict.fromkeys(paths, 'new'))
         current['rules'][acceptance.WRONG_PAGE] = 'new'
         acceptance.compare_native_keys(original, current, paths)
+        with self.assertRaisesRegex(ValueError, 'scoped tool-checked'):
+            acceptance.compare_native_keys({**original, 'scoped_native_tools': False}, current, paths)
         variants = [
             ('runtime', {'tools': {'cargo': 'new'}, 'test_configuration': {'threads': 4}}),
             ('runtime', {'tools': {'cargo': 'original'}, 'test_configuration': {'threads': 8}}),
@@ -148,7 +150,8 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
         paths = sorted({acceptance.WRONG_PAGE, *acceptance.WRONG_FREEZES})
         base = {'commit': 'a' * 40, 'tree': 'b' * 40}
         tools = {name: {'sha256': 'c' * 64, 'version': name} for name in ('cargo', 'rustc', 'clippy-driver')}
-        original = {'kind': 'inbox-lookup-native-key-v1', 'source': dict.fromkeys(paths, 'old'),
+        original = {'kind': 'inbox-lookup-native-key-v1', 'scoped_native_tools': True,
+                    'source': dict.fromkeys(paths, 'old'),
                     'rules': {}, 'runtime': {'tools': {'rustup:' + name: row for name, row in tools.items()}}}
         current = {**original, 'source': dict.fromkeys(paths, 'new')}
         with tempfile.TemporaryDirectory() as temp:
@@ -212,7 +215,7 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
             self.assertEqual(acceptance.execute_native_preparation(output, candidate), 0)
             self.assertEqual(acceptance.read(output/'native-preparation.json')['status'], 'passed')
             self.assertEqual({file.name for file in output.iterdir()}, {'native-preparation.json'})
-            prepare.assert_called_once_with(output.resolve(), candidate)
+            prepare.assert_called_once_with(output.resolve(), candidate, scoped=True)
             prepare.side_effect = ValueError('original command failed')
             output = Path(temp) / 'failed'
             self.assertEqual(acceptance.execute_native_preparation(output, candidate), 1)
@@ -250,10 +253,33 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
         self.assertEqual([child for child, _ in observed], [[None, '4'], [None, '4'], [None, '8']])
         self.assertEqual(observed[0][1], observed[1][1])
         paths = {acceptance.WRONG_PAGE, *acceptance.WRONG_FREEZES}
-        original = dict(kind='inbox-lookup-native-key-v1', source=dict.fromkeys(paths, 'old'), runtime=observed[0][1])
+        original = dict(kind='inbox-lookup-native-key-v1', scoped_native_tools=True,
+                        source=dict.fromkeys(paths, 'old'), runtime=observed[0][1])
         current = dict(original, source=dict.fromkeys(paths, 'new'), runtime=observed[2][1])
         with self.assertRaisesRegex(ValueError, 'native key changed: runtime'):
             acceptance.compare_native_keys(original, current, paths)
+
+    def test_scoped_tools_reject_unpinned_same_path_before_and_after_replacement(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            wrapper, default = root / 'compiler-wrapper', root / 'cc'
+            default.write_text('fixed compiler fixture\n')
+            default.chmod(0o700)
+            pinned = {'cc': {default.resolve()}}
+            acceptance.check_native_tool_overrides({'CC': str(default), 'RUSTC_WRAPPER': '',
+                                                    'RUSTFLAGS': '-Cdebuginfo=1'}, [], pinned)
+            for data in ('old wrapper bytes', 'replacement wrapper bytes'):
+                wrapper.write_text(data)
+                wrapper.chmod(0o700)
+                with self.assertRaisesRegex(ValueError, 'override: RUSTC_WRAPPER'):
+                    acceptance.check_native_tool_overrides({'RUSTC_WRAPPER': str(wrapper)}, [], pinned)
+            linker = root / 'config.toml'
+            linker.write_text(f'[target.x86_64-unknown-linux-gnu]\nlinker = {json.dumps(str(wrapper))}\n')
+            with self.assertRaisesRegex(ValueError, 'target.x86_64-unknown-linux-gnu.linker'):
+                acceptance.check_native_tool_overrides({}, [linker], pinned)
+            with self.assertRaisesRegex(ValueError, 'override: CARGO_ENCODED_RUSTFLAGS'):
+                acceptance.check_native_tool_overrides(
+                    {'CARGO_ENCODED_RUSTFLAGS': '-C\x1flinker=' + str(wrapper)}, [], pinned)
 
 
 if __name__ == '__main__':
