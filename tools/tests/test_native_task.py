@@ -55,7 +55,7 @@ class NativeTaskTests(unittest.TestCase):
         return native_task.launch(self.output, [sys.executable, '-c', code])
 
     def retire(self, **kwargs):
-        with patch.object(native_task, 'observe', **kwargs):
+        with native_task.task_lock(self.output), patch.object(native_task, 'observe', **kwargs):
             return native_task.retire(self.output, self.observer)
 
     def test_success_and_retry_keep_original_seal_and_caches(self):

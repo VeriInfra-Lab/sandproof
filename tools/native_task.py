@@ -34,7 +34,7 @@ def preserve(path, value):
 
 @contextmanager
 def task_lock(output):
-    with (output / 'native-task.lock').open('a', opener=lambda p, f: os.open(
+    with open(output / 'native-task.lock', 'a', opener=lambda p, f: os.open(
             p, f | os.O_NOFOLLOW, 0o600)) as stream:
         fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
         yield
