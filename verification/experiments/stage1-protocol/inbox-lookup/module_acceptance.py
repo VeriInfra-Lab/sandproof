@@ -538,11 +538,47 @@ def check_contract_type(folder, variant, evidence=None):
     return dict(contract_type_log_sha256=sha(log), contract_type_source_sha256=sha(check))
 
 
-def execute(output, plan, candidate, formal_lock, reuse=None):
+def prepare_output(output, reuse=None):
     output = output.resolve()
     if output.is_relative_to(ROOT) or (reuse is not None and output.is_relative_to(reuse[0].parent.resolve())):
         raise ValueError('use a fresh private output and caches outside the source checkout')
     output.mkdir(mode=0o700)
+    return output
+
+
+def check_lookup_sources():
+    inventory = read(ROOT / HERE / 'inventory.json')
+    for name, digest in inventory['production_inputs'].items():
+        if sha(ROOT / name) != digest:
+            raise ValueError('reviewed Inbox Lookup input differs before running checks: ' + name)
+
+
+def prepare_native(output, candidate):
+    key = native_component_key()
+    native = run_driver(output, 'original-native')
+    if clean_candidate() != candidate or native_component_key() != key:
+        raise ValueError('native inputs, tools or environment changed during execution')
+    return native, publish_native_receipt(output, candidate, key, native)
+
+
+def execute_native_preparation(output, candidate):
+    output = prepare_output(output)
+    started = time.monotonic()
+    result = dict(kind='inbox-lookup-native-preparation', candidate=candidate, status='failed')
+    try:
+        check_lookup_sources()
+        _, result['native'] = prepare_native(output, candidate)
+        result['status'] = 'passed'
+    except Exception as exc:
+        result['error'] = str(exc)
+    result['seconds'] = time.monotonic() - started
+    write_json(output / 'native-preparation.json', result)
+    print(json.dumps(result, ensure_ascii=False))
+    return 0 if result['status'] == 'passed' else 1
+
+
+def execute(output, plan, candidate, formal_lock, reuse=None):
+    output = prepare_output(output, reuse)
     started = time.monotonic()
     report = dict(schema=1, kind='stage1-module-acceptance', module=MODULE, complete=False,
                   candidate=candidate, plan=plan, fresh_runs=reuse is None, full_stage1_acceptance=False,
@@ -551,22 +587,15 @@ def execute(output, plan, candidate, formal_lock, reuse=None):
     if hasattr(os, 'sched_getaffinity'):
         report['available_cpus'] = sorted(os.sched_getaffinity(0))
     try:
-        inventory = read(ROOT / HERE / 'inventory.json')
-        for name, digest in inventory['production_inputs'].items():
-            if sha(ROOT / name) != digest:
-                raise ValueError('reviewed Inbox Lookup input differs before running checks: ' + name)
+        check_lookup_sources()
         from formal import execution
         execution.tool_bind(ROOT)
-        key = native_component_key()
         permitted = plan.get('native_reuse_paths', [])
         if reuse is None:
-            native = run_driver(output, 'original-native')
-            if clean_candidate() != candidate or native_component_key() != key:
-                raise ValueError('native inputs, tools or environment changed during execution')
-            report['native'] = publish_native_receipt(output, candidate, key, native)
+            native, report['native'] = prepare_native(output, candidate)
         else:
             base = dict(commit=plan['base_commit'], tree=git('rev-parse', plan['base_commit']+'^{tree}').decode().strip())
-            native, report['native'] = load_native_reuse(*reuse, base, key, permitted)
+            native, report['native'] = load_native_reuse(*reuse, base, native_component_key(), permitted)
             from native import registry_module
             if registry_module.registry() != native['registry']:
                 raise ValueError('current verified locked registry differs from the original native receipt')
@@ -677,7 +706,10 @@ def main(argv=None):
                         help='original current Stage1 native-evidence path for a mapped registered selection')
     parser.add_argument('--reuse-native', type=Path, help='original standalone Inbox Lookup native receipt')
     parser.add_argument('--reuse-native-sha256', help='published SHA256 of that original standalone receipt')
+    parser.add_argument('--prepare-native', action='store_true', help='produce the standalone native receipt only')
     args = parser.parse_args(argv)
+    if args.prepare_native and (not args.output or args.registered_native or args.reuse_native or args.reuse_native_sha256):
+        parser.error('--prepare-native requires --output and cannot consume native evidence')
     os.umask(0o077)
     try:
         candidate = clean_candidate()
@@ -702,6 +734,8 @@ def main(argv=None):
         if args.plan or (plan['status'] != 'ready' and (impact is None or args.registered_native is None)):
             print(json.dumps(dict(plan, candidate=candidate), ensure_ascii=False))
             return 0 if plan['status'] == 'ready' else 2
+        if args.prepare_native:
+            return execute_native_preparation(args.output, candidate)
         if args.formal_lock is None or args.formal_lock.is_symlink() or not args.formal_lock.is_file():
             raise ValueError('execution requires the existing regular operator --formal-lock')
         if args.registered_native is not None:

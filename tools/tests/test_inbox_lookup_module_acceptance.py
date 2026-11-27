@@ -1,5 +1,7 @@
 import importlib.util
 from copy import deepcopy
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 import tempfile
 import unittest
@@ -169,6 +171,36 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
             result.unlink()
             with self.assertRaisesRegex(ValueError, 'missing or changed original native result'):
                 acceptance.load_native_reuse(path, sha, base, current, paths)
+
+    def test_native_preparation_cli_uses_the_native_only_path_without_a_formal_lock(self):
+        candidate = {'commit': 'b' * 40, 'tree': 'c' * 40}
+        launcher = str(LOOKUP / 'module_acceptance.py')
+        with patch.object(acceptance, 'clean_candidate', return_value=candidate), \
+                patch.object(acceptance, 'changed_files', return_value=('a' * 40, [launcher])), \
+                patch.object(acceptance, 'execute_native_preparation', return_value=0) as prepare, \
+                patch.object(acceptance, 'execute') as formal:
+            self.assertEqual(acceptance.main(['--base', 'reviewed', '--output', '/private/lookup-native',
+                                              '--prepare-native']), 0)
+            prepare.assert_called_once_with(Path('/private/lookup-native'), candidate)
+            formal.assert_not_called()
+
+    def test_native_preparation_preserves_status_without_any_proof_pass_report(self):
+        candidate = {'commit': 'b' * 40, 'tree': 'c' * 40}
+        with tempfile.TemporaryDirectory() as temp, redirect_stdout(StringIO()), \
+                patch.object(acceptance, 'check_lookup_sources'), \
+                patch.object(acceptance, 'prepare_native', return_value=({}, {'use': 'RUN'})) as prepare:
+            output = Path(temp) / 'passed'
+            self.assertEqual(acceptance.execute_native_preparation(output, candidate), 0)
+            self.assertEqual(acceptance.read(output/'native-preparation.json')['status'], 'passed')
+            self.assertEqual({file.name for file in output.iterdir()}, {'native-preparation.json'})
+            prepare.assert_called_once_with(output.resolve(), candidate)
+            prepare.side_effect = ValueError('original command failed')
+            output = Path(temp) / 'failed'
+            self.assertEqual(acceptance.execute_native_preparation(output, candidate), 1)
+            result = acceptance.read(output/'native-preparation.json')
+            self.assertEqual(result['status'], 'failed')
+            self.assertEqual(result['error'], 'original command failed')
+            self.assertEqual({file.name for file in output.iterdir()}, {'native-preparation.json'})
 
 
 if __name__ == '__main__':
