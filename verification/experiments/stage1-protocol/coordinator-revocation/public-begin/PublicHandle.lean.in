@@ -1,0 +1,15 @@
+import SandproofUnloadWorldBegin.Types
+import SandproofStage1Request.Types
+
+namespace SandproofActualRecordRust
+
+abbrev controller.transaction.CommittedWorld := SandproofUnloadWorldBegin.controller.transaction.CommittedWorld
+abbrev capture.HostEpochObservation := SandproofStage1RequestRust.sandproof_controller_service.capture.HostEpochObservation
+
+/-- The OS file value is threaded through the Rust lease unchanged. -/
+class FileHandle where
+  Handle : Type
+
+abbrev std.fs.File [file : FileHandle] := file.Handle
+
+end SandproofActualRecordRust

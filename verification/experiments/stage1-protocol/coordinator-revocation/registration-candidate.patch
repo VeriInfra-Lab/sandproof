@@ -1,5 +1,5 @@
 diff --git a/verification/experiments/stage1-protocol/registered.py b/verification/experiments/stage1-protocol/registered.py
-index eb47df75..bab834c7 100644
+index eb47df75..ea2eaf85 100644
 --- a/verification/experiments/stage1-protocol/registered.py
 +++ b/verification/experiments/stage1-protocol/registered.py
 @@ -364,8 +364,8 @@ NATIVE_DRIVERS = (
@@ -8,8 +8,8 @@ index eb47df75..bab834c7 100644
      'stage1-protocol-'+name for name in CRATE_CASES)
 -AUDIT_TEMPLATE_COUNT = 676
 -AUDIT_DECLARATION_COUNT = 2952
-+AUDIT_TEMPLATE_COUNT = 682
-+AUDIT_DECLARATION_COUNT = 2978
++AUDIT_TEMPLATE_COUNT = 683
++AUDIT_DECLARATION_COUNT = 2986
 
 
  def native_labels(profile='full'):
@@ -174,7 +174,16 @@ index eb47df75..bab834c7 100644
                 for name in evidence):
          raise ValueError('missing original raw LLBC evidence')
      if job['name'] == UNLOAD.LABEL:
-@@ -1704,7 +1814,7 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
+@@ -1553,6 +1663,8 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
+     if job['name'] == UNLOAD.PARENT_LABEL:
+         UNLOAD.check_parent_audits(ROOT, result, folder)
+         UNLOAD.check_parent_captures(folder, result, evidence)
++        UNLOAD.journal_component(ROOT, 'public_begin').check_evidence(ROOT, folder/'begin',
++            result['public_record_begin'], result['cases']['begin'], evidence)
+     commands = list(_kernel_commands(result))
+     views = list(_actual_views(result))
+     if job['actual_files'] and not views:
+@@ -1704,7 +1816,7 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
      if retained or job['name'] in CPU_PINNED_UNLOAD_JOBS:
          fd, _ = inherited_lock()
          pass_fds = (fd,)
@@ -183,7 +192,7 @@ index eb47df75..bab834c7 100644
              or job.get('convergence_package') in CONVERGENCE.LOCKED_FORMAL):
          fd, lock = inherited_lock()
          pass_fds = (fd,)
-@@ -1871,6 +1981,8 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
+@@ -1871,6 +1983,8 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
      labels = ('functional', *(('stage1-protocol',) if profile == 'full' else ()), *native_labels(profile))
      receipts = {name: shared.native_case(name, root, None, scope=scope) for name in labels}
      paths = {name: _evidence(receipt) for name, receipt in receipts.items()}
@@ -192,7 +201,7 @@ index eb47df75..bab834c7 100644
      for name in native_labels(profile):
          _original_file(receipts[name], 'result.json')
      if 'stage1-sqlite-commit' in receipts:
-@@ -1990,6 +2102,19 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
+@@ -1990,6 +2104,19 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
      return record
 
 
@@ -213,7 +222,7 @@ index eb47df75..bab834c7 100644
      parser = argparse.ArgumentParser(description=__doc__)
      parser.add_argument('mode', choices=('native', 'formal', 'plan'))
 diff --git a/verification/experiments/stage1-protocol/test_registered.py b/verification/experiments/stage1-protocol/test_registered.py
-index 372742d6..892390d6 100644
+index 372742d6..720a7fc4 100644
 --- a/verification/experiments/stage1-protocol/test_registered.py
 +++ b/verification/experiments/stage1-protocol/test_registered.py
 @@ -60,7 +60,7 @@ class CreateDelivery(OriginalReadPlanFixture):
@@ -240,10 +249,25 @@ index 372742d6..892390d6 100644
          self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
              'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
              'create-guard', 'envelope-writer-correct', 'envelope-writer-swallow-error',
-@@ -615,6 +620,99 @@ class Registration(OriginalReadPlanFixture):
+@@ -615,6 +620,114 @@ class Registration(OriginalReadPlanFixture):
          self.assertEqual(parent['cases'], [
              'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision', 'parent-link'])
 
++    def test_public_begin_binds_all_exit_audits_and_both_representation_pages(self):
++        root = registered.ROOT
++        public = registered.UNLOAD.journal_component(root, 'public_begin')
++        files = {str(public.RECORD/(n+'.lean')): registered._sha(root/public.PKG/(n+'.lean.in')) for n in public.NEW}
++        actual = dict(files=files, audits=sorted(public.AUDITS))
++        public.check_page(root, actual)
++        for page in files:
++            with self.subTest(page=page), patch.dict(files, {page: 'changed'}):
++                with self.assertRaisesRegex(ValueError, 'public BEGIN proof'):
++                    public.check_page(root, actual)
++        for declaration in public.AUDITS:
++            with self.subTest(declaration=declaration), patch.dict(actual, audits=sorted(public.AUDITS-{declaration})):
++                with self.assertRaisesRegex(ValueError, 'public BEGIN proof'):
++                    public.check_page(root, actual)
++
 +    def test_begin_requires_its_own_recording_owner_proof(self):
 +        root = registered.ROOT
 +        joint = registered.UNLOAD.started_header(root)
@@ -340,7 +364,7 @@ index 372742d6..892390d6 100644
      def test_full_dispatch_assigns_convergence_children_disjoint_four_cpu_slots(self):
          with tempfile.TemporaryDirectory() as directory:
              output = Path(directory)
-@@ -1680,6 +1778,15 @@ class CheckpointExecution(unittest.TestCase):
+@@ -1680,6 +1793,15 @@ class CheckpointExecution(unittest.TestCase):
          sqlite_readback_inputs = (sqlite_result.parent, registered.ROOT, sqlite_packet,
                                    sqlite_commit, current_sqlite)
          def original_file(receipt, name):
@@ -357,19 +381,23 @@ index 372742d6..892390d6 100644
              return sqlite_result if receipt['key']['label'] == 'stage1-sqlite-commit' else retained
          output = self.directory/'public'
 diff --git a/verification/experiments/stage1-protocol/unload_audits.py b/verification/experiments/stage1-protocol/unload_audits.py
-index 320fae36..d8c2bb20 100644
+index 320fae36..adfcf295 100644
 --- a/verification/experiments/stage1-protocol/unload_audits.py
 +++ b/verification/experiments/stage1-protocol/unload_audits.py
-@@ -31,10 +31,19 @@ PACKAGES = {
+@@ -31,10 +31,24 @@ PACKAGES = {
  }
 
 
-+def started_header(root):
-+    path = root / HERE / 'coordinator-revocation/journal_started.py'
-+    spec = importlib.util.spec_from_file_location('stage1_journal_started', path)
++def journal_component(root, name):
++    path = root / HERE / 'coordinator-revocation' / (name+'.py')
++    spec = importlib.util.spec_from_file_location('stage1_'+name, path)
 +    module = importlib.util.module_from_spec(spec)
 +    spec.loader.exec_module(module)
 +    return module
++
++
++def started_header(root):
++    return journal_component(root, 'journal_started')
 +
 +
  def check_parent_audits(root, result, folder):
@@ -377,11 +405,12 @@ index 320fae36..d8c2bb20 100644
          raise ValueError('missing actual parent transaction formal cases')
      package = root / HERE / 'unload-parent-link'
 +    started_header(root).check_page(root, result['cases']['begin'])
++    journal_component(root, 'public_begin').check_page(root, result['cases']['begin'])
      common = PARENT_AUDIT_INPUTS['begin']
      for case, actual in result['cases'].items():
          if case == 'parent-link':
 diff --git a/verification/experiments/stage1-protocol/unload_parent_transaction.py b/verification/experiments/stage1-protocol/unload_parent_transaction.py
-index 3a858ae7..3503ab2b 100644
+index 3a858ae7..8f10eabd 100644
 --- a/verification/experiments/stage1-protocol/unload_parent_transaction.py
 +++ b/verification/experiments/stage1-protocol/unload_parent_transaction.py
 @@ -9,7 +9,7 @@ import sys
@@ -389,18 +418,20 @@ index 3a858ae7..3503ab2b 100644
 
  from unload_audit_driver import HERE, ROOT, command, digest, load, native_case, write_json
 -from unload_audits import PARENT_LABEL, check_parent_audits
-+from unload_audits import PARENT_LABEL, check_parent_audits, started_header
++from unload_audits import PARENT_LABEL, check_parent_audits, journal_component, started_header
 
 
  LABEL = PARENT_LABEL
-@@ -202,6 +202,10 @@ def run_formal(output, result, identity, receipt_path, native_archive, native_ma
+@@ -202,6 +202,12 @@ def run_formal(output, result, identity, receipt_path, native_archive, native_ma
              expected_roots = [root]
          if roots != expected_roots or source != identity['head']:
              raise ValueError('wrong materialized root or commit: ' + case)
 +        if case == 'begin':
 +            joint = started_header(ROOT)
 +            files = joint.materialize(ROOT, project, files)
-+            roots = [*roots, joint.MODULE]
++            public = journal_component(ROOT, 'public_begin')
++            files, result['public_record_begin'] = public.prepare(ROOT, project, folder, files, tools.parent, identity['head'])
++            roots = [*roots, joint.MODULE, public.MODULE]
          if any(digest(project / name) != checksum for name, checksum in files.items()):
              raise ValueError('materialized proof differs from its checked inputs')
          shutil.copyfile(ROOT/'tools/proof_services.py', project/'tools/proof_services.py')

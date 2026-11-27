@@ -1,0 +1,174 @@
+import SandproofActualRecord.JournalStartedHeader
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol SandproofUnloadWorldBegin
+open SandproofParentCommitRust.ErrorTransport (fromRequest)
+open SandproofParentCommitRust.CurrentViews (ownerToSource)
+namespace SandproofActualRecordRust.PublicBegin
+open controller.lifecycle_inbox recording
+noncomputable section
+set_option autoImplicit false
+
+/-- The original BEGIN-to-recording representation supplies a value for the success
+continuation for every source owner and every permitted commit, V5 and termination observation. -/
+def enrichOwner (commit : JournalStartedHeader.CommitReply) (v5 : SandproofParentCommitRust.V5CallObservations)
+    (terminate : TerminateObservation) (source : SandproofParentCommitRust.CurrentViews.SourceOwner) :
+    { value : CallerOwnerView // ownerToSource value.parent = source } :=
+  ⟨JournalStartedHeader.callerOwner source commit v5 terminate,
+    JournalStartedHeader.erases_to_entire_owner source commit v5 terminate⟩
+
+variable [FileHandle] [env : PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+variable {C : Type} (crash : CrashInjector C) (journal : controller.ControllerJournal)
+  (intent : SourceFlowLink.Intent) (context : SourceFlowLink.Context) (crashes : C)
+
+abbrev initial : UnloadWorldBegin.Conn := ⟨journal.journal.connection, env.observation⟩
+
+/-- Every ordinary BEGIN refusal leaves the original hook and all untouched journal fields
+at the public return. The connection comes from this invocation, even on failure. -/
+theorem begin_refusal (error : SandproofUnloadWorldBegin.JournalError) (after : UnloadWorldBegin.Conn)
+    (stops : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Err error, after)) :
+    proof_public_journal crash journal intent context crashes =
+      .ok (.Err (fromRequest error), {journal with journal := ⟨after.base⟩}, crashes) := by
+  have refused : SandproofActualRecordRust.controller.transaction.WorldTransaction.begin journal.journal.connection
+      journal.committed_world = .ok (.Err (fromRequest error), after.base) := by
+    unfold SandproofActualRecordRust.controller.transaction.WorldTransaction.begin
+    rw [show (⟨journal.journal.connection, env.observation⟩ : UnloadWorldBegin.Conn) = initial journal from rfl, stops]
+    simp
+  unfold proof_public_journal ControllerJournal.record_lifecycle_intent
+  simp [refused, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem world_refusal (error : SandproofUnloadWorldBegin.JournalError)
+    (failed : env.observation.world (committedView journal.committed_world) journal.journal.connection =
+      .ok (.Err error)) :
+    proof_public_journal crash journal intent context crashes = .ok (.Err (fromRequest error), journal, crashes) := by
+  exact begin_refusal crash journal intent context crashes error (initial journal)
+    (UnloadWorldBegin.world_error_precedes_later_calls _ _ _ failed)
+
+theorem sqlite_refusal (world : UnloadStartedTransaction.World)
+    (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (error : SandproofUnloadWorldBegin.rusqlite.error.Error)
+    (read : env.observation.world (committedView journal.committed_world) journal.journal.connection =
+      .ok (.Ok world))
+    (prepare : env.observation.prepareWrite journal.journal.connection world (committedView journal.committed_world) =
+      .ok (.Ok (), prepared))
+    (failed : env.observation.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Err error, after)) :
+    proof_public_journal crash journal intent context crashes =
+      .ok (.Err (.Sqlite error), { journal with journal := ⟨after⟩ }, crashes) := by
+  exact begin_refusal crash journal intent context crashes (.Sqlite error) ⟨after,env.observation⟩
+    (UnloadWorldBegin.sqlite_error_preserves_payload_and_returned_connection _ _ _ _ _ _ read prepare failed)
+
+theorem preparation_refusal (world : UnloadStartedTransaction.World)
+    (prepared : SandproofStage1RequestRust.rusqlite.Connection) (error : SandproofUnloadWorldBegin.JournalError)
+    (read : env.observation.world (committedView journal.committed_world) journal.journal.connection =
+      .ok (.Ok world))
+    (failed : env.observation.prepareWrite journal.journal.connection world (committedView journal.committed_world) =
+      .ok (.Err error, prepared)) :
+    proof_public_journal crash journal intent context crashes =
+      .ok (.Err (fromRequest error), {journal with journal := ⟨prepared⟩}, crashes) := by
+  exact begin_refusal crash journal intent context crashes error ⟨prepared, env.observation⟩
+    (UnloadWorldBegin.preparation_error_precedes_sqlite _ _ _ _ _ read failed)
+
+theorem allocator_refusal (world : UnloadStartedTransaction.World)
+    (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (raw : UnloadStartedTransaction.Raw)
+    (error : SandproofUnloadWorldBegin.JournalError)
+    (read : env.observation.world (committedView journal.committed_world) journal.journal.connection =
+      .ok (.Ok world))
+    (prepare : env.observation.prepareWrite journal.journal.connection world (committedView journal.committed_world) =
+      .ok (.Ok (), prepared))
+    (opened : env.observation.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Ok raw, after))
+    (failed : env.observation.readAllocator raw.conn UnloadWorldBegin.inputKind UnloadWorldBegin.inputScope =
+      .ok (.Err error)) :
+    proof_public_journal crash journal intent context crashes =
+      .ok (.Err (fromRequest error), {journal with journal := ⟨after⟩}, crashes) := by
+  exact begin_refusal crash journal intent context crashes error ⟨after,env.observation⟩
+    (UnloadWorldBegin.allocator_error_precedes_owner_construction _ _ _ _ _ _ _ read prepare opened failed)
+
+theorem changed_version_refusal (world : UnloadStartedTransaction.World)
+    (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (raw : UnloadStartedTransaction.Raw)
+    (start : U64) (version : I64)
+    (read : env.observation.world (committedView journal.committed_world) journal.journal.connection =
+      .ok (.Ok world))
+    (prepare : env.observation.prepareWrite journal.journal.connection world (committedView journal.committed_world) =
+      .ok (.Ok (), prepared))
+    (opened : env.observation.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Ok raw, after))
+    (frontier : env.observation.readAllocator raw.conn UnloadWorldBegin.inputKind UnloadWorldBegin.inputScope =
+      .ok (.Ok start))
+    (observed : UnloadStartedTransaction.readVersion raw.conn = .ok (.Ok version))
+    (changed : version ≠ journal.committed_world.data_version)
+    (noBorrow : journal.committed_world.value.beforeBorrowCount = 0) :
+    proof_public_journal crash journal intent context crashes =
+      .ok (.Err .CorruptStore, {journal with journal := ⟨after⟩}, crashes) := by
+  exact begin_refusal crash journal intent context crashes .CorruptStore ⟨after,env.observation⟩
+    (UnloadWorldBegin.changed_version_prevents_begin_from_returning_an_owner _ _ _ _ _ _ _ _ read
+      prepare opened frontier observed changed noBorrow)
+
+abbrev retirement := native_retirement.StandardRetirementEncoding.Insts.Sandproof_controller_serviceControllerLifecycle_inboxNative_retirementRetirementEncoding
+abbrev terminal := model.StandardTerminalEncoding.Insts.Sandproof_controller_serviceControllerLifecycle_inboxModelTerminalEncoding
+abbrev renewal := renewal_confirmation.StandardRenewalEncoding.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRenewal_confirmationRenewalEncoding
+abbrev unload := unload_resolution.StandardUnloadEncoding.Insts.Sandproof_controller_serviceControllerLifecycle_inboxUnload_resolutionUnloadEncoding
+abbrev graphic := capture.StandardGraphicBytes.Insts.Sandproof_controller_serviceCaptureGraphicBytes
+abbrev codec := StandardRecordCodec.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordCodec
+
+/-- The success continuation is the original recording root with exactly the public
+dictionaries, constructed holder and original arguments. -/
+theorem started_reply (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (after : UnloadWorldBegin.Conn) (ns : Str)
+    (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+    (reply : core.result.Result model.LifecycleWorkState JournalError) (returnedHook : C)
+    (recorded : proof_record_actual_parent retirement terminal renewal unload graphic codec crash
+      (env.onOwner (originalOwner begun)).val ns () intent context crashes = .ok (reply, returnedHook)) :
+    proof_public_journal crash journal intent context crashes =
+      .ok (reply, { journal with journal := ⟨after.base⟩ }, returnedHook) := by
+  unfold proof_public_journal ControllerJournal.record_lifecycle_intent
+  have okBegin : SandproofActualRecordRust.controller.transaction.WorldTransaction.begin journal.journal.connection
+      journal.committed_world = .ok (.Ok (env.onOwner (originalOwner begun)).val, after.base) := by
+    unfold SandproofActualRecordRust.controller.transaction.WorldTransaction.begin
+    rw [show (⟨journal.journal.connection, env.observation⟩ : UnloadWorldBegin.Conn) = initial journal from rfl, started]
+    simp
+  simp [okBegin, core.result.Result.Insts.CoreOpsTry.branch, borrowed]
+  rw [CallerBranches.extraction_root_uses_real_constructor_and_dictionary] at recorded
+  change (do
+    let (r, c) ← record_transaction_using retirement terminal renewal unload graphic (CallerBranches.actualEffects codec)
+      crash ⟨(env.onOwner (originalOwner begun)).val, ns, ()⟩ intent context crashes
+    .ok (r, {journal with journal := ⟨after.base⟩}, c)) = _
+  simp [recorded]
+
+/-- Once the real BEGIN has constructed its owner, the original first SQL prepare on
+that owner's raw transaction supplies the refusal at the public journal boundary. -/
+theorem first_record_read_refusal (world : UnloadStartedTransaction.World)
+    (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (raw : UnloadStartedTransaction.Raw)
+    (start : U64) (ns : Str) (error : SandproofSqliteSession.SqlError)
+    (read : env.observation.world (committedView journal.committed_world) journal.journal.connection =
+      .ok (.Ok world))
+    (prepare : env.observation.prepareWrite journal.journal.connection world (committedView journal.committed_world) =
+      .ok (.Ok (), prepared))
+    (opened : env.observation.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Ok raw, after))
+    (frontier : env.observation.readAllocator raw.conn UnloadWorldBegin.inputKind UnloadWorldBegin.inputScope =
+      .ok (.Ok start))
+    (version : UnloadStartedTransaction.readVersion raw.conn = .ok (.Ok journal.committed_world.data_version))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+    (failed : raw.conn.reads.current.single.canonical.prepare InboxLoad.existsStatement = .ok (.Err error)) :
+    proof_public_journal crash journal intent context crashes =
+      .ok (.Err (.Sqlite error), { journal with journal := ⟨after⟩ }, crashes) := by
+  obtain ⟨begun, started, refusal⟩ := JournalStartedHeader.begin_to_first_prepare_refusal
+    retirement terminal renewal unload graphic codec crash ns () intent context crashes
+    (initial journal) journal.committed_world world prepared after raw start read prepare opened frontier version error failed
+  let owner := env.onOwner (originalOwner begun)
+  exact started_reply crash journal intent context crashes begun ⟨after,env.observation⟩ ns started borrowed
+    (.Err (.Sqlite error)) crashes (refusal owner.val owner.property).2
+
+
+end
+end SandproofActualRecordRust.PublicBegin
+
+#audit_controller_proof SandproofActualRecordRust.PublicBegin.begin_refusal
+#audit_controller_proof SandproofActualRecordRust.PublicBegin.world_refusal
+#audit_controller_proof SandproofActualRecordRust.PublicBegin.sqlite_refusal
+#audit_controller_proof SandproofActualRecordRust.PublicBegin.started_reply
+
+#audit_controller_proof SandproofActualRecordRust.PublicBegin.first_record_read_refusal
+
+#audit_controller_proof SandproofActualRecordRust.PublicBegin.preparation_refusal
+#audit_controller_proof SandproofActualRecordRust.PublicBegin.allocator_refusal
+#audit_controller_proof SandproofActualRecordRust.PublicBegin.changed_version_refusal
