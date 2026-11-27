@@ -73,6 +73,42 @@ class QueueMetadataTest(unittest.TestCase):
             self.assertIn('tools.ci_merge_queue', body)
             self.assertIn(f'tools/{original} --event "$event"', body)
 
+    def rest_reader(self):
+        repository = dict(full_name=queue.REPOSITORY, id=queue.REPOSITORY_ID)
+        pr = dict(number=681, title='chore(repo): Exact queue title', state='open', draft=False,
+                  head=dict(ref='integration', sha=self.head, repo=repository),
+                  base=dict(ref='test', sha=self.base, repo=repository))
+        paths = {
+            queue.PREFIX+'pulls?state=open&base=test&per_page=100': [pr],
+        }
+        for ref, obj in ((self.ref, self.sha), (queue.TARGET, self.base),
+                         ('refs/heads/integration', self.head)):
+            paths[queue.PREFIX+'git/ref/'+ref.removeprefix('refs/')] = dict(
+                ref=ref, object={'sha': obj, 'type': 'commit'})
+        return paths, pr
+
+    def test_workflow_uses_standard_read_api_and_real_parent_identity(self):
+        paths, pr = self.rest_reader()
+        reader = Mock(side_effect=paths.__getitem__)
+        original = queue.pr_event(queue.workflow_pr(self.group, reader, self.commit))
+        self.assertEqual(original['pull_request']['title'], pr['title'])
+        self.assertIsNone(check_pr_policy.validate(original))
+        self.assertEqual(reader.call_count, 4)
+        self.lookup.assert_not_called()
+
+    def test_workflow_never_guesses_between_matching_prs_or_accepts_fork(self):
+        paths, pr = self.rest_reader()
+        prs = paths[queue.PREFIX+'pulls?state=open&base=test&per_page=100']
+        other = copy.deepcopy(pr)
+        other['number'] = 123
+        other['head']['repo'] = dict(id=123, full_name='some/fork')
+        prs.append(other)
+        with self.assertRaisesRegex(ValueError, 'exactly one open PR'):
+            queue.workflow_pr(self.group, paths.__getitem__, self.commit)
+        prs[:] = [other]
+        with self.assertRaisesRegex(ValueError, 'not a protected same-repository'):
+            queue.workflow_pr(self.group, paths.__getitem__, self.commit)
+
 
 class QueueProtectionTest(unittest.TestCase):
     def setUp(self):

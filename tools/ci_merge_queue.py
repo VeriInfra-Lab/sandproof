@@ -12,6 +12,7 @@ from tools.ci_github_app import REPOSITORY, Transport
 REPOSITORY_ID = 1359710455
 TARGET = 'refs/heads/test'
 QUEUE_PREFIX = 'refs/heads/gh-readonly-queue/test/'
+PREFIX = '/repos/' + REPOSITORY + '/'
 QUERY = '''
 query ($ref: String!) {
   repository(owner: "VeriInfra-Lab", name: "sandproof") {
@@ -127,6 +128,43 @@ def checked_out_commit(sha):
     return dict(sha=actual, parents=parents, tree={'sha': tree})
 
 
+def workflow_pr(group, get, commit):
+    """Use only documented Actions read scopes for queue title and policy."""
+    actual = commit(group.sha)
+    parents = [object_id(parent['sha']) for parent in actual.get('parents', ())]
+    if actual.get('sha') != group.sha or len(parents) != 2 or parents[0] != group.base:
+        raise ValueError('Actions queue commit has an unexpected parent history')
+    head = parents[1]
+
+    def match_ref(ref, sha):
+        row = get(PREFIX + 'git/ref/' + ref.removeprefix('refs/'))
+        if (row.get('ref') != ref or row['object'].get('type') != 'commit'
+                or row['object'].get('sha') != sha):
+            raise ValueError('live queue or protected branch ref differs from the Actions object')
+
+    match_ref(group.ref, group.sha)
+    match_ref(TARGET, group.base)
+    rows = get(PREFIX + 'pulls?state=open&base=test&per_page=100')
+    if not isinstance(rows, list) or len(rows) >= 100:
+        raise ValueError('cannot establish a unique original promotion PR from the open inventory')
+    matches = [row for row in rows if row['head'].get('sha') == head
+               and row['base'].get('sha') == group.base]
+    if len(matches) != 1:
+        raise ValueError('expected exactly one open PR for the queue commit parents')
+    row, = matches
+    source = row['head'].get('ref')
+    if (row.get('state') != 'open' or row.get('draft') is not False
+            or row['base'].get('ref') != 'test' or source not in ('integration', 'main')
+            or type(row.get('number')) is not int or row['number'] <= 0
+            or not isinstance(row.get('title'), str)
+            or any((row[side].get('repo') or {}).get('id') != REPOSITORY_ID
+                   or (row[side].get('repo') or {}).get('full_name') != REPOSITORY
+                   for side in ('head', 'base'))):
+        raise ValueError('original queue PR metadata is incomplete or not a protected same-repository promotion')
+    match_ref('refs/heads/' + source, head)
+    return dict(pull=row['number'], source=source, head=head, base=group.base, title=row['title'])
+
+
 def pr_event(row):
     return {'pull_request': dict(number=row['pull'], title=row['title'],
         head=dict(ref=row['source'], sha=row['head'], repo={'id': REPOSITORY_ID}),
@@ -144,9 +182,9 @@ def main():
     if (os.environ.get('GITHUB_REPOSITORY') != REPOSITORY
             or os.environ.get('GITHUB_SHA') != group.sha or os.environ.get('GITHUB_REF') != group.ref):
         raise ValueError('Actions queue environment disagrees with the requested object')
-    lookup = graphql_lookup(Transport(os.environ.get('https_proxy') or os.environ.get('HTTPS_PROXY')),
-                            os.environ['GH_TOKEN'])
-    meta = group.observe(lookup, checked_out_commit)
+    transport = Transport(os.environ.get('https_proxy') or os.environ.get('HTTPS_PROXY'))
+    token = os.environ['GH_TOKEN']
+    meta = workflow_pr(group, lambda path: transport('GET', path, token), checked_out_commit)
     with args.output.open('x') as stream:
         json.dump(pr_event(meta), stream)
 
