@@ -1,0 +1,64 @@
+use super::*;
+use rusqlite::hooks::{AuthAction, AuthContext, Authorization, TransactionOperation};
+
+#[test]
+fn original_restore_permit_read_does_not_return_on_sqlite_commit_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let (mut journal, source) = unloaded_resume_source(&dir.path().join("db"));
+    let sandbox = source.work.anchor.local.sandbox;
+    let request = record_real_resume(&mut journal);
+    admit_real_resume(&mut journal, &request);
+    journal
+        .register_data_credential(sandbox, 2, [99; 32], &mut NeverCrash)
+        .unwrap();
+    let work = journal
+        .lifecycle_restore_work(&request, &v3::context())
+        .unwrap();
+    let action = claim_restore_action(&mut journal, sandbox, |command| {
+        matches!(command, core::Command::ActivateVm { .. })
+    });
+
+    let read_permit =
+        || journal.lifecycle_restore_activation_permit(&work, &action, &v3::context(), 10);
+    let before = read_permit().unwrap();
+    assert_eq!(before.action(), &action);
+    assert_eq!(before.work_binding(), &work.binding_digest().unwrap());
+
+    let connection = &journal.journal.connection;
+    let operations = Arc::new(Mutex::new(Vec::new()));
+    let observed = Arc::clone(&operations);
+    connection
+        .authorizer(Some(move |context: AuthContext<'_>| {
+            if let AuthAction::Transaction { operation } = context.action {
+                observed.lock().unwrap().push(operation);
+                // In fixed rusqlite 0.40.2 the hook decodes SQLite's COMMIT
+                // operation as Unknown. The other two observed operations
+                // are BEGIN and the rollback in Transaction::drop.
+                if operation == TransactionOperation::Unknown {
+                    return Authorization::Deny;
+                }
+            }
+            Authorization::Allow
+        }))
+        .unwrap();
+    let failure = read_permit();
+    connection
+        .authorizer(None::<fn(AuthContext<'_>) -> Authorization>)
+        .unwrap();
+
+    assert_eq!(
+        *operations.lock().unwrap(),
+        [
+            TransactionOperation::Begin,
+            TransactionOperation::Unknown,
+            TransactionOperation::Rollback,
+        ]
+    );
+    assert!(matches!(
+        failure,
+        Err(JournalError::Sqlite(rusqlite::Error::SqliteFailure(error, _)))
+            if error.extended_code == rusqlite::ffi::SQLITE_AUTH
+    ));
+    assert!(connection.is_autocommit());
+    assert_eq!(read_permit().unwrap(), before);
+}

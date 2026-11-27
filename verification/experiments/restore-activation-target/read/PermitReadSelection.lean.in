@@ -1,0 +1,63 @@
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.SourceQuery
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofRestoreSourceQueryRust
+open SandproofRestoreSourceQueryRust.controller.lifecycle_inbox.source_work
+open SandboxModel.Stage1Protocol.RestoreClaim
+
+namespace SandboxModel.Stage1Protocol.RestoreActivationTarget
+
+abbrev ResumeIntent := sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+
+/-- Specification of the complete intent comparison in the original Rust selector. -/
+noncomputable def matchesRestoreIntent (intent : ResumeIntent) (row : SourceWorkRecord) : Bool :=
+  match row.restore with
+  | none => false
+  | some claim => @decide (claim.intent = intent) (Classical.propDecidable _)
+
+/-- The first matching index is sufficient and necessary for the value returned
+by the list selector. Later matches do not affect it. -/
+theorem first_matching_intent_iff_index (intent : ResumeIntent)
+    (records : List SourceWorkRecord) (original : SourceWorkRecord) :
+    records.find? (matchesRestoreIntent intent) = some original ↔
+      matchesRestoreIntent intent original ∧
+        ∃ i h, records[i] = original ∧
+          ∀ j : Nat, (hj : j < i) → !(matchesRestoreIntent intent) records[j] :=
+  List.find?_eq_some_iff_getElem
+
+/-- Compose the actual original SQL result with the logical selection condition.
+The equation for the list is a specification; the Rust Iterator::find call
+still needs an implementation correspondence. -/
+theorem query_result_and_first_match_condition (ports : codec.SourceRowJson J D)
+    (connection : rusqlite.Connection)
+    (prepared : connection.current.single.canonical.prepare sourceRecordsSql = .ok (.Ok 0))
+    (rows : List (RawSourceRow × Option SourceWorkRecord))
+    (trace : SourceCursorTrace ports (sourceQueryIterator ports) (issuedSourceCursor connection J D) rows)
+    (capacity : (rows.filterMap Prod.snd).length ≤ Usize.max)
+    (bytes sha key : RowBytes) (original decoded : SourceWorkRecord)
+    (originalBytes : ports.decode_record (alloc.vec.Vec.deref bytes) = .ok (.Ok (some original)))
+    (originalSlot : ((.Ok (bytes, sha, some key)), some decoded) ∈ rows)
+    (intent : ResumeIntent) :
+    ∃ loaded,
+      codec.proof_query_source_records ports sourceNoParams connection () sourceRecordsSql = .ok (.Ok loaded) ∧
+      original ∈ loaded.val ∧ loaded.val = rows.filterMap Prod.snd ∧
+      (loaded.val.find? (matchesRestoreIntent intent) = some original ↔
+        matchesRestoreIntent intent original ∧
+          ∃ i h, loaded.val[i] = original ∧
+            ∀ j : Nat, (hj : j < i) → !(matchesRestoreIntent intent) loaded.val[j]) := by
+  obtain ⟨matching, query, member⟩ := original_slot_is_in_query_result ports connection prepared
+    rows trace capacity bytes sha key original decoded originalBytes originalSlot
+  obtain ⟨ordered, collected, order⟩ := actual_source_collect_preserves_rows ports
+    (sourceQueryIterator ports) (issuedSourceCursor connection J D) rows trace capacity
+  have orderedQuery := (actual_source_query_uses_issued_cursor ports connection prepared).trans collected
+  have same : matching = ordered := by
+    have output := Result.ok_injective (query.symm.trans orderedQuery)
+    cases output
+    rfl
+  subst ordered
+  exact ⟨matching, query, member, order, first_matching_intent_iff_index intent matching.val original⟩
+
+end SandboxModel.Stage1Protocol.RestoreActivationTarget
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.first_matching_intent_iff_index
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.query_result_and_first_match_condition

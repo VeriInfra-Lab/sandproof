@@ -1,0 +1,46 @@
+{
+  "production": "1b15872a07568f9f34aad514a64673ac328c7ee8",
+  "production_tree": "42b4f7fda5df6c10c9310f78b9edec6bbb98048a",
+  "restore_source_sha256": "3bc21d0f6e354de0718a254ec0cf9dd73389d3afc7e906aeb1fb880d32f046be",
+  "query_provider": "c05bac6a83b9d102a75060f0769a81ca9058d9e6",
+  "query_provider_tree": "435df6e1f95ef3e9cf563e150878f7a66ced6ec9",
+  "transaction_provider": "9b82954c68c85bb9c95831865fed7a278d455cb5",
+  "tools": {
+    "charon_sha256": "2603f720f0d26a4c77ae215485e2457029d69504dbd9d318a497ed866f21d4fd",
+    "aeneas_sha256": "22b326476f854e19b52ca5a2acfd953fd186da7694cd10d8d008ed5502f7c46a",
+    "aeneas_commit": "505b6ca35217e7be5c96c3e2f8045edfbdf47291",
+    "lean_version": "Lean (version 4.31.0, x86_64-unknown-linux-gnu, commit 68218e876d2a38b1985b8590fff244a83c321783, Release)",
+    "rusqlite_version": "0.40.2"
+  },
+  "generated": {
+    "query": {
+      "module": "SandproofRestoreSourceQuery",
+      "Funs.lean": "9e399e63dfa59e4aae813c4d74a4c85b2bb409ea17aed4b2c722ad46c12a0ca2",
+      "FunsExternal_Template.lean": "6ede7100d7444619ae02effa496ff1a08c55275ec304afbd689b14381f52d247",
+      "Types.lean": "23831385715f277d8f495746c48867b912c5db8de41f46f532b157a554156493",
+      "TypesExternal_Template.lean": "8ca8c6712c493731c6b4d621445f40d4516cbf16452910e23d3036e8d58f8058"
+    },
+    "work": {
+      "module": "SandproofRestoreWork",
+      "Funs.lean": "ef14d16bbc47aa3720f8a47be8f16a385865e3551106e8e14df10f97920a2c4b",
+      "FunsExternal_Template.lean": "27842f4df3be48622e060084926dd3e6c0c10eb2ee6fc2d6cbdd7d5a8bb605dd",
+      "Types.lean": "58ae864a609c2731f1ce6714cbf9e384a09771673870a1998606b76bc4dc2b5a",
+      "TypesExternal_Template.lean": "1dee782cb2c2735013f73f846d92426e8c81130278f2984b7b25ec98dd7fe5fb"
+    },
+    "identity": {
+      "module": "SandproofRestorePermitFinalize",
+      "Funs.lean": "eef968c4d238ebe5ae774ab7d934e70d821b82d1ee5a5949a257ea7f39385f9a",
+      "FunsExternal_Template.lean": "628cd0acc6c01893a2c0a9337182a9728d758618f42d4b120aef6387a6936449",
+      "Types.lean": "43ef9fdfbcb8ee741c0e06750045aa3803fff65fcf673ba0c3981928d5dbe6bf",
+      "TypesExternal_Template.lean": "2813ac251887c6072930c71ea549518ae4d58e97d3067e1a27ed38521a86b947"
+    }
+  },
+  "templates": {
+    "PermitReadSelection.lean.in": "81e3986bf6b4553e7801b95d50403504e9e6735fa66833410d62f11a735a8939",
+    "PermitReadWork.lean.in": "065603970cf5edcc523bd37b5826e57cdd21d0414f421ad4c2021bfdb966691b",
+    "PermitReadReturn.lean.in": "07735ef548c5207702deb9ee7ece153d2eddd02cd1d5012ff16c3700578aad2d",
+    "PermitReadIdentity.lean.in": "61afdfe9157f0043444e016765601d136bb12b3b51fddb450117e7eeb01b22cb",
+    "IdentityFunsExternal.lean.in": "98d4bb3f1334af95519a52c95e2f9091cdbb925d0f264abb54a1d9b1f2b1b221",
+    "IdentityTypesExternal.lean.in": "1933c1fe08aa439c97d6201554147dd85a408739bce1f7034ca4b260c64dbf55"
+  }
+}

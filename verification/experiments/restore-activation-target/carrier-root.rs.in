@@ -1,0 +1,19 @@
+// Private extraction entry. The methods and types are the production ones.
+use crate::capture::RestoreActivationPermit;
+use sandbox_controller_core::EffectId;
+use sandproof_protocol::{WorkAction, lifecycle::ContentDigest};
+
+pub fn construct_permit(
+    action: WorkAction<EffectId>,
+    binding: ContentDigest,
+) -> RestoreActivationPermit {
+    RestoreActivationPermit::after_dispatch_commit(action, binding)
+}
+
+pub fn permit_action(permit: &RestoreActivationPermit) -> &WorkAction<EffectId> {
+    permit.action()
+}
+
+pub fn permit_work_binding(permit: &RestoreActivationPermit) -> &ContentDigest {
+    permit.work_binding()
+}

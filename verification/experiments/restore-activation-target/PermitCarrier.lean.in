@@ -1,0 +1,27 @@
+import SandproofRestoreActivationCarrier.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofRestoreActivationCarrierRust
+
+namespace SandboxModel.Stage1Protocol.RestoreActivationTarget
+
+abbrev Action := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+abbrev Digest := sandproof_protocol.lifecycle.digest.ContentDigest
+
+/-- The original constructor and the original accessors preserve the complete supplied pair. -/
+theorem permit_carrier_round_trip (action : Action) (digest : Digest) :
+    (do
+      let permit ← capture.restore.RestoreActivationPermit.after_dispatch_commit action digest
+      let recoveredAction ← capture.restore.RestoreActivationPermit.impl.action permit
+      let recoveredDigest ← capture.restore.RestoreActivationPermit.impl.work_binding permit
+      pure (recoveredAction, recoveredDigest)) = .ok (action, digest) := by
+  simp [capture.restore.RestoreActivationPermit.after_dispatch_commit,
+    capture.restore.RestoreActivationPermit.impl.action,
+    capture.restore.RestoreActivationPermit.impl.work_binding]
+  change (Prod.mk action <$> (pure digest : Result Digest)) = pure (action, digest)
+  simp
+
+end SandboxModel.Stage1Protocol.RestoreActivationTarget
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreActivationTarget.permit_carrier_round_trip
+#print axioms SandboxModel.Stage1Protocol.RestoreActivationTarget.permit_carrier_round_trip
