@@ -15,16 +15,19 @@ import codec_binding
 import codec_reads
 import codec_receipt as codec
 import journal_entry
+import journal_decision
 from wiring import require
 
 RECORD = Path('verification/aeneas/actual-record/SandproofActualRecord')
-PAGE = str(RECORD/'PublicBegin.lean')
-MODULE = 'SandproofActualRecord.PublicBegin'
+PAGE = str(RECORD/'PublicReplay.lean')
+MODULE = 'SandproofActualRecord.PublicReplay'
 PKG = codec.PACKAGE/'public-begin'
-NEW = ('PublicHandle', 'PublicCalls', 'PublicBegin')
+NEW = ('PublicHandle', 'PublicCalls', 'PublicBegin', 'PublicReplay')
 AUDITS = {'SandproofActualRecordRust.PublicBegin.'+n for n in (
     'begin_refusal', 'world_refusal', 'preparation_refusal', 'sqlite_refusal', 'allocator_refusal',
     'changed_version_refusal', 'started_reply', 'first_record_read_refusal')}
+AUDITS.update('SandproofActualRecordRust.PublicReplay.'+n for n in (
+    'hook_return', 'retained', 'conflict', 'mapped_unloads', 'changed_capture', 'journal_error'))
 SHA = {'Types': '6c311fa06db63d48c43ca33fe50f096d186e65165a847fd2e7532df29aa05113',
        'Funs': '126609d05e094ecfa445c512bfccd4e11a85c2cc796a67df09b14a5d43f861af'}
 BINDERS = {'Types': b'variable [FileHandle]',
@@ -43,7 +46,7 @@ def bound_page(name, public, previous):
     return public.replace(NAMESPACE, NAMESPACE+b'\n'+BINDERS[name]+b'\n', 1)
 
 
-def project_inputs(root, journal, decoder):
+def project_inputs(root, journal, decoder, captures):
     """Describe every byte added to or superseding the original BEGIN project."""
     manifest = json.loads((root/PROVIDER/'materialization.json').read_bytes())['modules']
     result = {}
@@ -70,6 +73,11 @@ def project_inputs(root, journal, decoder):
         else:
             data = (root/codec.TEMPLATES/(file+'.in')).read_bytes()
         result[str(codec.FOLDER/codec.LIB/file)] = data
+    request = manifest['SandproofStage1Request.Types']
+    provider = (root/request['source']).read_bytes()
+    require(Path(request['path']) == journal_decision.REQUEST and codec.digest(provider) == request['sha256'],
+            'missing transaction request type provider')
+    result.update(journal_decision.project_inputs(root, captures, provider))
     return result
 
 
@@ -91,6 +99,10 @@ def prepare(root, project, folder, original_files, tools, head):
         journal = driver.capture_public(source, captures/'journal', tools, fixed, include_lease=True)
         original = driver.load(source/codec.AREA/'serde-binding/binding.py').Original
         public = original(json.loads((captures/'journal/actual.llbc').read_bytes()))
+        coordinator = driver.capture_parent(source, captures/'coordinator', tools, fixed, refactored=True)
+        require(coordinator['journal_entry'] == journal['journal_entry'], 'coordinator and public journal entry differ')
+        journal_decision.capture(source, captures, tools, fixed, driver.run)
+        decision = journal_decision.readback(source, captures, original, fixed['target'])
         dec = captures/'decoder'
         dec.mkdir()
         decoder = codec_reads.capture(source, dec, tools, fixed, public, original, driver.run)
@@ -99,7 +111,7 @@ def prepare(root, project, folder, original_files, tools, head):
             os.environ.pop('CARGO_TARGET_DIR', None)
         else:
             os.environ['CARGO_TARGET_DIR'] = previous_target
-    inputs = project_inputs(root, captures/'journal/generated', dec/'generated')
+    inputs = project_inputs(root, captures/'journal/generated', dec/'generated', captures)
     expected = dict(original_files)
     for name, data in inputs.items():
         path = project/name
@@ -112,14 +124,19 @@ def prepare(root, project, folder, original_files, tools, head):
         expected[name] = codec.digest(data)
     with (project/'lakefile.toml').open('a') as config:
         config.write(f'\n[[lean_lib]]\nname = "{codec.LIB}"\nsrcDir = "{codec.FOLDER}"\n')
+        config.write(f'\n[[lean_lib]]\nname = "{journal_decision.LIB}"\nsrcDir = "{journal_decision.FOLDER}"\n')
     files = closure(project, [PAGE], active_view='lakefile.toml')
-    require(files == expected, 'public journal import closure differs from its recording, decoder and BEGIN inputs')
-    return files, dict(journal=journal, decoder=decoder)
+    manifest = json.loads((root/PROVIDER/'materialization.json').read_bytes())['modules']
+    known = {entry['path']:entry['sha256'] for entry in manifest.values()} | expected
+    require(expected.keys() <= files.keys() and all(known.get(n) == h for n, h in files.items()),
+            'public journal import closure differs from its transaction, decision and BEGIN inputs')
+    return files, dict(journal=journal, decoder=decoder, **decision)
 
 
 def check_page(root, actual):
     files = actual.get('files', {})
-    require(AUDITS <= set(actual.get('audits', [])) and all(
+    require(journal_decision.PHYSICAL.items() <= files.items() and
+            AUDITS <= set(actual.get('audits', [])) and all(
         files.get(str(RECORD/(n+'.lean'))) == codec.sha(root/PKG/(n+'.lean.in')) for n in NEW),
         'missing public BEGIN proof, representation or audit')
 
@@ -139,12 +156,19 @@ def check_evidence(root, folder, row, actual, evidence):
                 'missing or changed public BEGIN extraction: '+name)
     project = folder/'project'
     files = actual['files']
-    for path, data in project_inputs(root, captures/'journal/generated', captures/'decoder/generated').items():
+    for path, data in project_inputs(root, captures/'journal/generated', captures/'decoder/generated', captures).items():
         require(files.get(path) == evidence.get(str(project/path)) == codec.digest(data),
                 'public BEGIN physical page differs: '+path)
     spec = importlib.util.spec_from_file_location('original_receipt_binding', root/codec.AREA/'serde-binding/binding.py')
     binding = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(binding)
+    fixed = json.loads((root/'verification/foundations-environment.json').read_bytes())
+    decision = journal_decision.readback(root, captures, binding.Original, fixed['target'])
+    for mode, view in decision.items():
+        raw = captures/mode/'actual.llbc'
+        require(row.get(mode) == view and evidence.get(str(raw)) == view['ir'] and
+                all(evidence.get(str(captures/mode/'generated'/n)) == h for n, h in view.get('generated', {}).items()),
+                'detached journal decision or parent evidence: '+mode)
     source = (root/codec_binding.SOURCE).read_text()
     appended = source+(root/PROVIDER/'caller-root.rs.in').read_text()+(root/codec.PACKAGE/'public-journal-root.rs.in').read_text()
     public = binding.Original(json.loads((captures/'journal/actual.llbc').read_bytes()))
@@ -153,6 +177,8 @@ def check_evidence(root, folder, row, actual, evidence):
     entry = journal_entry.check_entry(public) | dict(root_sha256=codec.sha(root/PROVIDER/'caller-root.rs.in'),
         recording_sha256=codec.sha(root/codec_binding.SOURCE),
         journal_sha256=codec.sha(root/'controller-service/src/controller/lifecycle_inbox.rs'))
+    require(decision['coordinator']['journal'] == journal_entry.check_entry(public),
+            'parent and public journal select different recording calls')
     mapping = json.loads((captures/'journal/generated/translation.json').read_bytes())
     require(row['journal']['journal_entry'] == entry and row['journal']['translated'] ==
             journal_entry.translated_entry(public, mapping, journal_entry.RECORDING+'::proof_public_journal'),
