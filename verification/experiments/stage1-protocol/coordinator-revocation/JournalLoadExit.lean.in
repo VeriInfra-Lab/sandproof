@@ -1,0 +1,203 @@
+import SandproofActualRecord.SourceFlowLink
+import SandproofActualRecord.CallerBranches
+import SandboxModel.Lifecycle.Protocol.InboxLoadHeader
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+open SandproofParentCommitRust.ErrorTransport
+
+namespace SandproofActualRecordRust.JournalLoadExit
+open controller.lifecycle_inbox recording SourceFlowLink
+noncomputable section
+set_option autoImplicit false
+
+variable {R T N U B E C : Type}
+variable (retirement : native_retirement.RetirementEncoding R) (terminal : model.TerminalEncoding T)
+  (renewal : renewal_confirmation.RenewalEncoding N) (unload : unload_resolution.UnloadEncoding U)
+  (graphic : capture.GraphicBytes B) (tx : RecordTransaction E) (crash : CrashInjector C)
+  (before after : E) (intent : Intent) (context : Context) (crashes : C) (error : JournalError)
+
+abbrev sourceIO := (ScopeTransport.recordEffects tx.RecordEffectsInst).codecInboxLoadEffectsInst
+
+abbrev originalLoad :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.load_using
+    (oldRetirement retirement) (oldTerminal terminal) (oldRenewal renewal) (oldUnload unload)
+    (oldGraphic graphic) (sourceIO tx) before
+
+abbrev LoadRefused :=
+  originalLoad retirement terminal renewal unload graphic tx before = .ok (.Err (toRequest error), after) ∨
+    (originalLoad retirement terminal renewal unload graphic tx before = .ok (.Ok none, after) ∧ error = .UnsupportedStore)
+
+/-- The real recording body returns the effect state at refusal. The enclosing transaction
+returns the same error and the unchanged crash hook. Both statements use the same receiver. -/
+abbrev ReturnsBeforeCommit :=
+  record_using retirement terminal renewal unload graphic tx.RecordEffectsInst before intent context =
+    .ok (.Err error, after) ∧
+  record_transaction_using retirement terminal renewal unload graphic tx crash before intent context crashes =
+    .ok (.Err error, crashes)
+
+/-- An error from the original loader has priority over authentication and lookup.
+An ordinary successful empty load is turned into UnsupportedStore by record_using. -/
+theorem load_exit
+    (stops : LoadRefused retirement terminal renewal unload graphic tx before after error) :
+    ReturnsBeforeCommit retirement terminal renewal unload graphic tx crash before after intent context crashes error := by
+  have body : record_using retirement terminal renewal unload graphic tx.RecordEffectsInst
+      before intent context = .ok (.Err error, after) := by
+    change liftResult transferOutcome
+      (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+        (oldRetirement retirement) (oldTerminal terminal) (oldRenewal renewal) (oldUnload unload)
+        (oldGraphic graphic) (ScopeTransport.recordEffects tx.RecordEffectsInst) before intent context) = _
+    unfold LoadRefused originalLoad sourceIO at stops
+    rcases stops with h | ⟨h, rfl⟩ <;>
+      simp [SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using,
+        h, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        transferOutcome, convertOutcome, liftResult]
+    rfl
+  exact ⟨body, by simp [record_transaction_using, body, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]⟩
+
+/-- Apply the load result on the real StandardRecord owner and journal namespace,
+with the concrete transaction dictionary supplied by the original extraction root. -/
+theorem standard_record_reply {D : Type} (codecEffects : RecordCodec D)
+    (owner : CallerOwnerView) (namespaceName : Str) (codec : D) (afterLoad : StandardRecord D)
+    (stops : LoadRefused retirement terminal renewal unload graphic (CallerBranches.actualEffects codecEffects)
+      ⟨owner, namespaceName, codec⟩ afterLoad error) :
+    proof_record_actual_parent retirement terminal renewal unload graphic codecEffects crash
+      owner namespaceName codec intent context crashes = .ok (.Err error, crashes) := by
+  rw [CallerBranches.extraction_root_uses_real_constructor_and_dictionary]
+  exact (load_exit retirement terminal renewal unload graphic (CallerBranches.actualEffects codecEffects) crash
+    ⟨owner, namespaceName, codec⟩ afterLoad intent context crashes error stops).2
+
+/-- The prefix ends at the first failing query. Each successor receives the immediately
+preceding returned state. The internal-table query is reachable only on the current layout. -/
+inductive HeaderQueryFailure (io : codec.InboxLoadEffects E) (before after : E) (error : JournalError) : Prop
+  | inboxTable (failed : io.query_bool before InboxLoad.existsStatement = .ok (.Err error, after))
+  | version (hasInbox : Bool) (one : E)
+      (inboxTable : io.query_bool before InboxLoad.existsStatement = .ok (.Ok hasInbox, one))
+      (failed : io.checkpointconfigReadConfigEffectsInst.query_i64 one InboxLoad.versionStatement = .ok (.Err error, after))
+  | sourceTable (hasInbox : Bool) (version : I64) (one two : E)
+      (inboxTable : io.query_bool before InboxLoad.existsStatement = .ok (.Ok hasInbox, one))
+      (versionRead : io.checkpointconfigReadConfigEffectsInst.query_i64 one InboxLoad.versionStatement = .ok (.Ok version, two))
+      (failed : io.query_bool two InboxLoad.sourceStatement = .ok (.Err error, after))
+  | internalTable (one two three : E)
+      (inboxTable : io.query_bool before InboxLoad.existsStatement = .ok (.Ok true, one))
+      (versionRead : io.checkpointconfigReadConfigEffectsInst.query_i64 one InboxLoad.versionStatement =
+        .ok (.Ok SandproofStage1RequestRust.sandproof_controller_service.LIFECYCLE_STORE_FORMAT_VERSION, two))
+      (sourceTable : io.query_bool two InboxLoad.sourceStatement = .ok (.Ok true, three))
+      (failed : io.query_bool three InboxLoad.internalStatement = .ok (.Err error, after))
+
+private theorem bool_reply (state next : E) (sql : Str) (reply : ParentRustResult Bool)
+    (h : tx.RecordEffectsInst.codecInboxLoadEffectsInst.query_bool state sql = .ok (reply, next)) :
+    (sourceIO tx).query_bool state sql = .ok (toRequestRustResult reply, next) := by
+  change toRequestStateResult _ = _
+  rw [h]
+  simp [toRequestStateResult]
+
+private theorem version_reply (state next : E) (reply : ParentRustResult I64)
+    (h : tx.RecordEffectsInst.codecInboxLoadEffectsInst.checkpointconfigReadConfigEffectsInst.query_i64
+      state InboxLoad.versionStatement = .ok (reply, next)) :
+    (sourceIO tx).checkpointconfigReadConfigEffectsInst.query_i64 state InboxLoad.versionStatement =
+      .ok (toRequestRustResult reply, next) := by
+  change toRequestStateResult _ = _
+  rw [h]
+  simp [toRequestStateResult]
+
+theorem first_header_error
+    (queries : HeaderQueryFailure tx.RecordEffectsInst.codecInboxLoadEffectsInst before after error) :
+    ReturnsBeforeCommit retirement terminal renewal unload graphic tx crash before after intent context crashes error := by
+  apply load_exit
+  left
+  cases queries with
+  | inboxTable h =>
+    apply InboxLoad.first_query_error
+    exact bool_reply tx _ _ _ _ h
+  | version _ _ h₁ h₂ =>
+    apply InboxLoad.version_query_error
+    · exact bool_reply tx _ _ _ _ h₁
+    · exact version_reply tx _ _ _ h₂
+  | sourceTable _ _ _ _ h₁ h₂ h₃ =>
+    apply InboxLoad.source_query_error
+    · exact bool_reply tx _ _ _ _ h₁
+    · exact version_reply tx _ _ _ h₂
+    · exact bool_reply tx _ _ _ _ h₃
+  | internalTable _ _ _ h₁ h₂ h₃ h₄ =>
+    apply InboxLoad.internal_query_error
+    · exact bool_reply tx _ _ _ _ h₁
+    · exact version_reply tx _ _ _ h₂
+    · exact bool_reply tx _ _ _ _ h₃
+    · exact bool_reply tx _ _ _ _ h₄
+
+/-- All completed three-query headers that stop before the internal-table query.
+Only a noncurrent format with both tables absent reaches the ordinary empty-load case. -/
+theorem header_layout (one two : E) (hasInbox hasSource : Bool) (version : I64)
+    (stops : ¬ (version = SandproofStage1RequestRust.sandproof_controller_service.LIFECYCLE_STORE_FORMAT_VERSION
+      ∧ hasInbox = true ∧ hasSource = true))
+    (inboxTable : tx.RecordEffectsInst.codecInboxLoadEffectsInst.query_bool before InboxLoad.existsStatement =
+      .ok (.Ok hasInbox, one))
+    (versionRead : tx.RecordEffectsInst.codecInboxLoadEffectsInst.checkpointconfigReadConfigEffectsInst.query_i64
+      one InboxLoad.versionStatement = .ok (.Ok version, two))
+    (sourceTable : tx.RecordEffectsInst.codecInboxLoadEffectsInst.query_bool two InboxLoad.sourceStatement =
+      .ok (.Ok hasSource, after)) :
+    ReturnsBeforeCommit retirement terminal renewal unload graphic tx crash before after intent context crashes
+      (if version = SandproofStage1RequestRust.sandproof_controller_service.LIFECYCLE_STORE_FORMAT_VERSION
+        then .CorruptStore else if hasSource || hasInbox then .CorruptStore else .UnsupportedStore) := by
+  have first := bool_reply tx _ _ _ _ inboxTable
+  have second := version_reply tx _ _ _ versionRead
+  have third := bool_reply tx _ _ _ _ sourceTable
+  by_cases current : version = SandproofStage1RequestRust.sandproof_controller_service.LIFECYCLE_STORE_FORMAT_VERSION
+  · rw [if_pos current]
+    apply load_exit
+    left
+    subst version
+    cases hasSource with
+    | false => apply InboxLoad.current_source_missing <;> assumption
+    | true =>
+      cases hasInbox with
+      | false => apply InboxLoad.current_missing_inbox_rejected <;> assumption
+      | true => exact (stops ⟨rfl, rfl, rfl⟩).elim
+  · rw [if_neg current]
+    cases hasSource with
+    | true =>
+      apply load_exit
+      left
+      apply InboxLoad.legacy_with_source_rejected <;> assumption
+    | false =>
+      cases hasInbox with
+      | true =>
+        apply load_exit
+        left
+        apply InboxLoad.legacy_present_inbox_rejected <;> assumption
+      | false =>
+        apply load_exit
+        right
+        refine ⟨?_, rfl⟩
+        apply InboxLoad.legacy_absence_success <;> assumption
+
+theorem unexpected_internal_table (one two three : E)
+    (inboxTable : tx.RecordEffectsInst.codecInboxLoadEffectsInst.query_bool before InboxLoad.existsStatement =
+      .ok (.Ok true, one))
+    (versionRead : tx.RecordEffectsInst.codecInboxLoadEffectsInst.checkpointconfigReadConfigEffectsInst.query_i64
+      one InboxLoad.versionStatement =
+      .ok (.Ok SandproofStage1RequestRust.sandproof_controller_service.LIFECYCLE_STORE_FORMAT_VERSION, two))
+    (sourceTable : tx.RecordEffectsInst.codecInboxLoadEffectsInst.query_bool two InboxLoad.sourceStatement =
+      .ok (.Ok true, three))
+    (internalTable : tx.RecordEffectsInst.codecInboxLoadEffectsInst.query_bool three InboxLoad.internalStatement =
+      .ok (.Ok true, after)) :
+    ReturnsBeforeCommit retirement terminal renewal unload graphic tx crash before after intent context crashes .CorruptStore := by
+  apply load_exit
+  left
+  apply InboxLoad.internal_table_rejected
+  · exact bool_reply tx _ _ _ _ inboxTable
+  · exact version_reply tx _ _ _ versionRead
+  · exact bool_reply tx _ _ _ _ sourceTable
+  · exact bool_reply tx _ _ _ _ internalTable
+
+end
+end SandproofActualRecordRust.JournalLoadExit
+
+#audit_controller_proof SandproofActualRecordRust.JournalLoadExit.load_exit
+#audit_controller_proof SandproofActualRecordRust.JournalLoadExit.standard_record_reply
+#audit_controller_proof SandproofActualRecordRust.JournalLoadExit.first_header_error
+#audit_controller_proof SandproofActualRecordRust.JournalLoadExit.header_layout
+#audit_controller_proof SandproofActualRecordRust.JournalLoadExit.unexpected_internal_table

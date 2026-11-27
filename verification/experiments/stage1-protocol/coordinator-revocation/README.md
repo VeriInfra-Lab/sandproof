@@ -66,7 +66,17 @@
 
 这三条定理在原事务提供方的生成类型上检查；上节协调器的查找与决策在自己的联合抽取中检查。两处共同使用原 `InboxLookup` 与 `InboxState.workState` 规格。载入结果、字节可表示和 Graphic 字符检查沿用提供方的具名条件。实际 BEGIN、自动析构和物理回滚仍交由事务提供方。
 
-[事务包登记候选](journal-provider-candidate.patch)以 #1061 的 `de37231d` 为补丁基线，供主控在叠入本生产版本的候选上接入。补丁将新页面加入现有事务入口的构建根与逐文件检查清单，用 `current_file_overrides` 记录本版协调器，保留原冻结。事务独立入口的既有输入漂移仍需按各自提供方回执核对。
+## 载入阶段的首个拒绝如何返回事务调用者
+
+`JournalLoadExit` 从原 `codec::load_using` 的实际返回或它发出的查询开始。定理同时给出两层可观察结果：`record_using` 返回出错时的 effects 状态，外层 `record_transaction_using` 返回同一错误和传入的故障钩子状态。载入失败和空值都会在认证、查找及提交前退出。这组结论对任意编码字典、事务实现和故障钩子成立，无需字符规则或解码字符串可表示的前提。
+
+- `load_exit` 覆盖任意带载荷的普通 `JournalError`，并用原提供方的双向错误转换保留完整载荷。载入正常返回 `Ok(None)` 时录入返回 `UnsupportedStore`。`standard_record_reply` 将这一结论接到使用原事务 owner、namespace、codec 的 `proof_record_actual_parent`。
+- `first_header_error` 覆盖检查收件表、读取版本、检查来源表，以及在当前布局上检查内部表的四个查询。每个分支只要求失败前缀的真实调用观察。下一次查询使用上一次返回的状态。
+- `header_layout` 覆盖前三个查询均成功且布局提前退出的全部组合。版本与当前值不等且收件表、来源表均缺失时，录入返回 `UnsupportedStore`；其余提前退出组合返回 `CorruptStore`。当前格式且两表存在时继续查询内部表，`unexpected_internal_table` 证明若它存在则返回 `CorruptStore`。
+
+表是否存在、版本值及查询错误来自本次事务的 effects 观察。SQLite 提供方仍负责说明物理库怎样产生这些观察。上述返回性质覆盖 Rust 的普通结果，析构和物理回滚按 V5 合同验收。
+
+[事务包登记候选](journal-provider-candidate.patch)以 #1061 的 `de37231d` 为补丁基线，供主控在叠入本生产版本的候选上接入。补丁将重放与载入首错两页加入现有事务入口的构建根与逐文件检查清单，用 `current_file_overrides` 记录本版协调器，保留原冻结。事务独立入口的既有输入漂移仍需按各自提供方回执核对。
 
 ## 复验与登记候选
 
@@ -84,7 +94,7 @@ SANDPROOF_ACCEPTANCE_ROLE=formal PYTHONDONTWRITEBYTECODE=1 \
 
 [公共登记候选](registration-candidate.patch)供主控在包含本包的候选上审阅、试套。[覆盖记录候选](coverage-candidate.patch)注明已实测的源码和边界。登记通过 `scripts/verify-stage1-protocol.sh` 默认使用的 `full` 计划调用同一检查器。其原生前提包括已封口的完整 Linux `functional` 日志中的两个指定测试，以及原 `stage1-inbox-lookup` 和 `stage1-inbox-state` 两份收据。单项命令和缺少封口的日志可用于开发复核。
 
-[默认入口的新增输入候选](inputs-candidate.patch)向 `verification/stage1-protocol-inputs.sha256` 增列本包九份 Python 检查文件、两份 Rust 薄根、两份 Lean 定理模板、三份生产 Rust 源码以及原事务提供方的 profile 和薄根，共十八项。该补丁以主控 #1061 的清单为基线，保留其 SQLite 检查输入；尚未叠入 #1061 的分支可按补丁中的十八个路径和 SHA 逐项核对。生产行取追加抽取薄根前的 Rust 全文。主控在接入登记补丁后还需核对原清单已有行、各提供方清单及同一候选的原生封口。
+[默认入口的新增输入候选](inputs-candidate.patch)向 `verification/stage1-protocol-inputs.sha256` 增列本包九份 Python 检查文件、两份 Rust 薄根、三份 Lean 定理模板、三份生产 Rust 源码以及原事务提供方的 profile 和薄根，共十九项。该补丁以主控 #1061 的清单为基线，保留其 SQLite 检查输入；尚未叠入 #1061 的分支可按补丁中的十九个路径和 SHA 逐项核对。生产行取追加抽取薄根前的 Rust 全文。主控在接入登记补丁后还需核对原清单已有行、各提供方清单及同一候选的原生封口。
 
 登记子任务在分配的四核内继承并核对原协调锁描述符。检查点读取四份指定 LLBC、公开 journal 的五份生成产物、真实内核命令的退出状态与日志、物理文件和原服务回执。收敛与 Create 有限计划继续按各自的原任务清单验收。主控合入时需重新校验受影响的公共冻结和完整原生输入。
 
