@@ -11,6 +11,8 @@ import subprocess
 import sys
 import tarfile
 
+from sender_binding import inspect_senders
+from sender_binding_regressions import check_rejections
 from wiring import COORD, DECIDE, MODEL, MODULE, SERVICE, declaration, inspect_parent, nodes, require
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -67,7 +69,8 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
     else:
         roots = [COORD + '::ControllerApplication::record_lifecycle_intent']
         retain = [MODULE + '::*::record_lifecycle_intent']
-        include = [*retain, COORD + '::ControllerApplication', COORD + '::Inner', MODEL + '::LifecycleWorkState',
+        include = [*retain, COORD + '::*::revoke_data', 'sandbox_controller_core::ids::SandboxId',
+                   COORD + '::ControllerApplication', COORD + '::Inner', MODEL + '::LifecycleWorkState',
                    SERVICE + '::JournalError', 'sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent',
                    'sandproof_protocol::lifecycle::request::LifecycleRequest',
                    'sandproof_protocol::lifecycle::request::LifecycleOperation',
@@ -89,8 +92,13 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
             and [opts[k] for k in ('start_from', 'start_from_if_exists', 'include', 'opaque')] == [roots, retain, include, opaque]
             and not any(opts[k] for k in ('exclude', 'skip_borrowck', 'no_typecheck', 'monomorphize')), 'unexpected extraction')
     if not joint:
-        inspect_parent(raw, refactored=refactored)
-        return {'ir': sha(ir), 'caller': sha(source/CALLER)}
+        broadcast = inspect_parent(raw, refactored=refactored)
+        view = load(source/AREA/'serde-binding/binding.py').Original(raw)
+        senders = inspect_senders(view, broadcast)
+        if refactored:
+            senders['rejected_metadata'] = check_rejections(view, broadcast)
+        return {'ir': sha(ir), 'caller': sha(source/CALLER), 'senders': senders,
+                'coordinator': sha(source/'controller-service/src/application/coordinator.rs')}
     load(source/AREA/'inbox-lookup/journal_binding.py').admit(raw)
     dest = evidence/'generated'
     run(source, evidence, 'aeneas', [tools/'aeneas/bin/aeneas', '-backend', 'lean', '-abort-on-error', '-warnings-as-errors',

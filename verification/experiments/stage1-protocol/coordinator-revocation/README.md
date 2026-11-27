@@ -16,6 +16,13 @@
 
 `check.py` 对基线和候选分别抽取完整父函数。`wiring.py` 从真实 LLBC 检查锁、日志参数及原结果返回，核对候选把传入 `intent.request.operation` 和同一个结果交给决策。三个返回变体分别对应空分支、`revoke_data` 的原 sandbox 参数、原锁下 `data_revocations.values()` 的双层循环与 `send_replace(true)`。这是结构化调用接线检查。固定 Aeneas 翻译完整父方法时停在 `ControllerApplication` 的函数指针标记字段。
 
+`sender_binding.py` 在同一份父函数 LLBC 中读取透明的 `Inner::revoke_data`，检查正常控制流和调用实参。
+
+- 定向路径使用所选 `SandboxId.0` 查询原 `Inner.data_revocations`。查不到时直接返回。查到时遍历本次查询返回的向量，`next()` 为 `Some` 时，将这次取出的 sender 作为 `send_replace(true)` 的接收者，为 `None` 时退出循环。
+- 候选的广播路径在原锁下取同一张表的 `values()`。外层每次 `next()` 返回的向量产生内层迭代器，内层每次 `next()` 返回的 sender 接收同一个布尔字面值。检查器分别核对两层循环的退出和继续位置。
+
+检查器还在候选 LLBC 的副本上逐项断开查表键、查无结果时的返回边、定向 sender、广播向量四处连接，要求对应诊断命中。这些回归只检验检查器自身。这里的证据止于 Rust 实际发起 watch 调用的位置。固定 Aeneas 单独翻译泛型 `Inner::revoke_data` 时停在 Serde 的相互递归 trait 组。迭代库语义、异常退出以及接收端观察均需独立证据。
+
 检查器在私有源码副本加两个单调用薄根，使固定 Charon/Aeneas 在同一次生成中保留实际决策和原 `Inbox::state`。复用原 `state_contract`、完整 intent clone 及现有库绑定，直接使用生成的协议操作、日志错误、查询状态和 sandbox ID。
 
 - `success` 和 `failure` 分别对全部成功值和完整错误枚举给出精确决策。

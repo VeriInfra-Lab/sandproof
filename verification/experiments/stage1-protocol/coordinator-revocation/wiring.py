@@ -174,3 +174,4 @@ def inspect_parent(raw, *, refactored):
     require(origin(argument, assignments_before(targeted, stmt)) == (decision_local, (1, 0)),
             'targeted revocation lost the selected sandbox')
     require(len(list(nodes(branches['All'], 'Loop'))) == 2, 'broadcast loops differ')
+    return broadcast
