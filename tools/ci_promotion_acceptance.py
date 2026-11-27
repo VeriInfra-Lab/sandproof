@@ -163,12 +163,41 @@ def attest_evidence(native, formal, candidate, checkout):
                 native_tools=receipts.digest(seal['runtime']), formal_tools=receipts.digest(context['runtime']))
 
 
-def run_stage(candidate, checkout, output, *, native=None):
+def previous_attempt(candidate, directory):
+    directory = msra_directory(directory)
+    if os.path.lexists(directory/'complete.json'):
+        raise ValueError('previous run already completed; use its original output for publication')
+    attempt = json_file(private_path(directory/'attempt.json'))
+    if attempt.get('schema') != 1 or attempt.get('candidate') != asdict(candidate):
+        raise ValueError('resume requires the same PR, head, base, merge and source tree')
+    native = msra_directory(attempt['native_path'])
+    seal = private_path(native/'complete.json')
+    expected = directory/'native-seal.json'
+    if os.path.lexists(expected) and json_file(private_path(expected)) != {'sha256': digest(seal)}:
+        raise ValueError('original native seal changed since the interrupted attempt')
+    records = list(directory.glob('tmp/sandproof-stage1-protocol.*/registered/registered-result.json'))
+    if len(records) > 1:
+        raise ValueError('multiple formal attempts in one original output')
+    prior = private_path(records[0]) if records else None
+    if prior is not None:
+        formal = json_file(prior, limit=16 * 1024**2)
+        if formal.get('profile') != 'full' or formal.get('shared_seal_sha256') != digest(seal):
+            raise ValueError('original formal checkpoints do not consume this complete native seal')
+    return native, prior
+
+
+def run_stage(candidate, checkout, output, *, native=None, resume_from=None):
     """Under the usual msra lock and env, run Rust once then the original Lean entry."""
     candidate.check_checkout(checkout)
     output = msra_directory(output)
-    original_native = msra_directory(native) if native else None
+    prior = None
+    if resume_from is not None:
+        original_native, prior = previous_attempt(candidate, resume_from)
+    else:
+        original_native = msra_directory(native) if native else None
     native = original_native or output / 'native'
+    write_once(output/'attempt.json', dict(schema=1, candidate=asdict(candidate),
+                                          native_path=str(native)))
     temporary = output / 'tmp'
     temporary.mkdir(mode=0o700)
     cargo_target = output / 'cargo-target'
@@ -197,11 +226,16 @@ def run_stage(candidate, checkout, output, *, native=None):
         retired = json_file(private_path(native/'native-task-retired.json'))
         if retired.get('returncode') != 0 or retired.get('remaining_build_bytes') != 0:
             raise ValueError('original native run does not have successful retirement')
+    write_once(output/'native-seal.json', dict(sha256=digest(private_path(native/'complete.json'))))
     with operator_lock(env, 'SANDPROOF_LOCK_FILE', 'SANDPROOF_LOCK_FD') as fd:
         # The formal entry itself admits the original complete native seal
         # under current source, environment and tool rules, including functional.
         formal_env = dict(env, SANDPROOF_ACCEPTANCE_ROLE='formal', TMPDIR=str(temporary))
         formal_env.pop('SANDPROOF_PROOF_HEAVY_LOCK_FD', None)
+        if resume_from is not None:
+            formal_env.pop('SANDPROOF_STAGE1_RESUME_FROM', None)
+            if prior is not None:
+                formal_env['SANDPROOF_STAGE1_RESUME_FROM'] = str(prior)
         run_entry(['bash', 'scripts/verify-stage1-protocol.sh'], log=output/'formal.log',
                   checkout=checkout, env=formal_env,
                   pass_fds=(fd,))
@@ -389,12 +423,14 @@ def main():
     parser.add_argument('--candidate', type=Path, help='private reviewed Candidate JSON')
     parser.add_argument('--checkout', type=Path, default=ROOT)
     parser.add_argument('--output', type=Path, required=True)
-    parser.add_argument('--native', type=Path, help='original native seal to admit instead of rerunning')
+    repeat = parser.add_mutually_exclusive_group()
+    repeat.add_argument('--native', type=Path, help='original native seal to admit instead of rerunning')
+    repeat.add_argument('--resume-from', type=Path, help='original interrupted promotion output')
     parser.add_argument('--config', type=Path, help='private publication settings, no credentials in checkout')
     args = parser.parse_args()
     os.umask(0o077)
     if args.mode == 'readback':
-        if args.candidate is not None or args.config is not None or args.native is not None:
+        if any(x is not None for x in (args.candidate, args.config, args.native, args.resume_from)):
             parser.error('readback takes the approved candidate on stdin and no credentials')
         candidate = Candidate(**json.loads(sys.stdin.read(4096)))
         print(json.dumps(read_stage(candidate, args.checkout.resolve(strict=True),
@@ -408,13 +444,13 @@ def main():
         if args.config is not None:
             parser.error('proof execution does not take publication credentials')
         try:
-            run_stage(candidate, checkout, args.output, native=args.native)
+            run_stage(candidate, checkout, args.output, native=args.native, resume_from=args.resume_from)
         except subprocess.CalledProcessError as error:
             # The native wrapper's 75 keeps its finished seal for retirement
             # resume. There is no promotion success until the proof also runs.
             return error.returncode
         return
-    if args.config is None or args.native is not None or os.geteuid() != 0:
+    if args.config is None or args.native is not None or args.resume_from is not None or os.geteuid() != 0:
         parser.error('publication requires the installed protected App process and existing full evidence')
     config = json_file(private_path(args.config))
     if config.get('test_cutover_approved') is not True or config.get('app_id') != GATE_APP:

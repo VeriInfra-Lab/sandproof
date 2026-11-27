@@ -187,6 +187,8 @@ class PromotionTest(unittest.TestCase):
     def test_original_full_formal_consumes_exact_one_new_or_existing_native_seal(self):
         existing = self.path/'existing-native'
         existing.mkdir(mode=0o700)
+        (existing/'complete.json').write_text('{}')
+        (existing/'complete.json').chmod(0o600)
         for prior in (None, existing):
             with self.subTest(existing=bool(prior)):
                 output = self.path / ('reuse' if prior else 'fresh')
@@ -203,6 +205,9 @@ class PromotionTest(unittest.TestCase):
                         self.assertIn('tools/native_task.py', command)
                         self.assertIn('stage1-protocol', command)
                         self.assertEqual(env['TMPDIR'], '/mnt/xfs')
+                        (output/'native').mkdir(mode=0o700)
+                        (output/'native'/'complete.json').write_text('{}')
+                        (output/'native'/'complete.json').chmod(0o600)
 
                 with (patch.object(gate.Candidate, 'check_checkout'),
                       patch.object(gate, 'MOUNT', self.path),
@@ -216,6 +221,45 @@ class PromotionTest(unittest.TestCase):
                 self.assertEqual(entries.call_count, 1 if prior else 2)
                 self.assertEqual(result['candidate'], asdict(self.candidate))
                 self.assertTrue((output/'complete.json').is_file())
+
+    def test_resume_uses_bound_native_seal_and_original_partial_formal_record(self):
+        old = self.path/'interrupted'
+        new = self.path/'resumed'
+        native = old/'native'
+        formal = old/'tmp'/'sandproof-stage1-protocol.old'/'registered'
+        native.mkdir(parents=True, mode=0o700)
+        formal.mkdir(parents=True, mode=0o700)
+        old.chmod(0o700)
+        new.mkdir(mode=0o700)
+        seal = native/'complete.json'
+        gate.write_once(seal, {'native': 'complete'})
+        gate.write_once(old/'attempt.json', dict(schema=1, candidate=asdict(self.candidate),
+                                                native_path=str(native)))
+        gate.write_once(old/'native-seal.json', {'sha256': gate.digest(seal)})
+        prior = formal/'registered-result.json'
+        gate.write_once(prior, dict(profile='full', shared_seal_sha256=gate.digest(seal),
+                                    complete=False))
+
+        def execute(command, *, log, checkout, env, pass_fds):
+            self.assertEqual(command, ['bash', 'scripts/verify-stage1-protocol.sh'])
+            self.assertEqual(env['SANDPROOF_STAGE1_RESUME_FROM'], str(prior))
+            self.assertEqual(env['SANDPROOF_NATIVE_EVIDENCE'], str(native))
+            (Path(env['TMPDIR'])/'sandproof-stage1-protocol.new'/'registered').mkdir(parents=True)
+
+        with (patch.object(gate.Candidate, 'check_checkout'),
+              patch.object(gate, 'MOUNT', self.path),
+              patch.object(gate, 'operator_lock', return_value=nullcontext(9)),
+              patch.object(gate, 'attest_evidence', return_value=self.evidence),
+              patch.object(gate, 'run_entry', side_effect=execute) as command):
+            gate.run_stage(self.candidate, self.path, new, resume_from=old)
+            self.assertEqual(command.call_count, 1)
+            rejected = gate.Candidate(682, 'integration', self.candidate.head,
+                                      self.candidate.base, self.candidate.merge, self.candidate.tree)
+            with self.assertRaisesRegex(ValueError, 'same PR'):
+                gate.previous_attempt(rejected, old)
+            seal.write_text('{}')
+            with self.assertRaisesRegex(ValueError, 'original native seal changed'):
+                gate.previous_attempt(self.candidate, old)
 
     def test_full_receipt_rejects_finite_failed_mismatched_or_missing_evidence(self):
         def save(path, value):
