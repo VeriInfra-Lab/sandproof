@@ -132,6 +132,11 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
         current = {**original, 'source': dict.fromkeys(paths, 'new')}
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
+            old_module_result = root / acceptance.NATIVE_RECEIPT
+            acceptance.write_json(old_module_result, dict(schema=1, kind='stage1-module-acceptance', candidate=base))
+            with self.assertRaisesRegex(ValueError, 'exact original candidate receipt'):
+                acceptance.load_native_reuse(old_module_result, acceptance.sha(old_module_result), base, current, paths)
+            old_module_result.unlink()
             folder = root / 'original-native'
             folder.mkdir()
             (root / 'original-native.log').write_text('fixture launcher log\n')
