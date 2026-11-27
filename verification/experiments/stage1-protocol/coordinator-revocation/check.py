@@ -12,6 +12,8 @@ import sys
 import tarfile
 
 from guard_binding import check_guard
+from journal_hook import check_joint_hook, check_journal_hook
+from hook_regressions import check_parent_rejections, check_joint_rejection
 from sender_binding import inspect_senders
 from sender_binding_regressions import check_guard_rejections, check_rejections
 from wiring import COORD, DECIDE, MODEL, MODULE, SERVICE, declaration, inspect_parent, nodes, require
@@ -64,7 +66,7 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
     evidence.mkdir(mode=0o700)
     os.environ['CARGO_TARGET_DIR'] = str(evidence / 'target')
     if joint:
-        roots = [MODULE + '::proof_data_revocation', MODEL + '::proof_state',
+        roots = [MODULE + '::proof_data_revocation', MODEL + '::proof_state', MODULE + '::proof_never_crash',
                  *['crate::' + n for n in ('request_validate', 'replay_matches', 'accepted_validate', 'recorded_matches')]]
         include = ['sandproof_protocol', 'sandbox_controller_core', SERVICE]
         opaque = ['rusqlite::error::Error', 'sandproof_protocol::ContractError']
@@ -74,7 +76,8 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
         roots = [COORD + '::ControllerApplication::record_lifecycle_intent']
         retain = [MODULE + '::*::record_lifecycle_intent']
         include = [*retain, COORD + '::*::revoke_data', 'sandbox_controller_core::ids::SandboxId',
-                   COORD + '::ControllerApplication', COORD + '::Inner', MODEL + '::LifecycleWorkState',
+                   SERVICE + '::NeverCrash', SERVICE + '::CrashInjector', SERVICE + '::CrashPoint',
+                   SERVICE + '::*::hit', COORD + '::ControllerApplication', COORD + '::Inner', MODEL + '::LifecycleWorkState',
                    SERVICE + '::JournalError', 'sandproof_protocol::lifecycle::authority::AcceptedLifecycleIntent',
                    'sandproof_protocol::lifecycle::request::LifecycleRequest',
                    'sandproof_protocol::lifecycle::request::LifecycleOperation',
@@ -95,16 +98,17 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
     require(raw['has_errors'] is False and [v['key'] for v in trans['target_information']] == [fixed['target']]
             and [opts[k] for k in ('start_from', 'start_from_if_exists', 'include', 'opaque')] == [roots, retain, include, opaque]
             and not any(opts[k] for k in ('exclude', 'skip_borrowck', 'no_typecheck', 'monomorphize')), 'unexpected extraction')
+    view = load(source/AREA/'serde-binding/binding.py').Original(raw)
     if not joint:
-        view = load(source/AREA/'serde-binding/binding.py').Original(raw)
         guard = check_guard(view)
         broadcast = inspect_parent(raw, refactored=refactored, guard=guard)
         senders = inspect_senders(view, broadcast)
         report = {'ir': sha(ir), 'caller': sha(source/CALLER), 'senders': senders, 'guard_local': guard,
-                  'coordinator': sha(source/'controller-service/src/application/coordinator.rs')}
+                  'journal_hook': check_journal_hook(view, source), 'coordinator': sha(source/'controller-service/src/application/coordinator.rs')}
         if refactored:
             senders['rejected_metadata'] = check_rejections(view, broadcast)
             report['rejected_guard_metadata'] = check_guard_rejections(view)
+            report['rejected_hook_metadata'] = check_parent_rejections(view, source)
         return report
     load(source/AREA/'inbox-lookup/journal_binding.py').admit(raw)
     dest = evidence/'generated'
@@ -131,7 +135,9 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
         decl = declaration(trans['fun_decls'], actual)
         require('Structured' in decl['body'] and any(f['def_id'] == decl['def_id'] and f['is_opaque'] is False and
                 f['lean_file'] == 'SandproofStage1Request/Funs.lean' for f in functions), 'missing generated body: '+actual)
-    return {'ir': sha(ir), 'mapping': sha(dest/'translation.json')}
+    return {'ir': sha(ir), 'mapping': sha(dest/'translation.json'),
+            'journal_hook': check_joint_hook(view, mapping, source),
+            'rejected_hook_metadata': check_joint_rejection(view, mapping, source)}
 
 
 def project_files(project, generated):
@@ -175,6 +181,8 @@ def check(args, report):
         with (project/path).open('ab') as stream:
             stream.write(b'\n' + (project/fragment).read_bytes())
     report['joint'] = capture(project, args.output/'joint', args.tools, fixed, joint=True)
+    require(report['candidate_parent']['journal_hook'] == report['joint']['journal_hook'],
+            'coordinator and Lean selected different hook implementations')
     project_files(project, args.output/'joint/generated')
     for link, target in [(project/'.lake/packages', args.packages), (project/'.tools/lean-mcp', args.tools/'lean-mcp')]:
         link.parent.mkdir(parents=True, exist_ok=True)
