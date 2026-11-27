@@ -797,7 +797,9 @@ def main(argv=None):
             plan['affected_modules'] = impact['affected_modules']
             plan['reason'] = ('selected registered jobs require the original current Stage1 native evidence; '
                               'the plan alone issues no module pass')
-        if args.plan or (plan['status'] != 'ready' and (impact is None or args.registered_native is None)):
+        native_only_baseline = args.prepare_native and plan['status'] == 'empty'
+        if args.plan or (not native_only_baseline and plan['status'] != 'ready'
+                         and (impact is None or args.registered_native is None)):
             print(json.dumps(dict(plan, candidate=candidate), ensure_ascii=False))
             return 0 if plan['status'] == 'ready' else 2
         if not args.prepare_native and (args.formal_lock is None or args.formal_lock.is_symlink()

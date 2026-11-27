@@ -198,12 +198,19 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
         candidate = {'commit': 'b' * 40, 'tree': 'c' * 40}
         launcher = str(LOOKUP / 'module_acceptance.py')
         with patch.object(acceptance, 'clean_candidate', return_value=candidate), \
-                patch.object(acceptance, 'changed_files', return_value=('a' * 40, [launcher])), \
+                patch.object(acceptance, 'changed_files', return_value=('a' * 40, [launcher])) as changes, \
                 patch.object(acceptance, 'execute_native_preparation', return_value=0) as prepare, \
                 patch.object(acceptance, 'execute') as formal:
             self.assertEqual(acceptance.main(['--base', 'reviewed', '--output', '/private/lookup-native',
                                               '--prepare-native']), 0)
             prepare.assert_called_once_with(Path('/private/lookup-native'), candidate)
+            changes.return_value = (candidate['commit'], [])
+            self.assertEqual(acceptance.main(['--base', 'HEAD', '--output', '/private/lookup-native',
+                                              '--prepare-native']), 0)
+            self.assertEqual(prepare.call_count, 2)
+            with redirect_stdout(StringIO()):
+                self.assertEqual(acceptance.main(['--base', 'HEAD', '--plan']), 2)
+                self.assertEqual(acceptance.main(['--base', 'HEAD', '--output', '/private/lookup-module']), 2)
             formal.assert_not_called()
 
     def test_native_preparation_preserves_status_without_any_proof_pass_report(self):
