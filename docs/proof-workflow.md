@@ -425,7 +425,7 @@ BTreeSet 插入、Metadata 目录判断和 Tokio Mutex 各有独立原生 case�
 
 只修改没有下游消费者的 `InboxLookupWrong.lean.in` 以及其派生摘要时，可以复用独立的原生收据。用同一入口从干净基线运行 `--prepare-native --base HEAD --output <新建私有证据路径>`，实际执行四个原 Rust 变体并写入 `lookup-native-receipt.json`。再从后继提交用 `--base <原收据提交>`、`--reuse-native <收据路径>` 和 `--reuse-native-sha256 <收据摘要>` 运行，保留原结果及命令日志。复用限于已登记的固定工具与配置。后继仍实际运行原 Lean 正确版和错误版检查，所产收据只覆盖这个模块。
 
-使用宿主已安装的观察器时，独立验收可用[托管入口](../tools/ci_lookup_acceptance.py)直接运行。同一轮只登记两个新建的抽取 `extract-target`。原模块输出位于 `$run/module`，保留原有收据、源码、LLBC、日志和 `.lake`。收尾待办时，在相同候选上执行 `closeout`，只读回原证据并续办回收。
+使用宿主已安装的观察器时，独立验收可用[托管入口](../tools/ci_lookup_acceptance.py)直接运行。运行前登记两个抽取 `extract-target`。如果本轮新跑原生检查，也登记它创建的四个 Cargo `target`，复用原生收据时只处理本轮的两个抽取目录。原模块输出位于 `$run/module`，保留收据、源码、LLBC、日志和 `.lake`。收尾待办时，在相同候选上执行 `closeout`，只读回原证据并续办回收。
 
 ```sh
 bash scripts/python-entry.sh -m tools.ci_lookup_acceptance run \

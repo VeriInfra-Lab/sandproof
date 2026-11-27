@@ -1,4 +1,4 @@
-"""Run standalone Inbox Lookup with retirement of its two private extraction targets."""
+"""Run standalone Inbox Lookup and retire its private build directories."""
 
 import argparse
 import importlib.util
@@ -26,6 +26,12 @@ def lookup():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def build_targets(module, native):
+    if native is not None:
+        return TARGETS
+    return (*TARGETS, *(Path('module/original-native')/variant/'target' for variant in module.NATIVE_VARIANTS))
 
 
 def checked_file(path, files, expected=None):
@@ -166,11 +172,14 @@ def closeout(output, observer):
     module = lookup()
     _, enrollment, targets = formal_builds.admission(output)
     invocation = json_file(private_path(output/INVOCATION))
-    if (invocation.get('schema') != 1 or invocation['candidate'] != module.clean_candidate()
+    schema = invocation.get('schema')
+    if (schema not in (1, 2) or invocation['candidate'] != module.clean_candidate()
             or type(invocation.get('lookup_only', False)) is not bool
-            or enrollment['candidate'] != invocation['candidate']['commit']
-            or targets != [output/target for target in TARGETS]):
-        raise ValueError('original Lookup candidate and two exact extraction targets required')
+            or enrollment['candidate'] != invocation['candidate']['commit']):
+        raise ValueError('original Lookup candidate and build enrollment required')
+    expected = TARGETS if schema == 1 else build_targets(module, invocation['native'])
+    if targets != [output/target for target in expected]:
+        raise ValueError('original Lookup build paths differ from the enrolled execution')
     return formal_builds.retire(output, observer, lambda terminal: stage_files(output, invocation, terminal, module))
 
 
@@ -181,9 +190,10 @@ def run(output, observer, base, formal_lock, native=None, *, lookup_only=False):
         raise ValueError('host observer must be installed outside the proof checkout')
     if lookup_only and native is None:
         raise ValueError('Lookup-only requires the original scoped native receipt and SHA256')
-    candidate = lookup().clean_candidate()
-    formal_builds.enroll(output, candidate=candidate['commit'], observer=observer, targets=TARGETS)
-    write_once(output/INVOCATION, dict(schema=1, candidate=candidate, native=native,
+    module = lookup()
+    candidate = module.clean_candidate()
+    formal_builds.enroll(output, candidate=candidate['commit'], observer=observer, targets=build_targets(module, native))
+    write_once(output/INVOCATION, dict(schema=2, candidate=candidate, native=native,
                                        base=base, formal_lock=str(formal_lock), lookup_only=lookup_only))
     args = [sys.executable, str(DRIVER), '--base', base, '--output', str(output/'module'),
             '--formal-lock', str(formal_lock)]

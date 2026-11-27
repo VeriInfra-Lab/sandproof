@@ -10,6 +10,9 @@ from tools import ci_lookup_acceptance as wrapper, formal_builds, native_task
 from tools.system_acceptance import digest, json_file, write_once
 
 
+RUST_VARIANTS = ('original', 'candidate', 'key-only', 'restored')
+
+
 class LookupCloseoutTests(unittest.TestCase):
     def setUp(self):
         self.addCleanup(os.umask, os.umask(0o077))
@@ -41,6 +44,12 @@ assert a.formal_lock == '/installed/formal.lock'
 assert a.lookup_only is {lookup_only!r}
 assert (a.reuse_native, a.reuse_native_sha256) == ({None if native is None else native['path']!r},
                                                        {None if native is None else native['sha256']!r})
+if not a.reuse_native:
+    for variant in {RUST_VARIANTS!r}:
+        native = a.output / 'original-native' / variant
+        (native/'target').mkdir(parents=True)
+        (native/'target/private-build').write_bytes(b'r'*4096)
+        (native/'test.log').write_text('original Rust log')
 for variant in ('correct', 'key-only'):
     project = a.output / ('formal-' + variant) / 'source'
     target = project / 'artifacts/extract-target'
@@ -59,8 +68,9 @@ if {terminal} < 0:
     os.kill(os.getpid(), -{terminal})
 raise SystemExit({terminal})
 ''')
+        module = SimpleNamespace(clean_candidate=lambda: self.candidate, NATIVE_VARIANTS=RUST_VARIANTS)
         with (patch.object(wrapper, 'ROOT', self.checkout), patch.object(wrapper, 'DRIVER', script),
-              patch.object(wrapper, 'lookup', return_value=SimpleNamespace(clean_candidate=lambda: self.candidate))):
+              patch.object(wrapper, 'lookup', return_value=module)):
             return wrapper.run(output, self.observer, 'reviewed-base', Path('/installed/formal.lock'),
                                native, lookup_only=lookup_only)
 
@@ -94,6 +104,26 @@ raise SystemExit({terminal})
         self.assertEqual(len(list(output.glob('module/formal-*/source/.lake/preserved.olean'))), 2)
         self.assertEqual(len(list(output.glob('module/formal-*/source/actual.llbc'))), 2)
 
+    def test_fresh_run_retires_four_rust_builds_and_keeps_their_logs(self):
+        output = self.root/'fresh'
+
+        def readback(directory, invocation, terminal, module):
+            evidence = self.tangible_evidence(directory, invocation, terminal, module)
+            for variant in RUST_VARIANTS:
+                path = directory/'module/original-native'/variant/'test.log'
+                self.assertEqual(path.read_text(), 'original Rust log')
+                evidence[path] = digest(path)
+            return evidence
+
+        with (patch.object(wrapper, 'stage_files', side_effect=readback), patch.object(native_task, 'observe')):
+            self.assertEqual(self.run_fixture(output, 0), 0)
+        result = json_file(output/formal_builds.DIRECTORY/'retired.json')
+        self.assertEqual((result['target_count'], result['remaining_build_bytes']), (6, 0))
+        for variant in RUST_VARIANTS:
+            native = output/'module/original-native'/variant
+            self.assertFalse((native/'target').exists())
+            self.assertEqual((native/'test.log').read_text(), 'original Rust log')
+
     def test_known_failure_and_cancel_preserve_status_sigkill_preserves_targets(self):
         for code, shell in ((1, 1), (-15, 143), (137, 137)):
             with self.subTest(code=code), patch.object(native_task, 'observe'):
@@ -103,6 +133,10 @@ raise SystemExit({terminal})
                 self.assertEqual(json_file(state/'native-task-exit.json')['returncode'], code)
                 self.assertIs(json_file(output/'module/module-result.json')['complete'], False)
                 self.assertTrue(all((output/path).is_dir() == (code == 137) for path in wrapper.TARGETS))
+                for variant in RUST_VARIANTS:
+                    native = output/'module/original-native'/variant
+                    self.assertEqual((native/'target').is_dir(), code == 137)
+                    self.assertTrue((native/'test.log').is_file())
 
     def test_local_exit_two_and_receipt_survive_cleanup(self):
         output = self.root/'local'
