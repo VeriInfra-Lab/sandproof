@@ -17,6 +17,7 @@ from tools.ci_e2e_supervisor import PREFIX, REPO, Checks, git, is_ancestor
 from tools.ci_github_app import (APIError, CHECK_PERMISSIONS, PERMISSIONS, SOURCE_PERMISSIONS,
                                GitHubApp, Transport)
 from tools.ci_merge_queue import QueueGroup, TARGET, graphql_lookup
+from tools.native_task import OWNER as NATIVE_TASK_OWNER
 from tools.system_acceptance import digest, json_file, private_path, write_once
 
 GATE = 'Promotion / Stage1'
@@ -29,6 +30,7 @@ SCOPE = 'stage1-protocol'
 ROOT = Path(__file__).resolve().parents[1]
 BINARY = ['bash', 'scripts/python-entry.sh']
 MOUNT = Path('/mnt')
+STORAGE_POLICY = Path('/etc/sandproof-stage1-promotion.json')
 
 
 def oid(value):
@@ -100,6 +102,33 @@ def msra_directory(path):
     return directory
 
 
+def promotion_registry():
+    attributes = STORAGE_POLICY.lstat()
+    if (STORAGE_POLICY.resolve(strict=True) != STORAGE_POLICY
+            or not stat.S_ISREG(attributes.st_mode) or attributes.st_uid != 0
+            or attributes.st_mode & 0o022):
+        raise ValueError('promotion storage policy must be a root-owned, non-writable host file')
+    policy = json_file(STORAGE_POLICY)
+    if (set(policy) != {'schema', 'evidence_uid', 'registry'} or policy['schema'] != 1
+            or policy['evidence_uid'] != os.geteuid() or os.geteuid() == 0):
+        raise ValueError('use the configured promotion evidence account and registry')
+    return msra_directory(policy['registry'])
+
+
+@contextmanager
+def registered_promotion(candidate):
+    key = receipts.digest(asdict(candidate))
+    directory = promotion_registry() / key
+    directory.mkdir(mode=0o700, exist_ok=True)
+    private_path(directory, directory=True)
+    with open(directory/'run.lock', 'a', opener=lambda p, f: os.open(p, f | os.O_NOFOLLOW, 0o600)) as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise ValueError('this exact promotion already has a running or recovering attempt') from error
+        yield directory, lock.fileno()
+
+
 @contextmanager
 def operator_lock(env, path_name, fd_name):
     """Use the inherited coordination lock required by the selected suite."""
@@ -168,13 +197,18 @@ def attest_evidence(native, formal, candidate, checkout):
                 native_tools=receipts.digest(seal['runtime']), formal_tools=receipts.digest(context['runtime']))
 
 
+def attempt_record(candidate, directory):
+    attempt = json_file(private_path(directory/'attempt.json'))
+    if attempt.get('schema') != 1 or attempt.get('candidate') != asdict(candidate):
+        raise ValueError('resume requires the same PR, head, base, merge and source tree')
+    return attempt
+
+
 def previous_attempt(candidate, directory):
     directory = msra_directory(directory)
     if os.path.lexists(directory/'complete.json'):
         raise ValueError('previous run already completed; use its original output for publication')
-    attempt = json_file(private_path(directory/'attempt.json'))
-    if attempt.get('schema') != 1 or attempt.get('candidate') != asdict(candidate):
-        raise ValueError('resume requires the same PR, head, base, merge and source tree')
+    attempt = attempt_record(candidate, directory)
     native = msra_directory(attempt['native_path'])
     seal = private_path(native/'complete.json')
     expected = directory/'native-seal.json'
@@ -191,7 +225,75 @@ def previous_attempt(candidate, directory):
     return native, prior
 
 
-def run_stage(candidate, checkout, output, *, native=None, resume_from=None):
+def retry_before_formal(candidate, directory):
+    if not os.path.lexists(directory/'attempt.json'):
+        return not any(directory.iterdir())  # Registration interrupted before launching anything.
+    attempt = attempt_record(candidate, directory)
+    native = directory/'native'
+    if (Path(attempt['native_path']) != native or os.path.lexists(native/'complete.json')
+            or os.path.lexists(directory/'native-seal.json')):
+        return False
+    if not os.path.lexists(native):
+        return True  # No managed native run was enrolled.
+    retired_path = native/'native-task-retired.json'
+    if not os.path.lexists(retired_path):
+        return False
+    private_path(native, directory=True)
+    retired = json_file(private_path(retired_path))
+    code = retired.get('returncode')
+    enrollment = json_file(private_path(native/'native-task.json'))
+    terminal = json_file(private_path(native/'native-task-exit.json'))
+    identity = native.stat()
+    executed = retired.get('candidate')
+    return (executed in (candidate.head, candidate.merge) and retired.get('scope') == SCOPE
+            and enrollment.get('kind') == NATIVE_TASK_OWNER and enrollment.get('scope') == SCOPE
+            and enrollment.get('candidate') == executed
+            and enrollment.get('identity') == [identity.st_dev, identity.st_ino]
+            and type(code) is int and code != 0 and terminal.get('returncode') == code
+            and retired.get('status') in ('failed', 'cancelled', 'no-build-allocated')
+            and retired.get('remaining_build_bytes') == 0)
+
+
+def run_registered(candidate, checkout, output, *, native=None, resume_from=None):
+    candidate.check_checkout(checkout)
+    output = msra_directory(output)
+    with registered_promotion(candidate) as (registry, lock_fd):
+        if output.is_relative_to(registry.parent) or registry.parent.is_relative_to(output):
+            raise ValueError('promotion output and registry require separate directories')
+        records = sorted(registry.glob('attempt-*.json'))
+        if records:
+            row = json_file(private_path(records[-1]))
+            if row.get('schema') != 1 or row.get('candidate') != asdict(candidate):
+                raise ValueError('original promotion registration changed')
+            current = msra_directory(row['output'])
+            actual = current.stat()
+            if row.get('output_identity') != [actual.st_dev, actual.st_ino]:
+                raise ValueError('previously registered promotion output was replaced')
+            if resume_from is None or msra_directory(resume_from) != current:
+                raise ValueError('exact promotion already registered; use its latest recorded output to resume or publish')
+        if any(output.iterdir()):
+            raise ValueError('provide a new empty output and preserve the earlier promotion records')
+        restart = False
+        if resume_from is not None:
+            resume_from = msra_directory(resume_from)
+            if not os.path.lexists(resume_from/'complete.json') and retry_before_formal(candidate, resume_from):
+                if not records:
+                    raise ValueError('retry of failed native work requires an original registration')
+                restart = True
+            else:
+                previous_attempt(candidate, resume_from)
+                if native is not None:
+                    raise ValueError('resume must keep the existing complete native seal')
+        actual = output.stat()
+        record = dict(schema=1, candidate=asdict(candidate), output=str(output),
+                      output_identity=[actual.st_dev, actual.st_ino],
+                      previous=str(resume_from) if resume_from is not None else None)
+        write_once(registry / f'attempt-{len(records) + 1:08d}.json', record)
+        return run_stage(candidate, checkout, output, native=native,
+                         resume_from=None if restart else resume_from, registration_fd=lock_fd)
+
+
+def run_stage(candidate, checkout, output, *, native=None, resume_from=None, registration_fd=None):
     """Under the usual msra lock and env, run Rust once then the original Lean entry."""
     candidate.check_checkout(checkout)
     output = msra_directory(output)
@@ -233,7 +335,7 @@ def run_stage(candidate, checkout, output, *, native=None, resume_from=None):
             run_entry([*BINARY, 'tools/native_task.py', 'run', '--scope', SCOPE,
                        '--candidate', execution_commit, '--output', str(native), '--observer', observer],
                       log=output/'native.log', checkout=checkout,
-                      env=native_env, pass_fds=(fd,))
+                      env=native_env, pass_fds=(fd,) if registration_fd is None else (fd, registration_fd))
     elif (native/'native-task.json').exists():
         # Older complete original seals predate managed retirement. A new
         # managed invocation with pending retirement must resume it, not rerun.
@@ -255,7 +357,7 @@ def run_stage(candidate, checkout, output, *, native=None, resume_from=None):
                 formal_env['SANDPROOF_STAGE1_RESUME_FROM'] = str(prior)
         run_entry(['bash', 'scripts/verify-stage1-protocol.sh'], log=output/'formal.log',
                   checkout=checkout, env=formal_env,
-                  pass_fds=(fd,))
+                  pass_fds=(fd,) if registration_fd is None else (fd, registration_fd))
         formal, = temporary.glob('sandproof-stage1-protocol.*/registered')
         candidate.check_checkout(checkout)
         bound = attest_evidence(native, formal, candidate, checkout)
@@ -516,9 +618,8 @@ def main():
     parser.add_argument('--candidate', type=Path, help='private reviewed Candidate JSON')
     parser.add_argument('--checkout', type=Path, default=ROOT)
     parser.add_argument('--output', type=Path, required=True)
-    repeat = parser.add_mutually_exclusive_group()
-    repeat.add_argument('--native', type=Path, help='original native seal to admit instead of rerunning')
-    repeat.add_argument('--resume-from', type=Path, help='original interrupted promotion output')
+    parser.add_argument('--native', type=Path, help='original native seal to admit instead of rerunning')
+    parser.add_argument('--resume-from', type=Path, help='latest interrupted promotion output')
     parser.add_argument('--config', type=Path, help='private publication settings, no credentials in checkout')
     parser.add_argument('--queue-ref')
     parser.add_argument('--queue-sha')
@@ -544,7 +645,7 @@ def main():
         if args.config is not None:
             parser.error('proof execution does not take publication credentials')
         try:
-            run_stage(candidate, checkout, args.output, native=args.native, resume_from=args.resume_from)
+            run_registered(candidate, checkout, args.output, native=args.native, resume_from=args.resume_from)
         except subprocess.CalledProcessError as error:
             # The native wrapper's 75 keeps its finished seal for retirement
             # resume. There is no promotion success until the proof also runs.

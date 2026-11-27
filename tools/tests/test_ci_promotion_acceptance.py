@@ -227,7 +227,7 @@ class PromotionTest(unittest.TestCase):
                 output.mkdir(mode=0o700)
 
                 def execute(command, *, log, checkout, env, pass_fds):
-                    self.assertEqual(pass_fds, (9,))
+                    self.assertEqual(pass_fds, (9, 37))
                     self.assertNotIn('GH_TOKEN', env)
                     if env['SANDPROOF_ACCEPTANCE_ROLE'] == 'formal':
                         self.assertEqual(command, ['bash', 'scripts/verify-stage1-protocol.sh'])
@@ -252,7 +252,7 @@ class PromotionTest(unittest.TestCase):
                       patch.dict(os.environ, dict(GH_TOKEN='test-only', TMPDIR='/mnt/xfs',
                                                  CARGO_TARGET_DIR=str(cache),
                                                  SANDPROOF_NATIVE_OBSERVER='/installed/observer'))):
-                    result = gate.run_stage(self.candidate, checkout, output, native=prior)
+                    result = gate.run_stage(self.candidate, checkout, output, native=prior, registration_fd=37)
                 self.assertEqual(entries.call_count, 1 if prior else 2)
                 self.assertEqual(result['candidate'], asdict(self.candidate))
                 self.assertTrue((output/'complete.json').is_file())
