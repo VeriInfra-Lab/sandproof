@@ -85,7 +85,15 @@
 
 这里复用 V0/V5 的 `queryBool`、`queryI64`、`queryRow` 和原 `StandardRecordIO` 调用合同。SQL 引擎如何产生这些观察、查询错误后的物理事务状态及 BEGIN 到 `raw` 的对应继续由 V5 提供。
 
-V5 可从[原 BEGIN 证明](../unload-parent-link/world-begin/UnloadWorldBegin.lean.in)的 `begin_passes_original_inputs_to_started_owner` 继续。其[抽取入口](../unload-parent-link/world_begin_capture.py)所列 `Cargo.lock`、`transaction.rs`、`allocators.rs`、`checkpoint.rs` 在提供方基线 `f26fc26a` 和本片父提交 `a6f6b6b9` 的内容逐一相同。原 BEGIN 构建的 40 个 Lean 输入中，34 个已在父提交的事务工程逐份匹配，其余 6 个属于 BEGIN 和 started-transaction 视图。仍需把 BEGIN 成功返回的原 raw 事务对应到这里的 `before.tx.parent.transaction`，并给出 commit 和 terminate 观察的来源。
+本片复用[原 BEGIN 证明](../unload-parent-link/world-begin/UnloadWorldBegin.lean.in)的 `begin_success_keeps_original_owner`。其[抽取入口](../unload-parent-link/world_begin_capture.py)所列 `Cargo.lock`、`transaction.rs`、`allocators.rs`、`checkpoint.rs` 在提供方基线 `f26fc26a` 和 `a6f6b6b9` 的内容逐一相同。原 BEGIN 构建的 40 个 Lean 输入中，34 个已在同一生产版本的录入工程逐份匹配，其余 6 个属于 BEGIN 和 started-transaction 视图。
+
+### 从 BEGIN 的成功结果连接原录入父调用
+
+`JournalStartedHeader` 使用实际 `WorldTransaction::begin` 产生的事务。输入是原已提交 World 的读取结果、写入准备、`BEGIN IMMEDIATE` 返回的连接与 raw 事务、该事务的分配器上界，以及在它上面读到的匹配版本。结论保留 BEGIN 返回给 journal 的连接。录入时从 raw 事务读取，二者的角色各自保留。
+
+`erases_to_entire_owner` 给出完整字段表示的见证。它只补入原录入视图要求的 commit、V5 调用和 terminate 观察，投影后恢复全部原 owner。`begin_to_first_prepare_refusal` 对每个投影等于本次 BEGIN 返回 owner 的录入调用者成立。它从完整投影推出活动事务槽和同一个底层连接，第一条 SQL 的 prepare 返回错误时，实际录入体交回原 holder，事务和原 `proof_record_actual_parent` 均交回同一 SQLite 错误及原钩子。
+
+[物化与检查](journal_started.py)复用原 `stage1-unload-parent-transaction` 的 `begin` case。原 BEGIN 入口先核对本候选的抽取、类型化调用及源码，随后将联合页加入该 case 的构建和逐文件服务清单。录入一侧使用原事务提供方的同一生成类型、源绑定和表示，两个提供方共享的 Lean 输入必须逐字节相同。主控须在同一候选收齐原录入抽取与该 BEGIN 结果。V5 仍提供真实物理对象对应及 commit、terminate 的观察；公开 journal 如何选定调用者、具体 codec 与网关效果继续按各自入口验收。
 
 [事务包登记候选](journal-provider-candidate.patch)以 #1061 的 `de37231d` 为补丁基线，供主控在叠入本生产版本的候选上接入。补丁将重放、载入首错与实际表头读取三页加入现有事务入口的构建根与逐文件检查清单，用 `current_file_overrides` 记录本版协调器，保留原冻结。事务独立入口的既有输入漂移仍需按各自提供方回执核对。
 
@@ -105,7 +113,7 @@ SANDPROOF_ACCEPTANCE_ROLE=formal PYTHONDONTWRITEBYTECODE=1 \
 
 [公共登记候选](registration-candidate.patch)供主控在包含本包的候选上审阅、试套。[覆盖记录候选](coverage-candidate.patch)注明已实测的源码和边界。登记通过 `scripts/verify-stage1-protocol.sh` 默认使用的 `full` 计划调用同一检查器。其原生前提包括已封口的完整 Linux `functional` 日志中的两个指定测试，以及原 `stage1-inbox-lookup` 和 `stage1-inbox-state` 两份收据。单项命令和缺少封口的日志可用于开发复核。
 
-[默认入口的新增输入候选](inputs-candidate.patch)向 `verification/stage1-protocol-inputs.sha256` 增列本包九份 Python 检查文件、两份 Rust 薄根、四份 Lean 定理模板、三份生产 Rust 源码以及原事务提供方的 profile 和薄根，共二十项。该补丁以主控 #1061 的清单为基线，保留其 SQLite 检查输入；尚未叠入 #1061 的分支可按补丁中的二十个路径和 SHA 逐项核对。生产行取追加抽取薄根前的 Rust 全文。主控在接入登记补丁后还需核对原清单已有行、各提供方清单及同一候选的原生封口。
+[默认入口的输入候选](inputs-candidate.patch)在 #1061 的清单上累计新增 37 个路径，更新原 `unload_audits.py` 的一行。它覆盖协调器、录入、BEGIN 所用的生产源码、证明、薄根、原始抽取与物化入口。事务独立清单一并列出这个共享检查文件的候选内容。主控还需核对既有公共工具冻结以及同一候选的原生封口。
 
 登记子任务在分配的四核内继承并核对原协调锁描述符。检查点读取四份指定 LLBC、公开 journal 的五份生成产物、真实内核命令的退出状态与日志、物理文件和原服务回执。收敛与 Create 有限计划继续按各自的原任务清单验收。主控合入时需重新校验受影响的公共冻结和完整原生输入。
 
