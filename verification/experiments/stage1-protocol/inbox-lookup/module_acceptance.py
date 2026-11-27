@@ -24,6 +24,8 @@ WORKFLOW_DOC = 'docs/proof-workflow.md'
 ISOLATED_INPUTS = {
     str(HERE / 'module_acceptance.py'),
     str(HERE / 'InboxLookupWrong.lean.in'),
+    'tools/ci_lookup_acceptance.py',
+    'tools/tests/test_ci_lookup_acceptance.py',
     'tools/tests/test_inbox_lookup_module_acceptance.py',
 }
 VARIANTS = {

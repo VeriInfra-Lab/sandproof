@@ -23,12 +23,19 @@ spec.loader.exec_module(acceptance)
 
 class InboxLookupModuleAcceptanceTests(unittest.TestCase):
     def test_workflow_selects_only_lookup_and_both_original_lean_views(self):
-        plan = acceptance.select([str(LOOKUP / 'module_acceptance.py'), acceptance.WORKFLOW_DOC])
+        changes = [str(LOOKUP / 'module_acceptance.py'), acceptance.WORKFLOW_DOC,
+                   'tools/ci_lookup_acceptance.py', 'tools/tests/test_ci_lookup_acceptance.py',
+                   'tools/tests/test_inbox_lookup_module_acceptance.py']
+        plan = acceptance.select(changes)
         self.assertEqual(plan['status'], 'ready')
         self.assertEqual(plan['affected_modules'], ['inbox-lookup'])
         self.assertEqual(plan['checks'], ['original-native', 'formal-correct', 'formal-key-only'])
         self.assertIn('Inbox::find', plan['production_entry'])
         self.assertEqual(acceptance.select([acceptance.WORKFLOW_DOC])['checks'], [])
+        shared_plan = acceptance.select([*changes, 'tools/formal_builds.py'])
+        self.assertEqual(shared_plan['status'], 'review-required')
+        self.assertEqual(shared_plan['checks'], [])
+        self.assertEqual(shared_plan['unmapped_inputs'], ['tools/formal_builds.py'])
 
     def test_isolated_mutant_template_selects_its_original_contract_check(self):
         plan = acceptance.select([str(LOOKUP / 'InboxLookupWrong.lean.in')])
