@@ -1,0 +1,12 @@
+import SandproofStage1Request.Types
+
+namespace SandproofStandardRecordCodec
+abbrev core.error.Error := SandproofFoundationsRust.core.error.Error
+abbrev core.fmt.Display := SandproofFoundationsRust.core.fmt.Display
+abbrev core.fmt.Formatter := SandproofFoundationsRust.core.fmt.Formatter
+abbrev core.fmt.Error := SandproofFoundationsRust.core.fmt.Error
+abbrev rusqlite.Connection := SandproofStage1RequestRust.rusqlite.Connection
+abbrev serde_json.error.Error := SandproofStage1RequestRust.serde_json.error.Error
+abbrev controller.checkpoint.config.MaintenanceConfig := SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.MaintenanceConfig
+abbrev controller.lifecycle_inbox.model.Inbox := SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox
+end SandproofStandardRecordCodec

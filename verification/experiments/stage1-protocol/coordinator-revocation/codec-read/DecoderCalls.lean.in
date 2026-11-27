@@ -1,0 +1,43 @@
+import SandproofStandardRecordCodec.Funs
+import SandboxModel.InboxTransaction.CodecTransfer
+
+open Aeneas Aeneas.Std
+open SandboxModel.StandardRecordCodec
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording
+namespace SandproofStandardRecordCodec.DecoderCalls
+
+open controller.lifecycle_inbox.recording.StandardRecordCodec.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordCodec
+
+abbrev Encoder := Unit → rusqlite.Connection → controller.lifecycle_inbox.model.Inbox →
+  Result (JsonReply (alloc.vec.Vec U8) × Unit)
+
+variable [calls : DecodeCalls]
+
+/-- The public journal selects both of these concrete reads. The write observation is arbitrary. -/
+def withReads (encode : Encoder) : RecordCodec Unit where
+  decode_maintenance := decode_maintenance
+  decode_inbox := decode_inbox
+  encode_inbox := encode
+
+theorem maintenance_return (encode : Encoder) (before : Holder Unit) (bytes : Slice U8)
+    (raw : SandproofStage1RequestRust.rusqlite.transaction.Transaction)
+    (slot : before.tx.transaction = some raw) (reply : JsonReply controller.checkpoint.config.MaintenanceConfig)
+    (parsed : calls.fromSlice controller.checkpoint.config.MaintenanceConfig.Insts.Serde_coreDeDeserialize bytes = .ok reply) :
+    StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.decode_maintenance
+      (withReads encode) before bytes = .ok (mapJson reply, before) := by
+  apply actual_decode_maintenance_returned_state (withReads encode) before bytes raw reply before.codec slot
+  simp [withReads, decode_maintenance, serde_json.de.from_slice, parsed]
+
+theorem inbox_return (encode : Encoder) (before : Holder Unit) (bytes : Slice U8)
+    (raw : SandproofStage1RequestRust.rusqlite.transaction.Transaction)
+    (slot : before.tx.transaction = some raw) (reply : JsonReply controller.lifecycle_inbox.model.Inbox)
+    (parsed : calls.fromSlice controller.lifecycle_inbox.model.Inbox.Insts.Serde_coreDeDeserialize bytes = .ok reply) :
+    StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.decode_inbox
+      (withReads encode) before bytes = .ok (mapJson reply, before) := by
+  apply actual_decode_inbox_returned_state (withReads encode) before bytes raw reply before.codec slot
+  simp [withReads, decode_inbox, serde_json.de.from_slice, parsed]
+
+end SandproofStandardRecordCodec.DecoderCalls
+
+#audit_controller_proof SandproofStandardRecordCodec.DecoderCalls.maintenance_return
+#audit_controller_proof SandproofStandardRecordCodec.DecoderCalls.inbox_return

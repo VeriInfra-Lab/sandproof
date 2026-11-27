@@ -12,6 +12,8 @@ import subprocess
 import sys
 import tarfile
 
+import codec_reads
+import codec_receipt
 from guard_binding import check_guard
 from journal_entry import CODEC, CONTROLLER, DATABASE, INBOX, PROVIDER, RECORD, RECORDING, TRANSACTION, check_entry, translated_entry
 from journal_entry_regressions import check_entry_rejections
@@ -248,6 +250,32 @@ def dependencies(project, packages):
     return revisions
 
 
+def check_decoders(current, args, fixed):
+    folder = args.output/'codec-read'
+    folder.mkdir(mode=0o700)
+    project = folder/'project'
+    unpack(current, project)
+    original = load(project/AREA/'serde-binding/binding.py').Original
+    public = original(json.loads((args.output/'public-journal/actual.llbc').read_bytes()))
+    result = codec_reads.capture(project, folder, args.tools, fixed, public, original, run)
+    files = codec_reads.materialize(project, folder, load(project/'tools/proof_batch.py').closure)
+    (project/'.lake').mkdir(exist_ok=True)
+    (project/'.lake/packages').symlink_to(args.packages, target_is_directory=True)
+    (project/'.tools').symlink_to(args.tools, target_is_directory=True)
+    (project/'artifacts').mkdir(exist_ok=True)
+    run(project, folder, 'build', ['lake', 'build', codec_receipt.ROOT])
+    commands = []
+
+    def kernel(project, output, label, argv):
+        commands.append(run(project, output, label, argv))
+
+    checker = load(project/AREA/'formal.py')
+    result['actual'] = checker.actual_files(project, files, folder, os.environ, kernel)
+    result['kernel_commands'] = commands
+    codec_receipt.check_page(project, result)
+    return result
+
+
 def check(args, report):
     fixed = json.loads((ROOT/'verification/foundations-environment.json').read_bytes())
     for n, path in [('charon', 'aeneas/charon/bin/charon'), ('aeneas', 'aeneas/bin/aeneas')]:
@@ -267,6 +295,8 @@ def check(args, report):
     report['public_journal'] = capture_public(project, args.output/'public-journal', args.tools, fixed)
     require(report['candidate_parent']['journal_entry'] == report['public_journal']['journal_entry'],
             'public translation differs from the real coordinator journal capture')
+    before = dependencies(project, args.packages)
+    report['codec_read'] = check_decoders(current, args, fixed)
     for path, fragment in [(STATE, AREA/'inbox-state/roots.rs.in'), (STATE, AREA/'inbox-lookup/extract-root.rs.in'),
                            (CALLER, PKG/'root.rs.in')]:
         with (project/path).open('ab') as stream:
@@ -283,7 +313,6 @@ def check(args, report):
     import proof_batch
     files = sorted(proof_batch.closure(project, [str(SEED)], active_view='lakefile.toml'))
     require(all('_Template' not in f for f in files), 'unexpected external template')
-    before = dependencies(project, args.packages)
     run(project, args.output, 'build', ['lake', 'build',
         'SandboxModel.Lifecycle.Protocol.CoordinatorRevocation'])
     checker = load(project/AREA/'formal.py')
