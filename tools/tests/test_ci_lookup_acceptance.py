@@ -216,6 +216,44 @@ raise SystemExit({terminal})
             with self.assertRaisesRegex(ValueError, 'different acceptance scope'):
                 wrapper.stage_files(output, invocation, terminal, module)
 
+    def test_fresh_readback_checks_native_payload_without_scoped_reuse(self):
+        output = self.root/'fresh-evidence'
+        directory = output/'module'
+        (directory/'original-native').mkdir(parents=True)
+        native_result = directory/'original-native/result.json'
+        native_result.write_text('{}\n')
+        native_log = directory/'original-native.log'
+        native_log.write_text('original native executor\n')
+        native_receipt = directory/'lookup-native-receipt.json'
+        original = dict(schema=1, kind='inbox-lookup-standalone-native-receipt', candidate=self.candidate,
+                        key=dict(kind='inbox-lookup-native-key-v1', scoped_native_tools=False),
+                        result_sha256=digest(native_result), launcher_log_sha256=digest(native_log))
+        invocation = dict(schema=2, candidate=self.candidate, native=None)
+        write_once(output/wrapper.INVOCATION, invocation)
+        module = SimpleNamespace(MODULE='inbox-lookup', NATIVE_RECEIPT=native_receipt.name,
+                                 checked_native_payload=Mock(return_value={'commands': []}), load_native_reuse=Mock())
+        report = dict(schema=1, kind='stage1-module-acceptance', module=module.MODULE, complete=True,
+                      full_stage1_acceptance=False, candidate=self.candidate,
+                      formal={case: {} for case in wrapper.CASES},
+                      native=dict(use='RUN', receipt=str(native_receipt), result_sha256=digest(native_result)))
+        terminal = {'returncode': 0}
+        with patch.object(wrapper, 'proof_files') as proofs:
+            for scope in (False, True):
+                original['key']['scoped_native_tools'] = scope
+                native_receipt.write_text(json.dumps(original))
+                report['native']['receipt_sha256'] = digest(native_receipt)
+                (directory/'module-result.json').write_text(json.dumps(report))
+                if scope:
+                    with self.assertRaisesRegex(ValueError, 'fresh execution'):
+                        wrapper.stage_files(output, invocation, terminal, module)
+                else:
+                    files = wrapper.stage_files(output, invocation, terminal, module)
+                    self.assertIn(native_receipt, files)
+                    self.assertIn(native_result, files)
+            module.checked_native_payload.assert_called_once()
+            module.load_native_reuse.assert_not_called()
+            self.assertEqual(proofs.call_count, 2)
+
     def test_saved_proof_readback_rejects_changed_type_and_llbc(self):
         folder = self.root/'formal-key-only'
         project = folder/'source'

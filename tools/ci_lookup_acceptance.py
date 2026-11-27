@@ -21,8 +21,9 @@ TARGETS = tuple(Path(f'module/formal-{case}/source/artifacts/extract-target') fo
 INVOCATION = 'standalone-inbox-lookup.json'
 
 
-def lookup():
-    spec = importlib.util.spec_from_file_location('standalone_lookup_retirement', DRIVER)
+def lookup(checkout=None):
+    driver = DRIVER if checkout is None else checkout / DRIVER.relative_to(ROOT)
+    spec = importlib.util.spec_from_file_location('standalone_lookup_retirement', driver)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -82,7 +83,7 @@ def proof_files(module, saved_view, variant, folder, candidate, native, files, *
     checked_file(physical/'requests.jsonl', files)
     checked_file(folder/'actual-service.stdout', files)
     checked_file(folder.parent/(folder.name+'.log'), files)
-    module.registration(ROOT)._saved_physical_view(actual, project, physical, record['commands'])
+    module.registration(module.ROOT)._saved_physical_view(actual, project, physical, record['commands'])
     proposition = ('¬ ' if variant == 'key-only' else '') + module.THEOREM_TYPE + module.LOOKUP
     expected = f'import SandboxModel.Lifecycle.Protocol.{library}\n#check ({theorem} : {proposition})\n'
     check = checked_file(project/'artifacts/ModuleAcceptance.lean', files, saved_view['contract_type_source_sha256'])
@@ -151,12 +152,18 @@ def stage_files(output, invocation, terminal, module):
             or prepared is not None and native_use['receipt_sha256'] != prepared['sha256']):
         raise ValueError('Lookup result did not use its original native receipt')
     original = json_file(checked_file(receipt, files, native_use['receipt_sha256']), limit=16 * 1024**2)
-    base = candidate if prepared is None else native_use['original_candidate']
-    native, admitted = module.load_native_reuse(receipt, native_use['receipt_sha256'], base, original['key'], [])
-    if admitted['result_sha256'] != native_use['result_sha256']:
+    if original['result_sha256'] != native_use['result_sha256']:
         raise ValueError('original Lookup native result differs')
-    if local and original['key'].get('scoped_native_tools') is not True:
-        raise ValueError('original Lookup native receipt was not prepared for scoped reuse')
+    if prepared is None:
+        if (original.get('schema') != 1 or original.get('kind') != 'inbox-lookup-standalone-native-receipt'
+                or original.get('candidate') != candidate
+                or original['key'].get('kind') != 'inbox-lookup-native-key-v1'
+                or original['key'].get('scoped_native_tools') is not False):
+            raise ValueError('original Lookup native receipt does not bind this fresh execution')
+        native = module.checked_native_payload(original, receipt.parent, candidate)
+    else:
+        native, _ = module.load_native_reuse(receipt, native_use['receipt_sha256'], native_use['original_candidate'],
+                                             original['key'], [])
     permitted = checked_local_plan(result, invocation, module) if local else None
     checked_file(receipt.parent/'original-native/result.json', files, original['result_sha256'])
     checked_file(receipt.parent/'original-native.log', files, original['launcher_log_sha256'])
@@ -168,8 +175,8 @@ def stage_files(output, invocation, terminal, module):
     return files
 
 
-def closeout(output, observer):
-    module = lookup()
+def closeout(output, observer, *, checkout=None):
+    module = lookup(checkout)
     _, enrollment, targets = formal_builds.admission(output)
     invocation = json_file(private_path(output/INVOCATION))
     schema = invocation.get('schema')
@@ -219,6 +226,7 @@ def main(argv=None):
     parser.add_argument('--observer', type=Path, required=True)
     parser.add_argument('--base')
     parser.add_argument('--formal-lock', type=Path)
+    parser.add_argument('--checkout', type=Path, help='original candidate checkout for closeout')
     parser.add_argument('--reuse-native', type=Path)
     parser.add_argument('--reuse-native-sha256')
     parser.add_argument('--lookup-only', action='store_true', help='check both Lookup proofs and keep downstream work pending')
@@ -230,8 +238,11 @@ def main(argv=None):
         if args.lookup_only or any(value is not None for value in (
                 args.base, args.formal_lock, args.reuse_native, args.reuse_native_sha256)):
             parser.error('closeout reads the original run and never executes Rust or Lean')
-        print(json.dumps(closeout(output, observer), sort_keys=True))
+        original = args.checkout.resolve(strict=True) if args.checkout is not None else None
+        print(json.dumps(closeout(output, observer, checkout=original), sort_keys=True))
         return 0
+    if args.checkout is not None:
+        parser.error('--checkout belongs to closeout only')
     if (args.base is None or args.formal_lock is None
             or (args.reuse_native is None) != (args.reuse_native_sha256 is None)):
         parser.error('run requires --base, --formal-lock and both original native receipt parameters when reusing')
