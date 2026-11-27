@@ -59,6 +59,7 @@ class PromotionTest(unittest.TestCase):
         self.actions_app = 15368
         for job in ('sdk-contract', 'harbor-inputs', 'pr-title', 'pr-policy'):
             self.ordinary(job)
+            self.api.check(self.group.sha, job, app=dict(id=self.actions_app))
         self.e2e = self.api.check(self.candidate.head, gate.E2E, output=dict(text=json.dumps(dict(
             schema=1, source=self.candidate.source, target='test', head=self.candidate.head,
             base=self.candidate.base, tree=self.candidate.tree))))
@@ -150,6 +151,9 @@ class PromotionTest(unittest.TestCase):
                          asdict(self.candidate))
         self.assertEqual(json.loads(self.api.posts[2]['output']['summary'])['e2e_check_id'], self.e2e['id'])
         self.assertEqual(len(json.loads(self.api.posts[3]['output']['summary'])['ordinary_check_ids']), 4)
+        self.assertEqual(json.loads(self.api.posts[3]['output']['summary'])['queue_ordinary_check_ids'],
+                         {row['name']: row['id'] for row in self.api.rows[self.group.sha]
+                          if row['app']['id'] == self.actions_app})
 
     def test_moved_target_before_publication_raises_without_post(self):
         with (patch.object(gate.Candidate, 'check_checkout'),
@@ -211,6 +215,53 @@ class PromotionTest(unittest.TestCase):
             self.publish()
         self.assertEqual([(row['name'], row['head_sha']) for row in self.api.posts],
                          [(gate.GATE, self.candidate.head)])
+
+    def test_queue_requires_literal_success_from_latest_native_check_runs(self):
+        self.admit()
+        saved = self.api.rows[self.group.sha][:]
+        cases = [
+            ('absent', None), ('wrong app', {'app': {'id': 123}}),
+            ('wrong SHA', {'head_sha': self.candidate.head}),
+            ('skipped', {'conclusion': 'skipped'}), ('neutral', {'conclusion': 'neutral'}),
+            ('cancelled', {'conclusion': 'cancelled'}), ('failed', {'conclusion': 'failure'}),
+            ('running', {'status': 'in_progress', 'conclusion': None}),
+        ]
+        for label, update in cases:
+            with self.subTest(label=label):
+                if label in ('absent', 'wrong app', 'wrong SHA'):
+                    fresh = [row for row in saved if row['name'] != 'pr-policy']
+                else:
+                    fresh = saved[:]
+                self.api.rows[self.group.sha] = fresh
+                if update is not None:
+                    self.api.check(self.group.sha, 'pr-policy',
+                                   **dict({'app': {'id': self.actions_app}}, **update))
+                with self.assertRaisesRegex(ValueError, 'all four current Actions checks'):
+                    self.publish()
+        self.assertEqual([(row['name'], row['head_sha']) for row in self.api.posts],
+                         [(gate.GATE, self.candidate.head)])
+
+    def test_changed_queue_check_blocks_e2e_after_reference_and_gate_after_e2e(self):
+        self.admit()
+        original = gate.publish_check
+
+        def publish_and_restart(*args, name, sha):
+            original(*args, name=name, sha=sha)
+            if name == pivot:
+                self.api.check(self.group.sha, 'pr-title', app=dict(id=self.actions_app),
+                               status='in_progress', conclusion=None)
+
+        for pivot, message in ((gate.REFERENCE, 'changed before E2E publication'),
+                               (gate.E2E, 'ordinary checks or E2E changed during publication')):
+            with self.subTest(after=pivot):
+                with patch.object(gate, 'publish_check', side_effect=publish_and_restart):
+                    with self.assertRaisesRegex(ValueError, message):
+                        self.publish()
+                self.assertFalse(any(row['head_sha'] == self.group.sha and row['name'] == gate.GATE
+                                     for row in self.api.posts))
+                if pivot == gate.REFERENCE:
+                    self.assertFalse(any(row['head_sha'] == self.group.sha for row in self.api.posts))
+                self.api.rows[self.group.sha].pop()
 
     def test_original_full_formal_consumes_exact_one_new_or_existing_native_seal(self):
         existing = self.path/'existing-native'

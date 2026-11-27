@@ -23,7 +23,7 @@ bash scripts/python-entry.sh -m tools.ci_promotion_acceptance run \
 
 `test` 原五项必需检查及其 App 绑定继续生效。新增规则仅作用于 `test`，要求使用单候选合并队列，且 `Promotion / Stage1` 只能由原受保护 App 发布。配置必须生效且无绕过角色，发布器才接受 `admit`。此时的源提交状态只用于进入队列。
 
-真实候选入队后，GitHub 在队列提交上执行原四项 Actions 检查。标题和分支规则使用通过队列事件、Git 对象和现有 PR 核对的原元数据。发布器读取当前唯一队列成员并核对源提交、目标基线和代码树。只有原完整 Rust、Stage1 和 E2E 证据仍对应实际合并内容时，才以 `publish --queue-ref <实际队列引用> --queue-sha <实际队列提交>` 发布队列提交上的 `Promotion / Stage1` 和原 `E2E / terminal-bench-ci`。四项 Actions 以及两项 App 检查由 GitHub 对同一队列提交强制核对。基线或代码树变化时重新核对证据。现有 `integration`、`main` 的保护继续生效。
+真实候选入队后，GitHub 在队列提交上执行原四项 Actions 检查。标题和分支规则使用通过队列事件、Git 对象和现有 PR 核对的原元数据。运维先等待队列提交的四项真实 Actions 全部通过。发布器要求四项最新记录都来自 App 15368，位于同一精确队列 SHA，且结论为 `success`。GitHub 可能视跳过或中性结论为满足保护规则，发布入口要求实际通过并保留四个原检查 ID。发布器继续核对当前唯一队列成员、源提交、目标基线和代码树，并在发出两项 App 检查之前再次确认相关记录。只有原完整 Rust、Stage1 和 E2E 证据仍对应实际合并内容时，才以 `publish --queue-ref <实际队列引用> --queue-sha <实际队列提交>` 发布队列提交上的 `Promotion / Stage1` 和原 `E2E / terminal-bench-ci`。六项检查仍由 GitHub 对同一队列提交强制核对。基线或代码树变化时重新核对证据。现有 `integration`、`main` 的保护继续生效。
 
 源码合入、宿主安装和线上门槛启用分别记录。用下一次已批准晋升的真实候选验证规则和队列检查，不额外制造晋升。保留原保护，读回新规则、实际队列提交、原六项所需检查及其 App 身份，确认基线变化、缺原始证据和失败检查都会阻断。推送后的 Rust 工作流仅对同一合并代码树和精确父提交复用原完整验收。其独立的 root 安装检查和非晋升入口按原规则运行。
 

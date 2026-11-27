@@ -535,17 +535,24 @@ def publish(candidate, checkout, output, *, group, api, lookup, commit, director
     if (not succeeded(head) or head.get('external_id') != receipts.digest(admitted_record)
             or json.loads(head['output']['summary']) != admitted_record):
         raise ValueError('original PR has no matching successful Stage1 queue admission')
-    record.update(publication='merge-queue', queue=binding)
+    ordinary = Checks(api)
+    queue_checks = ordinary.ordinary_receipts(group.sha, ACTIONS_APP)
+    if queue_checks is None:
+        raise ValueError('require all four current Actions checks to complete with success on the exact queue SHA')
+    record.update(publication='merge-queue', queue=binding, queue_ordinary_check_ids=queue_checks)
     if queue_binding(candidate, group, lookup, commit) != binding:
         raise ValueError('queue entry changed before publication')
     policy()
-    # The queue itself independently enforces all four current Actions checks
-    # on Q. These App records only authorize the exact same full scope and E2E.
+    # GitHub still enforces the required Actions contexts independently. The
+    # App additionally excludes skipped and neutral checks, which GitHub may accept.
     publish_check(api, directory, record, name=REFERENCE, sha=candidate.head)
+    if ordinary.ordinary_receipts(group.sha, ACTIONS_APP) != queue_checks:
+        raise ValueError('queue Actions checks changed before E2E publication')
     publish_check(api, directory, queue_e2e(record), name=E2E, sha=group.sha)
     if (queue_binding(candidate, group, lookup, commit) != binding
-            or promotion_inputs(api, candidate, ACTIONS_APP) != admission):
-        raise ValueError('queue, original ordinary checks or E2E changed during publication')
+            or promotion_inputs(api, candidate, ACTIONS_APP) != admission
+            or ordinary.ordinary_receipts(group.sha, ACTIONS_APP) != queue_checks):
+        raise ValueError('queue, ordinary checks or E2E changed during publication')
     policy()
     publish_check(api, directory, record, name=GATE, sha=group.sha)
 
@@ -585,6 +592,7 @@ def equivalent_push(event, api):
     record = json.loads(reference['output']['summary'])
     candidate = Candidate(**record['candidate'])
     if (record.get('schema') != 2 or record.get('publication') != 'merge-queue'
+            or set(record.get('queue_ordinary_check_ids', {})) != set(ORDINARY)
             or candidate.base != before or candidate.head != head
             or candidate.tree != commit['tree']['sha']
             or reference.get('external_id') != receipts.digest(record)):
