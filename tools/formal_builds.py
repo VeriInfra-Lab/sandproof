@@ -11,12 +11,17 @@ from tools.system_acceptance import digest, json_file, private_path, write_once
 
 DIRECTORY = 'formal-build-closeout'
 EXACT_TARGET_NAMES = {'cargo-target', 'formal-cargo-target', 'extract-target'}
+LOOKUP_RUST_TARGETS = {
+    Path('module/original-native')/variant/'target'
+    for variant in ('original', 'candidate', 'key-only', 'restored')
+}
 
 
 def target_paths(run, names):
     paths = [Path(name) for name in names]
     if (not paths or len(set(paths)) != len(paths)
-            or any(path.is_absolute() or '..' in path.parts or path.name not in EXACT_TARGET_NAMES
+            or any(path.is_absolute() or '..' in path.parts
+                   or (path.name not in EXACT_TARGET_NAMES and path not in LOOKUP_RUST_TARGETS)
                    or {DIRECTORY, '.lake', '.git', '.tools'} & set(path.parts) for path in paths)
             or any(path != other and path.is_relative_to(other) for path in paths for other in paths)):
         raise ValueError('exact nonoverlapping private formal build paths required')
