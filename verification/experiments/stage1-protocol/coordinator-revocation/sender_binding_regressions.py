@@ -1,8 +1,47 @@
-"""Reject disconnected operand or Option edges on private copies of an admitted compiler capture."""
+"""Reject disconnected coordinator edges on private copies of an admitted compiler capture."""
 from copy import deepcopy
 
+from guard_binding import RESULT, check_guard
 from sender_binding import ALL, GET, ONE, VEC_ITER, inspect_senders
-from wiring import declaration, name, nodes, require
+from wiring import PARENT, SERVICE, declaration, name, nodes, require
+
+
+def expect_rejection(label, diagnostic, check, *inputs):
+    try:
+        check(*inputs)
+    except ValueError as error:
+        require(str(error).split(':', 1)[0] == diagnostic, f'{label}: unexpected diagnostic: {error}')
+    else:
+        raise ValueError(f'{label}: admitted disconnected compiler evidence')
+
+
+def check_guard_rejections(view):
+    cases = [
+        ('guard-source', 'journal guard does not come from lock Continue'),
+        ('poison-error', 'lock error mapper does not return ControllerBusy'),
+        ('break-residual', 'early return loses the original lock residual'),
+    ]
+    for label, diagnostic in cases:
+        fixture = deepcopy(view)
+        parent = declaration(fixture.functions.values(), PARENT)['body']['Structured']
+        if label == 'guard-source':
+            guard, = [v['index'] for v in parent['locals']['locals'] if v['name'] == 'inner']
+            source, = [rhs['Use'][0]['Move'] for dst, rhs in nodes(parent['body'], 'Assign')
+                       if dst['kind'] == {'Local': guard}]
+            source['kind'] = {'Local': 1}
+        elif label == 'poison-error':
+            closure = declaration(fixture.functions.values(), PARENT + '::{impl}::call_once')
+            error = declaration(fixture.type_decls.values(), SERVICE + '::JournalError')
+            other, = [v['id'] for v in error['kind']['Enum'] if v['name'] == 'CorruptStore' and not v['fields']]
+            result, = [rhs for dst, rhs in nodes(closure['body'], 'Assign') if dst['kind'] == {'Local': 0}]
+            result['Aggregate'][0]['Adt'][1] = other
+        else:
+            residual, = [c['call'] for c in nodes(parent['body'], 'Call')
+                         if name(fixture.functions[c['call']['func']['Regular']['kind']['Fun']])
+                         == RESULT + 'from_residual']
+            residual['args'][0]['Move']['kind'] = {'Local': 1}
+        expect_rejection(label, diagnostic, check_guard, fixture)
+    return [label for label, _ in cases]
 
 
 def check_rejections(view, broadcast):
@@ -26,11 +65,6 @@ def check_rejections(view, broadcast):
         else:
             # Keep the call, its type metadata and control flow. Disconnect only the operand's origin.
             call['args'][operand]['Move']['kind'] = call['dest']['kind']
-        try:
-            inspect_senders(fixture, all_arm)
-        except ValueError as error:
-            require(str(error).split(':', 1)[0] == diagnostic, f'{label}: unexpected diagnostic: {error}')
-        else:
-            raise ValueError(f'{label}: admitted a disconnected sender edge')
+        expect_rejection(label, diagnostic, inspect_senders, fixture, all_arm)
         rejected.append(label)
     return rejected

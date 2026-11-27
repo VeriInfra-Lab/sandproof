@@ -81,23 +81,27 @@ def check_args(block, statement, inherited, *expected):
         require(place is not None and origin(place, sources) == path, 'sender call operand has a different origin')
 
 
-def option_edges(view, statement, producer):
+def enum_edges(view, statement, producer, enum_name, layout):
     switch = statement['kind']['Switch']
     data = switch['data']
     require(data['scrutinee']['Discriminant']['kind'] == {'Local': output(producer)},
-            'Option branch uses a different call result')
-    option = declaration(view.type_decls.values(), 'core::option::Option')
-    require([(v['id'], v['name'], len(v['fields'])) for v in option['kind']['Enum']] ==
-            [(0, 'None', 0), (1, 'Some', 1)], 'unexpected Option layout')
+            'enum branch uses a different call result')
+    enum = declaration(view.type_decls.values(), enum_name)
+    require([(v['id'], v['name'], len(v['fields'])) for v in enum['kind']['Enum']] == layout,
+            'unexpected enum layout: ' + enum_name)
     arms = {}
     for const, edge in data['branches']:
         adt, variant = view.resolve(const, view.constants)[0]['Discriminant']
-        require(adt['id'] == option['def_id'] and variant in (0, 1) and variant not in arms,
-                'unexpected Option discriminant')
+        require(adt['id'] == enum['def_id'] and variant in (0, 1) and variant not in arms,
+                'unexpected enum discriminant')
         arms[variant] = edge
     edges = [arms.get(i, data['fallback']) for i in (0, 1)]
-    require(len(switch['branches']) == 2 and set(edges) == {0, 1}, 'Option arms are not distinct and exhaustive')
+    require(len(switch['branches']) == 2 and set(edges) == {0, 1}, 'enum arms are not distinct and exhaustive')
     return [switch['branches'][i] for i in edges]
+
+
+def option_edges(view, statement, producer):
+    return enum_edges(view, statement, producer, 'core::option::Option', [(0, 'None', 0), (1, 'Some', 1)])
 
 
 def check_vec_loop(view, block, loop, iterator, inherited):

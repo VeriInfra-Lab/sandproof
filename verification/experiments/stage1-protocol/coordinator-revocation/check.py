@@ -11,8 +11,9 @@ import subprocess
 import sys
 import tarfile
 
+from guard_binding import check_guard
 from sender_binding import inspect_senders
-from sender_binding_regressions import check_rejections
+from sender_binding_regressions import check_guard_rejections, check_rejections
 from wiring import COORD, DECIDE, MODEL, MODULE, SERVICE, declaration, inspect_parent, nodes, require
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -92,13 +93,16 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
             and [opts[k] for k in ('start_from', 'start_from_if_exists', 'include', 'opaque')] == [roots, retain, include, opaque]
             and not any(opts[k] for k in ('exclude', 'skip_borrowck', 'no_typecheck', 'monomorphize')), 'unexpected extraction')
     if not joint:
-        broadcast = inspect_parent(raw, refactored=refactored)
         view = load(source/AREA/'serde-binding/binding.py').Original(raw)
+        guard = check_guard(view)
+        broadcast = inspect_parent(raw, refactored=refactored, guard=guard)
         senders = inspect_senders(view, broadcast)
+        report = {'ir': sha(ir), 'caller': sha(source/CALLER), 'senders': senders, 'guard_local': guard,
+                  'coordinator': sha(source/'controller-service/src/application/coordinator.rs')}
         if refactored:
             senders['rejected_metadata'] = check_rejections(view, broadcast)
-        return {'ir': sha(ir), 'caller': sha(source/CALLER), 'senders': senders,
-                'coordinator': sha(source/'controller-service/src/application/coordinator.rs')}
+            report['rejected_guard_metadata'] = check_guard_rejections(view)
+        return report
     load(source/AREA/'inbox-lookup/journal_binding.py').admit(raw)
     dest = evidence/'generated'
     run(source, evidence, 'aeneas', [tools/'aeneas/bin/aeneas', '-backend', 'lean', '-abort-on-error', '-warnings-as-errors',
