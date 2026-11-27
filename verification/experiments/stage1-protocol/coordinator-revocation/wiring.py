@@ -70,7 +70,7 @@ def assignments_before(block, stop):
     return assignments
 
 
-def inspect_parent(raw, *, refactored):
+def inspect_parent(raw, *, refactored, guard):
     require(raw['has_errors'] is False, 'incomplete parent capture')
     trans = raw['translated']
     rows = trans['fun_decls']
@@ -112,8 +112,9 @@ def inspect_parent(raw, *, refactored):
         require(part['statements'].index(statement) <
                 part['statements'].index(consumer), 'borrow after effect')
         before = assignments_before(part, statement)
-        before.pop(labels['inner'], None)
-        require(origin(borrow['args'][0]['Move'], before) == (labels['inner'],), 'different guard')
+        # The guard's unique definition and its lifetime through dispatch are checked in check_guard.
+        before.pop(guard, None)
+        require(origin(borrow['args'][0]['Move'], before) == (guard,), 'different guard')
         arg = consumer['kind']['Call']['call']['args'][0]['Move']
         require(origin(arg, prior) == (borrow['dest']['kind']['Local'], *fields), 'wrong guarded object')
     record_statement, journal = next((s, c) for s, c in top if callee(c) == JOURNAL)
@@ -174,3 +175,4 @@ def inspect_parent(raw, *, refactored):
     require(origin(argument, assignments_before(targeted, stmt)) == (decision_local, (1, 0)),
             'targeted revocation lost the selected sandbox')
     require(len(list(nodes(branches['All'], 'Loop'))) == 2, 'broadcast loops differ')
+    return broadcast
