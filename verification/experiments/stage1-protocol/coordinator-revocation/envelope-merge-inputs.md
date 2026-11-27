@@ -2,6 +2,8 @@
 
 [候选补丁](envelope-merge-inputs-candidate.patch)适用于 `integration@87bc20b8` 与 `#1061@de37231d` 的组合。主控先保留两边对 `frozen.json` 的修改，并在默认 Stage1 根清单中登记组合后的文件。相对 #1061，这份组合清单中只有 `inputs["tools/ci_retention.py"]` 发生变化，对应原生构建回收工具。协议 4 的 request、manifest 和 carriers 生成记录与 #1061 逐字段相等。[主控 PR](https://github.com/VeriInfra-Lab/sandproof/pull/1061)
 
+在 schema 组件的回执中，`historical_freeze.migration` 沿用了 #686 的固定说明。本次 request 是否一致可核对 `historical_freeze.matches_current`、重抽的完整 LLBC 和生成文件清单。[schema 检查器](../envelope-schema/formal.py)
+
 补丁同步四个组件对组合清单的直接引用。bytes 还引用 schema 的输入清单，budget 引用 schema 与 bytes，writer 引用前三份。默认根清单登记四个最终文件。组件的 Rust、证明、错误版、生成预期和审计项均取原版本。
 
 在隔离组合的仓库根目录执行以下命令，`patch_file` 指向本候选补丁。
