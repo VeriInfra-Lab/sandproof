@@ -70,7 +70,9 @@ Python 产物指纹与模板暂存哈希在 Linux 上按文件系统报告的数
 接受正整数。未配置时使用原 Cargo 测试命令及其环境。托管启动器应把这项变量传给子进程，
 使普通验收及 Stage1 调用的普通验收共用这项设置。Cargo 编译并行和证明任务各有独立配置。
 
-SDK 与 Harbor 的原锁定检查使用 `UV_OFFLINE=1`、`CARGO_NET_OFFLINE=true`，只读取受控黄金盘中已制备的固定依赖，避免缓存未命中后等待 GitHub/PyPI/crates.io 下载。缺材料立即失败，审核新锁后重新制备和验收黄金盘；不静默改锁、联网补料或跳过测试。Actions 组件下载、任务领取及结果回传仍经原受限网络。普通 PR 可按下文从本地只读盘检出源码。
+SDK 与 Harbor 的原锁定检查使用 `UV_OFFLINE=1`、`CARGO_NET_OFFLINE=true`，只读取受控黄金盘中已制备的固定依赖，避免缓存未命中后等待 GitHub/PyPI/crates.io 下载。缺材料立即失败，审核新锁后重新制备和验收黄金盘；不静默改锁、联网补料或跳过测试。Actions 元数据、任务领取及结果回传仍经原受限网络。普通 PR 可按下文从本地只读盘检出源码。
+
+宿主运维可一次性将 [固定的 checkout 归档](https://codeload.github.com/actions/checkout/tar.gz/11d5960a326750d5838078e36cf38b85af677262) 安装为 `/var/lib/sandproof-ci/actions-checkout-11d5960a326750d5838078e36cf38b85af677262.tar.gz`，所有者 `root:root`，权限 `0444`。启动器按[固定大小和 SHA256](../tools/ci_vm.py)核验，通过后将归档随本次只读启动盘交给来宾内置的 Runner 归档缓存。归档缺失时沿用原受限下载，归档损坏或权限不符时拒绝启动。来宾副本随本次工作盘和启动盘回收，复用宿主现役缓存无需重建黄金盘。启用后以新作业证明实际命中。更新 checkout 固定提交时一起核对归档摘要和部署入口，回收无在途引用的旧版本。Runner 仍向 GitHub 解析 Action 的实际提交。checkout 归档只包含 Action 本身，项目源码按下文获取。
 
 #### 普通 PR 的只读源码缓存
 
