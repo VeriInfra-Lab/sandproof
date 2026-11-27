@@ -51,6 +51,35 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
         self.assertEqual(empty['affected_modules'], [])
         self.assertEqual(empty['checks'], [])
 
+    def test_positive_lean_selects_its_original_jobs_and_concrete_downstream_jobs(self):
+        name = str(LOOKUP / 'InboxLookup.lean.in')
+        plan = acceptance.registered_impact([name], root=ROOT)
+        self.assertEqual(plan['unmapped'], [])
+        self.assertEqual(plan['related_rust_checks'], [])
+        jobs = {row['name']: row for row in plan['required_jobs']}
+        self.assertTrue({'inbox-lookup-correct', 'inbox-lookup-key-only', 'inbox-record-correct',
+                         'inbox-record-total-correct', 'create-selection', 'stage1-unload-audits'} <= jobs.keys())
+        self.assertNotIn('inbox-admission-correct', jobs)
+        self.assertEqual(jobs['inbox-lookup-correct']['args'], ['--require-native', '--variant', 'correct'])
+        self.assertIn('stage1-inbox-append', plan['original_native_prerequisites'])
+        self.assertIn('functional', plan['original_native_prerequisites'])
+
+    def test_business_rust_plan_retains_both_crate_checks_and_source_bindings(self):
+        plan = acceptance.registered_impact([acceptance.MODEL], root=ROOT)
+        self.assertEqual(plan['unmapped'], [])
+        self.assertIn(str(LOOKUP / 'inventory.json'), plan['registered_rust_inputs'])
+        self.assertIn('controller::lifecycle_inbox::tests::', plan['related_rust_checks'][0])
+        self.assertIn('clippy', plan['related_rust_checks'][1])
+        self.assertIn('inbox-admission-correct', {row['name'] for row in plan['required_jobs']})
+        self.assertIsNone(acceptance.registered_impact([acceptance.MODEL, 'tools/acceptance_receipts.py'], root=ROOT))
+
+    def test_source_digest_refresh_cannot_replace_any_other_input_or_rule(self):
+        before = {'variants': [{'production_inputs': {acceptance.MODEL: 'a' * 64, 'other': 'b' * 64},
+                               'audit': 'kept'}]}
+        actual = acceptance.refreshed_inputs(before, {acceptance.MODEL: 'c' * 64, 'audit': 'd' * 64})
+        self.assertEqual(actual, {'variants': [{'production_inputs': {acceptance.MODEL: 'c' * 64, 'other': 'b' * 64},
+                                                'audit': 'kept'}]})
+
 
 if __name__ == '__main__':
     unittest.main()
