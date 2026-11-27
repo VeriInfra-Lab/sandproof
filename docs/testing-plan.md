@@ -578,6 +578,60 @@ public Unloaded 与完整后续链，不能由 gate/SQL 观察伪造公共成功
 
 隔离副本分别引入：捕获失败就杀原 VM；快照未提交先 stop；激活未知后重新 load 旧来源；检查引用后无保护删除；load 返回立即释放 backing pin；超时/进程查询缺席即退额度。负例必须通过语法/抽取并到达错误分支；预期证明目标不可满足或同一可执行性质产生反例，不能把编译失败、环境超时、改弱断言当拒绝成功。不把错误版本合入生产。
 
+[普通 Pause 失败严格入口](../verification/experiments/ordinary-pause-failure/README.md)复用捕获
+交接既有 `terminal-pause` 定义/变异函数和同一原测试，补充当前严格产物检查、恢复版与
+三个正常控制。错误版必须实际经过原补偿，在原 helper 的阶段相等断言观察到 Revoking
+而非 Pausing；用例名失败、早期错误、编译/超时均不算拒绝。旧证明及历史结果保留。
+这是第一类的 Core 补偿决定代表，原断言先于终止 worker 或物理 VM 停止，不认领完整
+第一类、六类矩阵、KVM 或新定理；精确原生结果另行记录，最终组合交执行方复验。
+
+[未知激活后再次预留入口](../verification/experiments/unknown-activation-reservation/README.md)
+复用原 checkpoint 的 Resume/未知激活/Crash/Recover 历史及末尾再次预留拒绝断言。
+私有错误政策只对完整同源未知激活旁路原 sealed/VM/slot 三处门，保留其它首错、
+来源、新鲜性和算术检查；正常恢复、普通首错、两轮不同 VM 及未知激活终止四个控制
+在三版均须通过。该有限代表观察实际 reducer 的第二份资源决定，尚未应用该决定或
+执行第二次 Load，不代替第三类全部路径、六类矩阵、真实 VM 或新形式证明；精确
+结果另行记录，最终组合及实机验收交执行方。
+
+[恢复后材料 pin 原生入口](../verification/experiments/loaded-material-pin/README.md)复用原
+source-work 的 Running 后继与真实 journal 读取。私有错误版把 Load 后的激活登记当作
+使用结束，实际保存 false pin；相关工作/校验/重放门采用同一错误寿命政策，来源、
+完整动作和真正退休闭合检查保持。同一原 pin 断言必须到达并拒绝，未知 Prepare 保留
+与合法后继退休两个控制在三版均须通过。该入口不执行真实 Load/映射/删除/退额，
+不代替第五类全部路径、六类矩阵、KVM 或新证明；实际结果绑定精确候选另行记录。
+
+[删除许可持久边界入口](../verification/experiments/retirement-permit-commit/README.md)复用原
+journal 在许可返回后的使用关闭断言。私有错误版仅漏掉原退休方法的一次 source 保存，
+保留原 eligibility/校验/事务/commit 与故障点，须实际返回许可后在同一原断言拒绝；
+正确/恢复及三个正常控制通过。完整原测试与其它输入保持，不以更早错误充当反例。
+这是第四类的有限持久许可代表，没有执行删除、新 reader 或真实引用交错，不能认领
+完整第四类、E10、六类矩阵、KVM 或新形式证明；实际结果绑定精确候选另行记录。
+
+[未提交快照 Stop 原生入口](../verification/experiments/uncommitted-stop/README.md)复用原
+capture 测试的真实 World/派发/worker：sealed 但尚未提交时必须拒绝 Stop。私有错误版
+旁路原 worker 整段快照 gate，仍保留先前的原来源、Frozen 和 fence 检查；同一原断言须
+实际拒绝错误成功的 StopVm 决定，不能把其它拒绝或编译失败当反例。已提交合法卸载和
+普通失败保原 VM 两个控制在三版均须通过。本入口不执行宿主效果、真实 VM 或新证明，
+不代替完整第二类跨层错误、六类矩阵或 KVM；实际三版结果绑定精确提交另行记录。
+
+[未知宿主释放原生入口](../verification/experiments/unknown-host-release/README.md)复用原协议 4
+两 owner/两轮恢复及位置重开测试，检查真实 journal 在 `ReplyLost` 时保留释放责任。
+正确、忽略回调错误、恢复三版使用同一原断言，错误版必须在准确断言位置失败。
+这是第六类的同步 SQLite/宿主端口代表；端口结果受控，不包含进程查询或真实 VM，
+不代表完整六类跨层反例、形式化证明或实机验收通过。执行结果绑定精确候选另行记录。
+
+[命名空间引用原生入口](../verification/experiments/namespace-reference/README.md)另复用
+Runtime 原 FD-only/线程成员/设备身份/未知观察断言，在隔离源码中仅跳过一次真实 FD
+身份检查。三版 actual Runtime libtest 和完整原测试模块须对应，错误版必须到达同一
+FD-only 拒绝断言。原测试使用普通文件与受控 proc 形状，不当作实际内核命名空间、
+运行位置/额度事务、KVM 或新 Lean 证明；最终系统顺序与该原生对照分别验收。
+
+[原材料文件身份入口](../verification/experiments/material-file-identity/README.md)复用原
+Runtime 保存计划后替换文件的拒绝断言，以及正常幂等回收和无计划目录出现的控制。
+私有错误版只让已有计划路径跳过完整 FileStamp 比较，仍须实际编译并在同一原拒绝
+断言失败，两个控制通过。它使用真实私有文件系统，不涉及并发 reader、VMM/backing、
+SQL 删除许可或退额，不代替第四类完整业务错误、全部 E9/E11、KVM 或形式证明。
+
 ### 论文证据与环境
 
 普通单元/组件/CI 在测试机 ning，形式化验收在 msra；地址、路径和凭据仅存私有操作记录。KVM 场景使用按开发指南批准的专用隔离环境，运行前核精确候选与全部资源；不得把普通证明机默认当特权 VM 测试机。所有原始证据保留，按同一输入复用已有检查而不混用不同版本。
