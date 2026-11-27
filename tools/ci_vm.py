@@ -39,6 +39,12 @@ ROLES = {'rust': (4096, 4, 32), 'sdk': (6144, 8, 32),
 PREPARATION_ROLES = {'bootstrap', 'preheat'}
 MAX_ROLE_WORKERS = 2
 PROXY = 'http://10.0.2.100:3128'
+# The pinned runner looks up an archive by GitHub's resolved owner and SHA.
+CHECKOUT_REF = '11d5960a326750d5838078e36cf38b85af677262'
+CHECKOUT_ARCHIVE_SHA256 = '0f48a50cf2edeea3d6e270f8dae645529128ca8b2954993891a2fb8f7b16145a'
+CHECKOUT_ARCHIVE_BYTES = 434773
+CHECKOUT_ARCHIVE_NAME = f'actions-checkout-{CHECKOUT_REF}.tar.gz'
+ACTION_ARCHIVE_CACHE = '/usr/local/lib/sandproof-ci/action-archives'
 RUNNER_JOBS = {'rust': 'rust', 'sdk': 'sdk-contract', 'harbor': 'harbor-inputs',
                'title': 'pr-title', 'policy': 'pr-policy'}
 RUNNER_WAIT_SECONDS = 300
@@ -89,6 +95,23 @@ def qemu_command(directory, role, source_disk=None):
 
 def file_entry(path, content, permissions='0644', owner='root:root'):
     return {'path': path, 'content': content, 'permissions': permissions, 'owner': owner}
+
+
+def load_checkout_archive():
+    """Read one administrator-installed archive without altering the host cache."""
+    try:
+        fd = os.open(ROOT / CHECKOUT_ARCHIVE_NAME, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o222
+                or info.st_size != CHECKOUT_ARCHIVE_BYTES):
+            raise ValueError('checkout archive must be root-owned, read-only and match the pinned size')
+        data = stream.read(CHECKOUT_ARCHIVE_BYTES + 1)
+    if hashlib.sha256(data).hexdigest() != CHECKOUT_ARCHIVE_SHA256:
+        raise ValueError('checkout archive differs from the pinned SHA256')
+    return data
 
 
 # This root recipe runs before the unprivileged listener, only in its disposable
@@ -217,9 +240,13 @@ if __name__ == '__main__':
 """
 
 
-def cloud_config(role, jit='', pins=None, dependency_bundle=None, completion_nonce=None, source_disk=None):
-    if source_disk is not None and role in PREPARATION_ROLES:
-        raise ValueError('PR source is only for ordinary job disks')
+def cloud_config(role, jit='', pins=None, dependency_bundle=None, completion_nonce=None, source_disk=None,
+                 *, checkout_archive=None):
+    if role in PREPARATION_ROLES:
+        if source_disk is not None:
+            raise ValueError('PR source is only for ordinary job disks')
+        if checkout_archive is not None:
+            raise ValueError('checkout archive is only for ordinary job disks')
     cargo_jobs = 4 if role == 'sdk' else 2
     env = ('http_proxy=' + PROXY + '\nhttps_proxy=' + PROXY + '\n'
            'HTTP_PROXY=' + PROXY + '\nHTTPS_PROXY=' + PROXY + '\n'
@@ -389,6 +416,11 @@ if processes():
             file_entry('/home/runner/.jitconfig', jit, '0600', 'runner:runner'),
             file_entry('/opt/actions-runner/start-jit.sh', start, '0755'),
             file_entry('/etc/systemd/system/sandproof-ci-job.service', unit)]
+        if checkout_archive is not None:
+            result['write_files'][0]['content'] += f'ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE={ACTION_ARCHIVE_CACHE}\n'
+            result['write_files'].append(dict(file_entry(
+                f'{ACTION_ARCHIVE_CACHE}/actions_checkout/{CHECKOUT_REF}.tar.gz',
+                base64.b64encode(checkout_archive).decode(), '0444'), encoding='b64'))
         preparation = ''
         if role in {'rust', 'sdk'}:
             result['write_files'][0]['content'] += 'TMPDIR=' + COW_SCRATCH_ROOT + '/mount/tmp\n'
@@ -680,7 +712,9 @@ def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None
     nonce = secrets.token_hex(32) if role == 'preheat' else None
     started = time.time()
     try:
-        config = cloud_config(role, jit, pins, dependency_bundle, nonce, source_disk)
+        checkout_archive = None if role in PREPARATION_ROLES else load_checkout_archive()
+        config = cloud_config(role, jit, pins, dependency_bundle, nonce, source_disk,
+                              checkout_archive=checkout_archive)
         (directory / 'user-data').write_text('#cloud-config\n' + json.dumps(config))
         (directory / 'user-data').chmod(0o600)
         (directory / 'meta-data').write_text('instance-id: ci-' + run_id + '\n')
