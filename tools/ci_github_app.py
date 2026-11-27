@@ -31,7 +31,7 @@ class Transport:
             def redirect_request(self, req, fp, code, msg, headers, newurl):
                 return None
         self.opener = urllib.request.build_opener(
-            urllib.request.ProxyHandler({'https': proxy}), NoRedirect())
+            urllib.request.ProxyHandler({'https': proxy} if proxy else {}), NoRedirect())
 
     def __call__(self, method, path, token, body=None):
         if not path.startswith('/') or '://' in path:
@@ -39,7 +39,7 @@ class Transport:
         data = None if body is None else json.dumps(body).encode()
         request = urllib.request.Request('https://api.github.com' + path,
             data=data, method=method, headers={
-                'Authorization': 'Bearer ' + token,
+                **({'Authorization': 'Bearer ' + token} if token else {}),
                 'Accept': 'application/vnd.github+json',
                 'Content-Type': 'application/json',
                 'X-GitHub-Api-Version': '2022-11-28',
@@ -144,11 +144,18 @@ class GitHubApp:
         prefix = '/repos/' + REPOSITORY + '/'
         suffix = path[len(prefix):] if path.startswith(prefix) else ''
         ordinary = suffix.startswith('actions/') and self.permissions == PERMISSIONS
+        # Reading ruleset bypass actors requires an installation that can
+        # administer the ruleset. This client only reads protection policy.
+        policy = method == 'GET' and self.permissions == PERMISSIONS and (
+            suffix in ('branches/test/protection', 'rules/branches/test')
+            or re.fullmatch(r'rulesets/[1-9][0-9]*', suffix))
+        source = (method == 'GET' and self.permissions == SOURCE_PERMISSIONS
+                  and re.fullmatch(r'git/commits/[0-9a-f]{40}', suffix))
         checks = self.permissions == CHECK_PERMISSIONS and (
             (method == 'GET' and re.fullmatch(r'commits/[0-9a-f]{40}/check-runs\?per_page=100&filter=all', suffix))
             or (method == 'POST' and suffix == 'check-runs')
             or (method == 'PATCH' and re.fullmatch(r'check-runs/[0-9]+', suffix)))
-        if not ordinary and not checks:
+        if not ordinary and not checks and not policy and not source:
             raise ValueError('repository API outside CI scope')
         try:
             return self.transport(method, path, self.access_token(), body)

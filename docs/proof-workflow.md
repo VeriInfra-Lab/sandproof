@@ -4,7 +4,7 @@
 
 本文用于证明开发批次。当前 V1 功能开发按[项目蓝图](project-blueprint.md)
 与[测试计划](testing-plan.md)推进，不要求新增功能逐项先完成证明。
-既有证明的适用版本和后续缺口必须准确记录；进入证明批次时仍执行下述完整验收。
+既有证明的适用版本和后续缺口必须准确记录。任务 PR 按影响范围验收，晋升前执行登记范围内的完整验收。
 
 ## 证明批次的组织顺序
 
@@ -135,25 +135,29 @@
 默认构建成功不代表所有探索中的模块已通过，也不代表所有控制器输入已覆盖。
 不修改检查脚本来排除失败模块，不以占位证明、自定义假设或调试开关绕过检查。
 
-### 普通测试机与证明机的分工及证据交接
+### 手动 Rust 和 Lean 验收的环境及证据交接
 
-普通 CI 继续使用现有 ning 上的隔离 runner。普通 Rust/Python 测试、格式、
-Clippy、SDK、组件回归和错误实现的原生断言也都在 ning 执行。
-证明机（如 msra）仅运行证明所需的编译/MIR 捕获、固定 Charon/Aeneas 抽取、Lean 构建、
-形式反例、真实文件诊断和依赖审计；不在证明机安装或复制另一套 CI 环境。
+GitHub CI 使用现有的隔离 runner。手动验收宿主执行 Rust/Python 测试、Clippy、
+组件回归、错误实现的原生断言，以及固定 Charon/Aeneas 抽取、Lean 构建、形式反例、
+真实文件诊断和依赖审计。宿主的实际目录和设备配置由[运行环境](ci.md)约定。
 
-一次完整证明批次先在 ning 的确定提交上运行：
+模块验收先核对生产入口、Rust 和配置输入、抽取根、Lean 导入及下游合同。
+原生测试和使用独立固定输入的 Lean 检查可并行，写目录各自隔离。
+某条证明需要本次新抽取或原生结果时，等对应的前置任务通过后再运行。
+晋升所需的完整原生验收和登记范围内的 Stage1 使用同一个固定候选。
 
 ```sh
-# 使用现有的固定 Rust、Python、离线 Cargo 和真实 Redis 环境。
+# 在原协调锁下使用固定 Rust、Python、离线 Cargo 和真实 Redis。
 export CARGO_NET_OFFLINE=true
 export SANDPROOF_REDIS_SERVER=/path/to/fixed/redis-server
 export SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE=/private/acceptance/sqlite-original.tar
 export SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE=/private/acceptance/child-original.tar
 export SANDPROOF_WRITER_SOURCE_ARCHIVE=/private/acceptance/writer-original.tar.gz
 export SANDPROOF_LIBRARY_SOURCE_ARCHIVE=/private/acceptance/library-original.tar
-bash scripts/python-entry.sh tools/proof_native_suite.py run \
-  --output /private/acceptance/native-evidence
+bash scripts/python-entry.sh tools/native_task.py run \
+  --candidate "$(git rev-parse HEAD)" --scope all \
+  --output /private/acceptance/native-evidence \
+  --observer "$SANDPROOF_NATIVE_OBSERVER"
 ```
 
 这个入口包含完整 Linux `check-function.sh`，并运行原证明入口中的独立抽取
@@ -165,16 +169,18 @@ crate 测试/Clippy、任务持额、撤销、持额消息、Notify、JoinSet、
 移除错误版包缓存，保留其它依赖。原 Child 入口同样绑定实际同 crate 的业务测试程序，
 检查 package/manifest/src/fresh，并只清理 sandbox-runtime 自有包的变体缓存。源码时间较旧不能作为复用前一变体库的依据。
 SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这份证明批次记录替代。
-涉及整文件 CoW 的 ning 普通测试须把 `TMPDIR` 配在已具备 XFS 条件的安全父目录；
+涉及整文件 CoW 的手动普通测试须把 `TMPDIR` 配在已具备 XFS 条件的安全父目录；
 入口保留该文件系统并新建 0700 私有子目录，逐级核对属主、模式和非符号链接，非法显式配置直接拒绝。
-稳定的父目录身份参与原生缓存判断，随机子目录名不参与；这项 XFS 要求不适用于 msra 的 Lean 编译。
+稳定的父目录身份参与原生缓存判断，随机子目录名每轮独立。Lean 编译使用自己的私有构建目录。
 不放宽真实文件的属主、符号链接或祖先写权限检查。普通功能验收绑定全部跟踪输入，文档变化也必须重新检查，
 但这份文档检查的更新不会单独使未变化的 Lean 模块结果失效。
 源码副本应在 `umask 077` 下建立；入口只核对其祖先及跟踪目录，不自动 chmod
 工作区或共享父目录。权限不符合原用例要求时，在昂贵测试前失败。
 
-原始工作目录、二进制摘要和日志留在 ning。将完整的 `commands/`、`runtime.json`
-和 `complete.json` 交给证明机；不传 Cargo target。只有全部子检查成功后才写
+原始工作目录、二进制摘要和日志保存在验收证据目录。形式检查消费完整的 `commands/`、
+`runtime.json` 和 `complete.json`。Cargo target 按私有构建规则回收。宿主从已安装的原生环境提供
+`SANDPROOF_NATIVE_OBSERVER`。回收失败后沿用同一路径，以该命令的 `resume` 续办，
+先查原退出记录和收据再决定是否启动新验收。只有全部子检查成功后才写
 `complete.json`。证明机必须检查完整记录及其所有日志摘要，缺一个、被修改或
 未完成都拒绝入场，不能只信文件名或一个 `success` 字段。
 
@@ -226,9 +232,11 @@ Charon 或 Aeneas。原生入口在完整 `functional` 前核对整包和每个�
 并纳入此组件一次。形式入口只接当前六字段的真实 caller，不调用历史四字段值层 replay：
 
 ```sh
-# ning：同一干净提交及本节固定普通环境。
-bash scripts/python-entry.sh tools/proof_native_suite.py run \
-  --scope capture-caller --output /private/acceptance/capture-caller-native
+# 同一手动验收宿主、同一干净提交及本节固定普通环境。
+bash scripts/python-entry.sh tools/native_task.py run \
+  --candidate "$(git rev-parse HEAD)" --scope capture-caller \
+  --output /private/acceptance/capture-caller-native \
+  --observer "$SANDPROOF_NATIVE_OBSERVER"
 # 证明机：保留全部原 commands、runtime、complete 和 source.tar/源清单；不传 target。
 export SANDPROOF_ACCEPTANCE_ROLE=formal
 export SANDPROOF_NATIVE_EVIDENCE=/private/acceptance/capture-caller-native
