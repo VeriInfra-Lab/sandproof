@@ -21,6 +21,13 @@ bash scripts/python-entry.sh -m tools.ci_promotion_acceptance run \
 
 形式阶段中断时，用新输出目录和指向上一次登记输出的 `--resume-from`，复用原生封印和仍符合原规则的形式检查点。原生没有启动，或者原失败工作已完成状态核对与回收时，可从最新原输出恢复。此时也可用 `--native` 接入已有的同候选完整原生证据。完成的原生封印用于后续形式续验。已完成但发布失败时，从原受保护 App 环境重试发布，沿用原完成目录。无需重新执行 Rust 或 Lean。原生外层锁由调用方持有，组合入口不会主动释放。以 `--native` 交接时，形式仍按原规则核对完整封印。形式阶段自己创建的抽取目录沿用原保留规则。
 
+晋升入口在创建 `formal-cargo-target` 前登记该目录。形式进程实际退出后，回收前后核对原验收结果，成功收尾才写入晋升的 `complete.json`。原退出记录和日志在 `formal-build-closeout` 下。形式进程已经退出零、回收仍待办时，使用同一候选、检出、观察器和原输出执行收尾，复用原检查结果。
+
+```sh
+bash scripts/python-entry.sh -m tools.ci_promotion_acceptance closeout \
+  --candidate "$candidate_json" --checkout "$candidate_checkout" --output "$original_output"
+```
+
 `test` 原五项必需检查及其 App 绑定继续生效。新增规则仅作用于 `test`，要求使用单候选合并队列，且 `Promotion / Stage1` 只能由原受保护 App 发布。配置必须生效且无绕过角色，发布器才接受 `admit`。此时的源提交状态只用于进入队列。
 
 真实候选入队后，GitHub 在队列提交上执行原四项 Actions 检查。标题和分支规则使用通过队列事件、Git 对象和现有 PR 核对的原元数据。运维先等待队列提交的四项真实 Actions 全部通过。发布器要求四项最新记录都来自 App 15368，位于同一精确队列 SHA，且结论为 `success`。GitHub 可能视跳过或中性结论为满足保护规则，发布入口要求实际通过并保留四个原检查 ID。发布器继续核对当前唯一队列成员、源提交、目标基线和代码树，并在发出两项 App 检查之前再次确认相关记录。只有原完整 Rust、Stage1 和 E2E 证据仍对应实际合并内容时，才以 `publish --queue-ref <实际队列引用> --queue-sha <实际队列提交>` 发布队列提交上的 `Promotion / Stage1` 和原 `E2E / terminal-bench-ci`。六项检查仍由 GitHub 对同一队列提交强制核对。基线或代码树变化时重新核对证据。现有 `integration`、`main` 的保护继续生效。

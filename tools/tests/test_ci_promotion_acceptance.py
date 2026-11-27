@@ -3,11 +3,13 @@ from dataclasses import asdict
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
 from tools import ci_promotion_acceptance as gate
+from tools import formal_builds, native_task
 
 
 def sha(digit):
@@ -46,9 +48,12 @@ class GitHub:
 
 class PromotionTest(unittest.TestCase):
     def setUp(self):
+        self.addCleanup(os.umask, os.umask(0o077))
         directory = tempfile.TemporaryDirectory()
         self.addCleanup(directory.cleanup)
         self.path = Path(directory.name).resolve()
+        self.observer = self.path/'installed-observer'
+        self.observer.write_text('the tests override only host observation\n')
         self.candidate = gate.Candidate(681, 'integration', sha('a'), sha('b'), sha('c'), sha('d'))
         self.api = GitHub()
         self.group = gate.QueueGroup('refs/heads/gh-readonly-queue/test/known', sha('e'),
@@ -263,6 +268,35 @@ class PromotionTest(unittest.TestCase):
                     self.assertFalse(any(row['head_sha'] == self.group.sha for row in self.api.posts))
                 self.api.rows[self.group.sha].pop()
 
+    def formal_fixture(self, trailing='exit 0'):
+        launch = formal_builds.execute
+
+        def execute(output, command, *, cwd, env, pass_fds):
+            self.assertEqual(command, ['bash', 'scripts/verify-stage1-protocol.sh'])
+            self.assertNotIn('GH_TOKEN', env)
+            self.assertEqual(env['CARGO_TARGET_DIR'], str(output/'formal-cargo-target'))
+            self.assertEqual(pass_fds[0], 9)
+            script = r'''
+set -eu
+phase="$TMPDIR/sandproof-stage1-protocol.abcdef/registered"
+mkdir -p "$phase/execution/retained/cargo-target" "$phase/actual/source/.lake"
+printf '{}\n' > "$phase/registered-result.json"
+printf '{}\n' > "$phase/execution-inputs.json"
+printf 'per-job build\n' > "$phase/execution/retained/cargo-target/keep"
+printf 'Lean cache\n' > "$phase/actual/source/.lake/keep"
+printf 'build\n' > "$CARGO_TARGET_DIR/private-build"
+printf 'original formal executor log\n'
+'''
+            # The caller's fd transport is checked separately from the private subprocess fixture.
+            return launch(output, ['bash', '-c', script + trailing], cwd=cwd, env=env)
+
+        return execute
+
+    @staticmethod
+    def formal_receipt(native, formal, _candidate, _checkout):
+        return dict(native=gate.digest(native/'complete.json'), formal=gate.digest(formal/'registered-result.json'),
+                    context=gate.digest(formal/'execution-inputs.json'))
+
     def test_original_full_formal_consumes_exact_one_new_or_existing_native_seal(self):
         existing = self.path/'existing-native'
         checkout = self.path/'checkout'
@@ -277,36 +311,40 @@ class PromotionTest(unittest.TestCase):
                 output = self.path / ('reuse' if prior else 'fresh')
                 output.mkdir(mode=0o700)
 
-                def execute(command, *, log, checkout, env, pass_fds):
+                def ordinary(command, *, log, checkout, env, pass_fds):
                     self.assertEqual(pass_fds, (9, 37))
                     self.assertNotIn('GH_TOKEN', env)
-                    if env['SANDPROOF_ACCEPTANCE_ROLE'] == 'formal':
-                        self.assertEqual(command, ['bash', 'scripts/verify-stage1-protocol.sh'])
-                        self.assertEqual(env['SANDPROOF_NATIVE_EVIDENCE'], str(prior or output/'native'))
-                        self.assertEqual(env['CARGO_TARGET_DIR'], str(output/'formal-cargo-target'))
-                        (Path(env['TMPDIR'])/'sandproof-stage1-protocol.abcdef'/'registered').mkdir(parents=True)
-                    else:
-                        self.assertIn('tools/native_task.py', command)
-                        self.assertIn('stage1-protocol', command)
-                        self.assertEqual(env['TMPDIR'], '/mnt/xfs')
-                        self.assertEqual(env['CARGO_TARGET_DIR'], str(cache))
-                        (output/'native').mkdir(mode=0o700)
-                        (output/'native'/'complete.json').write_text('{}')
-                        (output/'native'/'complete.json').chmod(0o600)
+                    self.assertIn('tools/native_task.py', command)
+                    self.assertIn('stage1-protocol', command)
+                    self.assertEqual(env['TMPDIR'], '/mnt/xfs')
+                    self.assertEqual(env['CARGO_TARGET_DIR'], str(cache))
+                    (output/'native').mkdir(mode=0o700)
+                    gate.write_once(output/'native'/'complete.json', {})
 
                 with (patch.object(gate.Candidate, 'check_checkout'),
                       patch.object(gate, 'MOUNT', self.path),
                       patch.object(gate, 'git', return_value=self.candidate.head),
                       patch.object(gate, 'operator_lock', return_value=nullcontext(9)),
-                      patch.object(gate, 'attest_evidence', return_value=self.evidence),
-                      patch.object(gate, 'run_entry', side_effect=execute) as entries,
+                      patch.object(gate, 'attest_evidence', side_effect=self.formal_receipt),
+                      patch.object(gate, 'run_entry', side_effect=ordinary) as entries,
+                      patch.object(formal_builds, 'execute', side_effect=self.formal_fixture()) as formal,
+                      patch.object(native_task, 'observe'),
                       patch.dict(os.environ, dict(GH_TOKEN='test-only', TMPDIR='/mnt/xfs',
                                                  CARGO_TARGET_DIR=str(cache),
-                                                 SANDPROOF_NATIVE_OBSERVER='/installed/observer'))):
+                                                 SANDPROOF_NATIVE_OBSERVER=str(self.observer)))):
                     result = gate.run_stage(self.candidate, checkout, output, native=prior, registration_fd=37)
-                self.assertEqual(entries.call_count, 1 if prior else 2)
+                self.assertEqual(entries.call_count, 0 if prior else 1)
+                formal.assert_called_once()
+                self.assertEqual(formal.call_args.kwargs['pass_fds'], (9, 37))
+                self.assertEqual(formal.call_args.kwargs['cwd'], checkout)
+                self.assertEqual(formal.call_args.kwargs['env']['SANDPROOF_NATIVE_EVIDENCE'],
+                                 str(prior or output/'native'))
                 self.assertEqual(result['candidate'], asdict(self.candidate))
                 self.assertTrue((output/'complete.json').is_file())
+                self.assertFalse((output/'formal-cargo-target').exists())
+                formal_output = Path(result['formal_path'])
+                self.assertTrue((formal_output/'execution/retained/cargo-target/keep').is_file())
+                self.assertTrue((formal_output/'actual/source/.lake/keep').is_file())
 
     def test_native_target_alias_cannot_hide_builds_in_candidate_or_evidence(self):
         checkout = self.path/'checkout'
@@ -320,9 +358,10 @@ class PromotionTest(unittest.TestCase):
             alias.symlink_to(target)
             with (patch.object(gate.Candidate, 'check_checkout'),
                   patch.object(gate, 'MOUNT', self.path),
+                  patch.object(gate, 'git', return_value=self.candidate.head),
                   patch.object(gate, 'run_entry') as execute,
                   patch.dict(os.environ, dict(CARGO_TARGET_DIR=str(alias),
-                                             SANDPROOF_NATIVE_OBSERVER='/installed/observer'))):
+                                             SANDPROOF_NATIVE_OBSERVER=str(self.observer)))):
                 with self.assertRaisesRegex(ValueError, 'separate from source and evidence'):
                     gate.run_stage(self.candidate, checkout, output)
             execute.assert_not_called()
@@ -345,19 +384,21 @@ class PromotionTest(unittest.TestCase):
         gate.write_once(prior, dict(profile='full', shared_seal_sha256=gate.digest(seal),
                                     complete=False))
 
-        def execute(command, *, log, checkout, env, pass_fds):
-            self.assertEqual(command, ['bash', 'scripts/verify-stage1-protocol.sh'])
-            self.assertEqual(env['SANDPROOF_STAGE1_RESUME_FROM'], str(prior))
-            self.assertEqual(env['SANDPROOF_NATIVE_EVIDENCE'], str(native))
-            (Path(env['TMPDIR'])/'sandproof-stage1-protocol.new'/'registered').mkdir(parents=True)
-
         with (patch.object(gate.Candidate, 'check_checkout'),
               patch.object(gate, 'MOUNT', self.path),
               patch.object(gate, 'operator_lock', return_value=nullcontext(9)),
-              patch.object(gate, 'attest_evidence', return_value=self.evidence),
-              patch.object(gate, 'run_entry', side_effect=execute) as command):
+              patch.object(gate, 'git', return_value=self.candidate.head),
+              patch.object(gate, 'attest_evidence', side_effect=self.formal_receipt),
+              patch.object(gate, 'run_entry') as ordinary,
+              patch.object(native_task, 'observe'),
+              patch.dict(os.environ, SANDPROOF_NATIVE_OBSERVER=str(self.observer)),
+              patch.object(formal_builds, 'execute', side_effect=self.formal_fixture()) as command):
             gate.run_stage(self.candidate, self.path, new, resume_from=old)
             self.assertEqual(command.call_count, 1)
+            ordinary.assert_not_called()
+            env = command.call_args.kwargs['env']
+            self.assertEqual(env['SANDPROOF_STAGE1_RESUME_FROM'], str(prior))
+            self.assertEqual(env['SANDPROOF_NATIVE_EVIDENCE'], str(native))
             rejected = gate.Candidate(682, 'integration', self.candidate.head,
                                       self.candidate.base, self.candidate.merge, self.candidate.tree)
             with self.assertRaisesRegex(ValueError, 'same PR'):
@@ -365,6 +406,83 @@ class PromotionTest(unittest.TestCase):
             seal.write_text('{}')
             with self.assertRaisesRegex(ValueError, 'original native seal changed'):
                 gate.previous_attempt(self.candidate, old)
+
+    def test_pending_formal_closeout_uses_original_registration_and_does_not_relaunch(self):
+        output, native, registry = (self.path/name for name in ('output', 'native', 'registry'))
+        for directory in (output, native, registry):
+            directory.mkdir()
+        gate.write_once(native/'complete.json', {})
+        original = output.stat()
+        gate.write_once(registry/'attempt-00000001.json', dict(schema=1, candidate=asdict(self.candidate),
+            output=str(output), output_identity=[original.st_dev, original.st_ino]))
+        with (patch.object(gate.Candidate, 'check_checkout'),
+              patch.object(gate, 'MOUNT', self.path),
+              patch.object(gate, 'git', return_value=self.candidate.head),
+              patch.object(gate, 'operator_lock', return_value=nullcontext(9)),
+              patch.object(gate, 'registered_promotion', return_value=nullcontext((registry, 37))) as mutex,
+              patch.object(gate, 'attest_evidence', side_effect=self.formal_receipt),
+              patch.object(gate, 'run_entry') as ordinary,
+              patch.dict(os.environ, SANDPROOF_NATIVE_OBSERVER=str(self.observer)),
+              patch.object(formal_builds, 'execute', side_effect=self.formal_fixture()) as formal):
+            with patch.object(native_task, 'observe', side_effect=ValueError('live target reference')):
+                with self.assertRaises(subprocess.CalledProcessError) as error:
+                    gate.run_stage(self.candidate, self.path, output, native=native, registration_fd=37)
+            self.assertEqual(error.exception.returncode, 75)
+            self.assertTrue((output/'formal-ready.json').is_file())
+            self.assertTrue((output/'formal-cargo-target/private-build').is_file())
+            self.assertFalse((output/'complete.json').exists())
+            with self.assertRaisesRegex(ValueError, 'close out the original'):
+                gate.previous_attempt(self.candidate, output)
+            with patch.object(native_task, 'observe'):
+                result = gate.closeout_registered(self.candidate, self.path, output)
+            self.assertEqual(result, gate.json_file(output/'complete.json'))
+            self.assertFalse((output/'formal-cargo-target').exists())
+            mutex.assert_called_once_with(self.candidate)
+            ordinary.assert_not_called()
+            formal.assert_called_once()
+
+    def test_waited_formal_exit_zero_requires_closeout_even_before_ready_publication(self):
+        output = self.path/'output'
+        output.mkdir()
+        gate.write_once(output/'attempt.json', dict(schema=1, candidate=asdict(self.candidate),
+                                                    native_path=str(self.path/'sealed-native')))
+        formal_builds.enroll(output, candidate=self.candidate.head, observer=self.observer,
+                             targets=(gate.FORMAL_TARGET,))
+        exit_record = formal_builds.execute(output, ['bash', '-c', 'exit 0'])
+        self.assertEqual(exit_record['returncode'], 0)
+        self.assertFalse((output/'formal-ready.json').exists())
+        with patch.object(gate, 'MOUNT', self.path):
+            with self.assertRaisesRegex(ValueError, 'close out the original'):
+                gate.previous_attempt(self.candidate, output)
+
+    def test_formal_failure_preserves_original_status_and_sigkill_keeps_target(self):
+        native = self.path/'native'
+        native.mkdir()
+        gate.write_once(native/'complete.json', {})
+        for trailing, raw, shell in (('exit 19', 19, 19), ('kill -TERM "$$"', -15, 143), ('exit 137', 137, 137)):
+            with self.subTest(code=raw):
+                output = self.path/str(raw)
+                output.mkdir()
+                with (patch.object(gate.Candidate, 'check_checkout'),
+                      patch.object(gate, 'MOUNT', self.path),
+                      patch.object(gate, 'git', return_value=self.candidate.head),
+                      patch.object(gate, 'operator_lock', return_value=nullcontext(9)),
+                      patch.object(gate, 'attest_evidence') as attest,
+                      patch.object(gate, 'run_entry') as ordinary,
+                      patch.object(native_task, 'observe'),
+                      patch.dict(os.environ, SANDPROOF_NATIVE_OBSERVER=str(self.observer)),
+                      patch.object(formal_builds, 'execute', side_effect=self.formal_fixture(trailing))):
+                    with self.assertRaises(subprocess.CalledProcessError) as error:
+                        gate.run_stage(self.candidate, self.path, output, native=native)
+                self.assertEqual(error.exception.returncode, shell)
+                closed = output/formal_builds.DIRECTORY
+                self.assertEqual(gate.json_file(closed/'native-task-exit.json')['returncode'], raw)
+                self.assertIn('original formal executor log', (closed/'native-task.log').read_text())
+                self.assertFalse((output/'complete.json').exists())
+                self.assertFalse((output/'formal-ready.json').exists())
+                self.assertEqual((output/'formal-cargo-target/private-build').exists(), raw == 137)
+                attest.assert_not_called()
+                ordinary.assert_not_called()
 
     def test_full_receipt_rejects_finite_failed_mismatched_or_missing_evidence(self):
         def save(path, value):

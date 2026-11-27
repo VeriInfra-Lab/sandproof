@@ -8,16 +8,18 @@ import os
 from pathlib import Path
 import pwd
 import re
+import signal
 import stat
 import subprocess
 import sys
 
 from tools import acceptance_receipts as receipts
+from tools import formal_builds
 from tools.ci_e2e_supervisor import PREFIX, REPO, Checks, git, is_ancestor
 from tools.ci_github_app import (APIError, CHECK_PERMISSIONS, PERMISSIONS, SOURCE_PERMISSIONS,
                                GitHubApp, Transport)
 from tools.ci_merge_queue import QueueGroup, TARGET, graphql_lookup
-from tools.native_task import OWNER as NATIVE_TASK_OWNER
+from tools.native_task import OWNER as NATIVE_TASK_OWNER, preserve
 from tools.system_acceptance import digest, json_file, private_path, write_once
 
 GATE = 'Promotion / Stage1'
@@ -31,6 +33,7 @@ ROOT = Path(__file__).resolve().parents[1]
 BINARY = ['bash', 'scripts/python-entry.sh']
 MOUNT = Path('/mnt')
 STORAGE_POLICY = Path('/etc/sandproof-stage1-promotion.json')
+FORMAL_TARGET = Path('formal-cargo-target')
 
 
 def oid(value):
@@ -209,6 +212,8 @@ def previous_attempt(candidate, directory):
     if os.path.lexists(directory/'complete.json'):
         raise ValueError('previous run already completed; use its original output for publication')
     attempt = attempt_record(candidate, directory)
+    if os.path.lexists(directory/'formal-ready.json') or formal_exited_zero(candidate, directory):
+        raise ValueError('original formal process exited zero; close out the original output before publication')
     native = msra_directory(attempt['native_path'])
     seal = private_path(native/'complete.json')
     expected = directory/'native-seal.json'
@@ -223,6 +228,20 @@ def previous_attempt(candidate, directory):
         if formal.get('profile') != 'full' or formal.get('shared_seal_sha256') != digest(seal):
             raise ValueError('original formal checkpoints do not consume this complete native seal')
     return native, prior
+
+
+def formal_exited_zero(candidate, output):
+    exit_path = output/formal_builds.DIRECTORY/'native-task-exit.json'
+    if not os.path.lexists(exit_path):
+        return False
+    _, enrollment, targets = formal_builds.admission(output)
+    terminal = json_file(private_path(exit_path))
+    if (enrollment['candidate'] not in (candidate.head, candidate.merge)
+            or targets != [output/FORMAL_TARGET]
+            or type(terminal.get('returncode')) is not int
+            or type(terminal.get('process_group')) is not int or terminal['process_group'] <= 1):
+        raise ValueError('original formal execution record differs from the registered attempt')
+    return terminal['returncode'] == 0
 
 
 def retry_before_formal(candidate, directory):
@@ -254,6 +273,17 @@ def retry_before_formal(candidate, directory):
             and retired.get('remaining_build_bytes') == 0)
 
 
+def registered_output(candidate, record):
+    row = json_file(private_path(record))
+    if row.get('schema') != 1 or row.get('candidate') != asdict(candidate):
+        raise ValueError('original promotion registration changed')
+    output = msra_directory(row['output'])
+    actual = output.stat()
+    if row.get('output_identity') != [actual.st_dev, actual.st_ino]:
+        raise ValueError('previously registered promotion output was replaced')
+    return output
+
+
 def run_registered(candidate, checkout, output, *, native=None, resume_from=None):
     candidate.check_checkout(checkout)
     output = msra_directory(output)
@@ -262,13 +292,7 @@ def run_registered(candidate, checkout, output, *, native=None, resume_from=None
             raise ValueError('promotion output and registry require separate directories')
         records = sorted(registry.glob('attempt-*.json'))
         if records:
-            row = json_file(private_path(records[-1]))
-            if row.get('schema') != 1 or row.get('candidate') != asdict(candidate):
-                raise ValueError('original promotion registration changed')
-            current = msra_directory(row['output'])
-            actual = current.stat()
-            if row.get('output_identity') != [actual.st_dev, actual.st_ino]:
-                raise ValueError('previously registered promotion output was replaced')
+            current = registered_output(candidate, records[-1])
             if resume_from is None or msra_directory(resume_from) != current:
                 raise ValueError('exact promotion already registered; use its latest recorded output to resume or publish')
         if any(output.iterdir()):
@@ -293,6 +317,56 @@ def run_registered(candidate, checkout, output, *, native=None, resume_from=None
                          resume_from=None if restart else resume_from, registration_fd=lock_fd)
 
 
+def closeout_registered(candidate, checkout, output):
+    output = msra_directory(output)
+    with registered_promotion(candidate) as (registry, _):
+        records = sorted(registry.glob('attempt-*.json'))
+        if not records or registered_output(candidate, records[-1]) != output:
+            raise ValueError('formal closeout requires the original latest registered promotion output')
+        return closeout_formal(candidate, checkout, output, Path(os.environ['SANDPROOF_NATIVE_OBSERVER']).resolve(strict=True))
+
+
+def closeout_formal(candidate, checkout, output, observer):
+    candidate.check_checkout(checkout)
+    _, enrollment, targets = formal_builds.admission(output)
+    if (targets != [output/FORMAL_TARGET]
+            or enrollment['candidate'] != git('rev-parse', 'HEAD', cwd=checkout)):
+        raise ValueError('formal closeout requires the original execution commit and single promotion target')
+    attempt = output/'attempt.json'
+    native = msra_directory(attempt_record(candidate, output)['native_path'])
+    native_seal = private_path(native/'complete.json')
+    bound_seal = private_path(output/'native-seal.json')
+    seal_digest = digest(native_seal)
+    if json_file(bound_seal) != {'sha256': seal_digest}:
+        raise ValueError('original native seal changed since the formal execution')
+    ready = output/'formal-ready.json'
+    complete = output/'complete.json'
+
+    def readback(terminal):
+        files = {attempt: digest(attempt), bound_seal: digest(bound_seal), native_seal: seal_digest}
+        code = terminal['returncode']
+        if code != 0:
+            if code in (-signal.SIGKILL, 128 + signal.SIGKILL) or any(os.path.lexists(p) for p in (ready, complete)):
+                raise ValueError('original formal execution has an unknown or inconsistent terminal state')
+            # The helper separately binds the actually waited-for exit and its raw log.
+            return files
+        formal, = (output/'tmp').glob('sandproof-stage1-protocol.*/registered')
+        formal = private_path(formal, directory=True)
+        bound = attest_evidence(native, formal, candidate, checkout)
+        preserve(ready, dict(schema=1, candidate=asdict(candidate), native_path=str(native),
+                             formal_path=str(formal), digests=bound))
+        files.update({ready: digest(ready), formal/'registered-result.json': bound['formal'],
+                      formal/'execution-inputs.json': bound['context']})
+        return files
+
+    retired = formal_builds.retire(output, observer, readback)
+    if retired['returncode'] != 0:
+        return retired
+    result = json_file(private_path(ready))
+    preserve(complete, result)
+    return result
+
+
 def run_stage(candidate, checkout, output, *, native=None, resume_from=None, registration_fd=None):
     """Under the usual msra lock and env, run Rust once then the original Lean entry."""
     candidate.check_checkout(checkout)
@@ -314,8 +388,9 @@ def run_stage(candidate, checkout, output, *, native=None, resume_from=None, reg
     # An imported dotenv or launch shell must not leak a GitHub token into a driver.
     for name in ('CREDENTIALS_DIRECTORY', 'GH_TOKEN', 'GITHUB_TOKEN'):
         env.pop(name, None)
+    observer = Path(env['SANDPROOF_NATIVE_OBSERVER']).resolve(strict=True)
+    execution_commit = git('rev-parse', 'HEAD', cwd=checkout)
     if original_native is None:
-        observer = env['SANDPROOF_NATIVE_OBSERVER']
         configured = Path(env.get('CARGO_TARGET_DIR', '.'))
         if not configured.is_absolute():
             raise ValueError('set the operator-approved shared native Cargo target under /mnt')
@@ -327,13 +402,12 @@ def run_stage(candidate, checkout, output, *, native=None, resume_from=None, reg
                 or any(cache.is_relative_to(path) or path.is_relative_to(cache)
                        for path in (checkout, output))):
             raise ValueError('native Cargo cache must be owner-writable and separate from source and evidence')
-        execution_commit = git('rev-parse', 'HEAD', cwd=checkout)
         with operator_lock(env, 'SANDPROOF_PROOF_HEAVY_LOCK',
                            'SANDPROOF_PROOF_HEAVY_LOCK_FD') as fd:
             native_env = dict(env, SANDPROOF_ACCEPTANCE_ROLE='native')
             native_env.pop('SANDPROOF_LOCK_FD', None)
             run_entry([*BINARY, 'tools/native_task.py', 'run', '--scope', SCOPE,
-                       '--candidate', execution_commit, '--output', str(native), '--observer', observer],
+                       '--candidate', execution_commit, '--output', str(native), '--observer', str(observer)],
                       log=output/'native.log', checkout=checkout,
                       env=native_env, pass_fds=(fd,) if registration_fd is None else (fd, registration_fd))
     elif (native/'native-task.json').exists():
@@ -346,7 +420,8 @@ def run_stage(candidate, checkout, output, *, native=None, resume_from=None, reg
     with operator_lock(env, 'SANDPROOF_LOCK_FILE', 'SANDPROOF_LOCK_FD') as fd:
         # The formal entry itself admits the original complete native seal
         # under current source, environment and tool rules, including functional.
-        cargo_target = output / 'formal-cargo-target'
+        formal_builds.enroll(output, candidate=execution_commit, observer=observer, targets=(FORMAL_TARGET,))
+        cargo_target = output / FORMAL_TARGET
         cargo_target.mkdir(mode=0o700)
         formal_env = dict(env, SANDPROOF_ACCEPTANCE_ROLE='formal', TMPDIR=str(temporary),
                           CARGO_TARGET_DIR=str(cargo_target))
@@ -355,16 +430,19 @@ def run_stage(candidate, checkout, output, *, native=None, resume_from=None, reg
             formal_env.pop('SANDPROOF_STAGE1_RESUME_FROM', None)
             if prior is not None:
                 formal_env['SANDPROOF_STAGE1_RESUME_FROM'] = str(prior)
-        run_entry(['bash', 'scripts/verify-stage1-protocol.sh'], log=output/'formal.log',
-                  checkout=checkout, env=formal_env,
-                  pass_fds=(fd,) if registration_fd is None else (fd, registration_fd))
-        formal, = temporary.glob('sandproof-stage1-protocol.*/registered')
-        candidate.check_checkout(checkout)
-        bound = attest_evidence(native, formal, candidate, checkout)
-        result = dict(schema=1, candidate=asdict(candidate), native_path=str(native),
-                      formal_path=str(formal), digests=bound)
-        write_once(output/'complete.json', result)
-        return result
+        command = ['bash', 'scripts/verify-stage1-protocol.sh']
+        exit_record = formal_builds.execute(output, command, cwd=checkout, env=formal_env,
+            pass_fds=(fd,) if registration_fd is None else (fd, registration_fd))
+        code = exit_record['returncode']
+    try:
+        result = closeout_formal(candidate, checkout, output, observer)
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print(f'Formal build closeout pending in {output}: {error}', file=sys.stderr)
+        if code == 0:
+            raise subprocess.CalledProcessError(75, ['closeout', str(output)]) from error
+    if code != 0:
+        raise subprocess.CalledProcessError(code if code > 0 else 128-code, command)
+    return result
 
 
 def read_stage(candidate, checkout, output):
@@ -622,7 +700,7 @@ def main():
         read_push_report(Path(sys.argv[2]))
         return
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=('run', 'readback', 'admit', 'publish'))
+    parser.add_argument('mode', choices=('run', 'closeout', 'readback', 'admit', 'publish'))
     parser.add_argument('--candidate', type=Path, help='private reviewed Candidate JSON')
     parser.add_argument('--checkout', type=Path, default=ROOT)
     parser.add_argument('--output', type=Path, required=True)
@@ -646,9 +724,14 @@ def main():
                                     msra_directory(args.output)), sort_keys=True))
         return
     if args.candidate is None:
-        parser.error('run and publish require a private candidate file')
+        parser.error('run, closeout and publication require a private candidate file')
     candidate = Candidate(**json_file(private_path(args.candidate)))
     checkout = args.checkout.resolve(strict=True)
+    if args.mode == 'closeout':
+        if any(x is not None for x in (args.config, args.native, args.resume_from)):
+            parser.error('closeout uses only the original candidate, checkout and output')
+        print(json.dumps(closeout_registered(candidate, checkout, args.output), sort_keys=True))
+        return
     if args.mode == 'run':
         if args.config is not None:
             parser.error('proof execution does not take publication credentials')
