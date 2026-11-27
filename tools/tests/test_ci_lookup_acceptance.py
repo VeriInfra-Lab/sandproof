@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from tools import ci_lookup_acceptance as wrapper, formal_builds, native_task
 from tools.system_acceptance import digest, json_file, write_once
@@ -22,7 +22,7 @@ class LookupCloseoutTests(unittest.TestCase):
         self.observer.write_text('actual observation replaced in the test\n')
         self.candidate = dict(commit='a'*40, tree='b'*40)
 
-    def run_fixture(self, output, terminal, native=None):
+    def run_fixture(self, output, terminal, native=None, *, lookup_only=False):
         output.mkdir()
         script = self.root/'original-driver.py'
         script.write_text(f'''import argparse, json, os, signal
@@ -33,10 +33,12 @@ p.add_argument('--base', required=True)
 p.add_argument('--formal-lock', required=True)
 p.add_argument('--reuse-native')
 p.add_argument('--reuse-native-sha256')
+p.add_argument('--lookup-only', action='store_true')
 a = p.parse_args()
 assert Path.cwd() == Path({str(self.checkout)!r})
 assert a.base == 'reviewed-base'
 assert a.formal_lock == '/installed/formal.lock'
+assert a.lookup_only is {lookup_only!r}
 assert (a.reuse_native, a.reuse_native_sha256) == ({None if native is None else native['path']!r},
                                                        {None if native is None else native['sha256']!r})
 for variant in ('correct', 'key-only'):
@@ -47,8 +49,11 @@ for variant in ('correct', 'key-only'):
     (project/'.lake').mkdir()
     (project/'.lake/preserved.olean').write_text('existing compiled Lean')
     (project/'actual.llbc').write_text('original LLBC')
-result = a.output/'module-result.json'
-result.write_text(json.dumps(dict(candidate={self.candidate!r}, complete={terminal == 0!r})))
+result = dict(candidate={self.candidate!r}, complete={terminal == 0!r})
+if a.lookup_only:
+    result.update(complete=False, lookup_only_complete={terminal == 2!r})
+path = a.output/('lookup-local-result.json' if a.lookup_only else 'module-result.json')
+path.write_text(json.dumps(result))
 print('logged by the original module executor', flush=True)
 if {terminal} < 0:
     os.kill(os.getpid(), -{terminal})
@@ -56,7 +61,8 @@ raise SystemExit({terminal})
 ''')
         with (patch.object(wrapper, 'ROOT', self.checkout), patch.object(wrapper, 'DRIVER', script),
               patch.object(wrapper, 'lookup', return_value=SimpleNamespace(clean_candidate=lambda: self.candidate))):
-            return wrapper.run(output, self.observer, 'reviewed-base', Path('/installed/formal.lock'), native)
+            return wrapper.run(output, self.observer, 'reviewed-base', Path('/installed/formal.lock'),
+                               native, lookup_only=lookup_only)
 
     def tangible_evidence(self, output, _invocation, terminal, _module):
         self.assertEqual(terminal['returncode'], 0)
@@ -97,6 +103,84 @@ raise SystemExit({terminal})
                 self.assertEqual(json_file(state/'native-task-exit.json')['returncode'], code)
                 self.assertIs(json_file(output/'module/module-result.json')['complete'], False)
                 self.assertTrue(all((output/path).is_dir() == (code == 137) for path in wrapper.TARGETS))
+
+    def test_local_exit_two_and_receipt_survive_cleanup(self):
+        output = self.root/'local'
+        receipt = output/'module/lookup-local-result.json'
+
+        def readback(directory, invocation, terminal, _module):
+            self.assertEqual(directory, output)
+            self.assertIs(invocation['lookup_only'], True)
+            self.assertEqual(terminal['returncode'], 2)
+            self.assertEqual(json_file(receipt), dict(candidate=self.candidate, complete=False, lookup_only_complete=True))
+            return {receipt: digest(receipt)}
+
+        native = dict(path='/original/lookup-native-receipt.json', sha256='a'*64)
+        with (patch.object(wrapper, 'stage_files', side_effect=readback),
+              patch.object(native_task, 'observe')):
+            self.assertEqual(self.run_fixture(output, 2, native, lookup_only=True), 2)
+        self.assertFalse((receipt.parent/'module-result.json').exists())
+        result = json_file(output/formal_builds.DIRECTORY/'retired.json')
+        self.assertEqual((result['returncode'], result['target_count'], result['remaining_build_bytes']), (2, 2, 0))
+        self.assertTrue(all(not (output/path).exists() for path in wrapper.TARGETS))
+        incomplete = self.root/'unreadable-local'
+        with patch.object(wrapper, 'stage_files', side_effect=KeyError('native')):
+            self.assertEqual(self.run_fixture(incomplete, 2, native, lookup_only=True), 2)
+        self.assertTrue(all((incomplete/path).is_dir() for path in wrapper.TARGETS))
+        self.assertFalse((incomplete/formal_builds.DIRECTORY/'retired.json').exists())
+
+    def test_local_readback_requires_exact_pending_jobs_and_both_original_views(self):
+        output = self.root/'local-evidence'
+        mod = output/'module'
+        mod.mkdir(parents=True)
+        native_dir = self.root/'native-proof'
+        (native_dir/'original-native').mkdir(parents=True)
+        native_result = native_dir/'original-native/result.json'
+        native_result.write_text('{}\n')
+        native_log = native_dir/'original-native.log'
+        native_log.write_text('original native executor\n')
+        key = {'scoped_native_tools': True}
+        native_receipt = native_dir/'lookup-native-receipt.json'
+        write_once(native_receipt, dict(key=key, result_sha256=digest(native_result),
+                                       launcher_log_sha256=digest(native_log)))
+        invocation = dict(schema=1, candidate=self.candidate, lookup_only=True, base='reviewed',
+                          native=dict(path=str(native_receipt), sha256=digest(native_receipt)))
+        write_once(output/wrapper.INVOCATION, invocation)
+        base = dict(commit='c'*40, tree='d'*40)
+        paths = ['positive.lean.in', 'frozen.sha256']
+        pending = [{'name': 'required-downstream-job'}]
+        impact = {'pending_jobs': pending, 'unmapped': ['unmapped-dependent']}
+        module = SimpleNamespace(MODULE='inbox-lookup', NATIVE_RECEIPT='lookup-native-receipt.json',
+            changed_files=Mock(return_value=(base['commit'], paths)), local_lookup_impact=Mock(return_value=impact),
+            load_native_reuse=Mock(return_value=({'commands': []}, {'result_sha256': digest(native_result)})))
+        views = {case: dict(case=case) for case in wrapper.CASES}
+        report = dict(schema=1, kind='inbox-lookup-only-proof', module=module.MODULE,
+            complete=False, lookup_only_complete=True, full_stage1_acceptance=False, fresh_runs=False,
+            candidate=self.candidate, formal=views,
+            native=dict(receipt=str(native_receipt), use='REUSE', receipt_sha256=digest(native_receipt),
+                        result_sha256=digest(native_result), original_candidate=base, source_differences=sorted(paths)),
+            plan=dict(status='lookup-only', base_commit=base['commit'], changed_paths=paths,
+                      native_reuse_paths=sorted(paths), pending_downstream=pending, unmapped_downstream=impact['unmapped'],
+                      checks=['reuse-original-native', 'formal-correct', 'formal-key-only']))
+        local = mod/'lookup-local-result.json'
+        local.write_text(json.dumps(report))
+        terminal = {'returncode': 2}
+        with patch.object(wrapper, 'proof_files') as proofs:
+            files = wrapper.stage_files(output, invocation, terminal, module)
+            self.assertIn(local, files)
+            self.assertEqual([call.args[2] for call in proofs.call_args_list], list(wrapper.CASES))
+            self.assertTrue(all(call.kwargs['permitted'] == sorted(paths) for call in proofs.call_args_list))
+            module.load_native_reuse.assert_called_once_with(native_receipt, digest(native_receipt), base, key, [])
+            report['plan']['pending_downstream'] = []
+            local.write_text(json.dumps(report))
+            with self.assertRaisesRegex(ValueError, 'pending downstream list differs'):
+                wrapper.stage_files(output, invocation, terminal, module)
+            local.unlink()
+            with self.assertRaises(FileNotFoundError):
+                wrapper.stage_files(output, invocation, terminal, module)
+            (mod/'module-result.json').write_text('{}\n')
+            with self.assertRaisesRegex(ValueError, 'different acceptance scope'):
+                wrapper.stage_files(output, invocation, terminal, module)
 
     def test_saved_proof_readback_rejects_changed_type_and_llbc(self):
         folder = self.root/'formal-key-only'
