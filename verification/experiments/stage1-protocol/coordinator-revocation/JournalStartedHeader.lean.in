@@ -1,0 +1,93 @@
+import UnloadWorldBegin
+import SandproofActualRecord.JournalHeaderReads
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+open SandboxModel.Stage1Protocol.UnloadStartedTransaction
+open SandproofUnloadWorldBegin (committedView originalOwner startedView)
+open SandproofParentCommitRust.CurrentViews (SourceRaw SourceOwner rawToSource ownerToSource)
+open SandproofActualRecordRust.IOOwnerTransport (Holder ParentRaw)
+
+namespace SandproofActualRecordRust.JournalStartedHeader
+open controller.lifecycle_inbox recording CallerBranches
+noncomputable section
+set_option autoImplicit false
+
+abbrev CommitReply := Result (core.result.Result Unit SandproofParentCommitRust.rusqlite.error.Error)
+
+private def callerRaw (raw : SourceRaw) (commit : CommitReply) (v5 : SandproofParentCommitRust.V5CallObservations) :
+    ParentRaw := ⟨⟨raw.conn, commit, v5⟩, raw.drop_behavior⟩
+
+/-- Add only the call observations needed by the existing recording view. The base
+connection, drop behavior, memo, candidate and allocator frontier come from BEGIN. -/
+def callerOwner (owner : SourceOwner) (commit : CommitReply) (v5 : SandproofParentCommitRust.V5CallObservations)
+    (terminate : TerminateObservation) : CallerOwnerView where
+  parent := {
+    transaction := owner.transaction.map (fun raw => callerRaw raw commit v5)
+    committed := ⟨owner.committed.value, owner.committed.data_version⟩
+    candidate := owner.candidate
+    input_start := owner.input_start }
+  terminate := terminate
+
+theorem erases_to_entire_owner (owner : SourceOwner) (commit : CommitReply)
+    (v5 : SandproofParentCommitRust.V5CallObservations) (terminate : TerminateObservation) :
+    ownerToSource (callerOwner owner commit v5 terminate).parent = owner := by
+  obtain ⟨slot, memo, candidate, start⟩ := owner
+  cases slot <;> simp [ownerToSource, callerOwner, callerRaw, rawToSource]
+
+variable {D R T N U B C : Type}
+  (retirement : native_retirement.RetirementEncoding R) (terminal : model.TerminalEncoding T)
+  (renewal : renewal_confirmation.RenewalEncoding N) (unload : unload_resolution.UnloadEncoding U)
+  (graphic : capture.GraphicBytes B) (codec : RecordCodec D) (crash : CrashInjector C)
+  (namespaceName : Str) (instanceD : D) (intent : SourceFlowLink.Intent)
+  (context : SourceFlowLink.Context) (crashes : C)
+
+private theorem same_raw_slot (owner : CallerOwnerView) (source : SourceOwner) (raw : SourceRaw)
+    (same : ownerToSource owner.parent = source) (slot : source.transaction = some raw) :
+    ∃ actual, owner.parent.transaction = some actual ∧ rawToSource actual = raw := by
+  have equalSlot := congrArg (fun s : SourceOwner => s.transaction) same
+  change owner.parent.transaction.map rawToSource = source.transaction at equalSlot
+  rw [slot] at equalSlot
+  cases h : owner.parent.transaction with
+  | none => simp [h] at equalSlot
+  | some actual => exact ⟨actual, rfl, by simpa [h] using equalSlot⟩
+
+/-- Once the original BEGIN call succeeds, every recording owner that represents its
+returned owner reads the original raw connection. The commit and termination observations
+are unrestricted. The representation premise is about values; V5 supplies the physical link. -/
+theorem begin_to_first_prepare_refusal (conn : UnloadWorldBegin.Conn) (memo : UnloadWorldBegin.Memo)
+    (world : World) (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (raw : Raw) (start : U64)
+    (worldRead : conn.calls.world (committedView memo) conn.base = .ok (.Ok world))
+    (prepareWrite : conn.calls.prepareWrite conn.base world (committedView memo) = .ok (.Ok (), prepared))
+    (opened : conn.calls.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Ok raw, after))
+    (frontier : conn.calls.readAllocator raw.conn UnloadWorldBegin.inputKind UnloadWorldBegin.inputScope = .ok (.Ok start))
+    (version : readVersion raw.conn = .ok (.Ok (committedView memo).data_version))
+    (error : SandproofSqliteSession.SqlError)
+    (header : raw.conn.reads.current.single.canonical.prepare InboxLoad.existsStatement = .ok (.Err error)) :
+    ∃ begun, UnloadWorldBegin.begin conn memo = .ok (.Ok begun, ⟨after, conn.calls⟩) ∧
+      ∀ owner : CallerOwnerView, ownerToSource owner.parent = originalOwner begun →
+        let holder : Holder D := ⟨owner, namespaceName, instanceD⟩
+        JournalLoadExit.ReturnsBeforeCommit retirement terminal renewal unload graphic (actualEffects codec) crash
+          holder holder intent context crashes (.Sqlite error) ∧
+        proof_record_actual_parent retirement terminal renewal unload graphic codec crash
+          owner namespaceName instanceD intent context crashes = .ok (.Err (.Sqlite error), crashes) := by
+  refine ⟨startedView conn.calls (initialOwner raw (committedView memo) start world),
+    UnloadWorldBegin.begin_success_keeps_original_owner conn memo world prepared after raw start worldRead
+      prepareWrite opened frontier version, ?_⟩
+  intro owner same
+  rw [UnloadWorldBegin.owner_view_recovers_original_fields] at same
+  obtain ⟨actual, live, original⟩ := same_raw_slot owner _ raw same rfl
+  have base := congrArg (fun t : SourceRaw => t.conn) original
+  change actual.conn.base = raw.conn at base
+  let holder : Holder D := ⟨owner, namespaceName, instanceD⟩
+  have refused := JournalHeaderReads.first_prepare_refusal codec holder actual live
+    retirement terminal renewal unload graphic crash intent context crashes error (by rw [base]; exact header)
+  exact ⟨refused, by
+    rw [extraction_root_uses_real_constructor_and_dictionary]
+    exact refused.2⟩
+
+end
+end SandproofActualRecordRust.JournalStartedHeader
+
+#audit_controller_proof SandproofActualRecordRust.JournalStartedHeader.erases_to_entire_owner
+#audit_controller_proof SandproofActualRecordRust.JournalStartedHeader.begin_to_first_prepare_refusal

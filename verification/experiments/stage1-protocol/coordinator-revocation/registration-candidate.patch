@@ -1,5 +1,5 @@
 diff --git a/verification/experiments/stage1-protocol/registered.py b/verification/experiments/stage1-protocol/registered.py
-index eb47df75..fe54e073 100644
+index eb47df75..6a748def 100644
 --- a/verification/experiments/stage1-protocol/registered.py
 +++ b/verification/experiments/stage1-protocol/registered.py
 @@ -364,8 +364,8 @@ NATIVE_DRIVERS = (
@@ -8,8 +8,8 @@ index eb47df75..fe54e073 100644
      'stage1-protocol-'+name for name in CRATE_CASES)
 -AUDIT_TEMPLATE_COUNT = 676
 -AUDIT_DECLARATION_COUNT = 2952
-+AUDIT_TEMPLATE_COUNT = 680
-+AUDIT_DECLARATION_COUNT = 2974
++AUDIT_TEMPLATE_COUNT = 681
++AUDIT_DECLARATION_COUNT = 2976
 
 
  def native_labels(profile='full'):
@@ -203,7 +203,7 @@ index eb47df75..fe54e073 100644
      parser = argparse.ArgumentParser(description=__doc__)
      parser.add_argument('mode', choices=('native', 'formal', 'plan'))
 diff --git a/verification/experiments/stage1-protocol/test_registered.py b/verification/experiments/stage1-protocol/test_registered.py
-index 372742d6..35292386 100644
+index 372742d6..ec3c58b3 100644
 --- a/verification/experiments/stage1-protocol/test_registered.py
 +++ b/verification/experiments/stage1-protocol/test_registered.py
 @@ -60,7 +60,7 @@ class CreateDelivery(OriginalReadPlanFixture):
@@ -230,10 +230,23 @@ index 372742d6..35292386 100644
          self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
              'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
              'create-guard', 'envelope-writer-correct', 'envelope-writer-swallow-error',
-@@ -615,6 +620,65 @@ class Registration(OriginalReadPlanFixture):
+@@ -615,6 +620,78 @@ class Registration(OriginalReadPlanFixture):
          self.assertEqual(parent['cases'], [
              'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision', 'parent-link'])
 
++    def test_begin_requires_its_own_recording_owner_proof(self):
++        root = registered.ROOT
++        joint = registered.UNLOAD.started_header(root)
++        actual = dict(files={joint.PAGE: registered._sha(root/joint.TEMPLATE)}, audits=sorted(joint.AUDITS))
++        joint.check_page(root, actual)
++        cases = {name: dict(actual) for name in registered.UNLOAD.PARENT_CASES}
++        result = dict(kind=registered.UNLOAD.PARENT_LABEL, cases=cases)
++        for stale in [dict(files={}), dict(files={joint.PAGE: '0'*64}),
++                      *(dict(audits=sorted(joint.AUDITS - {name})) for name in sorted(joint.AUDITS))]:
++            with self.subTest(stale=stale), patch.dict(cases['begin'], stale):
++                with self.assertRaisesRegex(ValueError, 'BEGIN-to-record page or audits'):
++                    registered.UNLOAD.check_parent_audits(root, result, None)
++
 +    def test_transaction_requires_all_three_pages_in_the_transaction_case(self):
 +        job = dict(name='v3-transaction-source', args=[], cases=['transaction', 'source-rows'], actual_files=True)
 +        pkg = registered.ROOT/registered.HERE/'coordinator-revocation'
@@ -296,7 +309,7 @@ index 372742d6..35292386 100644
      def test_full_dispatch_assigns_convergence_children_disjoint_four_cpu_slots(self):
          with tempfile.TemporaryDirectory() as directory:
              output = Path(directory)
-@@ -1680,6 +1744,15 @@ class CheckpointExecution(unittest.TestCase):
+@@ -1680,6 +1757,15 @@ class CheckpointExecution(unittest.TestCase):
          sqlite_readback_inputs = (sqlite_result.parent, registered.ROOT, sqlite_packet,
                                    sqlite_commit, current_sqlite)
          def original_file(receipt, name):
@@ -312,3 +325,51 @@ index 372742d6..35292386 100644
              self.assertEqual(name, 'result.json')
              return sqlite_result if receipt['key']['label'] == 'stage1-sqlite-commit' else retained
          output = self.directory/'public'
+diff --git a/verification/experiments/stage1-protocol/unload_audits.py b/verification/experiments/stage1-protocol/unload_audits.py
+index 320fae36..d8c2bb20 100644
+--- a/verification/experiments/stage1-protocol/unload_audits.py
++++ b/verification/experiments/stage1-protocol/unload_audits.py
+@@ -31,10 +31,19 @@ PACKAGES = {
+ }
+
+
++def started_header(root):
++    path = root / HERE / 'coordinator-revocation/journal_started.py'
++    spec = importlib.util.spec_from_file_location('stage1_journal_started', path)
++    module = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(module)
++    return module
++
++
+ def check_parent_audits(root, result, folder):
+     if result.get('kind') != PARENT_LABEL or tuple(result.get('cases', {})) != PARENT_CASES:
+         raise ValueError('missing actual parent transaction formal cases')
+     package = root / HERE / 'unload-parent-link'
++    started_header(root).check_page(root, result['cases']['begin'])
+     common = PARENT_AUDIT_INPUTS['begin']
+     for case, actual in result['cases'].items():
+         if case == 'parent-link':
+diff --git a/verification/experiments/stage1-protocol/unload_parent_transaction.py b/verification/experiments/stage1-protocol/unload_parent_transaction.py
+index 3a858ae7..3503ab2b 100644
+--- a/verification/experiments/stage1-protocol/unload_parent_transaction.py
++++ b/verification/experiments/stage1-protocol/unload_parent_transaction.py
+@@ -9,7 +9,7 @@ import sys
+ import tarfile
+
+ from unload_audit_driver import HERE, ROOT, command, digest, load, native_case, write_json
+-from unload_audits import PARENT_LABEL, check_parent_audits
++from unload_audits import PARENT_LABEL, check_parent_audits, started_header
+
+
+ LABEL = PARENT_LABEL
+@@ -202,6 +202,10 @@ def run_formal(output, result, identity, receipt_path, native_archive, native_ma
+             expected_roots = [root]
+         if roots != expected_roots or source != identity['head']:
+             raise ValueError('wrong materialized root or commit: ' + case)
++        if case == 'begin':
++            joint = started_header(ROOT)
++            files = joint.materialize(ROOT, project, files)
++            roots = [*roots, joint.MODULE]
+         if any(digest(project / name) != checksum for name, checksum in files.items()):
+             raise ValueError('materialized proof differs from its checked inputs')
+         shutil.copyfile(ROOT/'tools/proof_services.py', project/'tools/proof_services.py')
