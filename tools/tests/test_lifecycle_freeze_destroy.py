@@ -1036,7 +1036,6 @@ class SceneAndReplayTests(unittest.TestCase):
             c.last_http_status=None;c.failure_step='controlled';c.timing_report.return_value=[]
             c.wait_running.return_value={'phase':'running'};c.wait_unloaded.return_value={'phase':'unloaded'}
             c.query.return_value={'phase':'unloading' if owner=='1' else 'running'}
-            c.assert_terminal_unload_replay.side_effect=lambda *_,**kw: {'phase':kw['phase']}
             for name in ('create','unload','resume','destroy','wait_cleaned','run_public_workload','assert_resumed_workload','assert_continued_workload'):
                 getattr(c,name).side_effect=lambda *_,n=name,o=owner,**__:events.append(n+'-'+o) or {}
             clients[owner]=c
@@ -1087,16 +1086,31 @@ class SceneAndReplayTests(unittest.TestCase):
         p = Mock(spec=probe_type)
         for name in ('arm','after_acceptance','assert_terminal_before_gc','cleanup','close'):
             getattr(p,name).side_effect=lambda *_,n=name,**__:events.append(n) or {}
-        window_reads = iter(('before', 'after', 'after_rejected_resume', 'after_destroy_replay'))
+        window_reads = iter(('before', 'after', 'after_rejected_resume', 'after_destroy_replay',
+                             'after_unload_replay'))
         window_evidence = dict(freeze_sql_receipt_pending=True, original_pin_and_positive_charge_retained=True,
             original_vmm_endpoint=dict(jail_identity=[1, 2], socket_identity=[1, 3], uid=4))
-        def observe_destroy_window(_):
+        observed_windows = {}
+        journal_probe = None
+
+        def observe_destroy_window(deadline):
             edge = next(window_reads)
             events.append('freeze-window-' + edge)
-            if window_fault == edge:
+            if journal_probe is not None:
+                result = journal_probe.observe_destroy_window(deadline)
+            elif window_fault == edge:
                 raise ValueError('original Freeze receipt no longer pending')
-            return dict(window_evidence)
+            else:
+                result = dict(window_evidence)
+            observed_windows[edge] = result
+            return result
         p.observe_destroy_window.side_effect = observe_destroy_window
+
+        def replay_unload(*, phase):
+            events.append('unload-replay-' + phase)
+            return {'phase': phase}
+        original.assert_terminal_unload_replay.side_effect = replay_unload
+
         def recovery(*_,observe_peer,**__):
             events.append('recover')
             if fault:raise ValueError('unknown original Stop')
@@ -1108,6 +1122,27 @@ class SceneAndReplayTests(unittest.TestCase):
                 acceptance={'observed':'internal'},observed_monotonic=time.monotonic())
         p.terminal_failure_state.return_value={'original':'preserved'}
         with tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
+            if window_fault == 'after_unload_replay':
+                journal = fixture(Path(directory))
+                db = freeze_window_journal(journal)
+                journal_probe = journal.probe
+                stack.enter_context(patch.object(capture, 'checked_source_records', return_value=journal.rows))
+                stack.enter_context(patch.object(journal_probe, '_check_source_hold'))
+                stack.enter_context(patch.object(journal_probe, '_observe_destroy_endpoint',
+                                                 return_value=window_evidence['original_vmm_endpoint']))
+
+                def replay_with_late_receipt(*, phase):
+                    if phase == 'terminating':
+                        self.assertEqual(list(observed_windows),
+                                         ['before', 'after', 'after_rejected_resume', 'after_destroy_replay'])
+                        receipt = journal.receipt(journal.freeze, 'Frozen',
+                                                  dict(pid=123, start_ticks=456, boot_id='boot'))
+                        with closing(sqlite3.connect(db)) as conn, conn:
+                            conn.execute('UPDATE outbox SET dispatch_state=?,receipt_json=? WHERE id=1',
+                                         ('receipted', json.dumps(receipt).encode()))
+                    return replay_unload(phase=phase)
+                original.assert_terminal_unload_replay.side_effect = replay_with_late_receipt
+
             sandbox=Mock();sandbox.files.read.side_effect=['disk-counter:3','disk-counter:4','disk-counter:4','disk-counter:5']
             sdk_calls=0
             def sdk():
@@ -1143,7 +1178,9 @@ class SceneAndReplayTests(unittest.TestCase):
                     with self.assertRaises(scene.PublicStatusMismatch):
                         scene.exercise(args)
                 else:
-                    with self.assertRaisesRegex(ValueError, 'original Freeze receipt no longer pending'):
+                    message = ('one exact dispatched action with no SQL receipt required'
+                               if journal_probe is not None else 'original Freeze receipt no longer pending')
+                    with self.assertRaisesRegex(ValueError, message):
                         scene.exercise(args)
                 report = json.loads((Path(directory)/'lifecycle-unload-report.json').read_bytes())
                 self.assertFalse(report['complete'])
@@ -1154,33 +1191,39 @@ class SceneAndReplayTests(unittest.TestCase):
                     'after': 'recheck-original-freeze-after-public-destroy',
                     'after_rejected_resume': 'recheck-original-freeze-after-resume-veto',
                     'after_destroy_replay': 'recheck-original-freeze-after-destroy-replay',
+                    'after_unload_replay': 'recheck-original-freeze-after-unload-replay',
                 }
                 self.assertEqual(report['phase'], phases[public_conflict or window_fault])
                 if public_conflict is not None:
                     self.assertEqual(report['last_http_status'], dict(actual=202, expected=409))
-                expected_windows = {
-                    edge: window_evidence for edge in
-                    ('before', 'after', 'after_rejected_resume', 'after_destroy_replay')
-                    if 'freeze-window-' + edge in events and edge != window_fault
-                }
                 if window_fault == 'before':
                     original.destroy.assert_not_called()
                     self.assertNotIn('destroy', report)
                 else:
                     original.destroy.assert_called_once()
                     self.assertEqual(report['destroy'], original.current_acceptance)
-                    self.assertEqual(report['freeze_destroy_acceptance_window'], expected_windows)
+                    self.assertEqual(report['freeze_destroy_acceptance_window'], observed_windows)
                 if public_conflict == 'destroy-replay' or window_fault in (
-                        'after_rejected_resume', 'after_destroy_replay'):
+                        'after_rejected_resume', 'after_destroy_replay', 'after_unload_replay'):
                     self.assertEqual(report['frozen_destroy_resume_veto'], veto_evidence)
                 else:
                     self.assertNotIn('frozen_destroy_resume_veto', report)
-                if window_fault == 'after_destroy_replay':
+                if window_fault in ('after_destroy_replay', 'after_unload_replay'):
                     self.assertEqual(report['frozen_destroy_replay'], replay_evidence)
                 else:
                     self.assertNotIn('frozen_destroy_replay', report)
                 other.destroy.assert_not_called()
-                original.assert_terminal_unload_replay.assert_not_called()
+                if journal_probe is not None:
+                    original.assert_terminal_unload_replay.assert_called_once_with(phase='terminating')
+                    self.assertEqual(report['terminal_unload_replays'], [{'phase': 'terminating'}])
+                    self.assertEqual(len(observed_windows), 4)
+                    for sample in observed_windows.values():
+                        self.assertIs(sample['freeze_sql_receipt_pending'], True)
+                        self.assertEqual(sample['freeze_identity'], journal.freeze['identity'])
+                    self.assertNotIn('freeze_destroy_recovery', report)
+                    self.assertNotIn('release-stop', events)
+                else:
+                    original.assert_terminal_unload_replay.assert_not_called()
                 p.recover_after_destroy.assert_not_called()
                 p.assert_terminal_before_gc.assert_not_called()
                 runner.settlement_evidence.assert_not_called()
@@ -1221,12 +1264,13 @@ class SceneAndReplayTests(unittest.TestCase):
                     self.assertLess(events.index(terminal_event),events.index('freeze-window-after'))
                     expected_order = [
                         'freeze-window-after', 'new-resume', 'freeze-window-after_rejected_resume',
-                        'destroy-replay', 'freeze-window-after_destroy_replay', 'recover',
+                        'destroy-replay', 'freeze-window-after_destroy_replay', 'unload-replay-terminating',
+                        'freeze-window-after_unload_replay', 'recover',
                     ]
                     self.assertEqual([event for event in events if event in expected_order], expected_order)
                     self.assertEqual(report['freeze_destroy_acceptance_window'], dict(
                         before=window_evidence, after=window_evidence, after_rejected_resume=window_evidence,
-                        after_destroy_replay=window_evidence))
+                        after_destroy_replay=window_evidence, after_unload_replay=window_evidence))
                     self.assertEqual(report['frozen_destroy_resume_veto'], veto_evidence)
                     self.assertEqual(report['frozen_destroy_replay'], replay_evidence)
                 self.assertLess(events.index('assert_running_workload-2'),events.index('release-stop'))
@@ -1282,6 +1326,9 @@ class SceneAndReplayTests(unittest.TestCase):
         for edge in ('after_rejected_resume', 'after_destroy_replay'):
             with self.subTest(edge=edge):
                 self.exercise(window_fault=edge)
+
+    def test_ordered_scene_stops_at_sql_receipt_written_after_old_unload_replay(self):
+        self.exercise(window_fault='after_unload_replay')
 
     def test_unknown_stop_keeps_original_failure_without_reissuing_or_destroying_peer(self):self.exercise(fault=True)
 
