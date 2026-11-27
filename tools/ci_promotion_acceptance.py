@@ -151,6 +151,29 @@ def run_entry(command, *, log, checkout, env, pass_fds=()):
                        stderr=subprocess.STDOUT, check=True, pass_fds=pass_fds)
 
 
+def check_stage1_inputs(checkout, output, env):
+    registration = '''
+from pathlib import Path
+from tools.proof_native_suite import load
+
+root = Path.cwd()
+registered = load('stage1_promotion_sources', root / 'verification/experiments/stage1-protocol/registered.py')
+registered.validate_registration(root, profile='full')
+'''
+    checks = (
+        ('stage1-freeze.log', ['shasum', '-a', '256', '--check', '--quiet',
+                              'verification/stage1-protocol-inputs.sha256']),
+        ('stage1-registration.log', [*BINARY, '-c', registration]),
+    )
+    for filename, command in checks:
+        log = output / filename
+        try:
+            run_entry(command, log=log, checkout=checkout, env=env)
+        except subprocess.CalledProcessError:
+            print(f'Stage1 input preflight failed: {log}', file=sys.stderr)
+            raise
+
+
 def evidence_path(reference, parent, *, filename):
     path = private_path(reference['path'])
     if not path.is_relative_to(parent) or path.name != filename or digest(path) != reference['sha256']:
@@ -402,6 +425,7 @@ def run_stage(candidate, checkout, output, *, native=None, resume_from=None, reg
                 or any(cache.is_relative_to(path) or path.is_relative_to(cache)
                        for path in (checkout, output))):
             raise ValueError('native Cargo cache must be owner-writable and separate from source and evidence')
+        check_stage1_inputs(checkout, output, env)
         with operator_lock(env, 'SANDPROOF_PROOF_HEAVY_LOCK',
                            'SANDPROOF_PROOF_HEAVY_LOCK_FD') as fd:
             native_env = dict(env, SANDPROOF_ACCEPTANCE_ROLE='native')

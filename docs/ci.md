@@ -12,6 +12,8 @@
 
 在宿主固定环境和原协调锁下，用[晋升入口](../tools/ci_promotion_acceptance.py)执行 `run`。候选文件列明 PR 号、源分支、源提交、目标基线、GitHub 试合并提交和代码树。原生执行使用既有共享 `CARGO_TARGET_DIR`，登记在任务里的私有 Rust 构建按下文回收。
 
+开始新的完整 Rust 验收前，入口先核对 Stage1 冻结表和当前源登记，错误记入本轮的 `stage1-freeze.log` 或 `stage1-registration.log`。这一步可以在占用 Rust 验收锁前发现失配。最终仍由原完整入口核对原生收据、实际抽取和 Lean 结果。
+
 运维在宿主安装固定的 `/etc/sandproof-stage1-promotion.json`，由 root 所有、允许证据账户读取，且其他账户无写权限。文件包含 `schema: 1`、普通证据账户的数字 `evidence_uid`，以及由该账户拥有、位于 `/mnt` 的私有 `registry` 目录。登记目录与单次输出目录分开。所有操作者使用同一安装配置。入口按完整候选在共享登记目录上锁，保存每次尝试的原输出身份。并发请求和换一个输出目录重开相同候选均被拒绝。
 
 ```sh
