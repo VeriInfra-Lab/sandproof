@@ -20,6 +20,7 @@ STAGE1 = Path('verification/experiments/stage1-protocol')
 HERE = STAGE1 / 'inbox-lookup'
 MODULE = 'inbox-lookup'
 MODEL = 'controller-service/src/controller/lifecycle_inbox/model.rs'
+WORKFLOW_DOC = 'docs/proof-workflow.md'
 ISOLATED_INPUTS = {
     str(HERE / 'module_acceptance.py'),
     str(HERE / 'InboxLookupWrong.lean.in'),
@@ -130,9 +131,10 @@ def select(paths, root=ROOT):
     inventory = read(root / HERE / 'inventory.json')
     paths = sorted(set(paths))
     scope = dict(changed_paths=paths, affected_modules=[], checks=[], direct_consumers=[])
-    if not paths:
+    proof_paths = set(paths) - {WORKFLOW_DOC}
+    if not proof_paths:
         return dict(scope, status='empty', reason='no changed inputs; no module was accepted')
-    if set(paths) <= ISOLATED_INPUTS:
+    if proof_paths <= ISOLATED_INPUTS:
         # If even the isolated mutant template gets a new downstream reader,
         # stop treating it as isolated. Other inputs here are pilot tooling.
         if WRONG_PAGE not in paths or not (lean_consumers(root, {WRONG_PAGE}) - {MODULE}):
@@ -150,7 +152,7 @@ def select(paths, root=ROOT):
         'verification/foundations-environment.json', 'verification/stage1-protocol-inputs.sha256',
     }
     shared = [path for path in paths if path in shared_modules or Path(path).is_relative_to(HERE)]
-    unknown = sorted(set(paths) - set(shared) - ISOLATED_INPUTS)
+    unknown = sorted(proof_paths - set(shared) - ISOLATED_INPUTS)
     direct, affected = downstream(root, set(inventory['audits']))
     return dict(scope, status='review-required', affected_modules=[MODULE, *affected],
         direct_consumers=direct, shared_inputs=shared, unmapped_inputs=unknown,
