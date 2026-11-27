@@ -1,0 +1,14 @@
+import SandproofStandardRecordCodec.Types
+open Aeneas Aeneas.Std
+namespace SandproofStandardRecordCodec
+
+class DecodeCalls where
+  fromSlice {T : Type} : serde_core.de.Deserialize T → Slice U8 → Result (core.result.Result T serde_json.error.Error)
+  maintenance {D E : Type} : serde_core.de.Deserializer D E → D → Result (core.result.Result controller.checkpoint.config.MaintenanceConfig E)
+  inbox {D E : Type} : serde_core.de.Deserializer D E → D → Result (core.result.Result controller.lifecycle_inbox.model.Inbox E)
+
+variable [calls : DecodeCalls]
+abbrev serde_json.de.from_slice := @calls.fromSlice
+abbrev controller.checkpoint.config.MaintenanceConfig.Insts.Serde_coreDeDeserialize.deserialize := @calls.maintenance
+abbrev controller.lifecycle_inbox.model.Inbox.Insts.Serde_coreDeDeserialize.deserialize := @calls.inbox
+end SandproofStandardRecordCodec

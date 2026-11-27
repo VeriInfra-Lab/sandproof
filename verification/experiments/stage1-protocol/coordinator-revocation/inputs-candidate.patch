@@ -1,5 +1,5 @@
 diff --git a/verification/stage1-protocol-inputs.sha256 b/verification/stage1-protocol-inputs.sha256
-index ca1460e0..77b2c773 100644
+index ca1460e0..a5abdf37 100644
 --- a/verification/stage1-protocol-inputs.sha256
 +++ b/verification/stage1-protocol-inputs.sha256
 @@ -68,6 +68,9 @@ c3d56aae0daf302271a97f8f1509a6d6e415b13a92a68e087e9418b266d6ef19  SandboxModel/L
@@ -24,7 +24,7 @@ index ca1460e0..77b2c773 100644
  8b2d6d10a245b31552c5dbf8a1251ff97ca218e6f719643a331805d7a921b8d6  verification/experiments/sqlite-commit/negative.py
  29914fd4c86dca150a85a83717a77bb9eccebfd90655b28819f6f42c80352af7  verification/experiments/stage1-manifest/NegativeCount.lean.in
  803bc9ddfe18223fdc45417b8bc7ffc17ebd20db421d1f0b47e0161c3e1715c9  verification/experiments/stage1-manifest/NegativeDiskId.lean.in
-@@ -191,6 +199,23 @@ b731ece88657171a8c8581a81129b08cf3e2bf532fda776eab9db186d3373732  verification/e
+@@ -191,6 +199,29 @@ b731ece88657171a8c8581a81129b08cf3e2bf532fda776eab9db186d3373732  verification/e
  1611afa3391d94277b5bf1662c7cfceaac06dfcf2f2fd8d796db4f5a29de21d6  verification/experiments/stage1-protocol/archive.py
  8dbd6841523549fd1ed2bbef6155c4ac4b8d1646e8a0919c8f075ab125e812c1  verification/experiments/stage1-protocol/component.py
  0c3a5bcf4f1501496f8870fba5a0d0725d90a0a81d7eb913b33d0c953e7130da  verification/experiments/stage1-protocol/convergence.py
@@ -33,7 +33,13 @@ index ca1460e0..77b2c773 100644
 +c44ce95cd2720d3b81403389173ee3c85ef785a3ead06c7f77e0b816eafac5e5  verification/experiments/stage1-protocol/coordinator-revocation/JournalLoadExit.lean.in
 +3c1ff7cbfd19fe51110b904d4c7a50ade4d1455d313e69d4094dd29a42efed9b  verification/experiments/stage1-protocol/coordinator-revocation/JournalReplayState.lean.in
 +e146b130219f84efa5696e41fbb82c02bff86716c14c089e1ffd3f84cdbbe594  verification/experiments/stage1-protocol/coordinator-revocation/JournalStartedHeader.lean.in
-+fcd34071119db9ce47e6e8eebfc881e05df6d9abf5082f064034057760fc6ad0  verification/experiments/stage1-protocol/coordinator-revocation/check.py
++2929f772c98e89c7d5fe116c2fd07d30152a87c43239cd3f963d36c9093898db  verification/experiments/stage1-protocol/coordinator-revocation/check.py
++39dd7eac3105524d6f0e8a5f26d56234bd8ccc2533ac8ff8eac91d908ad83025  verification/experiments/stage1-protocol/coordinator-revocation/codec-read/DecoderCalls.lean.in
++f382c66227fad69a4c74b5350c88a2f8f25fddcc99c4397de42ec4f178bda66d  verification/experiments/stage1-protocol/coordinator-revocation/codec-read/FunsExternal.lean.in
++8a803487236aee0c58b7f70c9cb41953db6c3b3bacec8f8da22fe51b36c53690  verification/experiments/stage1-protocol/coordinator-revocation/codec-read/TypesExternal.lean.in
++a7b9c4fe01c7bb87e64a02eb3eaabba88e8c4aa29b313973efb68961468a07cb  verification/experiments/stage1-protocol/coordinator-revocation/codec_binding.py
++41c721cbd5f58394879228e1d2d846185a512fcae9b61d0f177379ecca268440  verification/experiments/stage1-protocol/coordinator-revocation/codec_reads.py
++aa6662bf96771392fcd510c3d3e6571adec16f6232a5f7a531b1a1d0c31e86dd  verification/experiments/stage1-protocol/coordinator-revocation/codec_receipt.py
 +5f834832dbf3a3b976d4cc729691c8c73b4c920ae04712e8e6d84de2f3a3c4cf  verification/experiments/stage1-protocol/coordinator-revocation/guard_binding.py
 +56eea506b3f59155da59adc1f4f436df5274c239bb7d6a0aa5bc9d78c862f35a  verification/experiments/stage1-protocol/coordinator-revocation/hook_regressions.py
 +16e8e7160145ad84ffa8bf2b6981ca0ee60f8d81f426fd70a56be32c970a1531  verification/experiments/stage1-protocol/coordinator-revocation/journal_entry.py
@@ -48,7 +54,7 @@ index ca1460e0..77b2c773 100644
  86765ff58583c61d30943ee20cad551892276bf8fe75552f4f661675f60a17e8  verification/experiments/stage1-protocol/create-observation/Cargo.lock
  7aa00fdfae5783599331cbee5aefb069e5b9a017b67bfbac03415132a65b7772  verification/experiments/stage1-protocol/create-observation/Cargo.toml
  a45d17cf86e75223e22c9538fb9e881fb3bf859e59936ffb6f7b91782a0ecf80  verification/experiments/stage1-protocol/create-observation/README.md
-@@ -1014,7 +1039,19 @@ be87b690a322072a800c3dadfab0223a1bbec2025f8ca0d65d34da2ca4c918ac  verification/e
+@@ -1014,7 +1045,19 @@ be87b690a322072a800c3dadfab0223a1bbec2025f8ca0d65d34da2ca4c918ac  verification/e
  0d81ab3e6e327e79430b943bd55b467dd3496f06ecd6dfd9ab02bbb800841c4b  verification/experiments/stage1-protocol/unload-observation/src/lib.rs
  284f8453a17451f153cae997ed232f6315e8070b0d6caaa93590ec81c072fc40  verification/experiments/stage1-protocol/unload-observation/test_drivers.py
  7ebb902f46ac7ba31b82b9496091b1305a97ee096c0dc01ec14c428d18c15448  verification/experiments/stage1-protocol/unload-observation/tests/contract.rs

@@ -97,6 +97,14 @@
 
 [事务包登记候选](journal-provider-candidate.patch)以 #1061 的 `de37231d` 为补丁基线，供主控在叠入本生产版本的候选上接入。补丁将重放、载入首错与实际表头读取三页加入现有事务入口的构建根与逐文件检查清单，用 `current_file_overrides` 记录本版协调器，保留原冻结。事务独立入口的既有输入漂移仍需按各自提供方回执核对。
 
+### 公开收件使用的两个标准解码器
+
+[`DecoderCalls`](codec-read/DecoderCalls.lean.in) 把生产 `StandardRecordCodec` 的两个读取方法接到原事务的 `CodecTransfer` 定理。[接线检查](codec_binding.py) 从公开 journal 选择的具体字典读取方法槽，再在独立抽取中核对同一方法的源位置、完整切片指针和长度、派生字典、JSON 函数及返回槽。Aeneas 从这两个真实方法生成透明函数体。检查器拒绝将切片长度换成连接参数，或用维护配置的派生类型解释收件箱。
+
+两条定理对任意编码方法、任意传入字节及任意存活事务成立。若相应的 `from_slice` 调用返回普通 Rust 结果，实际读取将成功值或完整 JSON 错误交给原 `mapJson`，并交回整个原 holder。表示沿用事务提供方的连接、配置、收件箱与 JSON 错误。固定 Serde 库及两个派生处理器按[逐符号合同](../../../../docs/formal/dependencies.md)提供，具体字节怎样解成字段仍需该提供方的证据。三个方法一同翻译时，编码路径在 Serde 的递归 Serialize trait 组停止。
+
+[解码视图](codec_reads.py)使用单独的 Lake 构建目录。检查器逐项核对事务提供方的 Rust 输入、原模块清单和实际可达导入。生成类型页逐字节使用，函数页仅由工具引入三个外部调用使用的字典参数，两页原件均保留。ning 复用 `stage1-create-transaction-link` 的原生入口，其中的 `record_codec_keeps_full_inputs_state_and_first_error_on_the_original_connection` 在实际 SQLite 连接上观察调用参数和故障分支。
+
 ## 复验与登记候选
 
 在证明机干净候选上使用固定工具和现有重锁，给出新的私有输出目录。
@@ -107,7 +115,7 @@ SANDPROOF_ACCEPTANCE_ROLE=formal PYTHONDONTWRITEBYTECODE=1 \
   --tools "$proof_tools" --packages "$fixed_lake_packages" --lock "$shared_proof_lock" --output "$new_output"
 ```
 
-`--tools` 下应有原 `aeneas` 与 `lean-mcp`。入口从 Git 解包源树，保留四份 Charon 产物、公开 journal 和联合视图的 Lean 生成体、隔离的 Lake 构建、实际文件诊断和审计。联合视图的两份 `*_Template.lean` 只由翻译器输出，实际联合工程使用已登记的五个函数绑定和四个类型绑定。
+`--tools` 下应有原 `aeneas` 与 `lean-mcp`。入口从 Git 解包源树，保留五份 Charon 产物、公开 journal、具体解码器和联合视图的 Lean 生成体、隔离的 Lake 构建、实际文件诊断和审计。联合视图的两份 `*_Template.lean` 只由翻译器输出，实际联合工程使用已登记的五个函数绑定和四个类型绑定。
 
 交主控登记这个形式入口及 `SandboxModel.Lifecycle.Protocol.CoordinatorRevocation` 的九条审计。覆盖记录可登记“在已解码 `Result` 上证明应用撤销选择，全文重放命中给出实际查询和选择，原父函数接线经实际 Charon 核对”，适用版本取通过对应检查的候选。生产协调器是现有原生输入，相关登记与冻结由主控结合 #1061 逐闭包复核。
 
@@ -115,6 +123,6 @@ SANDPROOF_ACCEPTANCE_ROLE=formal PYTHONDONTWRITEBYTECODE=1 \
 
 [默认入口的输入候选](inputs-candidate.patch)在 #1061 的清单上累计新增 37 个路径，更新原 `unload_audits.py` 的一行。它覆盖协调器、录入、BEGIN 所用的生产源码、证明、薄根、原始抽取与物化入口。事务独立清单一并列出这个共享检查文件的候选内容。主控还需核对既有公共工具冻结以及同一候选的原生封口。
 
-登记子任务在分配的四核内继承并核对原协调锁描述符。检查点读取四份指定 LLBC、公开 journal 的五份生成产物、真实内核命令的退出状态与日志、物理文件和原服务回执。收敛与 Create 有限计划继续按各自的原任务清单验收。主控合入时需重新校验受影响的公共冻结和完整原生输入。
+登记子任务在分配的四核内继承并核对原协调锁描述符。检查点读取五份指定 LLBC、公开 journal 和具体解码器各自的五份生成产物、真实内核命令的退出状态与日志、物理文件和原服务回执。收敛与 Create 有限计划继续按各自的原任务清单验收。主控合入时需重新校验受影响的公共冻结和完整原生输入。
 
 ning 在同一候选运行普通完整检查，核对现有 `historical_unload_keeps_resumed_route_current_unload_revokes_it` 与新增 `uncertain_commit_selects_broadcast_only_for_access_ending_operations` 两个原生断言组。前者通过原应用和受控端口观察实际通知，后者覆盖不确定提交和普通拒绝的决策边界。完整公共入口和实际网关分别验收。
