@@ -2,7 +2,11 @@ import importlib.util
 from copy import deepcopy
 from contextlib import redirect_stdout
 from io import StringIO
+import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -201,6 +205,40 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
             self.assertEqual(result['status'], 'failed')
             self.assertEqual(result['error'], 'original command failed')
             self.assertEqual({file.name for file in output.iterdir()}, {'native-preparation.json'})
+
+    def test_standalone_children_drop_login_session_but_keep_actual_test_configuration(self):
+        candidate = {'commit': 'b' * 40, 'tree': 'c' * 40}
+        launcher = str(LOOKUP / 'module_acceptance.py')
+        observed = []
+
+        def capture(*args):
+            child = json.loads(subprocess.check_output([sys.executable, '-c',
+                'import json, os; print(json.dumps([os.getenv("XDG_SESSION_ID"), os.getenv("RUST_TEST_THREADS")]))'],
+                text=True))
+            observed.append((child, dict(test_configuration=acceptance.native_test_configuration(os.environ),
+                                         environment_sha256=acceptance.digest(dict(os.environ)))))
+            return 0
+
+        with tempfile.TemporaryDirectory() as temp, \
+                patch.object(acceptance, 'clean_candidate', return_value=candidate), \
+                patch.object(acceptance, 'changed_files', return_value=('a' * 40, [launcher])), \
+                patch.object(acceptance, 'execute_native_preparation', side_effect=capture), \
+                patch.object(acceptance, 'execute', side_effect=capture):
+            lock = Path(temp) / 'formal.lock'
+            lock.touch()
+            prefix = ['--base', 'reviewed', '--output', str(Path(temp) / 'evidence')]
+            for session, threads, args in [('fixture-1', '4', ['--prepare-native']),
+                                           ('fixture-2', '4', ['--formal-lock', str(lock)]),
+                                           ('fixture-2', '8', ['--formal-lock', str(lock)])]:
+                with patch.dict(os.environ, XDG_SESSION_ID=session, RUST_TEST_THREADS=threads):
+                    self.assertEqual(acceptance.main([*prefix, *args]), 0)
+        self.assertEqual([child for child, _ in observed], [[None, '4'], [None, '4'], [None, '8']])
+        self.assertEqual(observed[0][1], observed[1][1])
+        paths = {acceptance.WRONG_PAGE, *acceptance.WRONG_FREEZES}
+        original = dict(kind='inbox-lookup-native-key-v1', source=dict.fromkeys(paths, 'old'), runtime=observed[0][1])
+        current = dict(original, source=dict.fromkeys(paths, 'new'), runtime=observed[2][1])
+        with self.assertRaisesRegex(ValueError, 'native key changed: runtime'):
+            acceptance.compare_native_keys(original, current, paths)
 
 
 if __name__ == '__main__':

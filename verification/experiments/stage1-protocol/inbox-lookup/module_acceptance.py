@@ -734,14 +734,18 @@ def main(argv=None):
         if args.plan or (plan['status'] != 'ready' and (impact is None or args.registered_native is None)):
             print(json.dumps(dict(plan, candidate=candidate), ensure_ascii=False))
             return 0 if plan['status'] == 'ready' else 2
-        if args.prepare_native:
-            return execute_native_preparation(args.output, candidate)
-        if args.formal_lock is None or args.formal_lock.is_symlink() or not args.formal_lock.is_file():
+        if not args.prepare_native and (args.formal_lock is None or args.formal_lock.is_symlink()
+                                        or not args.formal_lock.is_file()):
             raise ValueError('execution requires the existing regular operator --formal-lock')
         if args.registered_native is not None:
             if impact is None:
                 raise ValueError('registered evidence cannot be supplied for an unmapped or isolated selection')
             return execute_registered(args.output, plan, candidate, args.formal_lock, args.registered_native)
+        # The login-session identifier is not a test input. Remove it before
+        # both fingerprinting and launching the standalone children.
+        os.environ.pop('XDG_SESSION_ID', None)
+        if args.prepare_native:
+            return execute_native_preparation(args.output, candidate)
         return execute(args.output, plan, candidate, args.formal_lock, reuse)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         parser.exit(2, str(exc) + '\n')
