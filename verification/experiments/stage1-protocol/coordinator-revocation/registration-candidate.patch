@@ -1,5 +1,5 @@
 diff --git a/verification/experiments/stage1-protocol/registered.py b/verification/experiments/stage1-protocol/registered.py
-index eb47df75..e46966d9 100644
+index eb47df75..1b2df96e 100644
 --- a/verification/experiments/stage1-protocol/registered.py
 +++ b/verification/experiments/stage1-protocol/registered.py
 @@ -364,8 +364,8 @@ NATIVE_DRIVERS = (
@@ -32,7 +32,7 @@ index eb47df75..e46966d9 100644
      if result.get('kind') == 'source-live-four-view-proof-component':
          return [row['actual'] for row in result['views'].values()]
      if result.get('kind') == 'fixed-original-proof-readback':
-@@ -979,6 +984,22 @@ def _check_fixed_protocol_record(original, job):
+@@ -979,6 +984,24 @@ def _check_fixed_protocol_record(original, job):
  def _check_actual(result, job):
      if result.get('complete') is not True:
          raise ValueError('original formal driver incomplete: ' + job['name'])
@@ -42,7 +42,9 @@ index eb47df75..e46966d9 100644
 +                    ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip()):
 +            raise ValueError('coordinator result belongs to another candidate')
 +        hook = result.get('joint', {}).get('journal_hook')
-+        if (not isinstance(hook, dict) or hook.get('source') != 'controller-service/src/lib.rs'
++        if (not isinstance(hook, dict) or hook.get('trait') != 'sandproof_controller_service::CrashInjector'
++                or hook.get('receiver') != 'sandproof_controller_service::NeverCrash' or hook.get('method') != 'hit'
++                or hook.get('source') != 'controller-service/src/lib.rs'
 +                or hook.get('source_sha256') != _sha(ROOT/hook['source'])
 +                or result.get('candidate_parent', {}).get('journal_hook') != hook
 +                or any(result.get('original_parent', {}).get('journal_hook', {}).get(key) != hook.get(key)
@@ -55,7 +57,7 @@ index eb47df75..e46966d9 100644
      if job['name'] == UNLOAD.PARENT_LABEL:
          if any(not re.fullmatch(r'[0-9a-f]{64}', result.get(key, ''))
                 for key in ('source_sha256', 'native_result_sha256')):
-@@ -1221,7 +1242,7 @@ def compute_retained_coverage(root, record):
+@@ -1221,7 +1244,7 @@ def compute_retained_coverage(root, record):
              actual = result['cases']['correct']
              folder = result_path.parent/'correct'
          elif job['cases'] == ['correct']:
@@ -64,7 +66,7 @@ index eb47df75..e46966d9 100644
              folder = result_path.parent
          else:
              continue
-@@ -1263,7 +1284,7 @@ def profile_is_convergence_job(job):
+@@ -1263,7 +1286,7 @@ def profile_is_convergence_job(job):
 
 
  def requires_formal_cpu_slot(job):
@@ -73,7 +75,7 @@ index eb47df75..e46966d9 100644
              or any(key in job for key in ('create_package', 'convergence_package', 'convergence_extra')))
 
 
-@@ -1545,7 +1566,13 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
+@@ -1545,7 +1568,13 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                  if path.is_symlink() or not path.is_file():
                      raise ValueError('linked original proof input')
                  evidence[str(path.resolve())] = _sha(path)
@@ -88,7 +90,7 @@ index eb47df75..e46966d9 100644
                 for name in evidence):
          raise ValueError('missing original raw LLBC evidence')
      if job['name'] == UNLOAD.LABEL:
-@@ -1704,7 +1731,7 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
+@@ -1704,7 +1733,7 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
      if retained or job['name'] in CPU_PINNED_UNLOAD_JOBS:
          fd, _ = inherited_lock()
          pass_fds = (fd,)
@@ -97,7 +99,7 @@ index eb47df75..e46966d9 100644
              or job.get('convergence_package') in CONVERGENCE.LOCKED_FORMAL):
          fd, lock = inherited_lock()
          pass_fds = (fd,)
-@@ -1871,6 +1898,8 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
+@@ -1871,6 +1900,8 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
      labels = ('functional', *(('stage1-protocol',) if profile == 'full' else ()), *native_labels(profile))
      receipts = {name: shared.native_case(name, root, None, scope=scope) for name in labels}
      paths = {name: _evidence(receipt) for name, receipt in receipts.items()}
@@ -106,7 +108,7 @@ index eb47df75..e46966d9 100644
      for name in native_labels(profile):
          _original_file(receipts[name], 'result.json')
      if 'stage1-sqlite-commit' in receipts:
-@@ -1990,6 +2019,19 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
+@@ -1990,6 +2021,19 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
      return record
 
 
@@ -127,7 +129,7 @@ index eb47df75..e46966d9 100644
      parser = argparse.ArgumentParser(description=__doc__)
      parser.add_argument('mode', choices=('native', 'formal', 'plan'))
 diff --git a/verification/experiments/stage1-protocol/test_registered.py b/verification/experiments/stage1-protocol/test_registered.py
-index 372742d6..9f19ab54 100644
+index 372742d6..7db1cf98 100644
 --- a/verification/experiments/stage1-protocol/test_registered.py
 +++ b/verification/experiments/stage1-protocol/test_registered.py
 @@ -60,7 +60,7 @@ class CreateDelivery(OriginalReadPlanFixture):
@@ -154,10 +156,23 @@ index 372742d6..9f19ab54 100644
          self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
              'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
              'create-guard', 'envelope-writer-correct', 'envelope-writer-swallow-error',
-@@ -615,6 +620,20 @@ class Registration(OriginalReadPlanFixture):
+@@ -615,6 +620,33 @@ class Registration(OriginalReadPlanFixture):
          self.assertEqual(parent['cases'], [
              'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision', 'parent-link'])
 
++    def test_coordinator_rejects_an_unidentified_hook_even_if_all_views_agree(self):
++        name = 'coordinator-revocation'
++        hook = {'source': 'controller-service/src/lib.rs',
++                'source_sha256': registered._sha(registered.ROOT/'controller-service/src/lib.rs')}
++        result = {'kind': name, 'candidate': 'candidate', 'complete': True,
++                  'original_parent': {'journal_hook': hook},
++                  'candidate_parent': {'journal_hook': hook, 'rejected_hook_metadata': ['hook-argument', 'hook-dictionary']},
++                  'joint': {'journal_hook': hook, 'rejected_hook_metadata': ['hook-translation']},
++                  'physical': {'audits': ['SandboxModel.Stage1Protocol.CoordinatorRevocation.never_crash_hit']}}
++        with patch.object(registered.subprocess, 'check_output', return_value='candidate'):
++            with self.assertRaisesRegex(ValueError, 'incomplete coordinator journal hook evidence'):
++                registered._check_actual(result, {'name': name, 'cases': ['correct']})
++
 +    def test_coordinator_requires_both_exact_functional_successes(self):
 +        first = ('test controller::lifecycle_inbox::source_work::tests::material_retirement::application::'
 +                 'historical_unload_keeps_resumed_route_current_unload_revokes_it ... ok')
@@ -175,7 +190,7 @@ index 372742d6..9f19ab54 100644
      def test_full_dispatch_assigns_convergence_children_disjoint_four_cpu_slots(self):
          with tempfile.TemporaryDirectory() as directory:
              output = Path(directory)
-@@ -1680,6 +1699,15 @@ class CheckpointExecution(unittest.TestCase):
+@@ -1680,6 +1712,15 @@ class CheckpointExecution(unittest.TestCase):
          sqlite_readback_inputs = (sqlite_result.parent, registered.ROOT, sqlite_packet,
                                    sqlite_commit, current_sqlite)
          def original_file(receipt, name):
