@@ -417,6 +417,8 @@ BTreeSet 插入、Metadata 目录判断和 Tokio Mutex 各有独立原生 case�
 
 只修改没有下游消费者的 `InboxLookupWrong.lean.in` 以及其派生摘要时，可以复用独立的原生收据。用同一入口从干净基线运行 `--prepare-native --base HEAD --output <新建私有证据路径>`，实际执行四个原 Rust 变体并写入 `lookup-native-receipt.json`。再从后继提交用 `--base <原收据提交>`、`--reuse-native <收据路径>` 和 `--reuse-native-sha256 <收据摘要>` 运行，保留原结果及命令日志。复用限于已登记的固定工具与配置。后继仍实际运行原 Lean 正确版和错误版检查，所产收据只覆盖这个模块。
 
+如果计划列出 `registered_impact`，可用 `--registered-native <同一候选的原生证据目录>` 运行列出的登记证明。目前这些作业仍按原入口要求同一代码树的完整原生封印和 `functional` 收据。该路径可以省去未受影响的 Lean 作业，原生封印无法用单个 crate 的测试记录代替。
+
 ## 局部证明经验
 
 - 手写模式匹配与生成代码可能使用不同内部函数；先看完整目标，再证明固定生成版本所需的小引理，不盲目展开枚举组合或增加计算限额。
