@@ -35,6 +35,10 @@ LOOKUP = 'SandproofStage1RequestRust.sandproof_controller_service.controller.lif
 FREEZE = 'verification/stage1-protocol-inputs.sha256'
 WRONG_PAGE = str(HERE / 'InboxLookupWrong.lean.in')
 WRONG_FREEZES = {FREEZE, 'verification/protocol-convergence-inputs.sha256'}
+MODEL_PAGE = str(HERE / 'InboxLookupModel.lean.in')
+LOCAL_LOOKUP_PAGES = {str(HERE / 'InboxLookup.lean.in'), MODEL_PAGE}
+LOCAL_LOOKUP_FREEZES = {*WRONG_FREEZES, 'verification/create-delivery-inputs.sha256',
+                       'verification/v3-transaction-source-inputs.sha256'}
 NATIVE_RECEIPT = 'lookup-native-receipt.json'
 NATIVE_VARIANTS = ('original', 'candidate', 'key-only', 'restored')
 NATIVE_COMMANDS = {
@@ -186,7 +190,7 @@ def reviewed_refresh(root, base, name, hashes):
     if not (root / name).is_file():
         return False
     old = git('show', f'{base}:{name}', root=root)
-    if name in WRONG_FREEZES:
+    if name in LOCAL_LOOKUP_FREEZES:
         revised = re.sub(r'^([0-9a-f]{64})(  )([^\n]+)$',
                          lambda m: hashes.get(m[3], m[1]) + m[2] + m[3], old.decode(), flags=re.M)
         return revised != old.decode() and revised == (root / name).read_text()
@@ -368,19 +372,12 @@ def proposed_changes(before, after):
     return {name for name in before.keys() | after.keys() if before.get(name) != after.get(name)}
 
 
-def registered_impact(paths, root=ROOT, base=None):
-    """Resolve one reviewed business Rust file or original lookup Lean pages
-    to concrete registered jobs, keeping every original native prerequisite.
-    """
-    inventory = read(root / HERE / 'inventory.json')
-    pages = {str(HERE / (name + '.lean.in')) for name in inventory['audits']}
-    seeds = set(paths) & (pages | {MODEL})
-    if not seeds:
-        return None
+def checked_proof_inputs(paths, seeds, freezes, root, base, ignored=()):
+    """Bind proof seeds and only their exact derived checksum edits."""
     hashes = {name: sha(root / name) for name in seeds if (root / name).is_file()}
     if set(hashes) != seeds:
         return None
-    pending = set(paths) - seeds - ISOLATED_INPUTS - {FREEZE}
+    pending = set(paths) - seeds - set(ignored) - freezes
     if any(base is None or not Path(name).is_relative_to(STAGE1) or Path(name).name not in METADATA_FILES
            for name in pending):
         return None
@@ -390,9 +387,53 @@ def registered_impact(paths, root=ROOT, base=None):
             return None
         hashes.update({name: sha(root / name) for name in refreshed})
         pending -= refreshed
-    if FREEZE in paths and (base is None or not reviewed_refresh(root, base, FREEZE, hashes)):
+    if any(base is None or not reviewed_refresh(root, base, name, hashes) for name in set(paths) & freezes):
         return None
+    return hashes
 
+
+def check_original_lookup_model(root, base):
+    # These are the actual definitions referenced by the common proof and its
+    # counterexample. A dependency-only edit can change their proof lemmas,
+    # while the original imports, definitions and contract remain identical.
+    boundary = b'\ntheorem entry_absent_iff ('
+    old = git('show', f'{base}:{MODEL_PAGE}', root=root)
+    current = (root / MODEL_PAGE).read_bytes()
+    if (old.count(boundary) != 1 or current.count(boundary) != 1
+            or old.split(boundary, 1)[0] != current.split(boundary, 1)[0]):
+        raise ValueError('scoped Lookup reuse requires the original shared Lean model definitions')
+
+
+def local_lookup_impact(paths, base, root=ROOT):
+    seeds = set(paths) & LOCAL_LOOKUP_PAGES
+    if not seeds or checked_proof_inputs(paths, seeds, LOCAL_LOOKUP_FREEZES, root, base) is None:
+        raise ValueError('Lookup-only reuse requires positive/shared proof pages and exact derived checksum edits')
+    if MODEL_PAGE in seeds:
+        check_original_lookup_model(root, base)
+    impact = selected_registered_impact(seeds, root)
+    local = {f'{MODULE}-{variant}' for variant in VARIANTS}
+    if not local <= {job['name'] for job in impact['required_jobs']}:
+        raise ValueError('missing original Lookup positive or mutant job')
+    return dict(impact, pending_jobs=[job for job in impact['required_jobs'] if job['name'] not in local])
+
+
+def registered_impact(paths, root=ROOT, base=None):
+    """Resolve one reviewed business Rust file or original lookup Lean pages
+    to concrete registered jobs, keeping every original native prerequisite.
+    """
+    inventory = read(root / HERE / 'inventory.json')
+    pages = {str(HERE / (name + '.lean.in')) for name in inventory['audits']}
+    seeds = set(paths) & (pages | {MODEL})
+    if not seeds:
+        return None
+    if checked_proof_inputs(paths, seeds, {FREEZE}, root, base, ignored=ISOLATED_INPUTS) is None:
+        return None
+    return selected_registered_impact(seeds, root)
+
+
+def selected_registered_impact(seeds, root):
+    inventory = read(root / HERE / 'inventory.json')
+    pages = {str(HERE / (name + '.lean.in')) for name in inventory['audits']}
     stage = root / STAGE1
     actual_sources = []
     affected = {MODULE, *lean_consumers(root, seeds & pages)} if MODEL not in seeds else {
@@ -531,10 +572,23 @@ def load_native_reuse(path, expected_sha, base, key, permitted):
                         original_candidate=base, source_differences=permitted)
 
 
+def admit_scoped_lookup_native(binding, native, inputs, registry, permitted, root=ROOT):
+    """Read the original native snapshot separately from this proof projection."""
+    from native_admission import registry_identity
+
+    if not permitted or proposed_changes(native['inputs'], inputs) != set(permitted):
+        raise ValueError('formal source differs from original native beyond the admitted proof pages and checksums')
+    lock = root / HERE / 'Cargo.lock'
+    if sha(lock) != inputs[str(HERE/'Cargo.lock')]:
+        raise ValueError('registry Cargo.lock differs from admitted source input')
+    registry_identity.require_same_content(native['registry'], registry, tomllib.loads(lock.read_text()))
+    binding.update(native_inputs_match=True, registry_content_match=True)
+
+
 def admit_formal(native, record, folder, variant, commit, permitted=()):
     # Apply the same original component source and registry admission as the
     # full driver, with the narrow original-native record created in this run.
-    from native_admission import admit, registry_identity
+    from native_admission import admit
 
     rust_variant, module, theorem = VARIANTS[variant]
     if (record['kind'] != 'inbox-lookup-formal-development' or record['complete'] is not True
@@ -542,13 +596,7 @@ def admit_formal(native, record, folder, variant, commit, permitted=()):
         raise ValueError('missing current complete original Lean view: ' + variant)
     binding = {}
     if permitted:
-        if proposed_changes(native['inputs'], record['inputs']) != set(permitted):
-            raise ValueError('formal source differs from original native beyond the admitted Lean page and freezes')
-        lock = ROOT / HERE / 'Cargo.lock'
-        if sha(lock) != record['inputs'][str(HERE/'Cargo.lock')]:
-            raise ValueError('registry Cargo.lock differs from admitted source input')
-        registry_identity.require_same_content(native['registry'], record['registry'], tomllib.loads(lock.read_text()))
-        binding.update(native_inputs_match=True, registry_content_match=True)
+        admit_scoped_lookup_native(binding, native, record['inputs'], record['registry'], permitted)
     else:
         admit(binding, native, record['inputs'], record['registry'], ROOT, HERE / 'Cargo.lock')
     source_hash = record['candidate_model_sha256']
@@ -645,7 +693,7 @@ def execute_native_preparation(output, candidate):
     return 0 if result['status'] == 'passed' else 1
 
 
-def execute(output, plan, candidate, formal_lock, reuse=None):
+def execute(output, plan, candidate, formal_lock, reuse=None, *, lookup_only=False):
     output = prepare_output(output, reuse)
     started = time.monotonic()
     report = dict(schema=1, kind='stage1-module-acceptance', module=MODULE, complete=False,
@@ -680,13 +728,20 @@ def execute(output, plan, candidate, formal_lock, reuse=None):
             load_native_reuse(*reuse, base, native_component_key(scoped_output=output), permitted)
         if clean_candidate() != candidate or native_test_configuration(os.environ) != report['native_test_configuration']:
             raise ValueError('candidate or native test configuration changed during checking')
-        report['complete'] = True
+        if lookup_only:
+            report['lookup_only_complete'] = True
+        else:
+            report['complete'] = True
     except Exception as exc:
         report['error'] = str(exc)
     report['seconds'] = time.monotonic() - started
-    write_json(output / 'module-result.json', report)
+    if lookup_only:
+        report['kind'] = 'inbox-lookup-only-proof'
+        write_json(output / 'lookup-local-result.json', report)
+    else:
+        write_json(output / 'module-result.json', report)
     print(json.dumps(report, ensure_ascii=False))
-    return 0 if report['complete'] else 1
+    return 2 if report.get('lookup_only_complete') else (0 if report['complete'] else 1)
 
 
 def execute_registered(output, plan, candidate, formal_lock, native):
@@ -774,10 +829,14 @@ def main(argv=None):
                         help='original current Stage1 native-evidence path for a mapped registered selection')
     parser.add_argument('--reuse-native', type=Path, help='original standalone Inbox Lookup native receipt')
     parser.add_argument('--reuse-native-sha256', help='published SHA256 of that original standalone receipt')
+    parser.add_argument('--lookup-only', action='store_true',
+                        help='check the original Lookup views while mapped downstream work remains pending')
     parser.add_argument('--prepare-native', action='store_true', help='produce the standalone native receipt only')
     args = parser.parse_args(argv)
     if args.prepare_native and (not args.output or args.registered_native or args.reuse_native or args.reuse_native_sha256):
         parser.error('--prepare-native requires --output and cannot consume native evidence')
+    if args.lookup_only and not (args.reuse_native and args.reuse_native_sha256 and args.output):
+        parser.error('--lookup-only requires --output and the original scoped native receipt and SHA256')
     os.umask(0o077)
     try:
         candidate = clean_candidate()
@@ -787,11 +846,16 @@ def main(argv=None):
         if args.reuse_native is not None or args.reuse_native_sha256 is not None:
             if not (args.reuse_native and args.reuse_native_sha256 and args.output) or args.registered_native:
                 raise ValueError('standalone native reuse requires --output, --reuse-native and --reuse-native-sha256')
-            permitted = native_reuse_paths(paths, base)
+            local = local_lookup_impact(paths, base) if args.lookup_only else None
+            permitted = sorted(paths) if local is not None else native_reuse_paths(paths, base)
             reuse = (args.reuse_native.absolute(), args.reuse_native_sha256)
-            plan = dict(select([WRONG_PAGE]), base_commit=base, changed_paths=paths,
+            plan = dict(select([WRONG_PAGE] if local is None else [str(HERE/'module_acceptance.py')]),
+                        base_commit=base, changed_paths=paths,
                         native_reuse_paths=permitted,
                         checks=['reuse-original-native', 'formal-correct', 'formal-key-only'])
+            if local is not None:
+                plan.update(status='lookup-only', pending_downstream=local['pending_jobs'],
+                            unmapped_downstream=local['unmapped'])
         impact = registered_impact(paths, base=base) if plan['status'] == 'review-required' else None
         if impact is not None:
             plan['registered_impact'] = impact
@@ -800,7 +864,7 @@ def main(argv=None):
             plan['reason'] = ('selected registered jobs require the original current Stage1 native evidence; '
                               'the plan alone issues no module pass')
         native_only_baseline = args.prepare_native and plan['status'] == 'empty'
-        if args.plan or (not native_only_baseline and plan['status'] != 'ready'
+        if args.plan or (not native_only_baseline and plan['status'] not in ('ready', 'lookup-only')
                          and (impact is None or args.registered_native is None)):
             print(json.dumps(dict(plan, candidate=candidate), ensure_ascii=False))
             return 0 if plan['status'] == 'ready' else 2
@@ -816,6 +880,8 @@ def main(argv=None):
         os.environ.pop('XDG_SESSION_ID', None)
         if args.prepare_native:
             return execute_native_preparation(args.output, candidate)
+        if args.lookup_only:
+            return execute(args.output, plan, candidate, args.formal_lock, reuse, lookup_only=True)
         return execute(args.output, plan, candidate, args.formal_lock, reuse)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
         parser.exit(2, str(exc) + '\n')

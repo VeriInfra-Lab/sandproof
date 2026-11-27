@@ -8,8 +8,9 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -88,6 +89,81 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
         self.assertEqual(jobs['inbox-lookup-correct']['args'], ['--require-native', '--variant', 'correct'])
         self.assertIn('stage1-inbox-append', plan['original_native_prerequisites'])
         self.assertIn('functional', plan['original_native_prerequisites'])
+
+    def test_local_positive_projection_keeps_the_original_pair_and_reports_pending_consumers(self):
+        path = str(LOOKUP / 'InboxLookup.lean.in')
+        plan = acceptance.local_lookup_impact([path], 'HEAD', root=ROOT)
+        present = {item['name'] for item in plan['required_jobs']}
+        pending = {item['name'] for item in plan['pending_jobs']}
+        self.assertEqual(present - pending, {'inbox-lookup-correct', 'inbox-lookup-key-only'})
+        self.assertIn('stage1-unload-audits', pending)
+        self.assertIn('create-selection', pending)
+        with self.assertRaisesRegex(ValueError, 'proof pages and exact derived checksum'):
+            acceptance.local_lookup_impact([path, acceptance.MODEL], 'HEAD', root=ROOT)
+
+    def test_shared_lookup_projection_requires_the_same_original_model_definitions(self):
+        old = (ROOT / acceptance.MODEL_PAGE).read_bytes()
+        with tempfile.TemporaryDirectory() as temp, patch.object(acceptance, 'git', return_value=old):
+            root = Path(temp)
+            path = root / acceptance.MODEL_PAGE
+            path.parent.mkdir(parents=True)
+            path.write_bytes(old + b'\n-- proof-only fixture\n')
+            acceptance.check_original_lookup_model(root, 'old')
+            path.write_bytes(old.replace(b'FullLookupContract', b'LessSpecificLookupContract', 1))
+            with self.assertRaisesRegex(ValueError, 'original shared Lean model definitions'):
+                acceptance.check_original_lookup_model(root, 'old')
+
+    def test_common_lookup_projection_reads_and_preserves_original_source_and_registry(self):
+        page = str(LOOKUP / 'InboxLookup.lean.in')
+        lock = str(LOOKUP / 'Cargo.lock')
+        compare = Mock()
+        reader = SimpleNamespace(registry_identity=SimpleNamespace(require_same_content=compare))
+        with tempfile.TemporaryDirectory() as temp, patch.dict(sys.modules, {'native_admission': reader}):
+            root = Path(temp)
+            (root / LOOKUP).mkdir(parents=True)
+            (root / lock).write_text('version = 4\n')
+            native = {'inputs': {page: 'original', lock: acceptance.sha(root/lock)}, 'registry': {'old': 'raw'}}
+            before = deepcopy(native)
+            current = {**native['inputs'], page: 'candidate'}
+            binding = {}
+            acceptance.admit_scoped_lookup_native(binding, native, current, {'new': 'raw'}, [page], root=root)
+            self.assertEqual(native, before)
+            self.assertEqual(binding, {'native_inputs_match': True, 'registry_content_match': True})
+            compare.assert_called_once_with({'old': 'raw'}, {'new': 'raw'}, {'version': 4})
+            with self.assertRaisesRegex(ValueError, 'formal source differs'):
+                acceptance.admit_scoped_lookup_native({}, native, {**current, acceptance.MODEL: 'changed'},
+                                                       {'new': 'raw'}, [page], root=root)
+
+    def test_local_lookup_pair_cannot_publish_a_scoped_final_pass(self):
+        candidate = {'commit': 'c' * 40, 'tree': 'd' * 40}
+        plan = dict(base_commit='a' * 40, native_reuse_paths=sorted(acceptance.LOCAL_LOOKUP_PAGES),
+                    pending_downstream=[{'name': 'stage1-unload-audits'}], unmapped_downstream=[])
+        formal = SimpleNamespace(execution=SimpleNamespace(tool_bind=lambda _: None))
+        native = {'registry': {}}
+        native_module = SimpleNamespace(registry_module=SimpleNamespace(registry=lambda: native['registry']))
+        with tempfile.TemporaryDirectory() as temp, redirect_stdout(StringIO()), \
+                patch.dict(sys.modules, {'formal': formal, 'native': native_module}), \
+                patch.object(acceptance, 'check_lookup_sources'), \
+                patch.object(acceptance, 'git', return_value=b'b' * 40), \
+                patch.object(acceptance, 'native_component_key'), \
+                patch.object(acceptance, 'load_native_reuse', return_value=(native, {'use': 'REUSE'})), \
+                patch.object(acceptance, 'admit_formal', return_value={'view': 'original'}), \
+                patch.object(acceptance, 'clean_candidate', return_value=candidate), \
+                patch.object(acceptance, 'run_driver') as driver:
+            run = Path(temp)
+            lock = run / 'formal.lock'
+            lock.touch()
+            output = run / 'local'
+            code = acceptance.execute(output, plan, candidate, lock, (run/'old'/'lookup-native-receipt.json', 'e' * 64),
+                                      lookup_only=True)
+            self.assertEqual(code, 2)
+            receipt = acceptance.read(output/'lookup-local-result.json')
+            self.assertTrue(receipt['lookup_only_complete'])
+            self.assertFalse(receipt['complete'])
+            self.assertFalse(receipt['full_stage1_acceptance'])
+            self.assertFalse((output/'module-result.json').exists())
+            self.assertEqual([call.args[1:] for call in driver.call_args_list], [
+                ('formal-correct', '--variant', 'correct'), ('formal-key-only', '--variant', 'key-only')])
 
     def test_business_rust_plan_retains_both_crate_checks_and_source_bindings(self):
         plan = acceptance.registered_impact([acceptance.MODEL], root=ROOT)
