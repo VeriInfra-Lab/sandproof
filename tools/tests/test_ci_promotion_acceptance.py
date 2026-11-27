@@ -326,6 +326,7 @@ printf 'original formal executor log\n'
                       patch.object(gate, 'git', return_value=self.candidate.head),
                       patch.object(gate, 'operator_lock', return_value=nullcontext(9)),
                       patch.object(gate, 'attest_evidence', side_effect=self.formal_receipt),
+                      patch.object(gate, 'check_stage1_inputs') as preflight,
                       patch.object(gate, 'run_entry', side_effect=ordinary) as entries,
                       patch.object(formal_builds, 'execute', side_effect=self.formal_fixture()) as formal,
                       patch.object(native_task, 'observe'),
@@ -334,6 +335,7 @@ printf 'original formal executor log\n'
                                                  SANDPROOF_NATIVE_OBSERVER=str(self.observer)))):
                     result = gate.run_stage(self.candidate, checkout, output, native=prior, registration_fd=37)
                 self.assertEqual(entries.call_count, 0 if prior else 1)
+                self.assertEqual(preflight.call_count, 0 if prior else 1)
                 formal.assert_called_once()
                 self.assertEqual(formal.call_args.kwargs['pass_fds'], (9, 37))
                 self.assertEqual(formal.call_args.kwargs['cwd'], checkout)
@@ -345,6 +347,26 @@ printf 'original formal executor log\n'
                 formal_output = Path(result['formal_path'])
                 self.assertTrue((formal_output/'execution/retained/cargo-target/keep').is_file())
                 self.assertTrue((formal_output/'actual/source/.lake/keep').is_file())
+
+    def test_stale_stage1_registration_stops_before_the_native_gate(self):
+        checkout, output, cache = (self.path / name for name in ('checkout', 'run', 'shared-target'))
+        for path in (checkout, output, cache):
+            path.mkdir(mode=0o700)
+        failure = subprocess.CalledProcessError(1, ['register'])
+        with (patch.object(gate.Candidate, 'check_checkout'),
+              patch.object(gate, 'MOUNT', self.path),
+              patch.object(gate, 'git', return_value=self.candidate.head),
+              patch.object(gate, 'operator_lock') as lock,
+              patch.object(gate, 'run_entry', side_effect=(None, failure)) as execute,
+              patch.dict(os.environ, dict(CARGO_TARGET_DIR=str(cache),
+                                         SANDPROOF_NATIVE_OBSERVER=str(self.observer)))):
+            with self.assertRaises(subprocess.CalledProcessError):
+                gate.run_stage(self.candidate, checkout, output)
+        self.assertEqual([call.kwargs['log'].name for call in execute.call_args_list],
+                         ['stage1-freeze.log', 'stage1-registration.log'])
+        lock.assert_not_called()
+        self.assertFalse((output/'native').exists())
+        self.assertFalse((output/'complete.json').exists())
 
     def test_native_target_alias_cannot_hide_builds_in_candidate_or_evidence(self):
         checkout = self.path/'checkout'
