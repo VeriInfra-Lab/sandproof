@@ -113,6 +113,14 @@ BEGIN 成功后，`started_reply` 连接该次返回的原 owner、实际命名�
 
 [证明页](public-begin/PublicBegin.lean.in)、[表示和调用](public-begin/PublicCalls.lean.in)及[物化检查](public_begin.py)在主控登记候选中接入原 `stage1-unload-parent-transaction` 的 `begin` case。公开 journal 的抽取包含五个实际标记类型及 `ControllerLease.file`，并保留原录入提供方的全部生成声明。两个生成视图、原 BEGIN 和原有各页在同一隔离工程按完整导入闭包检查。ning 仍在同一集成候选收取原事务和协调器的原生回执。持久化、文件锁和 watch 的真实送达各由其提供方验收。
 
+### 从公共收件结果到锁内撤销决定
+
+从原 `WorldTransaction::begin` 成功返回、公开命名空间借用以及同一 owner 的实际载入开始，`PublicReplay.retained` 将首次全文命中的完整工作状态直接交给生产 `data_revocation`。当前性由所选 session 的版本决定，本地映射取自同一 session。旧版本 Unload 保留现有映射，当前版本 Unload 选择其中的 sandbox。合法封套但同键异 capture 的请求，以及认证或封套不匹配的请求，均返回 `Conflict` 且无撤销动作。两条具体见证沿用已有输入，逐一检查公开返回和选中的动作。对其它正常错误返回，只有结束访问的操作遇到 `CommitUncertain` 时选择广播。[组合定理](public-begin/PublicReplay.lean.in)
+
+同批重抽协调器父函数，核对同一锁内的 journal、原 intent/context、实际 `NeverCrash`、传给决策的 operation 和返回值。Lean 使用原决策与钩子方法的完整生成函数页，以及原动作和钩子类型的完整生成类型页。四个共享类型逐构造器、字段和载荷与事务提供方核对，错误沿用双向表示。原 `CoordinatorRevocation` 证明在这个共同环境重新检查。固定字符判断由实际标准实现履行。[抽取与接线检查](journal_decision.py)
+
+载入的普通结果、解码字符串可表示性、V5 的事务观察和受信认证来源仍是具名前提。自动析构和物理回滚、watch 通知送达及网关路由关闭保留原验收分工。ning 在同一个集成候选运行 Linux 完整普通检查，核对下列两个原生断言组与父事务和收件组件回执。
+
 ## 复验与登记候选
 
 在证明机干净候选上使用固定工具和现有重锁，给出新的私有输出目录。

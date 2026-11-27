@@ -1,0 +1,152 @@
+import SandproofActualRecord.PublicBegin
+import SandproofActualRecord.JournalReplayState
+import SandboxModel.Lifecycle.Protocol.CoordinatorRevocation
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+open SandproofStage1RequestRust.sandproof_controller_service (NeverCrash)
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model (Session Entry)
+open SandproofStage1RequestRust.sandproof_controller_service.application.coordinator.lifecycle_intent
+open SandproofParentCommitRust.ErrorTransport
+namespace SandproofActualRecordRust.PublicReplay
+open controller.lifecycle_inbox recording PublicBegin
+noncomputable section
+set_option autoImplicit false
+
+/-- Pass the original NeverCrash method to the public journal using the transaction
+provider's existing full crash-point and error representations. -/
+def hook : CrashInjector NeverCrash where
+  hit value point := fromRequestStateResult
+    (NeverCrash.Insts.Sandproof_controller_serviceCrashInjector.hit value (ScopeTransport.crashToSource point))
+
+theorem hook_return (value : NeverCrash) (point : CrashPoint) :
+    hook.hit value point = .ok (.Ok (), value) := by
+  simp [hook, CoordinatorRevocation.never_crash_hit, fromRequestStateResult, fromRequestRustResult]
+
+variable [FileHandle] [env : PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+
+/-- The coordinator's two normal calls in order. Keep the entire journal return for
+inspection, and pass its result to the original decision using the incoming operation. -/
+def journalDecision (journal : controller.ControllerJournal) (intent : SourceFlowLink.Intent)
+    (context : SourceFlowLink.Context) := do
+  let reply ← proof_public_journal hook journal intent context ()
+  let action ← data_revocation intent.request.operation (toRequestRustResult reply.1)
+  .ok (reply, action)
+
+variable (journal : controller.ControllerJournal) (intent : SourceFlowLink.Intent)
+    (context : SourceFlowLink.Context)
+    (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (after : UnloadWorldBegin.Conn) (ns : Str)
+    (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+
+abbrev holder (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction) (ns : Str) :
+    StandardRecord Unit := ⟨(env.onOwner (SandproofUnloadWorldBegin.originalOwner begun)).val, ns, ()⟩
+abbrev reads := (CallerBranches.actualEffects codec).RecordEffectsInst
+
+variable (represented : InboxLoad.DecodedStringsRepresentable (ScopeTransport.recordEffects reads).codecInboxLoadEffectsInst)
+    (afterLoad : StandardRecord Unit) (inbox : model.Inbox)
+    (loaded : SourceFlowLink.loadPrefix retirement terminal renewal unload reads (holder begun ns) =
+      .ok (.Ok (some inbox), afterLoad))
+
+include started borrowed represented loaded
+
+/-- A first full match supplies the exact entry, session and returned work state, together
+with the action for the incoming operation. A historical version cannot select its mapping. -/
+theorem retained (config : InboxAdmission.ContextMatches inbox context)
+    (envelope : Validation.ValidEnvelope intent context) (s e : Nat)
+    (found : InboxLookup.inboxSpec intent inbox.sessions.val 0 = .found s e) :
+    ∃ (session : Session) (entry : Entry),
+      inbox.sessions.val[s]? = some session ∧ session.entries.val[e]? = some entry ∧
+      entry.intent = intent ∧ journalDecision journal intent context = .ok
+        ((.Ok (InboxState.workState session entry), {journal with journal := ⟨after.base⟩}, ()),
+         CoordinatorRevocation.selected intent.request.operation
+           (decide (intent.accepted_version = session.current_version)) session.local) := by
+  obtain ⟨session, entry, value, hs, he, full, state, current, mapping, recorded⟩ :=
+    JournalReplayState.retained_state retirement terminal renewal unload graphic codec hook intent context
+      ComposedConfig.standard_graphic_contract represented _ ns () () afterLoad inbox loaded config envelope s e found
+  have reply := started_reply hook journal intent context () begun after ns started borrowed (.Ok value) () recorded
+  refine ⟨session, entry, hs, he, full, ?_⟩
+  subst value
+  simp [journalDecision, reply, toRequestRustResult, CoordinatorRevocation.success, current, mapping]
+
+/-- Invalid admission and an admitted first-key conflict both return the Rust Conflict,
+the original hook, the updated journal and no revocation. -/
+theorem conflict
+    (refused : (¬ InboxAdmission.ContextMatches inbox context ∨ ¬ Validation.ValidEnvelope intent context) ∨
+      (InboxAdmission.ContextMatches inbox context ∧ Validation.ValidEnvelope intent context ∧
+        InboxLookup.inboxSpec intent inbox.sessions.val 0 = .conflict)) :
+    journalDecision journal intent context =
+      .ok ((.Err .Conflict, {journal with journal := ⟨after.base⟩}, ()), .None) := by
+  have recorded := JournalReplayState.refused_before_commit retirement terminal renewal unload graphic codec
+    hook intent context ComposedConfig.standard_graphic_contract represented _ ns () () afterLoad inbox loaded refused
+  have reply := started_reply hook journal intent context () begun after ns started borrowed (.Err .Conflict) () recorded
+  simp [journalDecision, reply, toRequestRustResult, toRequest, CoordinatorRevocation.failure]
+
+omit loaded
+open InboxState.Values in
+/-- The same checked load and local mapping serve both valid Unloads. The retained older
+version leaves routes alone. The current version selects sandbox 10. -/
+theorem mapped_unloads
+    (observed : SourceFlowLink.loadPrefix retirement terminal renewal unload reads (holder begun ns) =
+      .ok (.Ok (some InboxState.Values.inbox), afterLoad)) :
+    let run := fun req => journalDecision journal req EnvelopeValues.context
+    let returned := fun entry => (.Ok (InboxState.workState session entry),
+      {journal with journal := ⟨after.base⟩}, ())
+    run older = .ok (returned oldEntry, .None) ∧
+    run newer = .ok (returned newEntry, .Sandbox 10#u64) := by
+  have witness (req : SourceFlowLink.Intent) (index : Nat) (row : Entry)
+      (valid : Validation.ValidEnvelope req EnvelopeValues.context)
+      (found : InboxLookup.inboxSpec req InboxState.Values.inbox.sessions.val 0 = .found 0 index)
+      (atEntry : session.entries.val[index]? = some row) :
+      journalDecision journal req EnvelopeValues.context =
+        .ok ((.Ok (InboxState.workState session row), {journal with journal := ⟨after.base⟩}, ()),
+          CoordinatorRevocation.selected req.request.operation (decide (req.accepted_version = session.current_version))
+            session.local) := by
+    obtain ⟨ss, ee, hs, he, _, answer⟩ := retained journal req EnvelopeValues.context begun after ns started
+      borrowed represented afterLoad InboxState.Values.inbox observed ⟨rfl,rfl⟩ valid 0 index found
+    have same : ss = session := by simpa [InboxState.Values.inbox] using hs.symm
+    subst ss
+    rw [atEntry] at he
+    cases he
+    exact answer
+  constructor
+  · apply witness older 0 oldEntry inputs_valid.1 _ (by rfl)
+    simp [InboxState.Values.inbox, session, oldEntry, InboxLookup.inboxSpec, InboxLookup.entrySpec]
+  · apply witness newer 1 newEntry inputs_valid.2 _ (by rfl)
+    simp [InboxState.Values.inbox, session, oldEntry, newEntry, older, newer, EnvelopeValues.intent,
+      InboxLookup.inboxSpec, InboxLookup.entrySpec]
+
+open InboxLookup.Witness in
+/-- Even with a valid authenticated envelope and the same key, changing the stored
+Unload capture yields a full public Conflict and no action. -/
+theorem changed_capture
+    (observed : SourceFlowLink.loadPrefix retirement terminal renewal unload reads (holder begun ns) =
+      .ok (.Ok (some (InboxLookup.Witness.inbox 2#u64)), afterLoad)) :
+    journalDecision journal (EnvelopeValues.intent 1#u64) EnvelopeValues.context =
+      .ok ((.Err .Conflict, {journal with journal := ⟨after.base⟩}, ()), .None) :=
+  conflict journal _ _ begun after ns started borrowed represented afterLoad _ observed
+    (Or.inr ⟨⟨rfl,rfl⟩, normal_shape.1, conflicting_spec⟩)
+
+omit represented started borrowed
+/-- All journal errors go through the same decision. Only CommitUncertain on an
+access-ending operation can broadcast. The journal state is the one returned on that call. -/
+theorem journal_error (error : JournalError) (returned : controller.ControllerJournal)
+    (refusal : proof_public_journal hook journal intent context () = .ok (.Err error, returned, ())) :
+    journalDecision journal intent context =
+      .ok ((.Err error, returned, ()), match toRequest error with
+        | .CommitUncertain _ => if CoordinatorRevocation.endsAccess intent.request.operation then .All else .None
+        | _ => .None) := by
+  simp [journalDecision, refusal, toRequestRustResult, CoordinatorRevocation.failure]
+  cases toRequest error <;> rfl
+
+end
+end SandproofActualRecordRust.PublicReplay
+
+#audit_controller_proof SandproofActualRecordRust.PublicReplay.hook_return
+#audit_controller_proof SandproofActualRecordRust.PublicReplay.retained
+#audit_controller_proof SandproofActualRecordRust.PublicReplay.conflict
+
+#audit_controller_proof SandproofActualRecordRust.PublicReplay.mapped_unloads
+#audit_controller_proof SandproofActualRecordRust.PublicReplay.changed_capture
+#audit_controller_proof SandproofActualRecordRust.PublicReplay.journal_error
