@@ -1,4 +1,7 @@
+import SandboxModel.Lifecycle.Protocol.InboxLookup
+import SandboxModel.Lifecycle.Protocol.InboxPositionLookup
 import SandboxModel.Lifecycle.Protocol.InboxState
+import SandboxModel.Lifecycle.Protocol.InboxStateValues
 
 open Aeneas Aeneas.Std SandproofStage1RequestRust
 open sandproof_controller_service sandproof_protocol.lifecycle.request
@@ -61,6 +64,91 @@ theorem other_version (op : LifecycleOperation) (inbox : Inbox) (s e : Usize)
   rw [from_indexed_state op inbox s e hs he]
   cases h : inbox.sessions.val[s.val].local <;> simp [selected, older]
 
+/-- The production full lookup supplies both indices, the full intent and the session mapping
+used by the actual state and decision. No session or key uniqueness premise is needed. -/
+theorem replay_decision (inbox : Inbox) (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+    (s e : Usize) (hit : inbox.find intent = .ok (.Ok (some (s, e)))) :
+    ∃ (session : Session) (entry : Entry),
+      inbox.sessions.val[s.val]? = some session ∧ session.entries.val[e.val]? = some entry ∧
+      entry.intent = intent ∧ inbox.state s e = .ok (InboxState.workState session entry) ∧
+      (do let state ← inbox.state s e
+          data_revocation intent.request.operation (.Ok state)) =
+        .ok (selected intent.request.operation (decide (intent.accepted_version = session.current_version))
+          session.local) := by
+  obtain ⟨actual, returned, observed⟩ := WP.spec_imp_exists (InboxLookup.find_spec inbox intent)
+  rw [hit] at returned
+  have actual_eq : actual = .Ok (some (s, e)) := by simpa using returned.symm
+  have found : InboxLookup.inboxSpec intent inbox.sessions.val 0 = .found s.val e.val := by
+    simpa [actual_eq, InboxLookup.observeInbox] using observed.symm
+  obtain ⟨session, entry, hs, he, full⟩ :=
+    InboxPosition.inbox_found_reads intent inbox.sessions.val s.val e.val found
+  refine ⟨session, entry, hs, he, full, ?_⟩
+  obtain ⟨sb, sameSession⟩ := List.getElem?_eq_some_iff.mp hs
+  obtain ⟨eb, sameEntry⟩ := List.getElem?_eq_some_iff.mp he
+  subst session
+  subst entry
+  exact ⟨InboxState.state_contract inbox s e sb eb, by
+    simpa [full] using from_indexed_state intent.request.operation inbox s e sb eb⟩
+
+/-- A successful replay from another accepted version leaves the mapped sandbox alone. -/
+theorem historical_replay (inbox : Inbox) (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+    (s e : Usize) (session : Session) (hit : inbox.find intent = .ok (.Ok (some (s, e))))
+    (atSession : inbox.sessions.val[s.val]? = some session)
+    (historical : intent.accepted_version ≠ session.current_version) :
+    (do let state ← inbox.state s e
+        data_revocation intent.request.operation (.Ok state)) = .ok .None := by
+  obtain ⟨stored, _, hs, _, _, _, decision⟩ := replay_decision inbox intent s e hit
+  rw [atSession] at hs
+  cases hs
+  rw [decision]
+  cases h : session.local <;> simp [selected, historical]
+
+/-- A conflict in the full lookup is a real journal Conflict, which selects no revocation
+for the incoming operation, including Unload and Destroy. -/
+theorem lookup_conflict (inbox : Inbox) (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+    (conflict : InboxLookup.inboxSpec intent inbox.sessions.val 0 = .conflict) :
+    inbox.find intent = .ok (.Err .Conflict) ∧
+      data_revocation intent.request.operation (.Err .Conflict) = .ok .None := by
+  exact ⟨by simpa [conflict] using InboxLookup.find_outcome inbox intent,
+    failure intent.request.operation .Conflict⟩
+
+/-- These two valid Unload intents share a session and its live local mapping. The older
+entry returns no action; the current entry returns that mapping's sandbox. -/
+theorem mapped_unload_replays :
+    let outcome := fun (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+        (expected : DataRevocation) =>
+      ∃ s e, InboxState.Values.inbox.find intent = .ok (.Ok (some (s, e))) ∧
+        (do let state ← InboxState.Values.inbox.state s e
+            data_revocation intent.request.operation (.Ok state)) = .ok expected
+    outcome InboxState.Values.older .None ∧
+      outcome InboxState.Values.newer (.Sandbox 10#u64) := by
+  classical
+  have witness (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent) (index : Nat)
+      (found : InboxLookup.inboxSpec intent InboxState.Values.inbox.sessions.val 0 = .found 0 index) :
+      ∃ s e, InboxState.Values.inbox.find intent = .ok (.Ok (some (s, e))) ∧
+        (do let state ← InboxState.Values.inbox.state s e
+            data_revocation intent.request.operation (.Ok state)) =
+          .ok (selected intent.request.operation
+            (decide (intent.accepted_version = InboxState.Values.session.current_version))
+            InboxState.Values.session.local) := by
+    have actual := InboxLookup.find_outcome InboxState.Values.inbox intent
+    rw [found] at actual
+    obtain ⟨s, e, spos, _, hit⟩ := actual
+    obtain ⟨session, _, hs, _, _, _, decision⟩ := replay_decision _ _ _ _ hit
+    have same : InboxState.Values.inbox.sessions.val[s.val]? = some InboxState.Values.session := by
+      simp [InboxState.Values.inbox, spos]
+    rw [same] at hs
+    cases hs
+    exact ⟨s, e, hit, decision⟩
+  constructor
+  · apply witness InboxState.Values.older 0
+    simp [InboxState.Values.inbox, InboxState.Values.session, InboxState.Values.oldEntry,
+      InboxLookup.inboxSpec, InboxLookup.entrySpec]
+  · apply witness InboxState.Values.newer 1
+    simp [InboxState.Values.inbox, InboxState.Values.session, InboxState.Values.oldEntry,
+      InboxState.Values.newEntry, InboxState.Values.older, InboxState.Values.newer,
+      EnvelopeValues.intent, InboxLookup.inboxSpec, InboxLookup.entrySpec]
+
 end SandboxModel.Stage1Protocol.CoordinatorRevocation
 
 #audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.success
@@ -68,3 +156,7 @@ end SandboxModel.Stage1Protocol.CoordinatorRevocation
 #audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.from_indexed_state
 #audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.other_version
 #audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.never_crash_hit
+#audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.replay_decision
+#audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.historical_replay
+#audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.lookup_conflict
+#audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.mapped_unload_replays

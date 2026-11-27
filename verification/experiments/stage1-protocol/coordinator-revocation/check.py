@@ -16,7 +16,7 @@ from journal_hook import check_joint_hook, check_journal_hook
 from hook_regressions import check_parent_rejections, check_joint_rejection
 from sender_binding import inspect_senders
 from sender_binding_regressions import check_guard_rejections, check_rejections
-from wiring import COORD, DECIDE, MODEL, MODULE, SERVICE, declaration, inspect_parent, nodes, require
+from wiring import COORD, DECIDE, MODEL, MODULE, SERVICE, assignments_before, declaration, inspect_parent, nodes, origin, require
 
 ROOT = Path(__file__).resolve().parents[4]
 BASE = 'd642a5f45253a716dbb8411a9942b8b9581dd5fb'
@@ -67,6 +67,7 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
     os.environ['CARGO_TARGET_DIR'] = str(evidence / 'target')
     if joint:
         roots = [MODULE + '::proof_data_revocation', MODEL + '::proof_state', MODULE + '::proof_never_crash',
+                 MODEL + '::proof_find',
                  *['crate::' + n for n in ('request_validate', 'replay_matches', 'accepted_validate', 'recorded_matches')]]
         include = ['sandproof_protocol', 'sandbox_controller_core', SERVICE]
         opaque = ['rusqlite::error::Error', 'sandproof_protocol::ContractError']
@@ -125,15 +126,28 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
                 if t['lean_file'].endswith('TypesExternal_Template.lean')}
     require(carriers == {'core.io.error.Error', 'serde_json.error.Error', 'rusqlite.error.Error',
                          'sandproof_protocol.ContractError'}, 'unexpected type binding')
-    for wrapper, actual in [(roots[0], DECIDE), (roots[1], MODEL+'::{impl}::state')]:
+    for wrapper, actual, arity in [(MODULE+'::proof_data_revocation', DECIDE, 2),
+                                   (MODEL+'::proof_state', MODEL+'::{impl}::state', 3),
+                                   (MODEL+'::proof_find', MODEL+'::{impl}::find', 2)]:
         caller = declaration(trans['fun_decls'], wrapper)
         callee = declaration(trans['fun_decls'], actual)
-        invoked = list(nodes(caller['body']['Structured']['body'], 'Call'))
-        require(len(invoked) == 1 and invoked[0]['call']['func']['Regular']['kind'] == {'Fun': callee['def_id']},
-                'the forwarding root does not call the selected production function')
-    for actual in (DECIDE, MODEL + '::{impl}::state'):
-        decl = declaration(trans['fun_decls'], actual)
-        require('Structured' in decl['body'] and any(f['def_id'] == decl['def_id'] and f['is_opaque'] is False and
+        block = caller['body']['Structured']['body']
+        call_stmt, = [s for s in block['statements'] if isinstance(s['kind'], dict) and 'Call' in s['kind']]
+        call = call_stmt['kind']['Call']['call']
+        at = block['statements'].index(call_stmt)
+        for stmt in block['statements'][:at]:
+            kind = stmt['kind']
+            require(isinstance(kind, dict) and ('StorageLive' in kind or
+                    ('Assign' in kind and kind['Assign'][0]['kind'].get('Local', 0) > arity)),
+                    'forwarding root changes an argument or takes another path: '+wrapper)
+        require(all('StorageDead' in s['kind'] for s in block['statements'][at+1:-1]),
+                'forwarding root changes its result: '+wrapper)
+        require(len(list(nodes(block, 'Call'))) == 1 and len(caller['signature']['inputs']) == arity
+                and call['func']['Regular']['kind'] == {'Fun': callee['def_id']}
+                and call['dest']['kind'] == {'Local': 0} and block['statements'][-1]['kind'] == 'Return'
+                and [origin(arg['Move'], assignments_before(block, call_stmt)) for arg in call['args']]
+                == [(i,) for i in range(1, arity + 1)], 'forwarding root changed arguments, result or callee: '+wrapper)
+        require('Structured' in callee['body'] and any(f['def_id'] == callee['def_id'] and f['is_opaque'] is False and
                 f['lean_file'] == 'SandproofStage1Request/Funs.lean' for f in functions), 'missing generated body: '+actual)
     return {'ir': sha(ir), 'mapping': sha(dest/'translation.json'),
             'journal_hook': check_joint_hook(view, mapping, source),
@@ -146,7 +160,11 @@ def project_files(project, generated):
     for package, stem in [('inbox-state', 'FunsExternal'), ('inbox-lookup', 'TypesExternal')]:
         shutil.copy2(project/AREA/package/(stem+'.lean.in'), project/GENERATED/(stem+'.lean'))
     for package, stem in [('inbox-record', 'InboxRecordCloning'), ('inbox-state', 'InboxStateModel'),
-                          ('inbox-state', 'InboxState'), ('coordinator-revocation', 'CoordinatorRevocation')]:
+                          ('inbox-state', 'InboxState'), ('inbox-state', 'InboxStateValues'),
+                          ('inbox-lookup', 'InboxLookupModel'),
+                          ('inbox-lookup', 'InboxLookupSupport'), ('inbox-lookup', 'InboxLookupValues'),
+                          ('inbox-lookup', 'InboxLookup'), ('inbox-position', 'InboxPositionLookup'),
+                          ('coordinator-revocation', 'CoordinatorRevocation')]:
         shutil.copy2(project/AREA/package/(stem+'.lean.in'), project/PROOFS/(stem+'.lean'))
 
 
@@ -177,7 +195,8 @@ def check(args, report):
     report['original_parent'] = capture(old, args.output/'original-parent', args.tools, fixed)
     report['candidate_parent'] = capture(
         project, args.output/'candidate-parent', args.tools, fixed, refactored=True)
-    for path, fragment in [(STATE, AREA/'inbox-state/roots.rs.in'), (CALLER, PKG/'root.rs.in')]:
+    for path, fragment in [(STATE, AREA/'inbox-state/roots.rs.in'), (STATE, AREA/'inbox-lookup/extract-root.rs.in'),
+                           (CALLER, PKG/'root.rs.in')]:
         with (project/path).open('ab') as stream:
             stream.write(b'\n' + (project/fragment).read_bytes())
     report['joint'] = capture(project, args.output/'joint', args.tools, fixed, joint=True)

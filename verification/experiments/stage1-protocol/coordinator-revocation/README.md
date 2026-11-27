@@ -27,14 +27,16 @@
 
 检查器还在候选 LLBC 的副本上逐项断开查表键、查无结果时的返回边、定向 sender、广播向量四处连接，要求对应诊断命中。这些回归只检验检查器自身。这里的证据止于 Rust 实际发起 watch 调用的位置。固定 Aeneas 单独翻译泛型 `Inner::revoke_data` 时停在 Serde 的相互递归 trait 组。迭代库语义、异常退出以及接收端观察均需独立证据。
 
-检查器在私有源码副本为决策与查询各加一个薄根，并为具体的故障钩子加一个两参数转发根，使固定 Charon/Aeneas 在同一次生成中保留实际决策、原 `Inbox::state` 和 `NeverCrash::hit`。复用原 `state_contract`、完整 intent clone 及现有库绑定，直接使用生成的协议操作、日志错误、查询状态和 sandbox ID。
+检查器在私有源码副本复用收件包的 `proof_find` 和 `proof_state`，与决策和具体故障钩子的薄根一起抽取。固定 Charon/Aeneas 在同一视图生成 `Inbox::find`、`Inbox::state`、`data_revocation` 和 `NeverCrash::hit`。查找、查询和决策的转发根均按顺序传入原参数并返回本次调用的值。
 
 - `never_crash_hit` 对任意 `CrashPoint` 及接收者证明，实际选中的 `hit` 返回 Rust 的 `Ok(())` 并保留接收者。
 - `success` 和 `failure` 分别对全部成功值和完整错误枚举给出精确决策。
 - `from_indexed_state` 在两个有效索引上把原查询接入原决策，以条目接受版本、会话当前版本及其本地映射表述结果。
 - `other_version` 推出任何版本不相等的条目均选择无动作。这里的操作来自父调用的入参；日志返回的 intent 仍是独立字段。
+- `replay_decision` 从实际全文查找返回的两个索引出发。原 `find_spec` 与 `inbox_found_reads` 给出命中会话、条目和完整意图，继而得到原查询的全部字段和确切撤销选择。任意重复键和会话均沿用原先遇到的查找结果。
+- `historical_replay` 证明命中条目的接受版本与该会话当前版本不同时，选择无动作。`lookup_conflict` 证明全文查找遇到冲突时返回 `Conflict`，该错误对应无动作。`mapped_unload_replays` 在同一份带本地映射的会话中给出旧 Unload 与当前 Unload 的实际查找和选择见证。
 
-V3 提供已解码查询值与其选择关系。日志事务的实际行来源、未知提交的耐久结局由 V5 提供。真实 watch 送达、网关撤销与在途 I/O 收尾由数据通路提供。上表描述此入口作出的选择；任何成功返回均不能单独说明实际连接已经断开。互斥锁、进程取消和错误载荷沿用[逐符号依赖](../../../../docs/formal/dependencies.md)。
+本片从已解码收件值及进入查找的完整意图开始。调用前的认证、未命中后的写入和事务仍有各自的合同。日志事务的实际行来源、未知提交的耐久结局由 V5 提供。真实 watch 送达、网关撤销与在途 I/O 收尾由数据通路提供。上表描述此入口作出的选择；任何成功返回均不能单独说明实际连接已经断开。互斥锁、进程取消和错误载荷沿用[逐符号依赖](../../../../docs/formal/dependencies.md)。
 
 ## 复验与登记候选
 
@@ -48,9 +50,9 @@ SANDPROOF_ACCEPTANCE_ROLE=formal PYTHONDONTWRITEBYTECODE=1 \
 
 `--tools` 下应有原 `aeneas` 与 `lean-mcp`。入口从 Git 解包源树，保留三份 Charon 产物、联合 Lean 生成体、隔离的 Lake 构建、实际文件诊断和审计。两份 `*_Template.lean` 只由翻译器输出，实际工程使用已登记的五个函数绑定和四个类型绑定。
 
-交主控登记这个形式入口及 `SandboxModel.Lifecycle.Protocol.CoordinatorRevocation` 的五条审计。覆盖记录可登记“在已解码 `Result` 和有效收件索引上证明应用撤销选择，原父函数接线经实际 Charon 核对”，适用版本取通过对应检查的候选。生产协调器是现有原生输入，相关登记与冻结由主控结合 #1061 逐闭包复核。
+交主控登记这个形式入口及 `SandboxModel.Lifecycle.Protocol.CoordinatorRevocation` 的九条审计。覆盖记录可登记“在已解码 `Result` 上证明应用撤销选择，全文重放命中给出实际查询和选择，原父函数接线经实际 Charon 核对”，适用版本取通过对应检查的候选。生产协调器是现有原生输入，相关登记与冻结由主控结合 #1061 逐闭包复核。
 
-[公共登记候选](registration-candidate.patch)供主控在包含本包的候选上审阅、试套。[覆盖记录候选](coverage-candidate.patch)注明已实测的源码和边界。登记通过 `scripts/verify-stage1-protocol.sh` 默认使用的 `full` 计划调用同一检查器。其原生前提包括已封口的完整 Linux `functional` 日志中的两个指定测试，以及原 `stage1-inbox-state` 收据。单项命令和缺少封口的日志可用于开发复核。
+[公共登记候选](registration-candidate.patch)供主控在包含本包的候选上审阅、试套。[覆盖记录候选](coverage-candidate.patch)注明已实测的源码和边界。登记通过 `scripts/verify-stage1-protocol.sh` 默认使用的 `full` 计划调用同一检查器。其原生前提包括已封口的完整 Linux `functional` 日志中的两个指定测试，以及原 `stage1-inbox-lookup` 和 `stage1-inbox-state` 两份收据。单项命令和缺少封口的日志可用于开发复核。
 
 [默认入口的新增输入候选](inputs-candidate.patch)向 `verification/stage1-protocol-inputs.sha256` 增列本包七份 Python 检查文件、Rust 薄根、Lean 定理模板及生产协调器，共十项。生产行取追加抽取薄根前的 Rust 全文。主控在接入登记补丁后还需核对原清单已有行、各提供方清单及同一候选的原生封口。
 
