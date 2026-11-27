@@ -31,7 +31,7 @@ class Transport:
             def redirect_request(self, req, fp, code, msg, headers, newurl):
                 return None
         self.opener = urllib.request.build_opener(
-            urllib.request.ProxyHandler({'https': proxy}), NoRedirect())
+            urllib.request.ProxyHandler({'https': proxy} if proxy else {}), NoRedirect())
 
     def __call__(self, method, path, token, body=None):
         if not path.startswith('/') or '://' in path:
@@ -39,7 +39,7 @@ class Transport:
         data = None if body is None else json.dumps(body).encode()
         request = urllib.request.Request('https://api.github.com' + path,
             data=data, method=method, headers={
-                'Authorization': 'Bearer ' + token,
+                **({'Authorization': 'Bearer ' + token} if token else {}),
                 'Accept': 'application/vnd.github+json',
                 'Content-Type': 'application/json',
                 'X-GitHub-Api-Version': '2022-11-28',

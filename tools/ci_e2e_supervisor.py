@@ -201,20 +201,32 @@ class Checks:
 
     def ordinary_ready(self, candidate, app_id):
         """Do not pause the shared host before the promotion's ordinary CI."""
+        return self.ordinary_receipts(candidate, app_id) is not None
+
+    def ordinary_receipts(self, candidate, app_id, *, pull=None, base=None):
         if type(app_id) is not int or app_id <= 0:
             raise ValueError('ordinary CI App identity is not approved')
         found = self.api.request('GET', PREFIX + 'commits/' + candidate + '/check-runs?per_page=100&filter=all')
-        if found['total_count'] > 100:
+        if found['total_count'] > 100 or found['total_count'] != len(found['check_runs']):
             raise ValueError('check inventory exceeds fixed limit')
+        receipts, suites = {}, set()
         for name in ('sdk-contract', 'harbor-inputs', 'pr-title', 'pr-policy'):
             matches = [r for r in found['check_runs'] if r.get('name') == name
-                       and r.get('head_sha') == candidate and r.get('app', {}).get('id') == app_id]
+                       and r.get('head_sha') == candidate and (r.get('app') or {}).get('id') == app_id]
+            if pull is not None:
+                matches = [r for r in matches if any(p.get('number') == pull
+                    and p['head'].get('sha') == candidate and p['base'].get('sha') == base
+                    for p in r.get('pull_requests', []))]
             if not matches:
-                return False
+                return None
             latest = max(matches, key=lambda r: r['id'])
             if latest.get('status') != 'completed' or latest.get('conclusion') != 'success':
-                return False
-        return True
+                return None
+            receipts[name] = latest['id']
+            suites.add((latest.get('check_suite') or {}).get('id'))
+        if pull is not None and (len(suites) != 1 or None in suites):
+            return None
+        return receipts
 
     def ensure(self, state, save):
         if state.get('check_id') is not None:
@@ -254,9 +266,13 @@ class Checks:
         rows.extend(r['name'] + ': ' + str(r['status']) + ' (' + r.get('oracle_mode', 'original') + ')' for r in result['tasks'])
         if 'rust_envd' in result:
             rows.append('同候选 Rust envd 实机阶段：通过；原 SDK 双端/输入/PTY/期限、文件及所选故障组和精确清理均已确认。默认 Go 模板未因此切换。')
+        output = dict(title='配置题集验收通过' if result['passed'] else '配置题集验收未通过',
+                      summary='\n\n'.join(rows))
+        if state.get('promotion') and state.get('candidate_tree'):
+            output['text'] = json.dumps(dict(schema=1, head=state['candidate'], base=state['base'],
+                tree=state['candidate_tree'], **state['promotion']), sort_keys=True)
         self.api.request('PATCH', PREFIX + 'check-runs/' + str(state['check_id']), dict(
-            status='completed', conclusion=conclusion, output=dict(
-                title='配置题集验收通过' if result['passed'] else '配置题集验收未通过', summary='\n\n'.join(rows))))
+            status='completed', conclusion=conclusion, output=output))
 
 
 @contextmanager
@@ -444,6 +460,7 @@ class Supervisor:
                 write_once(archive, self.state)
         self.state = dict(id=identity, architecture=service_artifacts.ARCHITECTURE,
             candidate=candidate, base=base, phase='waiting', configuration=self.config,
+            candidate_tree=git('rev-parse', 'HEAD^{tree}', cwd=checkout),
             dataset=dataset,
             promotion=dict(source=observed_promotion[0], target=observed_promotion[1]) if observed_promotion else None,
             dk=dict(phase='new'),
