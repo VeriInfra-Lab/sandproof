@@ -1,5 +1,5 @@
 diff --git a/verification/stage1-protocol-inputs.sha256 b/verification/stage1-protocol-inputs.sha256
-index ca1460e0..1b9a9dc7 100644
+index ca1460e0..d8658fb4 100644
 --- a/verification/stage1-protocol-inputs.sha256
 +++ b/verification/stage1-protocol-inputs.sha256
 @@ -68,6 +68,9 @@ c3d56aae0daf302271a97f8f1509a6d6e415b13a92a68e087e9418b266d6ef19  SandboxModel/L
@@ -21,11 +21,12 @@ index ca1460e0..1b9a9dc7 100644
  8b2d6d10a245b31552c5dbf8a1251ff97ca218e6f719643a331805d7a921b8d6  verification/experiments/sqlite-commit/negative.py
  29914fd4c86dca150a85a83717a77bb9eccebfd90655b28819f6f42c80352af7  verification/experiments/stage1-manifest/NegativeCount.lean.in
  803bc9ddfe18223fdc45417b8bc7ffc17ebd20db421d1f0b47e0161c3e1715c9  verification/experiments/stage1-manifest/NegativeDiskId.lean.in
-@@ -191,6 +196,19 @@ b731ece88657171a8c8581a81129b08cf3e2bf532fda776eab9db186d3373732  verification/e
+@@ -191,6 +196,20 @@ b731ece88657171a8c8581a81129b08cf3e2bf532fda776eab9db186d3373732  verification/e
  1611afa3391d94277b5bf1662c7cfceaac06dfcf2f2fd8d796db4f5a29de21d6  verification/experiments/stage1-protocol/archive.py
  8dbd6841523549fd1ed2bbef6155c4ac4b8d1646e8a0919c8f075ab125e812c1  verification/experiments/stage1-protocol/component.py
  0c3a5bcf4f1501496f8870fba5a0d0725d90a0a81d7eb913b33d0c953e7130da  verification/experiments/stage1-protocol/convergence.py
 +c691a9dbb200cdc55d7af60be9260951dd93f5420ed45a2c8f0047dc09f00023  verification/experiments/stage1-protocol/coordinator-revocation/CoordinatorRevocation.lean.in
++c44ce95cd2720d3b81403389173ee3c85ef785a3ead06c7f77e0b816eafac5e5  verification/experiments/stage1-protocol/coordinator-revocation/JournalLoadExit.lean.in
 +3c1ff7cbfd19fe51110b904d4c7a50ade4d1455d313e69d4094dd29a42efed9b  verification/experiments/stage1-protocol/coordinator-revocation/JournalReplayState.lean.in
 +fcd34071119db9ce47e6e8eebfc881e05df6d9abf5082f064034057760fc6ad0  verification/experiments/stage1-protocol/coordinator-revocation/check.py
 +5f834832dbf3a3b976d4cc729691c8c73b4c920ae04712e8e6d84de2f3a3c4cf  verification/experiments/stage1-protocol/coordinator-revocation/guard_binding.py
