@@ -52,6 +52,10 @@ def fixture(root):
                     command=dict(attempt=0,logical=dict(command={kind:fields})))
     freeze=action('FreezeVm');fence=action('InstallFence',4,5);stop=action('StopVm',4,5);cleanup=action('CleanupVm',4,5)
     def receipt(a,kind,body):return dict(identity=copy.deepcopy(a['identity']),outcome=dict(status='observed_success',details=dict(resource=copy.deepcopy(a['identity']['resource']),command=copy.deepcopy(a['command']['logical']['command']),result={kind:body})))
+    frozen_row = (freeze, 'receipted', receipt(freeze, 'Frozen', dict(
+        pid=source['pid'], start_ticks=source['start_time_ticks'], boot_id=source['boot_id'])))
+    unknown_freeze_row = (freeze, 'receipted', dict(
+        identity=copy.deepcopy(freeze['identity']), outcome={'status': 'unknown', 'details': {}}))
     backing=dict(work=dict(anchor=dict(local=dict(local),request=original)),observation={'sample':1},
         capture=dict(full=dict(state_bytes=1,memory_bytes=2,disk_bytes=3),reserved_material_bytes=2*6+2*262144+65536,completed=[7]*32),
         restore=dict(intent=resume,material_use=True),retirement=None,material_release=dict(producer=None,consumer=None))
@@ -86,7 +90,8 @@ def fixture(root):
     runner.services.processes.children['host-0']=p.host
     inbox=dict(sessions=[dict(id=client.session,current_version=5,terminal=True,local=local,entries=[old,terminal])])
     return NS(probe=p,runner=runner,node=node,inbox=inbox,snapshot=snapshot,cleanup=cleanup_snapshot,accepted=accepted,
-        unload=unload,destroy=destroy,freeze=freeze,stop=stop,receipt=receipt,rows=rows)
+        unload=unload,destroy=destroy,freeze=freeze,stop=stop,receipt=receipt,rows=rows,
+        frozen_row=frozen_row,unknown_freeze_row=unknown_freeze_row)
 
 
 def freeze_window_journal(f):
@@ -204,6 +209,7 @@ class FrozenFactsTests(unittest.TestCase):
             for path in paths:
                 with self.subTest(probe=probe_type.__name__,path=path),tempfile.TemporaryDirectory() as directory:
                     f=fixture(Path(directory));p=f.probe;p.__class__=probe_type;s=copy.deepcopy(f.snapshot)
+                    s['original_actions'][0] = f.frozen_row
                     if path is not None:
                         value=s
                         for key in path[:-1]:value=value[key]
@@ -222,6 +228,7 @@ class FrozenFactsTests(unittest.TestCase):
                     f=fixture(Path(directory));p=f.probe;p.__class__=probe_type
                     p.recovered=p.stop_released=True;p.continue_sent=p.continue_source_before_stop
                     p.before_stop=copy.deepcopy(f.snapshot);snapshot=copy.deepcopy(f.cleanup)
+                    snapshot['original_actions'][0] = f.frozen_row
                     snapshot['terminal_actions'][2][0]['identity']['epoch']=value
                     p.terminal_host=Mock();p.terminal_host.wait.return_value=86;p._read_terminal=Mock(return_value=snapshot)
                     p.runtime.services.processes.start=Mock();p.runtime.services.wait_ready=Mock()
@@ -562,13 +569,18 @@ class FrozenFactsTests(unittest.TestCase):
 
     def test_cleanup_needs_original_stop_receipt_kernel_exit_and_pending_cleanup(self):
         for probe_type in (frozen.FreezeDestroyProbe, frozen.OrderedFreezeDestroyProbe):
-            for fault in ('none','pid','start-ticks','stop-pending','stop-attempt','stop-logical-action',
-                          'no-exit','still-live','cleanup-saved','cleanup-epoch','freeze-missing','extra-full'):
+            faults = ('none','pid','start-ticks','stop-pending','stop-attempt','stop-logical-action',
+                      'no-exit','still-live','cleanup-saved','cleanup-epoch','freeze-missing','extra-full')
+            if probe_type is frozen.OrderedFreezeDestroyProbe:
+                faults += ('freeze-pending', 'freeze-unknown')
+            for fault in faults:
                 with self.subTest(probe=probe_type.__name__,fault=fault),tempfile.TemporaryDirectory() as directory,ExitStack() as stack:
                     f=fixture(Path(directory));p=f.probe;p.__class__=probe_type
                     p.recovered=p.stop_released=True;p.continue_sent=p.continue_source_before_stop
                     p.before_stop=copy.deepcopy(f.snapshot)
+                    p.before_stop['original_actions'][0] = f.frozen_row
                     s=copy.deepcopy(f.cleanup);p.terminal_host=Mock();p.terminal_host.wait.return_value=86
+                    s['original_actions'][0] = f.frozen_row
                     p._read_terminal=Mock(return_value=s);p.runtime.services.processes.start=Mock();p.runtime.services.wait_ready=Mock()
                     if fault=='pid':s['terminal_actions'][1][2]['outcome']['details']['result']['Stopped']['pid']+=1
                     if fault=='start-ticks':s['terminal_actions'][1][2]['outcome']['details']['result']['Stopped']['start_ticks']+=1
@@ -585,6 +597,8 @@ class FrozenFactsTests(unittest.TestCase):
                     if fault=='cleanup-saved':s['terminal_actions'][2]=(s['terminal_actions'][2][0],'receipted',{})
                     if fault=='cleanup-epoch':s['terminal_actions'][2][0]['identity']['epoch']+=1
                     if fault=='freeze-missing':s['original_actions']=[]
+                    if fault=='freeze-pending':s['original_actions'][0]=f.snapshot['original_actions'][0]
+                    if fault=='freeze-unknown':s['original_actions'][0]=f.unknown_freeze_row
                     if fault=='extra-full':s['sources'][1]['capture']={'action':f.freeze,'worker':None,'completed':None,'end':None}
                     stack.enter_context(patch.object(frozen,'pidfd_exited',return_value=fault!='no-exit'))
                     stack.enter_context(patch.object(frozen,'original_process',return_value=fault=='still-live'))
@@ -598,6 +612,12 @@ class FrozenFactsTests(unittest.TestCase):
                         with self.assertRaisesRegex(ValueError,'Cleanup does not retain the complete Stop'):
                             p.assert_terminal_before_gc(p.deadline)
                         p.runtime.services.processes.start.assert_not_called();self.assertIsNone(p.terminal_cut)
+                    elif fault in ('freeze-pending', 'freeze-unknown'):
+                        with self.assertRaisesRegex(ValueError, 'successful receipt for the original Freeze'):
+                            p.assert_terminal_before_gc(p.deadline)
+                        p.runtime.services.processes.start.assert_not_called()
+                        self.assertIsNone(p.terminal_cut)
+                        self.assertEqual(p.before_stop['original_actions'], [f.frozen_row])
                     else:
                         with self.assertRaises(ValueError):p.assert_terminal_before_gc(p.deadline)
                         p.runtime.services.processes.start.assert_not_called();self.assertIsNone(p.terminal_cut)
@@ -623,6 +643,22 @@ class FrozenFactsTests(unittest.TestCase):
             self.assertEqual(got['original'],p.unload_entry);self.assertEqual(got['global_pending_stops'],[f.stop])
             self.assertEqual(got['lifetime'],p.prior['lifetime']);self.assertNotIn('resume_actions',got)
             self.assertIs(got['logical_action_registered'],True)
+            p.__class__ = frozen.OrderedFreezeDestroyProbe
+            for row in (f.snapshot['original_actions'][0], f.unknown_freeze_row, f.frozen_row):
+                _, state, receipt = row
+                with self.subTest(freeze_receipt=receipt):
+                    with sqlite3.connect(p.runtime.services.native_pools[0]['database']) as conn:
+                        conn.execute('UPDATE outbox SET dispatch_state=?,receipt_json=? WHERE id=0',
+                                     (state, None if receipt is None else json.dumps(receipt).encode()))
+                    with patch.object(capture, 'checked_source_records', return_value=f.rows):
+                        got = p._read_terminal(p.deadline)
+                    self.assertEqual(got['original_actions'], [row])
+                    with patch.object(frozen, 'original_json', return_value=dict(epoch=4, terminal=True)):
+                        if row == f.frozen_row:
+                            self.assertTrue(p._stop_barrier(got)['terminal'])
+                        else:
+                            with self.assertRaisesRegex(ValueError, 'successful receipt for the original Freeze'):
+                                p._stop_barrier(got)
             for field,replacement in (('vm',10),('vm',9.0),('generation',2.0)):
                 with self.subTest(field=field,replacement=replacement):
                     changed=copy.deepcopy(logical)
@@ -818,9 +854,11 @@ class FreezeStopWiringTests(unittest.TestCase):
         for fault in ('none', 'peer-progress', 'global-stop', 'unregistered-stop',
                       'peer-stop-replacement', 'final-stop-replacement',
                       'ordered-none', 'ordered-peer-progress', 'ordered-global-stop',
+                      'ordered-first-freeze-pending', 'ordered-peer-freeze-unknown',
+                      'ordered-final-freeze-pending',
                       'ordered-automatic-none', 'ordered-automatic-peer-progress',
-                      'ordered-automatic-global-stop'):
-            with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+                      'ordered-automatic-global-stop', 'ordered-automatic-final-freeze-unknown'):
+            with self.subTest(fault=fault), tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
                 ordered = fault.startswith('ordered-')
                 fault = fault.removeprefix('ordered-')
                 automatic=fault.startswith('automatic-')
@@ -852,7 +890,16 @@ class FreezeStopWiringTests(unittest.TestCase):
                     accepted_snapshot['terminal_actions']=[(fence,'ready',None)]
                     accepted_snapshot['global_pending_stops']=[]
                     accepted_snapshot['logical_action_registered']=False
-                    p._read_terminal.side_effect=[accepted_snapshot,f.snapshot,f.snapshot,f.snapshot]
+                    f.snapshot['original_actions'][0] = f.frozen_row
+                    samples = [accepted_snapshot,f.snapshot,f.snapshot,f.snapshot]
+                    if '-freeze-' in fault:
+                        position, _, state = fault.split('-')
+                        index = ('first', 'peer', 'final').index(position) + 1
+                        samples[index] = copy.deepcopy(f.snapshot)
+                        unresolved = (accepted_snapshot['original_actions'][0] if state == 'pending'
+                                      else f.unknown_freeze_row)
+                        samples[index]['original_actions'][0] = unresolved
+                    p._read_terminal.side_effect=samples
                     p.runtime.services.wait_ready.side_effect=lambda **_:events.append('wait-ready')
                 if fault=='global-stop':f.snapshot['global_pending_stops']=[]
                 if fault=='unregistered-stop':f.snapshot['logical_action_registered']=False
@@ -904,6 +951,17 @@ class FreezeStopWiringTests(unittest.TestCase):
                             recovery(accepted,p.deadline,observe_peer=progress)
                         self.assertFalse(p.stop_released);self.assertFalse(p.recovered)
                         self.assertFalse(p.continue_sent);self.assertNotIn('peer',events)
+                    elif '-freeze-' in fault:
+                        with self.assertRaisesRegex(ValueError, 'successful receipt for the original Freeze'):
+                            recovery(accepted, p.deadline, observe_peer=progress)
+                        self.assertEqual(p._read_terminal.call_count, index + 1)
+                        self.assertEqual(events.count('peer'), int(index > 1))
+                        failed = p.terminal_failure_state()
+                        self.assertEqual(failed['terminal_acceptance_before_response_restored'], accepted_snapshot)
+                        self.assertEqual(failed['automatic_terminal' if automatic else 'destroy'], accepted)
+                        self.assertIs(failed['source_os_continue_sent'], True)
+                        self.assertIs(failed['stop_gate_release_sent'], False)
+                        self.assertIs(failed['capacity_released'], False)
                     else:
                         with self.assertRaises(ValueError):recovery(accepted,p.deadline,observe_peer=progress)
                         self.assertFalse(p.stop_released);self.assertFalse(p.recovered)
