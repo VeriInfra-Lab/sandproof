@@ -1,0 +1,197 @@
+import SandproofActualRecord.PublicLoaded
+import SandboxModel.Lifecycle.Protocol.InboxAppend
+import SandboxModel.Lifecycle.Protocol.InboxAppendSelections
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol SandproofParentCommitRust.ErrorTransport
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model (Session)
+namespace SandproofActualRecordRust.PublicUnload
+open controller.lifecycle_inbox recording PublicBegin PublicReplay SourceFlowLink
+open InboxAppend
+noncomputable section
+set_option autoImplicit false
+
+/-- All fields of the newly appended nonterminal entry as read by the recording body. -/
+def appendedState (session : Session) (intent : Intent) : model.LifecycleWorkState :=
+  InboxState.workState {session with current_version := intent.accepted_version, terminal := false}
+    (InboxRecord.pendingEntry intent)
+
+theorem append_current (inbox : model.Inbox) (intent : Intent) (s : Usize)
+    (selected : ExistingSelection inbox intent s)
+    (accepted : existingDecision inbox (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent =
+      .append false) :
+    ∃ (next : model.Inbox) (e : Usize), inbox.record intent = .ok (.Ok (s,e), next) ∧
+      next.state s e = .ok (appendedState (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent) := by
+  have bound := selected_bound inbox intent s selected
+  let session := inbox.sessions.val[s.val]'bound
+  obtain ⟨out, recorded, post⟩ := WP.spec_imp_exists (record_existing_contract inbox intent s selected)
+  rw [accepted] at post
+  obtain ⟨entries, e, contents, position, rfl⟩ := post
+  let updated := appendedSession session intent false entries
+  let next := replaceSession inbox s updated
+  have hs : next.sessions.val[s.val]? = some updated := by simp [next, replaceSession, bound]
+  have he : updated.entries.val[e.val]? = some (InboxRecord.pendingEntry intent) := by
+    simp [updated, appendedSession, contents, position, session]
+  obtain ⟨sb, sameSession⟩ := List.getElem?_eq_some_iff.mp hs
+  obtain ⟨eb, sameEntry⟩ := List.getElem?_eq_some_iff.mp he
+  refine ⟨next, e, recorded, ?_⟩
+  rw [InboxState.state_contract next s e sb (by simpa only [sameSession] using eb)]
+  simp only [sameSession, sameEntry]
+  rfl
+
+variable [env : PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+
+abbrev originalSave (inbox : model.Inbox) (before : StandardRecord Unit) :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.save_using
+    (oldRetirement retirement) (oldTerminal terminal) (oldRenewal renewal) (oldUnload unload)
+    (oldGraphic graphic) (ScopeTransport.recordEffects reads).codecInboxSaveEffectsInst inbox before
+
+local notation "sourceRecord" =>
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+local notation "admits" =>
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated
+
+/-- The Unload miss bypasses both Destroy-only helpers. The complete new inbox and
+the holder returned by the loader are the two operands of the original save. -/
+theorem record_after_save (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (ns : Str) (intent : Intent) (context : Context) (inbox next : model.Inbox)
+    (afterLoad afterSave : StandardRecord Unit) (s e : Usize) (value : model.LifecycleWorkState)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+    (admitted : admits inbox intent context = .ok (.Ok ()))
+    (absent : inbox.find intent = .ok (.Ok none))
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (appended : inbox.record intent = .ok (.Ok (s,e), next))
+    (read : next.state s e = .ok value)
+    (reply : core.result.Result Unit JournalError)
+    (saved : originalSave next afterLoad = .ok (toRequestRustResult reply, afterSave)) :
+    record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
+      .ok ((match reply with | .Ok () => .Ok (.Recorded value) | .Err error => .Err error), afterSave) := by
+  obtain ⟨source, capture, operation⟩ := op
+  change liftResult transferOutcome (sourceRecord (oldRetirement retirement) (oldTerminal terminal)
+    (oldRenewal renewal) (oldUnload unload) (oldGraphic graphic) (ScopeTransport.recordEffects reads)
+    (holder begun ns) intent context) = _
+  unfold SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+  unfold PublicLoaded.originalLoad JournalLoadExit.originalLoad JournalLoadExit.sourceIO at loaded
+  simp only [reads]
+  rw [loaded]
+  unfold originalSave reads at saved
+  cases reply <;> simp [admitted, absent, appended, read, operation, saved, liftResult, transferOutcome,
+    convertOutcome, ScopeTransport.outcomeFromSource, toRequestRustResult, core.option.Option.ok_or,
+    core.result.Result.Insts.CoreOpsTry.branch, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.guard_destroy,
+    SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.attach_destroy]
+
+variable [FileHandle] (journal : controller.ControllerJournal) (intent : Intent) (context : Context)
+    (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (after : UnloadWorldBegin.Conn) (ns : Str)
+    (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+
+include started borrowed
+/-- The standard dictionary consumes exactly the owner returned by the save. Both NeverCrash
+calls succeed at the real points. A commit error reaches the public journal with its payload. -/
+theorem commit_reply (afterSave : StandardRecord Unit) (value : model.LifecycleWorkState)
+    (recorded : record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
+      .ok (.Ok (.Recorded value), afterSave))
+    (reply : core.result.Result Unit JournalError)
+    (committed : SandproofParentCommitRust.controller.transaction.WorldTransaction.commit afterSave.tx.parent =
+      .ok reply) :
+    proof_public_journal hook journal intent context () =
+      .ok ((match reply with | .Ok () => .Ok value | .Err error => .Err error),
+        {journal with journal := ⟨after.base⟩}, ()) := by
+  apply started_reply hook journal intent context () begun after ns started borrowed
+  rw [CallerBranches.extraction_root_uses_real_constructor_and_dictionary]
+  have boundCommit : (CallerBranches.actualEffects codec).commit afterSave = .ok reply := by
+    rwa [CallerBranches.actual_standard_record_uses_original_commit]
+  cases reply with
+  | Ok result =>
+    cases result
+    exact CallerBranches.actual_recorded_success retirement terminal renewal unload graphic _ hook
+      (holder begun ns) afterSave intent context () () () value recorded
+      (hook_return () .BeforeCommit) boundCommit (hook_return () .AfterCommit)
+  | Err error =>
+    exact CallerBranches.actual_recorded_commit_error retirement terminal renewal unload graphic _ hook
+      (holder begun ns) afterSave intent context () () value error recorded
+      (hook_return () .BeforeCommit) boundCommit
+
+/-- A fresh Unload that passes the existing-session guards supplies the new current bit
+and the old session's actual mapping. Save refusal needs no commit observation. -/
+theorem fresh_unload (inbox : model.Inbox) (afterLoad : StandardRecord Unit) (s : Usize)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+    (config : InboxAdmission.ContextMatches inbox context) (valid : Validation.ValidEnvelope intent context)
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (selected : ExistingSelection inbox intent s)
+    (accept : existingDecision inbox (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent =
+      .append false) :
+    let session := inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)
+    let value := appendedState session intent
+    let returned := {journal with journal := ⟨after.base⟩}
+    let run := journalDecision journal intent context
+    ∃ (next : model.Inbox) (e : Usize), inbox.record intent = .ok (.Ok (s,e), next) ∧
+      next.state s e = .ok value ∧
+      (∀ afterSave error, originalSave next afterLoad = .ok (.Err (toRequest error), afterSave) →
+        run = .ok ((.Err error, returned, ()), match toRequest error with
+          | .CommitUncertain _ => .All | _ => .None)) ∧
+      (∀ afterSave, originalSave next afterLoad = .ok (.Ok (), afterSave) →
+        ∀ reply, SandproofParentCommitRust.controller.transaction.WorldTransaction.commit afterSave.tx.parent =
+          .ok reply → match reply with
+          | .Ok () => run = .ok ((.Ok value, returned, ()), match session.local with
+            | some binding => .Sandbox binding.sandbox | none => .None)
+          | .Err error => run = .ok ((.Err error, returned, ()), match toRequest error with
+            | .CommitUncertain _ => .All | _ => .None)) := by
+  dsimp only
+  obtain ⟨next, e, appended, read⟩ := append_current inbox intent s selected accept
+  have admitted := (InboxAdmission.accepts_iff inbox intent context).mpr ⟨config, valid⟩
+  have absent := (InboxLookup.find_none_iff inbox intent).mpr selected.1
+  have recording := record_after_save begun ns intent context inbox next afterLoad
+  obtain ⟨source, capture, operation⟩ := op
+  have ends : CoordinatorRevocation.endsAccess intent.request.operation = true := by
+    simp [operation, CoordinatorRevocation.endsAccess]
+  refine ⟨next, e, appended, read, ?_, ?_⟩
+  · intro afterSave error saved
+    have body := recording afterSave s e _ loaded admitted absent ⟨source,capture,operation⟩ appended read (.Err error) saved
+    have parent : proof_record_actual_parent retirement terminal renewal unload graphic codec hook
+        (holder begun ns).tx ns () intent context () = .ok (.Err error, ()) := by
+      rw [CallerBranches.extraction_root_uses_real_constructor_and_dictionary]
+      simp [record_transaction_using, body, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    have refused := journal_error journal intent context error _
+      (started_reply hook journal intent context () begun after ns started borrowed _ () parent)
+    cases h : toRequest error <;> simpa only [h, ends, if_true] using refused
+  · intro afterSave saved reply committed
+    have body := recording afterSave s e _ loaded admitted absent ⟨source,capture,operation⟩ appended read (.Ok ()) saved
+    have returned := commit_reply journal intent context begun after ns started borrowed afterSave _ body reply committed
+    cases reply with
+    | Ok result =>
+      cases result
+      simp [journalDecision, returned, toRequestRustResult, CoordinatorRevocation.success, CoordinatorRevocation.selected,
+        ends, appendedState, InboxState.workState, InboxRecord.pendingEntry]
+      cases (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)).local <;> rfl
+    | Err error =>
+      have refused := journal_error journal intent context error _ returned
+      cases h : toRequest error <;> simpa only [h, ends, if_true] using refused
+
+omit started borrowed [FileHandle] [PublicCalls] [SandproofStandardRecordCodec.DecodeCalls] in
+/-- The original valid Unload from the append suite is absent from a mapped running session.
+The real record call appends it and state returns its full current version and original local. -/
+theorem mapped_append_witness :
+    let inbox := InboxAppend.Values.withSession InboxAppend.Values.runningSession
+    let intent := InboxAppend.Values.unload
+    Validation.ValidEnvelope intent EnvelopeValues.context ∧
+      ∃ (next : model.Inbox) (e : Usize) (value : model.LifecycleWorkState),
+        inbox.record intent = .ok (.Ok (0#usize,e), next) ∧ next.state 0#usize e = .ok value ∧
+        value.intent = intent ∧ value.current = true ∧ value.current_session_version = intent.accepted_version ∧
+        value.local = some ⟨10#u64, 20#u64, 30#u64⟩ := by
+  refine ⟨InboxAppend.Values.normal_unload_valid, ?_⟩
+  obtain ⟨next, e, appended, read⟩ := append_current _ _ _ InboxAppend.Values.unload_selection
+    InboxAppend.Values.unload_decision
+  exact ⟨next,e,_,appended,read,rfl,rfl,rfl,rfl⟩
+
+end
+end SandproofActualRecordRust.PublicUnload
+
+#audit_controller_proof SandproofActualRecordRust.PublicUnload.append_current
+#audit_controller_proof SandproofActualRecordRust.PublicUnload.record_after_save
+#audit_controller_proof SandproofActualRecordRust.PublicUnload.commit_reply
+#audit_controller_proof SandproofActualRecordRust.PublicUnload.fresh_unload
+#audit_controller_proof SandproofActualRecordRust.PublicUnload.mapped_append_witness

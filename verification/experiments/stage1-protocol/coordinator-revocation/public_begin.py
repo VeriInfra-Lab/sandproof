@@ -19,10 +19,10 @@ import journal_decision
 from wiring import require
 
 RECORD = Path('verification/aeneas/actual-record/SandproofActualRecord')
-PAGE = str(RECORD/'PublicLoaded.lean')
-MODULE = 'SandproofActualRecord.PublicLoaded'
+PAGE = str(RECORD/'PublicUnload.lean')
+MODULE = 'SandproofActualRecord.PublicUnload'
 PKG = codec.PACKAGE/'public-begin'
-NEW = ('PublicHandle', 'PublicCalls', 'PublicBegin', 'PublicReplay', 'PublicLoaded')
+NEW = ('PublicHandle', 'PublicCalls', 'PublicBegin', 'PublicReplay', 'PublicLoaded', 'PublicUnload')
 AUDITS = {'SandproofActualRecordRust.PublicBegin.'+n for n in (
     'begin_refusal', 'world_refusal', 'preparation_refusal', 'sqlite_refusal', 'allocator_refusal',
     'changed_version_refusal', 'started_reply', 'first_record_read_refusal')}
@@ -30,6 +30,12 @@ AUDITS.update('SandproofActualRecordRust.PublicReplay.'+n for n in (
     'hook_return', 'retained', 'conflict', 'mapped_unloads', 'changed_capture', 'journal_error'))
 AUDITS.update('SandproofActualRecordRust.PublicLoaded.'+n for n in (
     'replay_return', 'retained', 'conflict', 'load_refusal'))
+AUDITS.update('SandproofActualRecordRust.PublicUnload.'+n for n in (
+    'append_current', 'record_after_save', 'commit_reply', 'fresh_unload', 'mapped_append_witness'))
+APPEND_WITNESSES = {
+    str(journal_decision.PROTOCOL/(name+'.lean')): codec.AREA/'inbox-append'/(name+'.lean.in')
+    for name in ('InboxAppendValues', 'InboxAppendSelections')
+}
 SHA = {'Types': '6c311fa06db63d48c43ca33fe50f096d186e65165a847fd2e7532df29aa05113',
        'Funs': '126609d05e094ecfa445c512bfccd4e11a85c2cc796a67df09b14a5d43f861af'}
 BINDERS = {'Types': b'variable [FileHandle]',
@@ -63,6 +69,8 @@ def project_inputs(root, journal, decoder, captures):
             else:
                 content = ('import SandproofActualRecord.'+extra+'\n').encode()+old
             result[entry['path']] = content
+    for name, template in APPEND_WITNESSES.items():
+        result[name] = (root/template).read_bytes()
     for name in NEW:
         result[str(RECORD/(name+'.lean'))] = (root/PKG/(name+'.lean.in')).read_bytes()
     for name in ('Types', 'Funs', 'TypesExternal', 'FunsExternal'):
@@ -138,6 +146,7 @@ def prepare(root, project, folder, original_files, tools, head):
 def check_page(root, actual):
     files = actual.get('files', {})
     require(journal_decision.PHYSICAL.items() <= files.items() and
+            all(files.get(n) == codec.sha(root/p) for n, p in APPEND_WITNESSES.items()) and
             AUDITS <= set(actual.get('audits', [])) and all(
         files.get(str(RECORD/(n+'.lean'))) == codec.sha(root/PKG/(n+'.lean.in')) for n in NEW),
         'missing public BEGIN proof, representation or audit')

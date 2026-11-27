@@ -1,5 +1,5 @@
 diff --git a/verification/experiments/stage1-protocol/registered.py b/verification/experiments/stage1-protocol/registered.py
-index eb47df75..c609c688 100644
+index eb47df75..69844312 100644
 --- a/verification/experiments/stage1-protocol/registered.py
 +++ b/verification/experiments/stage1-protocol/registered.py
 @@ -364,8 +364,8 @@ NATIVE_DRIVERS = (
@@ -8,8 +8,8 @@ index eb47df75..c609c688 100644
      'stage1-protocol-'+name for name in CRATE_CASES)
 -AUDIT_TEMPLATE_COUNT = 676
 -AUDIT_DECLARATION_COUNT = 2952
-+AUDIT_TEMPLATE_COUNT = 685
-+AUDIT_DECLARATION_COUNT = 2996
++AUDIT_TEMPLATE_COUNT = 686
++AUDIT_DECLARATION_COUNT = 3001
 
 
  def native_labels(profile='full'):
@@ -222,7 +222,7 @@ index eb47df75..c609c688 100644
      parser = argparse.ArgumentParser(description=__doc__)
      parser.add_argument('mode', choices=('native', 'formal', 'plan'))
 diff --git a/verification/experiments/stage1-protocol/test_registered.py b/verification/experiments/stage1-protocol/test_registered.py
-index 372742d6..070331bf 100644
+index 372742d6..b9375030 100644
 --- a/verification/experiments/stage1-protocol/test_registered.py
 +++ b/verification/experiments/stage1-protocol/test_registered.py
 @@ -60,7 +60,7 @@ class CreateDelivery(OriginalReadPlanFixture):
@@ -249,7 +249,7 @@ index 372742d6..070331bf 100644
          self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
              'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
              'create-guard', 'envelope-writer-correct', 'envelope-writer-swallow-error',
-@@ -615,6 +620,115 @@ class Registration(OriginalReadPlanFixture):
+@@ -615,6 +620,116 @@ class Registration(OriginalReadPlanFixture):
          self.assertEqual(parent['cases'], [
              'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision', 'parent-link'])
 
@@ -257,6 +257,7 @@ index 372742d6..070331bf 100644
 +        root = registered.ROOT
 +        public = registered.UNLOAD.journal_component(root, 'public_begin')
 +        files = {str(public.RECORD/(n+'.lean')): registered._sha(root/public.PKG/(n+'.lean.in')) for n in public.NEW}
++        files.update({n: registered._sha(root/p) for n, p in public.APPEND_WITNESSES.items()})
 +        files.update(public.journal_decision.PHYSICAL)
 +        actual = dict(files=files, audits=sorted(public.AUDITS))
 +        public.check_page(root, actual)
@@ -365,7 +366,7 @@ index 372742d6..070331bf 100644
      def test_full_dispatch_assigns_convergence_children_disjoint_four_cpu_slots(self):
          with tempfile.TemporaryDirectory() as directory:
              output = Path(directory)
-@@ -1680,6 +1794,15 @@ class CheckpointExecution(unittest.TestCase):
+@@ -1680,6 +1795,15 @@ class CheckpointExecution(unittest.TestCase):
          sqlite_readback_inputs = (sqlite_result.parent, registered.ROOT, sqlite_packet,
                                    sqlite_commit, current_sqlite)
          def original_file(receipt, name):
