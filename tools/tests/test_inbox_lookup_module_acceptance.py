@@ -80,6 +80,14 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
         self.assertEqual(actual, {'variants': [{'production_inputs': {acceptance.MODEL: 'c' * 64, 'other': 'b' * 64},
                                                 'audit': 'kept'}]})
 
+    def test_unload_repository_manifest_refresh_keeps_the_old_module_layout(self):
+        path = str(LOOKUP / 'InboxLookup.lean.in')
+        before = {'modules': {'InboxLookup': {'repository': path, 'sha256': 'a' * 64},
+                              'Independent': {'repository': 'other', 'sha256': 'b' * 64}}}
+        self.assertEqual(acceptance.refreshed_inputs(before, {path: 'c' * 64}),
+                         {'modules': {'InboxLookup': {'repository': path, 'sha256': 'c' * 64},
+                                      'Independent': {'repository': 'other', 'sha256': 'b' * 64}}})
+
 
 if __name__ == '__main__':
     unittest.main()

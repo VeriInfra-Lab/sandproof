@@ -30,7 +30,8 @@ VARIANTS = {
 THEOREM_TYPE = 'SandboxModel.Stage1Protocol.InboxLookup.FullLookupContract '
 LOOKUP = 'SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.find'
 FREEZE = 'verification/stage1-protocol-inputs.sha256'
-METADATA_FILES = {'inventory.json', 'frozen.json', 'candidate.json', 'package-inputs.json'}
+METADATA_FILES = {'inventory.json', 'frozen.json', 'candidate.json', 'package-inputs.json',
+                  'sources.json', 'input-closure.json'}
 
 sys.path.insert(0, str(ROOT))
 from tools.acceptance_receipts import native_test_configuration, sha, write_json
@@ -154,9 +155,14 @@ def refreshed_inputs(value, hashes):
     if isinstance(value, list):
         return [refreshed_inputs(row, hashes) for row in value]
     if isinstance(value, dict):
-        return {key: (hashes[key] if key in hashes and isinstance(row, str)
-                      and re.fullmatch('[0-9a-f]{64}', row) else refreshed_inputs(row, hashes))
-                for key, row in value.items()}
+        revised = {key: (hashes[key] if key in hashes and isinstance(row, str)
+                         and re.fullmatch('[0-9a-f]{64}', row) else refreshed_inputs(row, hashes))
+                   for key, row in value.items()}
+        repository = value.get('repository')
+        if (isinstance(repository, str) and repository in hashes
+                and isinstance(value.get('sha256'), str) and re.fullmatch('[0-9a-f]{64}', value['sha256'])):
+            revised['sha256'] = hashes[repository]
+        return revised
     return value
 
 
