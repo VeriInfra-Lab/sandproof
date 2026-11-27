@@ -186,6 +186,10 @@ class PromotionTest(unittest.TestCase):
 
     def test_original_full_formal_consumes_exact_one_new_or_existing_native_seal(self):
         existing = self.path/'existing-native'
+        checkout = self.path/'checkout'
+        cache = self.path/'shared-native-target'
+        checkout.mkdir(mode=0o700)
+        cache.mkdir(mode=0o755)
         existing.mkdir(mode=0o700)
         (existing/'complete.json').write_text('{}')
         (existing/'complete.json').chmod(0o600)
@@ -200,11 +204,13 @@ class PromotionTest(unittest.TestCase):
                     if env['SANDPROOF_ACCEPTANCE_ROLE'] == 'formal':
                         self.assertEqual(command, ['bash', 'scripts/verify-stage1-protocol.sh'])
                         self.assertEqual(env['SANDPROOF_NATIVE_EVIDENCE'], str(prior or output/'native'))
+                        self.assertEqual(env['CARGO_TARGET_DIR'], str(output/'formal-cargo-target'))
                         (Path(env['TMPDIR'])/'sandproof-stage1-protocol.abcdef'/'registered').mkdir(parents=True)
                     else:
                         self.assertIn('tools/native_task.py', command)
                         self.assertIn('stage1-protocol', command)
                         self.assertEqual(env['TMPDIR'], '/mnt/xfs')
+                        self.assertEqual(env['CARGO_TARGET_DIR'], str(cache))
                         (output/'native').mkdir(mode=0o700)
                         (output/'native'/'complete.json').write_text('{}')
                         (output/'native'/'complete.json').chmod(0o600)
@@ -216,11 +222,31 @@ class PromotionTest(unittest.TestCase):
                       patch.object(gate, 'attest_evidence', return_value=self.evidence),
                       patch.object(gate, 'run_entry', side_effect=execute) as entries,
                       patch.dict(os.environ, dict(GH_TOKEN='test-only', TMPDIR='/mnt/xfs',
+                                                 CARGO_TARGET_DIR=str(cache),
                                                  SANDPROOF_NATIVE_OBSERVER='/installed/observer'))):
-                    result = gate.run_stage(self.candidate, self.path, output, native=prior)
+                    result = gate.run_stage(self.candidate, checkout, output, native=prior)
                 self.assertEqual(entries.call_count, 1 if prior else 2)
                 self.assertEqual(result['candidate'], asdict(self.candidate))
                 self.assertTrue((output/'complete.json').is_file())
+
+    def test_native_target_alias_cannot_hide_builds_in_candidate_or_evidence(self):
+        checkout = self.path/'checkout'
+        checkout.mkdir(mode=0o700)
+        for index in range(2):
+            output = self.path/f'run-{index}'
+            output.mkdir(mode=0o700)
+            target = (checkout if index == 0 else output)/'target'
+            target.mkdir(mode=0o700)
+            alias = self.path/f'alias-{index}'
+            alias.symlink_to(target)
+            with (patch.object(gate.Candidate, 'check_checkout'),
+                  patch.object(gate, 'MOUNT', self.path),
+                  patch.object(gate, 'run_entry') as execute,
+                  patch.dict(os.environ, dict(CARGO_TARGET_DIR=str(alias),
+                                             SANDPROOF_NATIVE_OBSERVER='/installed/observer'))):
+                with self.assertRaisesRegex(ValueError, 'separate from source and evidence'):
+                    gate.run_stage(self.candidate, checkout, output)
+            execute.assert_not_called()
 
     def test_resume_uses_bound_native_seal_and_original_partial_formal_record(self):
         old = self.path/'interrupted'

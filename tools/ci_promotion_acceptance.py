@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import pwd
 import re
+import stat
 import subprocess
 import sys
 
@@ -200,17 +201,26 @@ def run_stage(candidate, checkout, output, *, native=None, resume_from=None):
                                           native_path=str(native)))
     temporary = output / 'tmp'
     temporary.mkdir(mode=0o700)
-    cargo_target = output / 'cargo-target'
-    cargo_target.mkdir(mode=0o700)
     env = dict(os.environ, SANDPROOF_NATIVE_EVIDENCE=str(native))
     env.update(SANDPROOF_PROOF_TOOL_ROOT=str(checkout/'.tools'),
-               CARGO_TARGET_DIR=str(cargo_target), RUSTUP_AUTO_INSTALL='0')
+               RUSTUP_AUTO_INSTALL='0')
     env.pop('PYTHONPATH', None)
     # An imported dotenv or launch shell must not leak a GitHub token into a driver.
     for name in ('CREDENTIALS_DIRECTORY', 'GH_TOKEN', 'GITHUB_TOKEN'):
         env.pop(name, None)
     if original_native is None:
         observer = env['SANDPROOF_NATIVE_OBSERVER']
+        configured = Path(env.get('CARGO_TARGET_DIR', '.'))
+        if not configured.is_absolute():
+            raise ValueError('set the operator-approved shared native Cargo target under /mnt')
+        cache = configured.resolve(strict=True)
+        cache_stat = cache.stat()
+        if (not cache.is_relative_to(MOUNT) or cache == MOUNT or not cache.is_dir()
+                or cache_stat.st_uid != os.geteuid() or stat.S_IMODE(cache_stat.st_mode) & 0o022
+                or not cache_stat.st_mode & stat.S_IWUSR
+                or any(cache.is_relative_to(path) or path.is_relative_to(cache)
+                       for path in (checkout, output))):
+            raise ValueError('native Cargo cache must be owner-writable and separate from source and evidence')
         execution_commit = git('rev-parse', 'HEAD', cwd=checkout)
         with operator_lock(env, 'SANDPROOF_PROOF_HEAVY_LOCK',
                            'SANDPROOF_PROOF_HEAVY_LOCK_FD') as fd:
@@ -230,7 +240,10 @@ def run_stage(candidate, checkout, output, *, native=None, resume_from=None):
     with operator_lock(env, 'SANDPROOF_LOCK_FILE', 'SANDPROOF_LOCK_FD') as fd:
         # The formal entry itself admits the original complete native seal
         # under current source, environment and tool rules, including functional.
-        formal_env = dict(env, SANDPROOF_ACCEPTANCE_ROLE='formal', TMPDIR=str(temporary))
+        cargo_target = output / 'formal-cargo-target'
+        cargo_target.mkdir(mode=0o700)
+        formal_env = dict(env, SANDPROOF_ACCEPTANCE_ROLE='formal', TMPDIR=str(temporary),
+                          CARGO_TARGET_DIR=str(cargo_target))
         formal_env.pop('SANDPROOF_PROOF_HEAVY_LOCK_FD', None)
         if resume_from is not None:
             formal_env.pop('SANDPROOF_STAGE1_RESUME_FROM', None)
