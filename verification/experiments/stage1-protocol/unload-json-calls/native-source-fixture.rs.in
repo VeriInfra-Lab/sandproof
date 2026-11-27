@@ -1,0 +1,32 @@
+// Test-only access to the existing running-source fixture. Appended only in
+// isolated native copies; no production visibility or implementation changes.
+pub(super) fn json_call_original_anchor() -> SourceAnchor {
+    let directory = tempfile::tempdir().unwrap();
+    let (mut journal, _state) = ready(&directory.path().join("json-calls.db"));
+    let namespace = journal.namespace.clone();
+    let active = journal.active_host_epoch.clone();
+    let tx = transaction::WorldTransaction::begin(
+        &mut journal.journal.connection,
+        &journal.committed_world,
+    )
+    .unwrap();
+    let inbox = crate::controller::lifecycle_inbox::codec::load(&tx)
+        .unwrap()
+        .unwrap();
+    let sources = super::codec::load(&tx).unwrap().unwrap();
+    let world = tx.world();
+    super::snapshot::current::<Evidence>(
+        &tx,
+        &namespace,
+        &unload(),
+        10,
+        super::snapshot::CurrentSource {
+            world: &world,
+            inbox: &inbox,
+            limits: &sources.config,
+            active: active.as_ref(),
+        },
+    )
+    .unwrap()
+    .anchor
+}
