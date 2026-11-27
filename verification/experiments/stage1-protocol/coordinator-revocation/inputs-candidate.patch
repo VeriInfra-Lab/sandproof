@@ -9,11 +9,12 @@ diff --git a/verification/stage1-protocol-inputs.sha256 b/verification/stage1-pr
  feadd669f2533ebb6189f12526b29eb3092331ade8782df28701744d66100264  lake-manifest.json
  5e9e1df3094a41ba9dc7aae5a7dd942555c6cef0dc1a39d19e41bce9cab7cfc1  lakefile.toml
  efac0b94923b2d8b6840cd35be9177ad0fc5ab2332f4f4311c98712cee92fdee  lean-toolchain
-@@ -191,6 +192,15 @@
+@@ -191,6 +192,16 @@
  1611afa3391d94277b5bf1662c7cfceaac06dfcf2f2fd8d796db4f5a29de21d6  verification/experiments/stage1-protocol/archive.py
  8dbd6841523549fd1ed2bbef6155c4ac4b8d1646e8a0919c8f075ab125e812c1  verification/experiments/stage1-protocol/component.py
  0c3a5bcf4f1501496f8870fba5a0d0725d90a0a81d7eb913b33d0c953e7130da  verification/experiments/stage1-protocol/convergence.py
 +c691a9dbb200cdc55d7af60be9260951dd93f5420ed45a2c8f0047dc09f00023  verification/experiments/stage1-protocol/coordinator-revocation/CoordinatorRevocation.lean.in
++3c1ff7cbfd19fe51110b904d4c7a50ade4d1455d313e69d4094dd29a42efed9b  verification/experiments/stage1-protocol/coordinator-revocation/JournalReplayState.lean.in
 +5654988cbc35eb7dd5d33eff8fc3740221d08076c44d21477704897df0b11a93  verification/experiments/stage1-protocol/coordinator-revocation/check.py
 +5f834832dbf3a3b976d4cc729691c8c73b4c920ae04712e8e6d84de2f3a3c4cf  verification/experiments/stage1-protocol/coordinator-revocation/guard_binding.py
 +56eea506b3f59155da59adc1f4f436df5274c239bb7d6a0aa5bc9d78c862f35a  verification/experiments/stage1-protocol/coordinator-revocation/hook_regressions.py

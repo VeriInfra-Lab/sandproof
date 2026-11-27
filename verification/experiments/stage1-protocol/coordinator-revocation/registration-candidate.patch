@@ -1,5 +1,5 @@
 diff --git a/verification/experiments/stage1-protocol/registered.py b/verification/experiments/stage1-protocol/registered.py
-index eb47df75..1694ced0 100644
+index eb47df75..49a2c198 100644
 --- a/verification/experiments/stage1-protocol/registered.py
 +++ b/verification/experiments/stage1-protocol/registered.py
 @@ -364,8 +364,8 @@ NATIVE_DRIVERS = (
@@ -8,8 +8,8 @@ index eb47df75..1694ced0 100644
      'stage1-protocol-'+name for name in CRATE_CASES)
 -AUDIT_TEMPLATE_COUNT = 676
 -AUDIT_DECLARATION_COUNT = 2952
-+AUDIT_TEMPLATE_COUNT = 677
-+AUDIT_DECLARATION_COUNT = 2961
++AUDIT_TEMPLATE_COUNT = 678
++AUDIT_DECLARATION_COUNT = 2964
 
 
  def native_labels(profile='full'):
@@ -32,7 +32,7 @@ index eb47df75..1694ced0 100644
      if result.get('kind') == 'source-live-four-view-proof-component':
          return [row['actual'] for row in result['views'].values()]
      if result.get('kind') == 'fixed-original-proof-readback':
-@@ -979,6 +984,30 @@ def _check_fixed_protocol_record(original, job):
+@@ -979,6 +984,39 @@ def _check_fixed_protocol_record(original, job):
  def _check_actual(result, job):
      if result.get('complete') is not True:
          raise ValueError('original formal driver incomplete: ' + job['name'])
@@ -60,10 +60,19 @@ index eb47df75..1694ced0 100644
 +            'CoordinatorRevocation.lookup_conflict', 'CoordinatorRevocation.mapped_unload_replays')}
 +        if not replay_audits <= set(result['physical']['audits']):
 +            raise ValueError('missing joint coordinator replay audits')
++    if job['name'] == 'v3-transaction-source':
++        transaction = result.get('cases', {}).get('transaction', {})
++        replay = 'verification/aeneas/actual-record/SandproofActualRecord/JournalReplayState.lean'
++        template = ROOT/HERE/'coordinator-revocation/JournalReplayState.lean.in'
++        required = {'SandproofActualRecordRust.JournalReplayState.'+name for name in
++                    ('retained_state', 'refused_before_commit', 'same_key_capture_replies')}
++        if (transaction.get('files', {}).get(replay) != _sha(template)
++                or not required <= set(transaction.get('audits', []))):
++            raise ValueError('missing transaction parent replay file or audits')
      if job['name'] == UNLOAD.PARENT_LABEL:
          if any(not re.fullmatch(r'[0-9a-f]{64}', result.get(key, ''))
                 for key in ('source_sha256', 'native_result_sha256')):
-@@ -1221,7 +1250,7 @@ def compute_retained_coverage(root, record):
+@@ -1221,7 +1259,7 @@ def compute_retained_coverage(root, record):
              actual = result['cases']['correct']
              folder = result_path.parent/'correct'
          elif job['cases'] == ['correct']:
@@ -72,7 +81,7 @@ index eb47df75..1694ced0 100644
              folder = result_path.parent
          else:
              continue
-@@ -1263,7 +1292,7 @@ def profile_is_convergence_job(job):
+@@ -1263,7 +1301,7 @@ def profile_is_convergence_job(job):
 
 
  def requires_formal_cpu_slot(job):
@@ -81,7 +90,7 @@ index eb47df75..1694ced0 100644
              or any(key in job for key in ('create_package', 'convergence_package', 'convergence_extra')))
 
 
-@@ -1545,7 +1574,13 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
+@@ -1545,7 +1583,13 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
                  if path.is_symlink() or not path.is_file():
                      raise ValueError('linked original proof input')
                  evidence[str(path.resolve())] = _sha(path)
@@ -96,7 +105,7 @@ index eb47df75..1694ced0 100644
                 for name in evidence):
          raise ValueError('missing original raw LLBC evidence')
      if job['name'] == UNLOAD.LABEL:
-@@ -1704,7 +1739,7 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
+@@ -1704,7 +1748,7 @@ def _launch_job(root, job, directory, paths, runtime_seed=None, cpu_affinity=Non
      if retained or job['name'] in CPU_PINNED_UNLOAD_JOBS:
          fd, _ = inherited_lock()
          pass_fds = (fd,)
@@ -105,7 +114,7 @@ index eb47df75..1694ced0 100644
              or job.get('convergence_package') in CONVERGENCE.LOCKED_FORMAL):
          fd, lock = inherited_lock()
          pass_fds = (fd,)
-@@ -1871,6 +1906,8 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
+@@ -1871,6 +1915,8 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
      labels = ('functional', *(('stage1-protocol',) if profile == 'full' else ()), *native_labels(profile))
      receipts = {name: shared.native_case(name, root, None, scope=scope) for name in labels}
      paths = {name: _evidence(receipt) for name, receipt in receipts.items()}
@@ -114,7 +123,7 @@ index eb47df75..1694ced0 100644
      for name in native_labels(profile):
          _original_file(receipts[name], 'result.json')
      if 'stage1-sqlite-commit' in receipts:
-@@ -1990,6 +2027,19 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
+@@ -1990,6 +2036,19 @@ def run_formal(output, retained_result=None, *, root=ROOT, jobs=None, resume_fro
      return record
 
 
@@ -135,7 +144,7 @@ index eb47df75..1694ced0 100644
      parser = argparse.ArgumentParser(description=__doc__)
      parser.add_argument('mode', choices=('native', 'formal', 'plan'))
 diff --git a/verification/experiments/stage1-protocol/test_registered.py b/verification/experiments/stage1-protocol/test_registered.py
-index 372742d6..918d66a2 100644
+index 372742d6..ed9cc7ac 100644
 --- a/verification/experiments/stage1-protocol/test_registered.py
 +++ b/verification/experiments/stage1-protocol/test_registered.py
 @@ -60,7 +60,7 @@ class CreateDelivery(OriginalReadPlanFixture):
@@ -162,10 +171,25 @@ index 372742d6..918d66a2 100644
          self.assertLessEqual({'replay-replay', 'replay-validation', 'replay-envelope',
              'manifest-validation', 'access-identity', 'create-observation', 'create-conversion',
              'create-guard', 'envelope-writer-correct', 'envelope-writer-swallow-error',
-@@ -615,6 +620,37 @@ class Registration(OriginalReadPlanFixture):
+@@ -615,6 +620,52 @@ class Registration(OriginalReadPlanFixture):
          self.assertEqual(parent['cases'], [
              'begin', 'prefix', 'prefix-reordered', 'finish', 'finish-reordered', 'revision', 'parent-link'])
 
++    def test_transaction_requires_replay_page_and_audits_in_transaction_case(self):
++        job = dict(name='v3-transaction-source', args=[], cases=['transaction', 'source-rows'], actual_files=True)
++        template = registered.ROOT/registered.HERE/'coordinator-revocation/JournalReplayState.lean.in'
++        page = 'verification/aeneas/actual-record/SandproofActualRecord/JournalReplayState.lean'
++        audits = ['SandproofActualRecordRust.JournalReplayState.'+name
++                  for name in ('retained_state', 'refused_before_commit', 'same_key_capture_replies')]
++        actual = dict(complete=True, files={page: registered._sha(template)}, audits=audits,
++                      service_log_sha256='a'*64)
++        result = dict(complete=True, cases={'transaction': actual, 'source-rows': copy.deepcopy(actual)})
++        registered._check_actual(result, job)
++        for field, stale in [('audits', audits[:1]), ('files', {page: 'b'*64})]:
++            with self.subTest(field=field), patch.dict(actual, {field: stale}):
++                with self.assertRaisesRegex(ValueError, 'transaction parent replay'):
++                    registered._check_actual(result, job)
++
 +    def test_coordinator_requires_identified_hook_and_joint_replay_audits(self):
 +        name = 'coordinator-revocation'
 +        hook = {'source': 'controller-service/src/lib.rs',
@@ -200,7 +224,7 @@ index 372742d6..918d66a2 100644
      def test_full_dispatch_assigns_convergence_children_disjoint_four_cpu_slots(self):
          with tempfile.TemporaryDirectory() as directory:
              output = Path(directory)
-@@ -1680,6 +1716,15 @@ class CheckpointExecution(unittest.TestCase):
+@@ -1680,6 +1731,15 @@ class CheckpointExecution(unittest.TestCase):
          sqlite_readback_inputs = (sqlite_result.parent, registered.ROOT, sqlite_packet,
                                    sqlite_commit, current_sqlite)
          def original_file(receipt, name):

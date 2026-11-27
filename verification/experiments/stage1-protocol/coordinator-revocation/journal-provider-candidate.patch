@@ -1,0 +1,82 @@
+diff --git a/verification/experiments/create-transaction-link/current/materialization.json b/verification/experiments/create-transaction-link/current/materialization.json
+index de3c5cff..486848f1 100644
+--- a/verification/experiments/create-transaction-link/current/materialization.json
++++ b/verification/experiments/create-transaction-link/current/materialization.json
+@@ -3,7 +3,8 @@
+   "roots": [
+     "SandproofActualRecord.CreateRootLink",
+     "SandproofParentCommit.FinishAudit",
+-    "SandboxModel.InboxTransaction.StandardLoadSave"
++    "SandboxModel.InboxTransaction.StandardLoadSave",
++    "SandproofActualRecord.JournalReplayState"
+   ],
+   "modules": {
+     "SandboxModel.Foundations.ByteArray": {
+@@ -906,6 +907,11 @@
+       "sha256": "12984430c6b3311ae5957b7b07d2830c5cf2ef55092cb0aff0327b3986cfa4f7",
+       "source": "verification/experiments/create-transaction-link/current/proof-inputs/SandproofActualRecord/IOProviderLink.lean.in"
+     },
++    "SandproofActualRecord.JournalReplayState": {
++      "path": "verification/aeneas/actual-record/SandproofActualRecord/JournalReplayState.lean",
++      "sha256": "3c1ff7cbfd19fe51110b904d4c7a50ade4d1455d313e69d4094dd29a42efed9b",
++      "source": "verification/experiments/stage1-protocol/coordinator-revocation/JournalReplayState.lean.in"
++    },
+     "SandproofActualRecord.OwnerLink": {
+       "path": "verification/aeneas/actual-record/SandproofActualRecord/OwnerLink.lean",
+       "sha256": "23bd420809fa9f6fbf169093670899b08cd9668a4cdb8f68c5a025fe979f36f1",
+@@ -1203,6 +1209,7 @@
+     "verification/aeneas/actual-record/SandproofActualRecord/IOAdmissible.lean",
+     "verification/aeneas/actual-record/SandproofActualRecord/IOOwnerTransport.lean",
+     "verification/aeneas/actual-record/SandproofActualRecord/IOProviderLink.lean",
++    "verification/aeneas/actual-record/SandproofActualRecord/JournalReplayState.lean",
+     "verification/aeneas/actual-record/SandproofActualRecord/OwnerLink.lean",
+     "verification/aeneas/actual-record/SandproofActualRecord/ReadonlyLink.lean",
+     "verification/aeneas/actual-record/SandproofActualRecord/RecordUsingLink.lean",
+diff --git a/verification/experiments/create-transaction-link/current/rust-source-binding.json b/verification/experiments/create-transaction-link/current/rust-source-binding.json
+index 1fe670ac..c84062cd 100644
+--- a/verification/experiments/create-transaction-link/current/rust-source-binding.json
++++ b/verification/experiments/create-transaction-link/current/rust-source-binding.json
+@@ -62,7 +62,7 @@
+     "sandbox-protocol/src/lifecycle/terminal.rs": "5daf92c2ea486d187b91f8c2e38e863353ff55bc373b819a3ede9af3792f7396"
+   },
+   "current_file_overrides": {
+-    "controller-service/src/application/coordinator/lifecycle_intent.rs": "2277e296f74dfaa340423bdc5b62427e32f42e2a6d354045b6227e36c832d5dd",
++    "controller-service/src/application/coordinator/lifecycle_intent.rs": "ff56d460fa987e09463783986742de6be6773ee75a05c88291c96afa0a2cd897",
+     "controller-service/src/host_contract.rs": "5b94f7e4b3e7e3bf140462e7f43462af7aec698e524a3c9e58eff13001bb2d5d"
+   },
+   "entry": "ControllerJournal::record_lifecycle_intent",
+diff --git a/verification/v3-transaction-source-inputs.sha256 b/verification/v3-transaction-source-inputs.sha256
+index 6adcc1e8..16778c06 100644
+--- a/verification/v3-transaction-source-inputs.sha256
++++ b/verification/v3-transaction-source-inputs.sha256
+@@ -42,7 +42,7 @@ bd90d4387cc5470e873e3f17a41092721a2e8b2aa7476dfdce8b21a65bc50167  controller-cor
+ 56944e8470ae34dcb1e692d500b35f2d4b0e9fe548085f1addc759e97ab26ce3  controller-core/src/store.rs
+ 93d12984975b43b64fc289ef5a14b750516477b6bdaca856757b757794a4447c  controller-core/src/worker.rs
+ f9b68a19b7e5d64a3933590a40780a002a9fe26dc97a252552fcdec572ff843d  controller-service/Cargo.toml
+-6bc2aabb7b486cb5cfa0f2594dcb4fdeb450b6e6a2d68fc778b0026fa987700b  controller-service/src/application/coordinator/lifecycle_intent.rs
++ff56d460fa987e09463783986742de6be6773ee75a05c88291c96afa0a2cd897  controller-service/src/application/coordinator/lifecycle_intent.rs
+ 85f88284f4f96e8207c5fbfa42562561f23b80590c26be918304929af1805272  controller-service/src/capture.rs
+ 53f465862c4544281d7971cde42194a4962990bcbdd2f6b01011f90798e1faf1  controller-service/src/controller/admission.rs
+ eef5af0cbb091eb4e2d6c7d72b2c292b3de22c58ea59a7a27b40dad87d016577  controller-service/src/controller/capacity.rs
+@@ -105,7 +105,7 @@ d53a906fa35ba6c3f195dcdc51b862d023016b1f9cca2833605994abb5812e4c  verification/e
+ 1a3815c2d2de279b7d9419d8b71654e21f34aebe9d42789e4ba68890891916b1  verification/experiments/create-transaction-link/current/caller-root.rs.in
+ ef4d0864c800f7c0c0aa36033edf368f5b83e5c1fc725abe12bcde651a8e5bf4  verification/experiments/create-transaction-link/current/formal.py
+ 6fbbf906378707c0e741e70ec47cdf3ff19ec2ba9d60c2b56b5d7d83f63056e6  verification/experiments/create-transaction-link/current/lakefile.toml.in
+-a80028c0d3c2936c4b0b548635ec68261086196bd8d69c340f61eb807d1a50ea  verification/experiments/create-transaction-link/current/materialization.json
++52c70967991e3751a55c60529b32cb93630e60dcf75dad79a1fb28f15adba6cd  verification/experiments/create-transaction-link/current/materialization.json
+ 6116c2820aacc007d847a165d69c794bf15238c72e4a657641a033b452110799  verification/experiments/create-transaction-link/current/proof-inputs/SandboxModel/InboxTransaction/CodecTransfer.lean.in
+ 3809f2c6f1ec785399cee90110fff4eacf4e76e77e70bc60a053d14f664ed46a  verification/experiments/create-transaction-link/current/proof-inputs/SandboxModel/InboxTransaction/IOTransfer.lean.in
+ df5b98ff2d752db40ae0b479cdd0812a32635a600546a98457af521b9b5ff439  verification/experiments/create-transaction-link/current/proof-inputs/SandboxModel/InboxTransaction/StandardLoadSave.lean.in
+@@ -155,10 +155,11 @@ ae4c04d851012bbb2f3f0e361a0df476adb243b0f424c81091bfa58ad03369b0  verification/e
+ aae807bbfb066e48335d72a4f32a8b088305c821ca18de6dc3613f5bf5fafe17  verification/experiments/create-transaction-link/current/proof-inputs/SandproofStage1Request/FunsExternal.lean.in
+ 930cceb0b57186a997215cf0a727bb03aac659d337dc8d0e7193966955048a21  verification/experiments/create-transaction-link/current/proof-inputs/SandproofStage1Request/Types.lean.in
+ 892327b854aa35e03016a309c5ad794d55a401fdbfe86741a3007e678e9c05e2  verification/experiments/create-transaction-link/current/proof-inputs/SandproofStage1Request/TypesExternal.lean.in
+-ea42f0c4c4e08484df584459935c5db7bd0d8dbe5bd81b61472fd390733e5137  verification/experiments/create-transaction-link/current/rust-source-binding.json
++b1c421c553de1bc21b9e847842e0cefb8df2ba5b6c728cdd1afbb46eb275cf77  verification/experiments/create-transaction-link/current/rust-source-binding.json
+ 08503caaa913f0c3a95e5e9ed29dae55935227c5ab310c07901b7ba70b79fc74  verification/experiments/create-transaction-link/finish/TypesExternal.lean.in
+ 995fe979658208e8634b5b5f54d4d2f9d80278a70bb6bdfc39f0e5a77c4220c7  verification/experiments/create-transaction-link/native.py
+ 1611afa3391d94277b5bf1662c7cfceaac06dfcf2f2fd8d796db4f5a29de21d6  verification/experiments/stage1-protocol/archive.py
++3c1ff7cbfd19fe51110b904d4c7a50ade4d1455d313e69d4094dd29a42efed9b  verification/experiments/stage1-protocol/coordinator-revocation/JournalReplayState.lean.in
+ d2477cb582900ceb3356d451107586fa3f23f0de2127f808e20dcf22e4bddd7f  verification/experiments/stage1-protocol/digest-uses/DigestArray32Representation.lean.in
+ 33db23fa4534f074efbad50bb75f86035e8e6f8a3120dfef73640378fd77b14a  verification/experiments/stage1-protocol/digest-uses/DigestByteBridge.lean.in
+ 589116992a3802fd78f811d44f0dbe2f59255c9827701d8c7623659bc3b3642d  verification/experiments/stage1-protocol/digest-uses/Sha256Bytes.lean.in
