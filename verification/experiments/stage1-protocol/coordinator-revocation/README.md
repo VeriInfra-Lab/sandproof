@@ -115,11 +115,17 @@ BEGIN 成功后，`started_reply` 连接该次返回的原 owner、实际命名�
 
 ### 从公共收件结果到锁内撤销决定
 
-从原 `WorldTransaction::begin` 成功返回、公开命名空间借用以及同一 owner 的实际载入开始，`PublicReplay.retained` 将首次全文命中的完整工作状态直接交给生产 `data_revocation`。当前性由所选 session 的版本决定，本地映射取自同一 session。旧版本 Unload 保留现有映射，当前版本 Unload 选择其中的 sandbox。合法封套但同键异 capture 的请求，以及认证或封套不匹配的请求，均返回 `Conflict` 且无撤销动作。两条具体见证沿用已有输入，逐一检查公开返回和选中的动作。对其它正常错误返回，只有结束访问的操作遇到 `CommitUncertain` 时选择广播。[组合定理](public-begin/PublicReplay.lean.in)
+从原 `WorldTransaction::begin` 成功返回、公开命名空间借用以及同一 owner 的 `SourceFlowLink.loadPrefix` 观察开始，`PublicReplay.retained` 将首次全文命中的完整工作状态直接交给生产 `data_revocation`。当前性由所选 session 的版本决定，本地映射取自同一 session。旧版本 Unload 保留现有映射，当前版本 Unload 选择其中的 sandbox。合法封套但同键异 capture 的请求，以及认证或封套不匹配的请求，均返回 `Conflict` 且无撤销动作。两条具体见证沿用已有输入，逐一检查公开返回和选中的动作。对其它正常错误返回，只有结束访问的操作遇到 `CommitUncertain` 时选择广播。[组合定理](public-begin/PublicReplay.lean.in)
 
 同批重抽协调器父函数，核对同一锁内的 journal、原 intent/context、实际 `NeverCrash`、传给决策的 operation 和返回值。Lean 使用原决策与钩子方法的完整生成函数页，以及原动作和钩子类型的完整生成类型页。四个共享类型逐构造器、字段和载荷与事务提供方核对，错误沿用双向表示。原 `CoordinatorRevocation` 证明在这个共同环境重新检查。固定字符判断由实际标准实现履行。[抽取与接线检查](journal_decision.py)
 
 载入的普通结果、解码字符串可表示性、V5 的事务观察和受信认证来源仍是具名前提。自动析构和物理回滚、watch 通知送达及网关路由关闭保留原验收分工。ning 在同一个集成候选运行 Linux 完整普通检查，核对下列两个原生断言组与父事务和收件组件回执。
+
+### 直接消费 Rust 载入返回
+
+`PublicLoaded` 采用 `JournalLoadExit.originalLoad`，即 `record_using` 在本次 BEGIN 返回 owner 上实际调用的 `codec::load_using`。调用结果包含完整收件箱以及当步交回的 holder。达到此处后，录入先检查认证，再按首个完整匹配读回工作状态。即使旧代映射指向当前 sandbox，撤销选择也使用该次读取的当前位。认证不符或同键异文时保留 `Conflict`，空库返回 `UnsupportedStore`，载入返回的其它普通错误保留载荷。成功重放时，录入体交回达到载入出口时的完整 holder。[Rust 载入返回的对应](public-begin/PublicLoaded.lean.in)
+
+这一入口适合已经持有实际 `load_using` 返回证据的提供方。使用 SQL 或协议模型的载入观察时，原入口继续要求解码字符串可表示等合同，以便解释数据库内容如何产生这次返回。生成的录入与加载体沿用事务提供方冻结的完整 Request 视图。物理事务和网关通知仍按原分工验收。
 
 ## 复验与登记候选
 
@@ -137,7 +143,7 @@ SANDPROOF_ACCEPTANCE_ROLE=formal PYTHONDONTWRITEBYTECODE=1 \
 
 [公共登记候选](registration-candidate.patch)供主控在包含本包的候选上审阅、试套。[覆盖记录候选](coverage-candidate.patch)注明已实测的源码和边界。登记通过 `scripts/verify-stage1-protocol.sh` 默认使用的 `full` 计划调用同一检查器。其原生前提包括已封口的完整 Linux `functional` 日志中的两个指定测试，以及原 `stage1-inbox-lookup`、`stage1-inbox-state` 和 `stage1-create-transaction-link` 收据。单项命令和缺少封口的日志可用于开发复核。
 
-[默认入口的输入候选](inputs-candidate.patch)在 #1061 的清单上累计新增 47 个路径，更新原 `unload_audits.py` 的一行。它覆盖协调器、录入、BEGIN 所用的生产源码、证明、薄根、原始抽取与物化入口。事务独立清单一并列出这个共享检查文件的候选内容。主控还需核对既有公共工具冻结以及同一候选的原生封口。
+[默认入口的输入候选](inputs-candidate.patch)列出相对 #1061 新增的全部路径以及原 `unload_audits.py` 的更新。它覆盖协调器、录入、BEGIN 所用的生产源码、证明、薄根、原始抽取与物化入口。事务独立清单一并列出这个共享检查文件的候选内容。主控还需核对既有公共工具冻结以及同一候选的原生封口。
 
 登记子任务在分配的四核内继承并核对原协调锁描述符。检查点读取五份指定 LLBC、公开 journal 和具体解码器各自的五份生成产物、真实内核命令的退出状态与日志、物理文件和原服务回执。收敛与 Create 有限计划继续按各自的原任务清单验收。主控合入时需重新校验受影响的公共冻结和完整原生输入。
 
