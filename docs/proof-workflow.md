@@ -411,6 +411,12 @@ BTreeSet 插入、Metadata 目录判断和 Tokio Mutex 各有独立原生 case�
 独立工作区和 `.lake/build`，不能共写一个构建目录。Lake 原有增量缓存继续保留，
 不删除 `.lake`，也不通过修改工具版本或内核检查选项换取通过。
 
+## 收件查找的定向验收
+
+从提交干净的检出运行[定向入口](../verification/experiments/stage1-protocol/inbox-lookup/module_acceptance.py)，用 `--base <基线提交> --plan` 查看变更和下游。计划允许局部验收时，用 `--output <新建私有证据路径>`、`--formal-lock <现有证明锁路径>` 替代 `--plan`。入口执行原 Rust 测试和两份原 Lean 检查，`module-result.json` 记录实际候选、执行和复用范围。共享生产入口、合同或未知输入变化时，按计划扩展验收。计划本身只列检查项。
+
+只修改没有下游消费者的 `InboxLookupWrong.lean.in` 以及其派生摘要时，可以复用独立的原生收据。用同一入口从干净基线运行 `--prepare-native --base HEAD --output <新建私有证据路径>`，实际执行四个原 Rust 变体并写入 `lookup-native-receipt.json`。再从后继提交用 `--base <原收据提交>`、`--reuse-native <收据路径>` 和 `--reuse-native-sha256 <收据摘要>` 运行，保留原结果及命令日志。复用限于已登记的固定工具与配置。后继仍实际运行原 Lean 正确版和错误版检查，所产收据只覆盖这个模块。
+
 ## 局部证明经验
 
 - 手写模式匹配与生成代码可能使用不同内部函数；先看完整目标，再证明固定生成版本所需的小引理，不盲目展开枚举组合或增加计算限额。
