@@ -60,7 +60,7 @@ index 1fe670ac..c84062cd 100644
    },
    "entry": "ControllerJournal::record_lifecycle_intent",
 diff --git a/verification/v3-transaction-source-inputs.sha256 b/verification/v3-transaction-source-inputs.sha256
-index 6adcc1e8..dc1515c1 100644
+index 6adcc1e8..14880863 100644
 --- a/verification/v3-transaction-source-inputs.sha256
 +++ b/verification/v3-transaction-source-inputs.sha256
 @@ -42,7 +42,7 @@ bd90d4387cc5470e873e3f17a41092721a2e8b2aa7476dfdce8b21a65bc50167  controller-cor
@@ -101,7 +101,7 @@ index 6adcc1e8..dc1515c1 100644
  6981041caf19b6337b4f8d698f7c89fdc0a07001fc47d2f8d339d33809769a10  verification/experiments/stage1-protocol/terminal-binding/TerminalModel.lean.in
  4eab7a6b86efb3a29c0fb238123aa9076d831e6e7687191782f7ba62c38f2678  verification/experiments/stage1-protocol/terminal-binding/TerminalProofs.lean.in
 -b3484abf8b386c83f721b6fcad2a62e11f8478b0e777a49422a3ff5b15a7c4a4  verification/experiments/stage1-protocol/unload_audits.py
-+890f1aae8f4913a564924e946adcc5ee888b604e7f861d578cefa58ae91e1b49  verification/experiments/stage1-protocol/unload_audits.py
++45d6b919dd035b33574e9a1a58cbce7b4e515e0b3a5b68019e9d24b13beb908b  verification/experiments/stage1-protocol/unload_audits.py
  17c85107a0cd1cfc480053649eb76562b4bf559a81bf9708ad3ab0803193872f  verification/experiments/stage1-protocol/v3-transaction-source.py
  0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c  verification/foundations-environment.json
  5dc493724618578053b3a838c39153279ba80fcadd605d909e79040d04c8298b  verification/sqlite-inputs.sha256

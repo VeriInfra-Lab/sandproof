@@ -127,9 +127,9 @@ SANDPROOF_ACCEPTANCE_ROLE=formal PYTHONDONTWRITEBYTECODE=1 \
 
 交主控登记这个形式入口及 `SandboxModel.Lifecycle.Protocol.CoordinatorRevocation` 的九条审计。覆盖记录可登记“在已解码 `Result` 上证明应用撤销选择，全文重放命中给出实际查询和选择，原父函数接线经实际 Charon 核对”，适用版本取通过对应检查的候选。生产协调器是现有原生输入，相关登记与冻结由主控结合 #1061 逐闭包复核。
 
-[公共登记候选](registration-candidate.patch)供主控在包含本包的候选上审阅、试套。[覆盖记录候选](coverage-candidate.patch)注明已实测的源码和边界。登记通过 `scripts/verify-stage1-protocol.sh` 默认使用的 `full` 计划调用同一检查器。其原生前提包括已封口的完整 Linux `functional` 日志中的两个指定测试，以及原 `stage1-inbox-lookup` 和 `stage1-inbox-state` 两份收据。单项命令和缺少封口的日志可用于开发复核。
+[公共登记候选](registration-candidate.patch)供主控在包含本包的候选上审阅、试套。[覆盖记录候选](coverage-candidate.patch)注明已实测的源码和边界。登记通过 `scripts/verify-stage1-protocol.sh` 默认使用的 `full` 计划调用同一检查器。其原生前提包括已封口的完整 Linux `functional` 日志中的两个指定测试，以及原 `stage1-inbox-lookup`、`stage1-inbox-state` 和 `stage1-create-transaction-link` 收据。单项命令和缺少封口的日志可用于开发复核。
 
-[默认入口的输入候选](inputs-candidate.patch)在 #1061 的清单上累计新增 37 个路径，更新原 `unload_audits.py` 的一行。它覆盖协调器、录入、BEGIN 所用的生产源码、证明、薄根、原始抽取与物化入口。事务独立清单一并列出这个共享检查文件的候选内容。主控还需核对既有公共工具冻结以及同一候选的原生封口。
+[默认入口的输入候选](inputs-candidate.patch)在 #1061 的清单上累计新增 47 个路径，更新原 `unload_audits.py` 的一行。它覆盖协调器、录入、BEGIN 所用的生产源码、证明、薄根、原始抽取与物化入口。事务独立清单一并列出这个共享检查文件的候选内容。主控还需核对既有公共工具冻结以及同一候选的原生封口。
 
 登记子任务在分配的四核内继承并核对原协调锁描述符。检查点读取五份指定 LLBC、公开 journal 和具体解码器各自的五份生成产物、真实内核命令的退出状态与日志、物理文件和原服务回执。收敛与 Create 有限计划继续按各自的原任务清单验收。主控合入时需重新校验受影响的公共冻结和完整原生输入。
 
