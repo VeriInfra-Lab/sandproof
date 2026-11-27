@@ -71,24 +71,46 @@ jobs:
             PATH="$RUNNER_TEMP/ci-git:$PATH" bash scripts/check-bench.sh
 
   pr-title:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: [self-hosted, Linux, X64, sandproof-ci-title]
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Read the original promotion PR for the queue commit
+        if: github.event_name == 'merge_group'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m tools.ci_merge_queue --event "$GITHUB_EVENT_PATH" --output "$RUNNER_TEMP/promotion-pr.json"
       - name: Check PR title
         # Read untrusted title as JSON data, never interpolate it into shell code.
-        run: python3 tools/check_commit_subject.py --event "$GITHUB_EVENT_PATH"
+        run: |
+          event="$GITHUB_EVENT_PATH"
+          if [[ "$GITHUB_EVENT_NAME" == merge_group ]]; then event="$RUNNER_TEMP/promotion-pr.json"; fi
+          python3 tools/check_commit_subject.py --event "$event"
 
   pr-policy:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
     runs-on: [self-hosted, Linux, X64, sandproof-ci-policy]
     timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+      - name: Read the original promotion PR for the queue commit
+        if: github.event_name == 'merge_group'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m tools.ci_merge_queue --event "$GITHUB_EVENT_PATH" --output "$RUNNER_TEMP/promotion-pr.json"
       - name: Check branch name and PR target
-        run: python3 tools/check_pr_policy.py --event "$GITHUB_EVENT_PATH"
+        run: |
+          event="$GITHUB_EVENT_PATH"
+          if [[ "$GITHUB_EVENT_NAME" == merge_group ]]; then event="$RUNNER_TEMP/promotion-pr.json"; fi
+          python3 tools/check_pr_policy.py --event "$event"

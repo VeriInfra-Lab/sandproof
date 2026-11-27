@@ -144,11 +144,18 @@ class GitHubApp:
         prefix = '/repos/' + REPOSITORY + '/'
         suffix = path[len(prefix):] if path.startswith(prefix) else ''
         ordinary = suffix.startswith('actions/') and self.permissions == PERMISSIONS
+        # Reading ruleset bypass actors requires an installation that can
+        # administer the ruleset. This client only reads protection policy.
+        policy = method == 'GET' and self.permissions == PERMISSIONS and (
+            suffix in ('branches/test/protection', 'rules/branches/test')
+            or re.fullmatch(r'rulesets/[1-9][0-9]*', suffix))
+        source = (method == 'GET' and self.permissions == SOURCE_PERMISSIONS
+                  and re.fullmatch(r'git/commits/[0-9a-f]{40}', suffix))
         checks = self.permissions == CHECK_PERMISSIONS and (
             (method == 'GET' and re.fullmatch(r'commits/[0-9a-f]{40}/check-runs\?per_page=100&filter=all', suffix))
             or (method == 'POST' and suffix == 'check-runs')
             or (method == 'PATCH' and re.fullmatch(r'check-runs/[0-9]+', suffix)))
-        if not ordinary and not checks:
+        if not ordinary and not checks and not policy and not source:
             raise ValueError('repository API outside CI scope')
         try:
             return self.transport(method, path, self.access_token(), body)

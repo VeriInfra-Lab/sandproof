@@ -14,13 +14,17 @@ import sys
 
 from tools import acceptance_receipts as receipts
 from tools.ci_e2e_supervisor import PREFIX, REPO, Checks, git, is_ancestor
-from tools.ci_github_app import APIError, CHECK_PERMISSIONS, SOURCE_PERMISSIONS, GitHubApp, Transport
+from tools.ci_github_app import (APIError, CHECK_PERMISSIONS, PERMISSIONS, SOURCE_PERMISSIONS,
+                               GitHubApp, Transport)
+from tools.ci_merge_queue import QueueGroup, TARGET, graphql_lookup
 from tools.system_acceptance import digest, json_file, private_path, write_once
 
 GATE = 'Promotion / Stage1'
 REFERENCE = 'Promotion / Stage1 evidence'
 E2E = 'E2E / terminal-bench-ci'
 GATE_APP = 5175756  # Existing protected E2E App
+ACTIONS_APP = 15368
+ORDINARY = ('pr-title', 'pr-policy', 'sdk-contract', 'harbor-inputs')
 SCOPE = 'stage1-protocol'
 ROOT = Path(__file__).resolve().parents[1]
 BINARY = ['bash', 'scripts/python-entry.sh']
@@ -354,26 +358,99 @@ def promotion_inputs(api, candidate, ordinary_app):
     return ordinary, row['id']
 
 
-def publish(candidate, checkout, output, *, api, source_client, proxy, ordinary_app, directory,
-            readback=None):
+def require_queue_policy(api, ruleset_id):
+    if type(ruleset_id) is not int or ruleset_id <= 0 or api.app_id != GATE_APP:
+        raise ValueError('exact approved test merge queue ruleset and App required')
+    original = api.request('GET', PREFIX + 'branches/test/protection')
+    classic = original['required_status_checks']
+    required = {**{name: ACTIONS_APP for name in ORDINARY}, E2E: GATE_APP}
+    rows = classic['checks']
+    if (classic.get('strict') is not True or original.get('enforce_admins', {}).get('enabled') is not True
+            or {row['context']: row['app_id'] for row in rows} != required
+            or len(rows) != len(required)):
+        raise ValueError('existing five native test checks and administrator enforcement are required')
+    ruleset = api.request('GET', PREFIX + 'rulesets/' + str(ruleset_id))
+    if (ruleset.get('id') != ruleset_id or ruleset.get('enforcement') != 'active'
+            or ruleset.get('target') != 'branch' or ruleset.get('source_type') != 'Repository'
+            or ruleset.get('source') != REPO.removeprefix('https://github.com/').removesuffix('.git')
+            or ruleset.get('bypass_actors') != []
+            or ruleset.get('conditions') != {'ref_name': {'include': [TARGET], 'exclude': []}}):
+        raise ValueError('approved test queue ruleset is inactive, unbound or allows bypass')
+    active = api.request('GET', PREFIX + 'rules/branches/test')
+    configured = [rule for rule in active if rule.get('type') == 'merge_queue']
+    status = [rule['parameters'] for rule in active if rule.get('type') == 'required_status_checks'
+              and rule.get('ruleset_id') == ruleset_id]
+    if (len(configured) != 1 or configured[0].get('ruleset_id') != ruleset_id or len(status) != 1
+            or status[0].get('strict_required_status_checks_policy') is not True
+            or status[0].get('required_status_checks') != [{'context': GATE, 'integration_id': GATE_APP}]):
+        raise ValueError('test queue and native App-bound Stage1 check are not jointly active')
+    parameters = configured[0]['parameters']
+    for key, expected in (('merge_method', 'MERGE'), ('grouping_strategy', 'ALLGREEN'),
+                          ('max_entries_to_build', 1), ('max_entries_to_merge', 1),
+                          ('min_entries_to_merge', 1)):
+        if parameters.get(key) != expected:
+            raise ValueError('test queue must validate one candidate with all checks')
+
+
+def evidence_record(candidate, digests, ordinary, e2e):
+    return dict(schema=2, candidate=asdict(candidate), digests=digests,
+                ordinary_app_id=ACTIONS_APP, ordinary_check_ids=ordinary, e2e_check_id=e2e)
+
+
+def admit(candidate, checkout, output, *, api, source_client, proxy, directory, policy,
+          readback=None):
+    policy()
     candidate.observe(source_client=source_client, proxy=proxy)
     digests = (readback or read_stage)(candidate, checkout, output)
-    ordinary, e2e = promotion_inputs(api, candidate, ordinary_app)
-    record = dict(schema=1, candidate=asdict(candidate), digests=digests,
-                  ordinary_app_id=ordinary_app, ordinary_check_ids=ordinary, e2e_check_id=e2e)
+    admission = promotion_inputs(api, candidate, ACTIONS_APP)
     candidate.observe(source_client=source_client, proxy=proxy)
-    # Complete the informational pointer first so an immediate merge cannot
-    # race a redundant workspace run before its evidence is discoverable.
+    if promotion_inputs(api, candidate, ACTIONS_APP) != admission:
+        raise ValueError('ordinary or E2E check attempt changed during queue admission')
+    policy()
+    record = dict(evidence_record(candidate, digests, *admission), publication='queue-admission')
+    # GitHub requires the same status names on the original PR and the queue.
+    # The active no-bypass queue policy is what makes this source status safe.
+    publish_check(api, directory, record, name=GATE, sha=candidate.head)
+
+
+def queue_binding(candidate, group, lookup, commit):
+    row = group.observe(lookup, commit)
+    if any(getattr(candidate, k) != row[k] for k in ('pull', 'source', 'head', 'base', 'tree')):
+        raise ValueError('live queue PR, base or tree differs from the original complete acceptance')
+    return dict(**asdict(group), entry=row['entry'])
+
+
+def publish(candidate, checkout, output, *, group, api, lookup, commit, directory, policy,
+            readback=None):
+    policy()
+    binding = queue_binding(candidate, group, lookup, commit)
+    digests = (readback or read_stage)(candidate, checkout, output)
+    admission = promotion_inputs(api, candidate, ACTIONS_APP)
+    record = evidence_record(candidate, digests, *admission)
+    checks = check_runs(api, candidate.head)
+    head = latest_check(checks, GATE, candidate.head, GATE_APP)
+    admitted_record = dict(record, publication='queue-admission')
+    if (not succeeded(head) or head.get('external_id') != receipts.digest(admitted_record)
+            or json.loads(head['output']['summary']) != admitted_record):
+        raise ValueError('original PR has no matching successful Stage1 queue admission')
+    record.update(publication='merge-queue', queue=binding)
+    if queue_binding(candidate, group, lookup, commit) != binding:
+        raise ValueError('queue entry changed before publication')
+    policy()
+    # The queue itself independently enforces all four current Actions checks
+    # on Q. These App records only authorize the exact same full scope and E2E.
     publish_check(api, directory, record, name=REFERENCE, sha=candidate.head)
-    candidate.observe(source_client=source_client, proxy=proxy)
-    # The source E2E checkout, test-merge parent identities, and both trees
-    # were confirmed above. Project the original App result, without re-running E2E.
-    publish_check(api, directory, dict(schema=1, candidate=asdict(candidate), e2e_check_id=e2e),
-                  name=E2E, sha=candidate.merge)
-    candidate.observe(source_client=source_client, proxy=proxy)
-    if promotion_inputs(api, candidate, ordinary_app) != (ordinary, e2e):
-        raise ValueError('ordinary or E2E check attempt changed during publication')
-    publish_check(api, directory, record, name=GATE, sha=candidate.merge)
+    publish_check(api, directory, queue_e2e(record), name=E2E, sha=group.sha)
+    if (queue_binding(candidate, group, lookup, commit) != binding
+            or promotion_inputs(api, candidate, ACTIONS_APP) != admission):
+        raise ValueError('queue, original ordinary checks or E2E changed during publication')
+    policy()
+    publish_check(api, directory, record, name=GATE, sha=group.sha)
+
+
+def queue_e2e(record):
+    return dict(schema=2, candidate=record['candidate'], queue=record['queue'],
+                e2e_check_id=record['e2e_check_id'])
 
 
 class ReadAPI:
@@ -405,17 +482,20 @@ def equivalent_push(event, api):
         return False
     record = json.loads(reference['output']['summary'])
     candidate = Candidate(**record['candidate'])
-    if (record.get('schema') != 1 or candidate.base != before or candidate.head != head
+    if (record.get('schema') != 2 or record.get('publication') != 'merge-queue'
+            or candidate.base != before or candidate.head != head
             or candidate.tree != commit['tree']['sha']
             or reference.get('external_id') != receipts.digest(record)):
         return False
-    gate = latest_check(check_runs(api, candidate.merge), GATE, candidate.merge, GATE_APP)
+    group = QueueGroup(**{key: record['queue'][key] for key in ('ref', 'sha', 'base')})
+    if group.base != before:
+        return False
+    gate = latest_check(check_runs(api, group.sha), GATE, group.sha, GATE_APP)
     if (not succeeded(gate) or gate.get('external_id') != reference['external_id']
             or json.loads(gate['output']['summary']) != record):
         return False
-    e2e = latest_check(check_runs(api, candidate.merge), E2E, candidate.merge, GATE_APP)
-    return succeeded(e2e) and json.loads(e2e['output']['summary']) == dict(
-        schema=1, candidate=asdict(candidate), e2e_check_id=record['e2e_check_id'])
+    e2e = latest_check(check_runs(api, group.sha), E2E, group.sha, GATE_APP)
+    return succeeded(e2e) and json.loads(e2e['output']['summary']) == queue_e2e(record)
 
 
 def read_push_report(event):
@@ -432,7 +512,7 @@ def main():
         read_push_report(Path(sys.argv[2]))
         return
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('mode', choices=('run', 'readback', 'publish'))
+    parser.add_argument('mode', choices=('run', 'readback', 'admit', 'publish'))
     parser.add_argument('--candidate', type=Path, help='private reviewed Candidate JSON')
     parser.add_argument('--checkout', type=Path, default=ROOT)
     parser.add_argument('--output', type=Path, required=True)
@@ -440,7 +520,14 @@ def main():
     repeat.add_argument('--native', type=Path, help='original native seal to admit instead of rerunning')
     repeat.add_argument('--resume-from', type=Path, help='original interrupted promotion output')
     parser.add_argument('--config', type=Path, help='private publication settings, no credentials in checkout')
+    parser.add_argument('--queue-ref')
+    parser.add_argument('--queue-sha')
     args = parser.parse_args()
+    if args.mode == 'publish':
+        if not all((args.queue_ref, args.queue_sha)):
+            parser.error('publishing requires the live merge queue ref and SHA')
+    elif args.queue_ref is not None or args.queue_sha is not None:
+        parser.error('queue ref and SHA belong to publish only')
     os.umask(0o077)
     if args.mode == 'readback':
         if any(x is not None for x in (args.candidate, args.config, args.native, args.resume_from)):
@@ -466,21 +553,33 @@ def main():
     if args.config is None or args.native is not None or args.resume_from is not None or os.geteuid() != 0:
         parser.error('publication requires the installed protected App process and existing full evidence')
     config = json_file(private_path(args.config))
-    if config.get('test_cutover_approved') is not True or config.get('app_id') != GATE_APP:
-        raise ValueError('test promotion status publication is disabled until protected rollout approval')
+    if config.get('test_queue_approved') is not True or config.get('app_id') != GATE_APP:
+        raise ValueError('test promotion publication is disabled until protected queue rollout approval')
     directory = private_path(config['state_root'], directory=True)
     credentials = Path(os.environ['CREDENTIALS_DIRECTORY'])
     transport = Transport(config['proxy'])
     clients = [GitHubApp(config['client_id'], credentials/'app-key', transport,
                          config['installation_id'], permissions=permissions)
-               for permissions in (CHECK_PERMISSIONS, SOURCE_PERMISSIONS)]
+               for permissions in (CHECK_PERMISSIONS, SOURCE_PERMISSIONS, PERMISSIONS)]
     for client in clients:
         if client.verify_installation()['app_id'] != config['app_id']:
             raise ValueError('publication installation differs from the protected branch App')
     with receipts.locked(directory):
-        publish(candidate, checkout, args.output, api=clients[0], source_client=clients[1],
-                proxy=config['proxy'], ordinary_app=config['ordinary_app_id'], directory=directory,
-                readback=lambda *values: operator_readback(*values, config['evidence_uid']))
+        def policy():
+            require_queue_policy(clients[2], config['test_queue_ruleset_id'])
+
+        def readback(*values):
+            return operator_readback(*values, config['evidence_uid'])
+
+        if args.mode == 'admit':
+            admit(candidate, checkout, args.output, api=clients[0], source_client=clients[1],
+                  proxy=config['proxy'], directory=directory, policy=policy, readback=readback)
+        else:
+            group = QueueGroup(args.queue_ref, args.queue_sha, candidate.base)
+            publish(candidate, checkout, args.output, group=group, api=clients[0],
+                    lookup=graphql_lookup(transport, clients[1].access_token()),
+                    commit=lambda sha: clients[1].request('GET', PREFIX + 'git/commits/' + sha),
+                    directory=directory, policy=policy, readback=readback)
 
 
 if __name__ == '__main__':

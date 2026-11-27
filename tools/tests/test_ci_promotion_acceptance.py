@@ -51,6 +51,10 @@ class PromotionTest(unittest.TestCase):
         self.path = Path(directory.name).resolve()
         self.candidate = gate.Candidate(681, 'integration', sha('a'), sha('b'), sha('c'), sha('d'))
         self.api = GitHub()
+        self.group = gate.QueueGroup('refs/heads/gh-readonly-queue/test/known', sha('e'),
+                                    self.candidate.base)
+        self.queue = dict(entry='queue-entry', pull=self.candidate.pull, source=self.candidate.source,
+                          head=self.candidate.head, base=self.candidate.base, tree=self.candidate.tree)
         self.evidence = {'native': 'original-native', 'formal': 'original-formal'}
         self.actions_app = 15368
         for job in ('sdk-contract', 'harbor-inputs', 'pr-title', 'pr-policy'):
@@ -65,12 +69,18 @@ class PromotionTest(unittest.TestCase):
                                 base=dict(sha=self.candidate.base))])
         return self.api.check(self.candidate.head, job, **dict(metadata, **overrides))
 
-    def publish(self):
+    def admit(self, policy=lambda: None):
         with (patch.object(gate.Candidate, 'check_checkout'),
               patch.object(gate.Candidate, 'observe'),
               patch.object(gate, 'read_stage', return_value=self.evidence)):
-            gate.publish(self.candidate, self.path, self.path, api=self.api, source_client=None,
-                         proxy=None, ordinary_app=self.actions_app, directory=self.path)
+            gate.admit(self.candidate, self.path, self.path, api=self.api, source_client=None,
+                       proxy=None, directory=self.path, policy=policy)
+
+    def publish(self, policy=lambda: None):
+        with (patch.object(gate.QueueGroup, 'observe', return_value=self.queue),
+              patch.object(gate, 'read_stage', return_value=self.evidence)):
+            gate.publish(self.candidate, self.path, self.path, group=self.group, api=self.api,
+                         lookup=None, commit=None, directory=self.path, policy=policy)
 
     def test_bind_live_protected_refs_together(self):
         refs = self.candidate.refs()
@@ -98,20 +108,20 @@ class PromotionTest(unittest.TestCase):
         self.ordinary('sdk-contract', status='in_progress', conclusion=None)
         self.ordinary('sdk-contract', app=dict(id=100))
         with self.assertRaisesRegex(ValueError, 'ordinary checks'):
-            self.publish()
+            self.admit()
         self.ordinary('sdk-contract', conclusion='failure')
         with self.assertRaisesRegex(ValueError, 'ordinary checks'):
-            self.publish()
+            self.admit()
         self.assertEqual(self.api.posts, [])
 
     def test_unrelated_pr_or_mixed_attempts_do_not_supply_missing_ordinary_evidence(self):
         del self.api.rows[self.candidate.head][0]
         self.ordinary('sdk-contract', pull_requests=[])
         with self.assertRaisesRegex(ValueError, 'ordinary checks'):
-            self.publish()
+            self.admit()
         self.ordinary('sdk-contract', check_suite=dict(id=999999))
         with self.assertRaisesRegex(ValueError, 'ordinary checks'):
-            self.publish()
+            self.admit()
         self.assertEqual(self.api.posts, [])
 
     def test_no_gate_on_pending_failed_wrong_head_or_wrong_base_e2e(self):
@@ -123,29 +133,31 @@ class PromotionTest(unittest.TestCase):
                 original = self.e2e[key]
                 self.e2e[key] = value
                 with self.assertRaisesRegex(ValueError, reason):
-                    self.publish()
+                    self.admit()
                 self.e2e[key] = original
         self.assertEqual(self.api.posts, [])
 
-    def test_publish_exact_merge_and_source_reference_idempotently(self):
+    def test_publish_live_queue_and_source_admission_idempotently(self):
+        self.admit()
+        self.admit()
         self.publish()
         self.publish()
         self.assertEqual([(row['name'], row['head_sha']) for row in self.api.posts],
-                         [(gate.REFERENCE, self.candidate.head), (gate.E2E, self.candidate.merge),
-                          (gate.GATE, self.candidate.merge)])
-        self.assertEqual(self.api.posts[0]['external_id'], self.api.posts[2]['external_id'])
-        self.assertEqual(json.loads(self.api.posts[0]['output']['summary'])['candidate'],
+                         [(gate.GATE, self.candidate.head), (gate.REFERENCE, self.candidate.head),
+                          (gate.E2E, self.group.sha), (gate.GATE, self.group.sha)])
+        self.assertEqual(self.api.posts[1]['external_id'], self.api.posts[3]['external_id'])
+        self.assertEqual(json.loads(self.api.posts[1]['output']['summary'])['candidate'],
                          asdict(self.candidate))
-        self.assertEqual(json.loads(self.api.posts[1]['output']['summary'])['e2e_check_id'], self.e2e['id'])
-        self.assertEqual(len(json.loads(self.api.posts[2]['output']['summary'])['ordinary_check_ids']), 4)
+        self.assertEqual(json.loads(self.api.posts[2]['output']['summary'])['e2e_check_id'], self.e2e['id'])
+        self.assertEqual(len(json.loads(self.api.posts[3]['output']['summary'])['ordinary_check_ids']), 4)
 
     def test_moved_target_before_publication_raises_without_post(self):
         with (patch.object(gate.Candidate, 'check_checkout'),
               patch.object(gate.Candidate, 'observe', side_effect=[None, ValueError('base moved')]),
               patch.object(gate, 'read_stage', return_value=self.evidence)):
             with self.assertRaisesRegex(ValueError, 'base moved'):
-                gate.publish(self.candidate, self.path, self.path, api=self.api, source_client=None,
-                             proxy=None, ordinary_app=self.actions_app, directory=self.path)
+                gate.admit(self.candidate, self.path, self.path, api=self.api, source_client=None,
+                           proxy=None, directory=self.path, policy=lambda: None)
         self.assertEqual(self.api.posts, [])
 
     def test_lost_check_post_never_repeats_without_readback(self):
@@ -160,6 +172,7 @@ class PromotionTest(unittest.TestCase):
         self.assertEqual([call.args[0] for call in api.request.call_args_list], ['GET', 'POST', 'GET'])
 
     def test_only_exact_push_skips_workspace(self):
+        self.admit()
         self.publish()
         actual_merge = sha('f')  # GitHub may give the final commit a new message/author.
         self.api.commits[actual_merge] = dict(sha=actual_merge, tree=dict(sha=self.candidate.tree),
@@ -173,16 +186,31 @@ class PromotionTest(unittest.TestCase):
         self.api.commits[actual_merge]['tree']['sha'] = sha('2')
         self.assertFalse(gate.equivalent_push(event, self.api))
         self.api.commits[actual_merge]['tree']['sha'] = self.candidate.tree
-        self.api.check(self.candidate.merge, gate.GATE, conclusion='failure')
+        self.api.check(self.group.sha, gate.GATE, conclusion='failure')
         self.assertFalse(gate.equivalent_push(event, self.api))
 
     def test_changed_upstream_attempt_during_publication_does_not_pass_gate(self):
+        self.admit()
         checked = gate.promotion_inputs(self.api, self.candidate, self.actions_app)
         replacement = (dict(checked[0], **{'pr-title': 42}), checked[1])
         with patch.object(gate, 'promotion_inputs', side_effect=[checked, replacement]):
-            with self.assertRaisesRegex(ValueError, 'check attempt changed'):
+            with self.assertRaisesRegex(ValueError, 'ordinary checks or E2E changed'):
                 self.publish()
-        self.assertFalse(any(row['name'] == gate.GATE for row in self.api.posts))
+        self.assertFalse(any(row['name'] == gate.GATE and row['head_sha'] == self.group.sha
+                             for row in self.api.posts))
+
+    def test_publication_rejects_wrong_tree_missing_admission_or_inactive_protection(self):
+        blocked = Mock(side_effect=ValueError('queue inactive'))
+        with self.assertRaisesRegex(ValueError, 'queue inactive'):
+            self.admit(blocked)
+        with self.assertRaisesRegex(ValueError, 'matching successful Stage1 queue admission'):
+            self.publish()
+        self.admit()
+        self.queue['tree'] = sha('f')
+        with self.assertRaisesRegex(ValueError, 'queue PR, base or tree differs'):
+            self.publish()
+        self.assertEqual([(row['name'], row['head_sha']) for row in self.api.posts],
+                         [(gate.GATE, self.candidate.head)])
 
     def test_original_full_formal_consumes_exact_one_new_or_existing_native_seal(self):
         existing = self.path/'existing-native'
