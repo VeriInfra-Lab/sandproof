@@ -606,21 +606,28 @@ class PublicUnloadScenario:
                     altered_unload_rejected=True,terminal_view_unchanged=True,data_access_closed=True)
 
     def assert_terminal_rejects_new_resume(self):
-        """Try one fresh Resume against the publicly current Destroy version."""
-        self.step('terminal-state-before-new-resume', 200)
+        return self._assert_terminal_rejects_fresh_request('resume', sequence_offset=1)
+
+    def assert_terminal_rejects_new_unload(self):
+        # Use a distinct key so Resume's rejection cannot account for this one.
+        return self._assert_terminal_rejects_fresh_request('unload', sequence_offset=2)
+
+    def _assert_terminal_rejects_fresh_request(self, operation, *, sequence_offset):
+        """Try a fresh operation against the publicly current Destroy version."""
+        self.step(f'terminal-state-before-new-{operation}', 200)
         current = self.query()
         self.check_view(current, self.current_acceptance)
         assert current['phase'] == 'terminating', 'current Destroy must be terminating'
-        sequence = self.sequence + 1
-        assert uint(sequence, positive=True), 'one fresh Resume sequence required'
+        sequence = self.sequence + sequence_offset
+        assert uint(sequence, positive=True), f'one fresh {operation.capitalize()} sequence required'
         request = dict(window=self.window, sequence=sequence,
                        expected_version=current['current_version'])
-        self.step('new-resume-after-destroy', 409)
-        status, _ = self.call('POST', self.path() + '/resume', key=self.owner_key, body=request)
+        self.step(f'new-{operation}-after-destroy', 409)
+        status, _ = self.call('POST', self.path() + '/' + operation, key=self.owner_key, body=request)
         if status != 409:
             raise PublicStatusMismatch(status, 409)
-        self.step('terminal-state-after-rejected-resume', 200)
-        assert equal(self.query(), current), 'rejected new Resume changed the current Destroy'
+        self.step(f'terminal-state-after-rejected-{operation}', 200)
+        assert equal(self.query(), current), f'rejected new {operation.capitalize()} changed the current Destroy'
         return dict(http_status=status, sequence=sequence,
                     expected_version=request['expected_version'], terminal_view_unchanged=True)
 
@@ -1340,6 +1347,11 @@ def exercise(args):
                     report['frozen_destroy_resume_veto'] = client.assert_terminal_rejects_new_resume()
                     report['phase'] = 'recheck-original-freeze-after-resume-veto'
                     report['freeze_destroy_acceptance_window']['after_rejected_resume'] = (
+                        capture_probe.observe_destroy_window(deadline))
+                    report['phase'] = 'new-unload-after-public-destroy-before-host-reopen'
+                    report['frozen_destroy_unload_veto'] = client.assert_terminal_rejects_new_unload()
+                    report['phase'] = 'recheck-original-freeze-after-unload-veto'
+                    report['freeze_destroy_acceptance_window']['after_rejected_unload'] = (
                         capture_probe.observe_destroy_window(deadline))
                     report['phase'] = 'destroy-replay-before-host-reopen'
                     report['frozen_destroy_replay'] = client.assert_frozen_destroy_replay()

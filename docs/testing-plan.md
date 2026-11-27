@@ -433,6 +433,11 @@ PID/start 回执及尚未记录的 Cleanup 回执；动作缺失、退出码不�
 用现有观察器在 Host SQLite 复查原 Freeze 回执为空、Full 未放行、原材料责任及原端点。
 报告保存 `freeze_after_expiry_acceptance`。复查失败仍保留原自动接受，停止终止接续。
 
+显式 Destroy 返回 202 后，在 Resume 检查与 Destroy 重放之间，用当前 Destroy 版本及
+与 Resume 不同的新键发送一次 Unload。要求返回 409，完整公开 Terminating 视图保持，
+并在 `freeze_destroy_acceptance_window.after_rejected_unload` 保存同一冻结窗口。
+任一检查失败时保留此前证据，停止原 Host 重开与 Stop 放行。
+
 在 `capture-freeze-receipt-destroy` 的 Host 重开前，以当前 Destroy 版本和新键尝试 Resume，
 要求 409。原样重放 Destroy 须返回同一完整接受，仅改 `expected_version` 的同键请求须返回
 409。每次请求后核对完整公开 Terminating 视图。Resume 拒绝及 Destroy 重放检查后，分别
