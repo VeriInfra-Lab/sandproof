@@ -81,7 +81,7 @@
     "controller-service/src/template_registry/state/tests.rs": "4ae3c8c1585f1196059c3053b17204d56b50eaba306a76516314e9a0649e3c11",
     "controller-service/src/application/coordinator/lifecycle_unload.rs": "43637bd1f494d159d527a9fa91ad3e581fdaf892038eb6577ef775410cc2f89f",
     "controller-service/src/application/coordinator/physical_storage.rs": "c151aeb9fa668b54bc4e40390ae448178c8612be3d5894a4c3ae40aee173e1d6",
-    "controller-service/src/application/coordinator/lifecycle_intent.rs": "6bc2aabb7b486cb5cfa0f2594dcb4fdeb450b6e6a2d68fc778b0026fa987700b",
+    "controller-service/src/application/coordinator/lifecycle_intent.rs": "2277e296f74dfaa340423bdc5b62427e32f42e2a6d354045b6227e36c832d5dd",
     "controller-service/src/application/coordinator/template_commands.rs": "db7288cc67fffbeba3f15f0d286cc3436c244ffc5b7cc6a39824e1ffd0dab901",
     "controller-service/src/application/coordinator/data_access.rs": "ecd49e57f260934b9e03a00a0de610df42714e27d1d1a4ac42ce782dcb6913e1",
     "controller-service/src/application/coordinator/recovery.rs": "ce6878321cfe02f614dcf2f1e3edb48b8dcdff8f431fca357a439a64a26ff0fe",
