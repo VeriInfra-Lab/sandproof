@@ -150,18 +150,33 @@ class Store:
                 continue
             plan.append(dict(id=value['id'], allocated_bytes=size, state=value['state']))
             if apply:
-                # Receipt and intent are fsynced BEFORE the first destructive action.
-                value['state'] = 'deleting'
-                atomic_json(record, value)
-                if payload.exists():
-                    reject_mounts(payload)
-                    remove_private_tree(payload, value['identity'])
-                fsync_directory(payload.parent)
-                value['state'] = 'removed'
-                atomic_json(record, value)
+                self.remove_retired(payload, record, value)
         if apply:
             self.prune_removed()
         return plan
+
+    def remove_retired(self, payload, record, value):
+        if value['state'] == 'removed':
+            if os.path.lexists(payload):
+                raise ValueError('removed artifact unexpectedly present')
+            return
+        if (value['state'] not in ('retired', 'deleting') or payload.is_symlink()
+                or (not payload.exists() and value['state'] != 'deleting')):
+            raise ValueError('disposable artifact is not durably retired')
+        if payload.exists():
+            info = private_path(payload, directory=True).stat()
+            if [info.st_dev, info.st_ino] != value['identity']:
+                raise ValueError('artifact identity changed')
+            reject_mounts(payload)
+        # Persist intent before deleting any bytes. The original path and
+        # identity are still required when continuing an interrupted deletion.
+        value['state'] = 'deleting'
+        atomic_json(record, value)
+        if payload.exists():
+            remove_private_tree(payload, value['identity'])
+        fsync_directory(payload.parent)
+        value['state'] = 'removed'
+        atomic_json(record, value)
 
     def prune_removed(self):
         # Only tiny, fully removed tombstones; unresolved/active evidence is never
@@ -402,19 +417,42 @@ def handoff_native_builds(store, manifest_path, receipt_path, evidence_path, *, 
         raise ValueError('complete trusted cleanup observation required; unknown references stay active')
     if type(now) is not int or now <= 0:
         raise ValueError('finite positive retirement time required')
-    if any(store.read(path.stem)[2]['finished'] >= now for path in store.record_paths()):
+    handoff = work / 'build-handoff.json'
+    binding = dict(manifest_sha256=digest(manifest_path), receipt_sha256=digest(receipt_path),
+                   trusted_evidence_sha256=digest(evidence_path))
+    if os.path.lexists(handoff):
+        saved = json_file(private_path(handoff))
+        payload, _, stored = store.read(Path(saved['payload']).name)
+        if (saved != dict(binding, payload=str(payload)) or stored['candidate'] != value['candidate']
+                or stored['kind'] != 'build'
+                or stored['receipt'] != (None if stored['state'] == 'active' else receipt)):
+            raise ValueError('existing native handoff has different identity or evidence')
+    else:
+        payload = stored = None
+    if (stored is None or stored['state'] == 'active') and any(
+            store.read(path.stem)[2]['finished'] >= now for path in store.record_paths()):
         # Do not choose the latest/rollback by UUID when completion seconds tie
         # or the host clock moves backwards. The operator keeps both in place.
         raise ValueError('native handoff time must follow earlier retirements')
     targets = []
-    for item in value['targets']:
-        path = private_path(Path(item['path']), directory=True)
-        info = path.stat()
+    for index, item in enumerate(value['targets']):
+        path = Path(item['path'])
         if (path.name != 'target' or not path.is_relative_to(work)
-                or any(part in ('.lake', '.git') for part in path.relative_to(work).parts)
-                or [info.st_dev, info.st_ino] != item['identity']):
+                or any(part in ('.lake', '.git', '..') for part in path.relative_to(work).parts)):
+            raise ValueError('unexpected Cargo target path in native manifest')
+        destination = payload / str(index) if payload is not None else None
+        if stored is not None and stored['state'] != 'active':
+            if os.path.lexists(path):
+                raise ValueError('retired Cargo target source unexpectedly present')
+            targets.append(path)
+            continue
+        existing = path if os.path.lexists(path) else destination
+        if existing is None or (existing == path and destination is not None and os.path.lexists(destination)):
+            raise ValueError('uncertain Cargo target move state')
+        info = private_path(existing, directory=True).stat()
+        if [info.st_dev, info.st_ino] != item['identity']:
             raise ValueError('Cargo target identity changed before handoff')
-        allocated_bytes(path)  # Existing owner/type/mount checks, before any move.
+        allocated_bytes(existing)  # Existing owner/type/mount checks, before any move.
         targets.append(path)
     if not targets or any(evidence_path.is_relative_to(path) or receipt_path.is_relative_to(path)
                           for path in targets):
@@ -422,12 +460,21 @@ def handoff_native_builds(store, manifest_path, receipt_path, evidence_path, *, 
     if len(set(targets)) != len(targets) or any(
             a != b and a.is_relative_to(b) for a in targets for b in targets):
         raise ValueError('duplicate or overlapping Cargo targets')
-    payload = store.allocate(kind='build', candidate=value['candidate'])
-    handoff = work / 'build-handoff.json'
-    write_once(handoff, dict(manifest_sha256=digest(manifest_path), payload=str(payload),
-        receipt_sha256=digest(receipt_path), trusted_evidence_sha256=digest(evidence_path)))
+    if stored is not None and stored['state'] != 'active':
+        return payload
+    if payload is None:
+        payload = store.allocate(kind='build', candidate=value['candidate'])
+        write_once(handoff, dict(binding, payload=str(payload)))
+    detail = private_path(payload, directory=True).stat()
+    if stored is not None and [detail.st_dev, detail.st_ino] != stored['identity']:
+        raise ValueError('native handoff payload identity changed')
+    reject_mounts(payload)
+    allowed_slots = {str(i) for i in range(len(targets))}
+    if any(p.name not in allowed_slots for p in payload.iterdir()):
+        raise ValueError('unexpected child in native handoff payload')
     for index, path in enumerate(targets):
-        path.rename(payload / str(index))
+        if os.path.lexists(path):
+            path.rename(payload / str(index))
         fsync_directory(path.parent)
     fsync_directory(payload)
     store.retire(payload.name, receipt_path, evidence_path, now=now)
