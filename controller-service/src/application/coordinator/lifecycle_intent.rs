@@ -82,6 +82,32 @@ enum PreparedCurrentAdmission {
     },
 }
 
+enum DataRevocation {
+    None,
+    Sandbox(sandbox_controller_core::SandboxId),
+    All,
+}
+
+fn data_revocation(
+    operation: &LifecycleOperation,
+    result: &Result<LifecycleWorkState, JournalError>,
+) -> DataRevocation {
+    if !matches!(
+        operation,
+        LifecycleOperation::Destroy {} | LifecycleOperation::Unload { .. }
+    ) {
+        return DataRevocation::None;
+    }
+    match result {
+        Ok(state) if state.current => match state.local {
+            Some(local) => DataRevocation::Sandbox(local.sandbox),
+            None => DataRevocation::None,
+        },
+        Err(JournalError::CommitUncertain(_)) => DataRevocation::All,
+        _ => DataRevocation::None,
+    }
+}
+
 impl<H: ControllerHost> ControllerApplication<H> {
     /// Acknowledge only the exact original applied SDK renewal, under the same
     /// application authority. This performs no Host I/O or lease revocation.
@@ -378,26 +404,15 @@ impl<H: ControllerHost> ControllerApplication<H> {
         let result = inner
             .journal
             .record_lifecycle_intent(intent, context, &mut NeverCrash);
-        if matches!(
-            intent.request.operation,
-            LifecycleOperation::Destroy {} | LifecycleOperation::Unload { .. }
-        ) {
-            match &result {
-                Ok(state) => {
-                    if state.current
-                        && let Some(local) = state.local
-                    {
-                        inner.revoke_data(local.sandbox);
+        match data_revocation(&intent.request.operation, &result) {
+            DataRevocation::None => {}
+            DataRevocation::Sandbox(sandbox) => inner.revoke_data(sandbox),
+            DataRevocation::All => {
+                for signals in inner.data_revocations.values() {
+                    for signal in signals {
+                        signal.send_replace(true);
                     }
                 }
-                Err(JournalError::CommitUncertain(_)) => {
-                    for signals in inner.data_revocations.values() {
-                        for signal in signals {
-                            signal.send_replace(true);
-                        }
-                    }
-                }
-                Err(_) => {}
             }
         }
         result
@@ -601,6 +616,29 @@ mod tests {
         ExpectedSession, LifecycleWindowClose, TerminalLifecycleObservation, TerminalStatus,
     };
     use std::sync::{Arc, Mutex};
+
+    #[test]
+    fn uncertain_commit_selects_broadcast_only_for_access_ending_operations() {
+        let uncertain = Err(JournalError::CommitUncertain(rusqlite::Error::InvalidQuery));
+        let unload = LifecycleOperation::Unload {
+            source_incarnation: 1.try_into().unwrap(),
+            capture: 1.try_into().unwrap(),
+        };
+        for op in [unload, LifecycleOperation::Destroy {}] {
+            assert!(matches!(
+                data_revocation(&op, &uncertain),
+                DataRevocation::All
+            ));
+            assert!(matches!(
+                data_revocation(&op, &Err(JournalError::Conflict)),
+                DataRevocation::None
+            ));
+        }
+        assert!(matches!(
+            data_revocation(&fixture::request().request.operation, &uncertain),
+            DataRevocation::None
+        ));
+    }
 
     fn pending_resume_view() -> crate::LifecycleCreateObservation {
         let mut request = fixture::request();

@@ -1,0 +1,7 @@
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_data_revocation(
+    op: &LifecycleOperation,
+    result: &Result<LifecycleWorkState, JournalError>,
+) -> DataRevocation {
+    data_revocation(op, result)
+}
