@@ -131,9 +131,7 @@ def select(paths, root=ROOT):
     if set(paths) <= ISOLATED_INPUTS:
         # If even the isolated mutant template gets a new downstream reader,
         # stop treating it as isolated. Other inputs here are pilot tooling.
-        changes_mutant = str(HERE / 'InboxLookupWrong.lean.in') in paths
-        _, affected = downstream(root, {'InboxLookupWrong'}) if changes_mutant else ([], [])
-        if not affected:
+        if WRONG_PAGE not in paths or not (lean_consumers(root, {WRONG_PAGE}) - {MODULE}):
             return dict(scope, status='ready', affected_modules=[MODULE],
                         checks=['original-native', 'formal-correct', 'formal-key-only'],
                         production_entry=f'{MODEL}:Inbox::find / Session::find_entry',

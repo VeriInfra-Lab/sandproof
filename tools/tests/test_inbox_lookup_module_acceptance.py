@@ -33,6 +33,21 @@ class InboxLookupModuleAcceptanceTests(unittest.TestCase):
         self.assertEqual(plan['status'], 'ready')
         self.assertIn('formal-key-only', plan['checks'])
 
+    def test_wrong_template_with_an_external_lean_consumer_cannot_accept_in_isolation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / LOOKUP).mkdir(parents=True)
+            acceptance.write_json(root / LOOKUP / 'inventory.json',
+                                  dict(audits={'InboxLookupWrong': []}, production_inputs={}))
+            outside = root / 'SandboxModel' / 'ExternalLookup.lean'
+            outside.parent.mkdir()
+            outside.write_text('import SandboxModel.Lifecycle.Protocol.InboxLookupWrong\n')
+            self.assertIn('SandboxModel/ExternalLookup.lean',
+                          acceptance.lean_consumers(root, {acceptance.WRONG_PAGE}))
+            plan = acceptance.select([acceptance.WRONG_PAGE], root=root)
+            self.assertEqual(plan['status'], 'review-required')
+            self.assertEqual(plan['checks'], [])
+
     def test_shared_proof_template_selects_real_reverse_consumers_without_issuing_pass(self):
         path = str(LOOKUP / 'InboxLookupModel.lean.in')
         plan = acceptance.select([path])
