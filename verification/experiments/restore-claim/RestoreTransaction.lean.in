@@ -1,0 +1,210 @@
+import SandproofParentCommit.ParentResults
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+namespace Transaction
+namespace Source
+
+open SandproofStage1RequestRust
+open SandproofStage1RequestRust.sandproof_controller_service.controller.transaction
+
+/-- The original constructor starts with a supplied transaction. Its identity
+check observes precisely the connection dereferenced from that handle. -/
+theorem actual_started_transaction_preserves_owner
+    (raw : rusqlite.transaction.Transaction) (committed : CommittedWorld)
+    (inputStart : U64) (world : sandbox_controller_core.model.World)
+    (identity : committed.check_identity raw.conn = .ok (.Ok ())) :
+    WorldTransaction.from_started_transaction raw committed inputStart world =
+      .ok (.Ok {
+        transaction := some raw
+        committed := committed
+        candidate := ⟨some world, 0⟩
+        input_start := inputStart }) := by
+  simp [WorldTransaction.from_started_transaction, core.cell.RefCell.new,
+    WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref, core.option.Option.as_ref,
+    core.option.Option.expect, Result.ofOption,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref,
+    core.result.Result.Insts.CoreOpsTry.branch, identity]
+
+end Source
+
+open SandproofParentCommitRust
+open SandproofParentCommitRust.ActualFinish
+open SandproofParentCommitRust.PhysicalLink
+
+abbrev CandidateAt (owner : Owner) (world : World) :=
+  SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt (CurrentViews.ownerToRead owner) world
+
+private theorem checked_before_success {S : Type}
+    (check : S → Result (Reply × S))
+    (next : S → Result Reply) (state : S)
+    (ran : CommitOrder.continueAfter check next state = .ok (.Ok ())) :
+    ∃ after, check state = .ok (.Ok (), after) ∧ next after = .ok (.Ok ()) := by
+  unfold CommitOrder.continueAfter at ran
+  cases checkReply : check state with
+  | ret pair =>
+    rcases pair with ⟨reply, after⟩
+    cases reply with
+    | Ok value =>
+      cases value
+      exact ⟨after, by rfl, by simpa [checkReply, bind_tc_ok] using ran⟩
+    | Err error => simp [checkReply, bind_tc_ok] at ran
+  | vis effect continuation => simp [checkReply] at ran
+  | div => simp [checkReply] at ran
+
+private theorem raw_from_owner (owner : Owner) (raw : Raw)
+    (live : owner.transaction = some raw) : CurrentViews.liveRaw owner = .ok raw := by
+  simp only [CurrentViews.liveRaw, SandproofParentReadRust.core.option.Option.as_ref,
+    live, bind_tc_ok, core.option.Option.expect, Result.ofOption]
+
+/-- The explicit V5 observation in the existing finisher contract is the
+actual inbox wrapper on this owner, raw transaction, and candidate World. -/
+theorem actual_finisher_inbox_check_succeeded
+    (owner : Owner) (raw : Raw) (world : World)
+    (live : owner.transaction = some raw)
+    (present : CandidateAt owner world)
+    (checks : ParentResults.ChecksReturnedOk owner raw world) :
+    ActualCalls.actualEffects.validate_inbox owner = .ok (.Ok (), owner) := by
+  have read := SandboxModel.InboxTransaction.CurrentWorldRead.world_from_same_candidate
+    (CurrentViews.ownerToRead owner) world present
+  simpa only [raw_from_owner owner raw live, read, checks.inbox, bind_tc_ok] using
+    ActualCalls.inbox_complete_call owner
+
+/-- A successful actual Commit cannot skip the original inbox validation.
+Its successful observation uses the same raw connection and candidate as
+the commit owner. Physical snapshot identity and V5 business rules are
+provided independently. -/
+theorem actual_successful_commit_validated_inbox
+    (owner : Owner) (raw : Raw) (world : World)
+    (live : owner.transaction = some raw)
+    (present : CandidateAt owner world)
+    (success : controller.transaction.WorldTransaction.commit owner = .ok (.Ok ())) :
+    ActualCalls.actualEffects.validate_inbox owner = .ok (.Ok (), owner) := by
+  rw [ParentOrder.actual_complete_first_error_order] at success
+  unfold CommitOrder.orderView at success
+  obtain ⟨afterCandidate, checkedCandidate, continues⟩ :=
+    checked_before_success _ _ _ success
+  have rawRead := raw_from_owner owner raw live
+  have worldRead := SandboxModel.InboxTransaction.CurrentWorldRead.world_from_same_candidate
+    (CurrentViews.ownerToRead owner) world present
+  rw [ActualCalls.candidate_complete_call] at checkedCandidate
+  simp only [rawRead, worldRead, bind_tc_ok] at checkedCandidate
+  cases candidateReply :
+      ErrorTransport.fromRequestResult (raw.conn.v5.candidate raw.conn.base world) with
+  | ret returned =>
+    simp only [candidateReply, bind_tc_ok, Result.ok.injEq, Prod.mk.injEq] at checkedCandidate
+    have same := checkedCandidate.2
+    subst afterCandidate
+    obtain ⟨afterInbox, checkedInbox, _⟩ := checked_before_success _ _ _ continues
+    rw [ActualCalls.inbox_complete_call] at checkedInbox
+    simp only [rawRead, worldRead, bind_tc_ok] at checkedInbox
+    cases inboxReply :
+        ErrorTransport.fromRequestResult (raw.conn.v5.inbox raw.conn.base world) with
+    | ret inboxResult =>
+      simp only [inboxReply, bind_tc_ok, Result.ok.injEq, Prod.mk.injEq] at checkedInbox
+      rw [ActualCalls.inbox_complete_call]
+      simp only [rawRead, worldRead, inboxReply, bind_tc_ok, checkedInbox.1]
+    | vis effect continuation => simp [inboxReply] at checkedInbox
+    | div => simp [inboxReply] at checkedInbox
+  | vis effect continuation => simp [candidateReply] at checkedCandidate
+  | div => simp [candidateReply] at checkedCandidate
+
+/-- Commit publishes the exact candidate observed by the four original checks.
+The caller supplies the candidate after its actual writes and advance. -/
+theorem actual_commit_success_observes_candidate_world
+    (owner : Owner) (raw : Raw) (world : World) (actualObserved : Option World)
+    (live : owner.transaction = some raw)
+    (present : CandidateAt owner world)
+    (checks : ParentResults.ChecksReturnedOk owner raw world)
+    (committedAvailable : owner.committed.value.beforeBorrowCount = 0)
+    (candidateAvailable : owner.candidate.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.commit raw = .ok (.Ok ()))
+    (physical : LinkedCommitted actualObserved (memoInvocation owner) (fun output => output.2.2)) :
+    controller.transaction.WorldTransaction.commit owner = .ok (.Ok ()) ∧
+      actualObserved = some world := by
+  obtain ⟨reply, published⟩ := ParentResults.actual_commit_success_and_original_observation
+    owner raw world actualObserved live present checks committedAvailable candidateAvailable returned physical
+  exact ⟨reply, published.trans present.2⟩
+
+
+abbrev originalDrop := controller.transaction.WorldTransaction.Insts.CoreOpsDropDrop.drop
+
+abbrev rollbackCallback :=
+  controller.transaction.DropWorldTransaction.drop.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError
+
+def rollbackInvocation (owner : Owner) : Result (Option Raw × Cells) :=
+  controller.transaction.memo.rollback_if_live cellOps rollbackCallback
+    owner.transaction (ownerCells owner) ()
+
+theorem actual_drop_projects_rollback (owner : Owner) :
+    originalDrop owner =
+      (do let (slot, _) ← rollbackInvocation owner; .ok { owner with transaction := slot }) := rfl
+
+theorem actual_drop_without_live_transaction (owner : Owner)
+    (absent : owner.transaction = none) :
+    rollbackInvocation owner = .ok (none, ownerCells owner) ∧
+      originalDrop owner = .ok owner := by
+  have noCall : rollbackInvocation owner = .ok (none, ownerCells owner) := by
+    simp [rollbackInvocation, controller.transaction.memo.rollback_if_live, absent,
+      core.option.Option.take]
+  refine ⟨noCall, ?_⟩
+  rw [actual_drop_projects_rollback, noCall, bind_tc_ok]
+  cases owner
+  simp_all
+
+/-- The original Drop invokes rollback on this raw handle. A normal successful
+rollback leaves the original cache value, conditional on the same surviving
+physical cell being observed. SQLite's durable effect is an A4 premise. -/
+theorem actual_drop_success_observes_original_cache (owner : Owner) (raw : Raw)
+    (actualObserved : Option World)
+    (live : owner.transaction = some raw)
+    (returned : rusqlite.transaction.Transaction.rollback raw = .ok (.Ok ()))
+    (physical : LinkedCommitted actualObserved (rollbackInvocation owner) Prod.snd) :
+    originalDrop owner = .ok { owner with transaction := none } ∧
+      actualObserved = owner.committed.value.value := by
+  have called : rollbackCallback.call_once () raw = .ok (.Ok ()) := returned
+  change controller.transaction.DropWorldTransaction.drop.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError.call_once
+    () raw = _ at called
+  have outcome : rollbackInvocation owner = .ok (none, ownerCells owner) := by
+    simp [rollbackInvocation, controller.transaction.memo.rollback_if_live, live,
+      core.option.Option.take, called, core.result.Result.is_err]
+  refine ⟨?_, physical _ outcome⟩
+  rw [actual_drop_projects_rollback, outcome, bind_tc_ok]
+  rfl
+
+/-- A returned rollback error invalidates the original cache. The result of
+Drop alone reports neither the error nor what happened to the database. -/
+theorem actual_drop_error_clears_original_cache (owner : Owner) (raw : Raw)
+    (error : rusqlite.error.Error) (actualObserved : Option World)
+    (live : owner.transaction = some raw)
+    (available : owner.committed.value.beforeBorrowCount = 0)
+    (returned : rusqlite.transaction.Transaction.rollback raw = .ok (.Err error))
+    (physical : LinkedCommitted actualObserved (rollbackInvocation owner) Prod.snd) :
+    originalDrop owner = .ok { owner with transaction := none } ∧ actualObserved = none := by
+  have called : rollbackCallback.call_once () raw = .ok (.Err error) := returned
+  change controller.transaction.DropWorldTransaction.drop.closure.Insts.CoreOpsFunctionFnOnceTupleTransactionResultTupleError.call_once
+    () raw = _ at called
+  have cleared := actual_set_committed_normal (ownerCells owner) none available
+  change controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.set_committed
+    (ownerCells owner) none = _ at cleared
+  have outcome : rollbackInvocation owner = .ok (none, clearedCells (ownerCells owner)) := by
+    simp [rollbackInvocation, controller.transaction.memo.rollback_if_live, live,
+      core.option.Option.take, called, core.result.Result.is_err, clearedCells, cleared]
+  refine ⟨?_, physical _ outcome⟩
+  rw [actual_drop_projects_rollback, outcome, bind_tc_ok]
+  rfl
+
+end Transaction
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.Transaction.Source.actual_started_transaction_preserves_owner
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.Transaction.actual_drop_projects_rollback
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.Transaction.actual_drop_without_live_transaction
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.Transaction.actual_drop_success_observes_original_cache
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.Transaction.actual_drop_error_clears_original_cache
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.Transaction.actual_commit_success_observes_candidate_world
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.Transaction.actual_finisher_inbox_check_succeeded
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.Transaction.actual_successful_commit_validated_inbox

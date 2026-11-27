@@ -1,0 +1,9 @@
+import SandproofSqlite.TypesExternal
+
+namespace SandproofRestoreSourceReadRust
+
+abbrev core.io.error.Error := SandproofSqliteRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofSqliteRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofSqliteRust.serde_json.error.Error
+
+end SandproofRestoreSourceReadRust

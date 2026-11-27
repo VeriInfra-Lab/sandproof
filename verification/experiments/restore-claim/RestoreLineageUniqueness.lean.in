@@ -1,0 +1,166 @@
+import SandboxModel.Lifecycle.Protocol.InboxLineage
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity
+open SandboxModel.Stage1Protocol.InboxLineage
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+def resumeCapture (entry : Entry) : Option CaptureId :=
+  match entry.intent.request.operation with
+  | .Resume _ capture _ _ => some capture
+  | _ => none
+
+/-- The last accepted resume capture is at most the unload frontier. A
+currently pending original unload came strictly after that resume. -/
+private def ResumeFloor (floor : U64) (state : LineageState) : Prop :=
+  floor ≤ state.frontier ∧ ∀ previous source capture,
+    state.previous = some previous → previous.intent.request.operation = .Unload source capture →
+    capture = state.frontier ∧ floor < capture
+
+private theorem prior_unload (source : IncarnationId) (capture : CaptureId) (state : LineageState)
+    (matched : priorMatches source capture state.previous = true) :
+    ∃ prior, state.previous = some prior ∧ prior.intent.request.operation = .Unload source capture := by
+  cases previous : state.previous with
+  | none => simp [priorMatches, previous] at matched
+  | some entry =>
+    cases shape : entry.intent.request.operation <;> simp [priorMatches, previous, shape] at matched
+    case Unload old oldCapture =>
+      obtain ⟨rfl, rfl⟩ := matched
+      exact ⟨entry, rfl, shape⟩
+
+private theorem floor_after_step (floor : U64) (state next : LineageState) (entry : Entry)
+    (before : ResumeFloor floor state) (accepted : step state entry = .ok next) :
+    match resumeCapture entry with
+    | none => ResumeFloor floor next
+    | some capture => floor < capture ∧ ResumeFloor capture next := by
+  rcases before with ⟨below, unload⟩
+  have other (incarnation : Option IncarnationId)
+      (notUnload : ∀ source capture, entry.intent.request.operation ≠ .Unload source capture) :
+      ResumeFloor floor { state with incarnation := incarnation, previous := some entry } := by
+    refine ⟨below, ?_⟩
+    intro previous source capture same shape
+    have sameEntry : entry = previous := Option.some.inj same
+    subst previous
+    exact (notUnload _ _ shape).elim
+  cases operation : entry.intent.request.operation with
+  | Create spec target =>
+    simp only [step, operation] at accepted
+    split at accepted
+    · simp at accepted
+    split at accepted
+    · simp at accepted
+    have post := Except.ok.inj accepted
+    subst next
+    simpa only [resumeCapture, operation] using other (some target) (by simp [operation])
+  | Unload source capture =>
+    simp only [step, operation] at accepted
+    split at accepted
+    · simp at accepted
+    split at accepted
+    · simp at accepted
+    rename_i notPast
+    have post := Except.ok.inj accepted
+    subst next
+    simp only [resumeCapture, operation]
+    have strictly : state.frontier < capture := lt_of_not_ge notPast
+    refine ⟨le_trans below (le_of_lt strictly), ?_⟩
+    intro previous old cap same shape
+    have sameEntry : entry = previous := Option.some.inj same
+    subst previous
+    have fields : old = source ∧ cap = capture := by simpa [operation] using shape.symm
+    exact ⟨fields.2, fields.2 ▸ lt_of_le_of_lt below strictly⟩
+  | Resume source capture target manifest =>
+    simp only [step, operation] at accepted
+    split at accepted
+    · simp at accepted
+    split at accepted
+    · simp at accepted
+    split at accepted
+    · simp at accepted
+    rename_i notUnmatched
+    have was : priorMatches source capture state.previous = true :=
+      Bool.eq_true_of_not_eq_false notUnmatched
+    obtain ⟨previous, saved, shape⟩ := prior_unload source capture state was
+    obtain ⟨frontier, advance⟩ := unload previous source capture saved shape
+    have post := Except.ok.inj accepted
+    subst next
+    simp only [resumeCapture, operation]
+    refine ⟨advance, ?_, ?_⟩
+    · exact le_of_eq frontier
+    · intro previous old cap same shape
+      have sameEntry : entry = previous := Option.some.inj same
+      subst previous
+      simp [operation] at shape
+  | Renew current life extension =>
+    simp only [step, operation] at accepted
+    split at accepted
+    · simp at accepted
+    have post := Except.ok.inj accepted
+    subst next
+    simpa only [resumeCapture, operation] using other state.incarnation (by simp [operation])
+  | Destroy =>
+    simp only [step, operation] at accepted
+    have post := Except.ok.inj accepted
+    subst next
+    simpa only [resumeCapture, operation] using other state.incarnation (by simp [operation])
+
+private theorem accepted_scan_orders_resumes (expected : Option IncarnationId)
+    (entries : List Entry) (state : LineageState) (floor : U64)
+    (before : ResumeFloor floor state) (accepted : scan expected entries state = .ok ()) :
+    (entries.filterMap resumeCapture).Pairwise (· < ·) ∧
+      ∀ capture ∈ entries.filterMap resumeCapture, floor < capture := by
+  induction entries generalizing state floor with
+  | nil => simp
+  | cons entry rest ih =>
+    cases decided : step state entry with
+    | error reason => simp [scan, decided] at accepted
+    | ok next =>
+      have further : scan expected rest next = .ok () := by simpa [scan, decided] using accepted
+      have follows := floor_after_step floor state next entry before decided
+      cases observed : resumeCapture entry with
+      | none => simpa [observed] using ih next floor (by simpa [observed] using follows) further
+      | some capture =>
+        rw [observed] at follows
+        obtain ⟨strict, invariant⟩ := follows
+        obtain ⟨inOrder, afterCapture⟩ := ih next capture invariant further
+        simp only [List.filterMap_cons, observed, List.pairwise_cons, List.mem_cons]
+        exact ⟨⟨afterCapture, inOrder⟩, fun later member =>
+          member.elim (fun same => same.symm ▸ strict)
+            (fun inTail => lt_trans strict (afterCapture later inTail))⟩
+
+/-- The input is one original retained Session, validated from an empty lineage
+and a zero capture frontier. In particular, the preceding Unload must remain
+in the same entries list; arbitrary truncation or another window is outside
+this hypothesis. No native attachment or new VM attempt is assumed. -/
+theorem actual_valid_session_resume_captures_grow (session : Session)
+    (accepted : session.validate_execution_lineage = .ok (.Ok ())) :
+    (session.entries.val.filterMap resumeCapture).Pairwise (· < ·) := by
+  have initialFloor : ResumeFloor 0#u64 initial := by
+    constructor
+    · rfl
+    · simp [initial]
+  exact (accepted_scan_orders_resumes session.incarnation session.entries.val initial 0#u64
+    initialFloor ((accepts_iff session).mp accepted)).1
+
+/-- The order follows the original retained entries without changing the
+operation keys or conflating two occurrences of the same request. -/
+theorem actual_valid_session_resume_order (session : Session)
+    (accepted : session.validate_execution_lineage = .ok (.Ok ()))
+    (earlierEntries between suffix : List Entry) (earlier later : Entry) (a b : CaptureId)
+    (positions : session.entries.val = earlierEntries ++ (earlier :: (between ++ later :: suffix)))
+    (firstCapture : resumeCapture earlier = some a)
+    (secondCapture : resumeCapture later = some b) : a < b := by
+  have sorted := actual_valid_session_resume_captures_grow session accepted
+  rw [positions] at sorted
+  simp only [List.filterMap_append, List.filterMap_cons, firstCapture, secondCapture] at sorted
+  have tail := (List.pairwise_append.mp sorted).2.1
+  apply (List.pairwise_cons.mp tail).1
+  simp
+
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.actual_valid_session_resume_captures_grow
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.actual_valid_session_resume_order

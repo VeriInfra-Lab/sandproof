@@ -1,0 +1,121 @@
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.Contract
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.ReusedReplayEquality
+
+open Aeneas Aeneas.Std SandproofRestoreClaimRust
+open SandproofRestoreClaimRust.sandproof_protocol
+open SandproofRestoreClaimRust.sandbox_controller_core.model
+open SandproofRestoreClaimRust.sandbox_controller_core.ids
+open SandproofRestoreClaimRust.controller.lifecycle_inbox.source_work.restore
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+private theorem resourceKind_eq (left right : ResourceKind) :
+    ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left <;> cases right <;>
+    simp [ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq, ResourceKind.read_discriminant]
+
+private theorem resourceRef_eq (left right : ResourceRef) :
+    ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq, resourceKind_eq,
+    ResourceId.Insts.CoreCmpPartialEqResourceId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, ReusedReplayEquality.ok_and]
+
+private theorem identity_eq (left right : ActionIdentity) :
+    ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [ActionIdentity.Insts.CoreCmpPartialEqActionIdentity.eq, resourceRef_eq,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    sandproof_protocol.OperationId.Insts.CoreCmpPartialEqOperationId.eq,
+    LogicalActionId.Insts.CoreCmpPartialEqLogicalActionId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq, ReusedReplayEquality.ok_and,
+    Bool.and_assoc, Bool.and_left_comm, Bool.and_comm]
+
+private theorem command_eq_activate
+    (s₁ s₂ : sandbox_controller_core.ids.SandboxId) (e₁ e₂ g₁ g₂ : U64) (v₁ v₂ : VmId) :
+    Command.Insts.CoreCmpPartialEqCommand.eq
+        (.ActivateVm s₁ e₁ g₁ v₁) (.ActivateVm s₂ e₂ g₂ v₂) =
+      .ok (decide (s₁ = s₂ ∧ e₁ = e₂ ∧ g₁ = g₂ ∧ v₁ = v₂)) := by
+  simp [Command.Insts.CoreCmpPartialEqCommand.eq, Command.read_discriminant,
+    sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    VmId.Insts.CoreCmpPartialEqVmId.eq, core.cmp.impls.PartialEqU64.eq,
+    lift, ReusedReplayEquality.ok_and]
+
+private theorem activation_eq (left right : Action)
+    (leftActivation : IsActivation left) (rightActivation : IsActivation right) :
+    WorkAction.Insts.CoreCmpPartialEqWorkAction.eq
+        EffectId.Insts.CoreCmpPartialEqEffectId left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  rcases left with ⟨li, ⟨⟨lc⟩, la⟩⟩
+  rcases right with ⟨ri, ⟨⟨rc⟩, ra⟩⟩
+  rcases leftActivation with ⟨ls, le, lg, lv, hl⟩
+  rcases rightActivation with ⟨rs, re, rg, rv, hr⟩
+  change lc = .ActivateVm ls le lg lv at hl
+  change rc = .ActivateVm rs re rg rv at hr
+  subst lc; subst rc
+  simp [WorkAction.Insts.CoreCmpPartialEqWorkAction.eq, identity_eq,
+    EffectId.Insts.CoreCmpPartialEqEffectId.eq,
+    LogicalEffectId.Insts.CoreCmpPartialEqLogicalEffectId.eq, command_eq_activate,
+    ReusedReplayEquality.ok_and, Bool.and_left_comm, Bool.and_comm]
+
+theorem existing_activation_value (claim : RestoreClaim) (original proposed : Action)
+    (saved : claim.activation = some original)
+    (originalActivation : IsActivation original) (proposedActivation : IsActivation proposed) :
+    proof_existing_activation claim proposed =
+      .ok (some (by classical exact decide (original = proposed))) := by
+  classical
+  simp [proof_existing_activation, saved, activation_eq original proposed
+    originalActivation proposedActivation]
+
+theorem existing_activation_exact (claim : RestoreClaim) (original proposed : Action)
+    (saved : claim.activation = some original)
+    (originalActivation : IsActivation original) (proposedActivation : IsActivation proposed) :
+    proof_existing_activation claim proposed = .ok (some true) ↔ proposed = original := by
+  classical
+  rw [existing_activation_value claim original proposed saved originalActivation proposedActivation]
+  simp [eq_comm]
+
+theorem keeps_recorded_activation : KeepsRecordedActivation proof_existing_activation := by
+  intro claim original proposed _ saved oldKind newKind accepted
+  exact (existing_activation_exact claim original proposed saved oldKind newKind).mp accepted
+
+theorem absent_activation_continues (claim : RestoreClaim) (proposed : Action)
+    (unmarked : claim.activation = none) :
+    proof_existing_activation claim proposed = .ok none := by
+  simp [proof_existing_activation, unmarked]
+
+theorem existing_restore_exact (claim : RestoreClaim)
+    (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent) :
+    proof_existing_restore (some claim) intent =
+      .ok (some (by classical exact decide (claim.intent = intent))) := by
+  simp [proof_existing_restore, ReusedReplayEquality.accepted_eq]
+
+theorem same_intent_replays (claim : RestoreClaim) :
+    proof_existing_restore (some claim) claim.intent = .ok (some true) := by
+  rw [existing_restore_exact]
+  simp
+
+theorem other_intent_refused (claim : RestoreClaim)
+    (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+    (different : claim.intent ≠ intent) :
+    proof_existing_restore (some claim) intent = .ok (some false) := by
+  rw [existing_restore_exact]
+  simp [different]
+
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.existing_activation_value
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.existing_activation_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.keeps_recorded_activation
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.absent_activation_continues
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.existing_restore_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.same_intent_replays
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.other_intent_refused

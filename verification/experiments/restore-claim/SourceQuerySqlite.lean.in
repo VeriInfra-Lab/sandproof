@@ -1,0 +1,108 @@
+import SandproofRestoreSourceQuery.Types
+import SandproofSqliteSession.ReadOps
+
+open Aeneas Aeneas.Std
+open SandproofRestoreSourceQueryRust
+
+namespace SandproofRestoreSourceQueryRust
+
+def sourceRawValue : rusqlite.types.value_ref.ValueRef → SandproofSqliteSession.RawValue
+  | .Null => .Null
+  | .Integer value => .Integer value
+  | .Real value => .Real value
+  | .Text value => .Text value
+  | .Blob value => .Blob value
+
+def sourceValueRef : SandproofSqliteSession.RawValue → rusqlite.types.value_ref.ValueRef
+  | .Null => .Null
+  | .Integer value => .Integer value
+  | .Real value => .Real value
+  | .Text value => .Text value
+  | .Blob value => .Blob value
+
+def sourceIssuedStatement (view : SandproofSqliteSession.ReadView) (sql : Str) (count : Nat) :
+    rusqlite.statement.Statement :=
+  { sql := sql
+    row := SandproofLoadBlobRust.issuedReadStatement view.single sql count
+    source := view
+    boundArguments := [] }
+
+def rusqlite.Connection.prepare (connection : rusqlite.Connection) (sql : Str) :
+    Result (core.result.Result rusqlite.statement.Statement rusqlite.error.Error) := do
+  let prepared ← connection.current.single.canonical.prepare sql
+  match prepared with
+  | .Err error => .ok (.Err error)
+  | .Ok count => .ok (.Ok (sourceIssuedStatement connection.current sql count))
+
+/-- The fixed zero-length Params instance calls ensure_parameter_count(0).
+Unit represents its sole value and there is no argument to convert or bind. -/
+def bindSourceNoParams
+    (_values : Unit)
+    (statement : rusqlite.statement.Statement) :
+    Result (core.result.Result Unit rusqlite.error.Error × rusqlite.statement.Statement) := do
+  let (answer, row) ← SandproofSqliteSession.bindUnit () statement.row
+  .ok (answer, { statement with row := row })
+
+def sourceNoParams : rusqlite.params.Params Unit where
+  sealedSealedInst := {}
+  __bind_in := bindSourceNoParams
+
+def sourceMappedCursor {F : Type} (statement : rusqlite.statement.Statement) (callback : F) :
+    rusqlite.row.MappedRows F :=
+  { mapped :=
+      { cursor :=
+          { query := statement.query
+            trace := statement.source.issueScan statement.sql statement.row statement.boundArguments
+            calls := 0 }
+        callback := callback }
+    statement := statement }
+
+def rusqlite.statement.Statement.query_map {T P F : Type} (params : rusqlite.params.Params P)
+    (_call : core.ops.function.FnMut F rusqlite.row.Row (core.result.Result T rusqlite.error.Error))
+    (statement : rusqlite.statement.Statement) (values : P) (callback : F) :
+    Result (core.result.Result (rusqlite.row.MappedRows F) rusqlite.error.Error ×
+      rusqlite.statement.Statement) := do
+  let (answer, bound) ← params.__bind_in values statement
+  match answer with
+  | .Err error => .ok (.Err error, bound)
+  | .Ok () => .ok (.Ok (sourceMappedCursor bound callback), bound)
+
+def rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError.next
+    {T F : Type}
+    (call : core.ops.function.FnMut F rusqlite.row.Row (core.result.Result T rusqlite.error.Error))
+    (cursor : rusqlite.row.MappedRows F) :
+    Result (Option (core.result.Result T rusqlite.error.Error) × rusqlite.row.MappedRows F) := do
+  let (answer, after) ← SandproofSqliteSession.mappedNext
+    (fun callback row => call.call_mut callback { original := row, statement := cursor.statement })
+    cursor.mapped
+  .ok (answer, { cursor with mapped := after })
+
+def Usize.Insts.RusqliteRowRowIndex.idx (position : Usize)
+    (statement : rusqlite.statement.Statement) :
+    Result (core.result.Result Usize rusqlite.error.Error) :=
+  SandproofSqliteSession.index position statement.row
+
+def rusqlite.row.Row.get {I T : Type} (index : rusqlite.row.RowIndex I)
+    (convert : rusqlite.types.from_sql.FromSql T) (row : rusqlite.row.Row) (position : I) :
+    Result (core.result.Result T rusqlite.error.Error) :=
+  SandproofSqliteSession.rowGet
+    (fun i _ => index.idx i row.statement)
+    (fun v => convert.column_result (sourceValueRef v)) row.original position
+
+def alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+    (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result (alloc.vec.Vec U8) rusqlite.types.from_sql.FromSqlError) :=
+  SandproofSqliteSession.blobColumn (sourceRawValue value)
+
+def core.option.Option.Insts.RusqliteTypesFrom_sqlFromSql.column_result {T : Type}
+    (convert : rusqlite.types.from_sql.FromSql T) (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result (Option T) rusqlite.types.from_sql.FromSqlError) := do
+  match value with
+  | .Null => .ok (.Ok none)
+  | other =>
+    let reply ← convert.column_result other
+    match reply with
+    | .Err error => .ok (.Err error)
+    | .Ok present => .ok (.Ok (some present))
+
+end SandproofRestoreSourceQueryRust

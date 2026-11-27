@@ -1,0 +1,41 @@
+import SandboxModel.Lifecycle.Protocol.RestoreClaim.Contract
+
+open Aeneas Aeneas.Std SandproofRestoreClaimRust
+open SandproofRestoreClaimRust.controller.lifecycle_inbox.source_work.restore
+
+namespace SandboxModel.Stage1Protocol.RestoreClaim
+
+private def manifest : Array U8 32#usize :=
+  Array.from (List.replicate 32 (88#u8)) (by simp)
+
+def proposed (vm : U64) (label : String) : Action :=
+  ⟨⟨1#u16, "owner", "session", "resume", 1#u64, 2#u64, label, 1#u64,
+      ⟨.Vm, label⟩⟩,
+    ⟨⟨.ActivateVm 1#u64 1#u64 2#u64 vm⟩, 1#u64⟩⟩
+
+def original : Action := proposed 2#u64 "vm-2"
+def other : Action := proposed 3#u64 "vm-3"
+
+def marked : RestoreClaim :=
+  ⟨⟨⟨⟨4#u16, ⟨"deployment", "node", 1#u64⟩, "session",
+      ⟨"deployment", "owner", 1#u64, 3#u64⟩, .Version 2#u64⟩,
+      .Resume 101#u64 1#u64 102#u64 manifest⟩,
+    3#u64, ⟨"deployment", "center"⟩, ⟨1#u16, 1#u64⟩⟩,
+  ⟨1#u64, 1#u64, 3#u64⟩, 2#u64, true, some original⟩
+
+theorem original_is_activation : IsActivation original :=
+  ⟨1#u64, 1#u64, 2#u64, 2#u64, rfl⟩
+
+theorem other_is_activation : IsActivation other :=
+  ⟨1#u64, 1#u64, 2#u64, 3#u64, rfl⟩
+
+theorem different_candidate : other ≠ original := by
+  intro same
+  have command := congrArg (fun (action : Action) => action.command.logical.command) same
+  simp [other, original, proposed] at command
+
+end SandboxModel.Stage1Protocol.RestoreClaim
+
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.original_is_activation
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.other_is_activation
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreClaim.different_candidate
