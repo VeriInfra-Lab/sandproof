@@ -166,6 +166,14 @@ BEGIN 成功后，`started_reply` 连接该次返回的原 owner、实际命名�
 后续摘要和更新步骤。具体 Serde 编码的字节语义、SQLite 持久化和网关送达分别由其提供方验收。
 [实际生成入口的证明与审计](public-begin/PublicUnload.lean.in) · [主控登记增量](save-encoding-integration-candidate.patch)
 
+### 首次 Unload 的保存更新和事务返回
+
+首次 Unload 通过追加、新收件箱校验和编码后，`bounded_save_result` 处理编码长度小于或等于配置预算的路径。配置预算上界保证这条路径落在现有 SHA 库合同的正常长度域。借用同一存活连接的标准保存方法把全部编码字节送给摘要方法。实际更新语句的两个 BLOB 参数依次为这些字节和完整的 32 字节摘要。在当前 SQLite 适配合同下，每次正常返回均带回此次写入后的读视图。对应定理保留 owner 的其余字段。[保存更新证明](public-begin/PublicUnloadSave.lean.in)
+
+`fresh_write_dispatch` 从同一次公开 BEGIN、载入和已认证的 Unload 得到追加后的收件箱与完整状态。SQL 报错时，协调器保留原 `Sqlite` 错误并选择无动作。更新零行或多行时返回 `CorruptStore` 并选择无动作。这两项无需提交观察。恰好一行时，原提交接收本次写入后的 owner，公开结果和撤销选择沿用该提交的实际返回。编码的具体字节由所调用的方法提供。SQL 调用的回执与后续物理耐久性由 V5 提供，接收端是否收到撤销仍由网关验收。[提交与撤销证明](public-begin/PublicUnload.lean.in)
+
+主控在应用保存编码的登记增量后，采用本段的[登记候选](save-update-integration-candidate.patch)。完整事务作业通过 `PublicUnloadSave` 引入先前的拒绝页和本段的四项审计。
+
 ### 首次 Unload 在追加前被拒绝
 
 从同一次 BEGIN、命名空间借用和真实 `load_using` 的完整返回开始，若信封与配置通过认证、整个收件箱没有该键且存在同一会话，录入会选择首个同会话行。`fresh_refusal` 使用原 `record_existing_contract` 的有序判定。该判定拒绝 Unload 时，`Inbox::record` 返回原收件箱，`record_using` 交回载入结束时的完整 holder，公开 journal 返回相同的首错，协调器选择不撤销。这个分支只可能返回 `Conflict` 或 `UnsupportedInput`。证明无需提供保存、提交或通知的执行结果。[首错与协调器决定](public-begin/PublicUnloadRefusal.lean.in)

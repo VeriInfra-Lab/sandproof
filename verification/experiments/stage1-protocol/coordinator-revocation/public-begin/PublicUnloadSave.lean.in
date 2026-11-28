@@ -1,0 +1,167 @@
+import SandproofActualRecord.PublicUnloadRefusal
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol SandproofParentCommitRust.ErrorTransport
+namespace SandproofActualRecordRust.PublicUnloadSave
+open controller.lifecycle_inbox recording PublicBegin PublicReplay SourceFlowLink InboxAppend PublicUnload
+open IOOwnerTransport (ParentRaw)
+noncomputable section
+set_option autoImplicit false
+
+/-- The observed write advances the current SQL read view on either normal return.
+The caller retains its owner, namespace, codec and all other connection observations. -/
+def afterWrite (before : StandardRecord Unit) (raw : ParentRaw) (view : SandproofSqliteSession.ReadView) :
+    StandardRecord Unit :=
+  let base := {raw.conn.base with reads := {raw.conn.base.reads with current := view}}
+  let next := {raw with conn := {raw.conn with base}}
+  {before with tx := {before.tx with parent := {before.tx.parent with transaction := some next}}}
+
+variable [env : PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave.Insts
+  renaming Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest → standardDigest
+
+/-- The borrowed connection receives the complete byte slice and returns its 32-byte digest. -/
+theorem save_digest_returned (before : StandardRecord Unit) (raw : ParentRaw)
+    (live : before.tx.parent.transaction = some raw) (bytes : Slice U8) (normal : bytes.val.length < 2^61) :
+    saveEffects.digest before bytes = .ok (DigestByteBridge.referenceOutput bytes, before) := by
+  change IOOwnerTransport.liftValue before _ = _
+  rw [SandboxModel.StandardRecordIO.actual_save_digest_call_contract]
+  have slot : (IOOwnerTransport.toSource before).tx.transaction =
+      some (SandproofParentCommitRust.CurrentViews.rawToSource raw) := by
+    simp [IOOwnerTransport.toSource, SandproofParentCommitRust.CurrentViews.ownerToSource, live]
+  have borrowed := SandboxModel.StandardRecordIO.observed_borrow_returns_original_owner
+    (fun connection input => standardDigest {connection} input) (IOOwnerTransport.toSource before) bytes _ (DigestByteBridge.referenceOutput bytes)
+    ⟨raw.conn.base⟩ slot (by simp only [standardDigest,
+      SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.sha256.digest, if_pos normal, bind_tc_ok,
+      SandproofParentCommitRust.CurrentViews.rawToSource])
+  rw [borrowed]
+  simp [IOOwnerTransport.liftValue, JournalHeaderReads.returned_borrowed_holder]
+
+/-- Bind the actual two-blob call to the new read view even when SQLite reports an error. -/
+theorem save_update_returned (before : StandardRecord Unit) (raw : ParentRaw)
+    (live : before.tx.parent.transaction = some raw) (sql : Str) (bytes digest : Slice U8)
+    (reply : SandproofSqliteSession.SqlReply Usize) (view : SandproofSqliteSession.ReadView)
+    (write : raw.conn.base.reads.step raw.conn.base.reads.current sql bytes digest = .ok (reply, view)) :
+    saveEffects.update before sql bytes digest = .ok (SandboxModel.StandardRecordIO.mapSql reply, afterWrite before raw view) := by
+  let src := SandproofParentCommitRust.CurrentViews.rawToSource raw
+  let base := {raw.conn.base with reads := {raw.conn.base.reads with current := view}}
+  let next := {src with conn := base}
+  have slot : (IOOwnerTransport.toSource before).tx.transaction = some src := by
+    simp [IOOwnerTransport.toSource, SandproofParentCommitRust.CurrentViews.ownerToSource, live, src]
+  have step : SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.sqlite_io.execute_blobs
+      src sql bytes digest = .ok (reply, next) := by
+    simp [SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.sqlite_io.execute_blobs,
+      SandproofSqliteSession.executeBlobs, src, next, base, SandproofParentCommitRust.CurrentViews.rawToSource, write]
+  have updated := SandboxModel.StandardRecordIO.actual_update_returned_transaction _ _ _ sql bytes digest reply slot step
+  change toRequestStateResult (IOOwnerTransport.liftReply before _) = _
+  rw [SandboxModel.StandardRecordIO.actual_update_call_contract]
+  simp only [SandboxModel.StandardRecordIO.updateView, updated, bind_tc_ok]
+  simp [IOOwnerTransport.liftReply,
+    IOOwnerTransport.returnedHolder, IOOwnerTransport.returnedOwner, IOOwnerTransport.returnedRaw,
+    IOOwnerTransport.toSource, SandproofParentCommitRust.CurrentViews.ownerToSource, live, next, base, src,
+    SandproofParentCommitRust.CurrentViews.rawToSource, afterWrite, toRequestStateResult, liftResult]
+
+abbrev payload (bytes : alloc.vec.Vec U8) := alloc.vec.Vec.deref bytes
+abbrev digestBlob (bytes : alloc.vec.Vec U8) := Array.to_slice (DigestByteBridge.referenceOutput (payload bytes))
+abbrev writeCall (raw : ParentRaw) (bytes : alloc.vec.Vec U8) :=
+  raw.conn.base.reads.step raw.conn.base.reads.current InboxSave.statement (payload bytes) (digestBlob bytes)
+
+/-- The configuration bounds suffice for the normal SHA byte domain, including
+the exact budget. The affected-row count is observed only after the update returns. -/
+theorem bounded_save_result (inbox : model.Inbox) (before : StandardRecord Unit) (raw : ParentRaw)
+    (live : before.tx.parent.transaction = some raw) (validated : saveValidation inbox = .ok (.Ok ()))
+    (bytes : alloc.vec.Vec U8) (encoded : env.encodeInbox () raw.conn.base inbox = .ok (.Ok bytes, ()))
+    (within : bytes.val.length ≤ ConfigBudget.bytes inbox.config)
+    (reply : SandproofSqliteSession.SqlReply Usize) (view : SandproofSqliteSession.ReadView)
+    (write : writeCall raw bytes = .ok (reply, view)) :
+    originalSave inbox before = .ok ((match reply with
+      | .Err error => .Err (.Sqlite error)
+      | .Ok count => if count.val = 1 then .Ok () else .Err .CorruptStore), afterWrite before raw view) := by
+  have normal : (payload bytes).val.length < 2^61 := by
+    simp only [payload, alloc.vec.Vec.deref, Slice.from_val]
+    have := ConfigBudget.total_bound inbox.config
+    omega
+  have enc := save_encode_returned before inbox raw live (.Ok bytes) encoded
+  have hash := save_digest_returned before raw live (payload bytes) normal
+  have put := save_update_returned before raw live InboxSave.statement (payload bytes) (digestBlob bytes) reply view write
+  obtain ⟨budget, cost, exactCost⟩ := ConfigBudget.required_bytes_refines inbox.config
+  unfold originalSave SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.save_using
+  unfold saveValidation at validated
+  unfold saveEffects at enc hash put
+  unfold payload at hash
+  simp [validated, core.result.Result.Insts.CoreOpsTry.branch, enc,
+    SandboxModel.StandardRecordCodec.mapJson, lift, cost, UScalar.lt_equiv,
+    exactCost, Nat.not_lt.mpr within, hash]
+  unfold InboxSave.statement payload digestBlob at put
+  rw [put]
+  cases reply with
+  | Err error => simp [SandboxModel.StandardRecordIO.mapSql,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok count =>
+    by_cases one : count.val = 1 <;> simp [SandboxModel.StandardRecordIO.mapSql, one]
+
+open SandproofStage1RequestRust.sandproof_controller_service.application.coordinator.lifecycle_intent in
+/-- A fresh Unload updates the actual new inbox. An SQL error or an unexpected
+row count reaches the coordinator before commit. Exactly one row passes the
+post-write owner, including the returned read view, to the original commit. -/
+theorem fresh_write_dispatch [FileHandle] (journal : controller.ControllerJournal)
+    (intent : Intent) (context : Context)
+    (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (after : UnloadWorldBegin.Conn) (ns : Str)
+    (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+    (inbox : model.Inbox) (afterLoad : StandardRecord Unit) (s : Usize)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+    (config : InboxAdmission.ContextMatches inbox context) (valid : Validation.ValidEnvelope intent context)
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (selected : ExistingSelection inbox intent s)
+    (accept : existingDecision inbox (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent =
+      .append false) :
+    let value := appendedState (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent
+    let returned := {journal with journal := ⟨after.base⟩}
+    let run := journalDecision journal intent context
+    ∃ (next : model.Inbox) (e : Usize), inbox.record intent = .ok (.Ok (s,e), next) ∧ next.state s e = .ok value ∧
+      (saveValidation next = .ok (.Ok ()) →
+      ∀ (raw : ParentRaw), afterLoad.tx.parent.transaction = some raw →
+      ∀ (bytes : alloc.vec.Vec U8), env.encodeInbox () raw.conn.base next = .ok (.Ok bytes, ()) →
+      bytes.val.length ≤ ConfigBudget.bytes next.config →
+      ∀ reply view, writeCall raw bytes = .ok (reply, view) →
+        match reply with
+        | .Err error => run = .ok ((.Err (.Sqlite error), returned, ()), .None)
+        | .Ok count =>
+          if count.val = 1 then
+            run = (do
+              let committed ← SandproofParentCommitRust.controller.transaction.WorldTransaction.commit
+                (afterWrite afterLoad raw view).tx.parent
+              let result : core.result.Result model.LifecycleWorkState JournalError := match committed with
+                | .Ok () => .Ok value | .Err error => .Err error
+              let action ← data_revocation intent.request.operation (toRequestRustResult result)
+              .ok ((result, returned, ()), action))
+          else run = .ok ((.Err .CorruptStore, returned, ()), .None)) := by
+  dsimp only
+  obtain ⟨next, e, appended, state, refuse, _⟩ :=
+    fresh_unload journal intent context begun after ns started borrowed inbox afterLoad s loaded config valid op selected accept
+  refine ⟨next, e, appended, state, ?_⟩
+  intro pre raw live bytes encoded within reply view write
+  have saved := bounded_save_result next afterLoad raw live pre bytes encoded within reply view write
+  cases reply with
+  | Err error => exact refuse _ (.Sqlite error) saved
+  | Ok count =>
+    by_cases one : count.val = 1
+    · simp only [if_pos one] at saved ⊢
+      have admitted := (InboxAdmission.accepts_iff inbox intent context).mpr ⟨config, valid⟩
+      have absent := (InboxLookup.find_none_iff inbox intent).mpr selected.1
+      have recorded := record_after_save begun ns intent context inbox next afterLoad _ s e _
+        loaded admitted absent op appended state (.Ok ()) saved
+      exact recorded_commit_dispatch journal intent context begun after ns started borrowed _ _ recorded
+    · simp only [if_neg one] at saved ⊢
+      exact refuse _ .CorruptStore saved
+
+end
+end SandproofActualRecordRust.PublicUnloadSave
+
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadSave.save_digest_returned
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadSave.save_update_returned
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadSave.bounded_save_result
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadSave.fresh_write_dispatch
