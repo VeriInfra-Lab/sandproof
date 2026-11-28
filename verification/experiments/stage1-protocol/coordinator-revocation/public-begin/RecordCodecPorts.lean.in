@@ -1,0 +1,200 @@
+import SandproofActualRecord.PublicUnload
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol SandproofParentCommitRust.ErrorTransport
+namespace SandproofActualRecordRust.RecordCodecPorts
+open controller.lifecycle_inbox recording PublicBegin PublicReplay SourceFlowLink PublicUnload
+noncomputable section
+set_option autoImplicit false
+
+variable [env : PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+
+/-- The public journal's canonical reload check and its save operation use the
+same encoding result on the same inbox and holder, including a failed borrow
+or an outer failure or divergence of the codec. -/
+theorem load_save_encode (before : StandardRecord Unit) (inbox : model.Inbox) :
+    (ScopeTransport.recordEffects reads).codecInboxLoadEffectsInst.encode_inbox before inbox =
+      saveEffects.encode before inbox := by
+  apply congrArg (fun reply => toRequestStateResult (IOOwnerTransport.liftReply before reply))
+  exact (SandboxModel.StandardRecordCodec.actual_encode_for_load_call_contract
+    (IOOwnerTransport.codecToSource codec) (IOOwnerTransport.toSource before) inbox).trans
+    (SandboxModel.StandardRecordCodec.actual_encode_for_save_call_contract
+      (IOOwnerTransport.codecToSource codec) (IOOwnerTransport.toSource before) inbox).symm
+
+/-- A live holder preserves the full outer result of the encoding observation.
+Only a returned JSON reply is mapped into the journal error type. -/
+theorem live_encode (before : StandardRecord Unit) (inbox : model.Inbox)
+    (raw : IOOwnerTransport.ParentRaw) (live : before.tx.parent.transaction = some raw) :
+    saveEffects.encode before inbox = (do
+      let (reply, _) ← env.encodeInbox () raw.conn.base inbox
+      .ok (SandboxModel.StandardRecordCodec.mapJson reply, before)) := by
+  have slot : (IOOwnerTransport.toSource before).tx.transaction =
+      some (SandproofParentCommitRust.CurrentViews.rawToSource raw) := by
+    simp [IOOwnerTransport.toSource, SandproofParentCommitRust.CurrentViews.ownerToSource, live]
+  have obs : SandboxModel.StandardRecordCodec.callView (IOOwnerTransport.codecToSource codec).encode_inbox
+      (IOOwnerTransport.toSource before) inbox = (do
+        let (reply, _) ← env.encodeInbox () raw.conn.base inbox
+        .ok (SandboxModel.StandardRecordCodec.mapJson reply, IOOwnerTransport.toSource before)) := by
+    simp only [SandboxModel.StandardRecordCodec.callView,
+      SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+      SandproofStage1RequestRust.core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+      core.option.Option.expect, Result.ofOption, slot,
+      SandproofStage1RequestRust.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, bind_tc_ok]
+    rfl
+  change toRequestStateResult (IOOwnerTransport.liftReply before _) = _
+  rw [SandboxModel.StandardRecordCodec.actual_encode_for_save_call_contract, obs]
+  simp only [toRequestStateResult, IOOwnerTransport.liftReply, bind_assoc_eq, liftResult_bind]
+  congr 1
+  funext pair
+  rcases pair with ⟨reply, u⟩
+  cases u
+  simp [JournalHeaderReads.returned_borrowed_holder]
+
+/-- With no live transaction both public call sites stop at the original
+transaction dereference, before any observation from the codec is needed. -/
+theorem missing_transaction (before : StandardRecord Unit) (inbox : model.Inbox)
+    (missing : before.tx.parent.transaction = none) :
+    (ScopeTransport.recordEffects reads).codecInboxLoadEffectsInst.encode_inbox before inbox = .fail .panic ∧
+      saveEffects.encode before inbox = .fail .panic := by
+  rw [load_save_encode]
+  suffices stops : saveEffects.encode before inbox = .fail .panic from ⟨stops, stops⟩
+  have slot : (IOOwnerTransport.toSource before).tx.transaction = none := by
+    simp [IOOwnerTransport.toSource, SandproofParentCommitRust.CurrentViews.ownerToSource, missing]
+  change toRequestStateResult (IOOwnerTransport.liftReply before _) = _
+  rw [SandboxModel.StandardRecordCodec.actual_encode_for_save_call_contract]
+  simp [SandboxModel.StandardRecordCodec.callView,
+    SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    SandproofStage1RequestRust.core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+    core.option.Option.expect, Result.ofOption, slot, IOOwnerTransport.liftReply, toRequestStateResult]
+
+/-- An outer failure of the selected encoder ends the original validated save
+before the digest or UPDATE. The same holds for divergence. -/
+theorem save_stops (before : StandardRecord Unit) (inbox : model.Inbox)
+    (valid : saveValidation inbox = .ok (.Ok ())) :
+    (∀ err, saveEffects.encode before inbox = .fail err → originalSave inbox before = .fail err) ∧
+    (saveEffects.encode before inbox = .div → originalSave inbox before = .div) := by
+  unfold saveValidation at valid
+  unfold saveEffects originalSave SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.save_using
+  constructor
+  · intro err stopped
+    simp [valid, core.result.Result.Insts.CoreOpsTry.branch, stopped]
+  · intro stopped
+    simp [valid, core.result.Result.Insts.CoreOpsTry.branch, stopped]
+
+/-- On the fresh Unload branch the actual save ends before the state read and
+the successful recorded outcome whenever the encoder does not return. -/
+theorem record_stops (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (ns : Str) (intent : Intent) (context : Context) (inbox next : model.Inbox)
+    (afterLoad : StandardRecord Unit) (s e : Usize)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+    (admitted : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated
+      inbox intent context = .ok (.Ok ()))
+    (absent : inbox.find intent = .ok (.Ok none))
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (appended : inbox.record intent = .ok (.Ok (s, e), next)) :
+    let run := record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context
+    (∀ err, originalSave next afterLoad = .fail err → run = .fail err) ∧
+    (originalSave next afterLoad = .div → run = .div) := by
+  dsimp only
+  obtain ⟨source, capture, operation⟩ := op
+  unfold PublicLoaded.originalLoad JournalLoadExit.originalLoad JournalLoadExit.sourceIO at loaded
+  constructor <;> intros
+  all_goals
+    rename_i saved
+    change liftResult transferOutcome
+      (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+        (oldRetirement retirement) (oldTerminal terminal) (oldRenewal renewal) (oldUnload unload)
+        (oldGraphic graphic) (ScopeTransport.recordEffects reads) (holder begun ns) intent context) = _
+    unfold SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+    simp only [reads]
+    rw [loaded]
+    unfold originalSave reads at saved
+    simp [admitted, absent, appended, operation, saved, core.option.Option.ok_or,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.guard_destroy,
+      SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.attach_destroy]
+
+variable [FileHandle] (journal : controller.ControllerJournal) (intent : Intent) (context : Context)
+    (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (after : UnloadWorldBegin.Conn) (ns : Str)
+    (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+
+include started borrowed
+open SandproofStage1RequestRust.sandproof_controller_service.application.coordinator.lifecycle_intent in
+/-- The public coordinator cannot produce a revocation action when recording
+fails in the extraction semantics or diverges before commit. -/
+theorem journal_stops :
+    let recorded := record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context
+    let run := journalDecision journal intent context
+    (∀ err, recorded = .fail err → run = .fail err) ∧ (recorded = .div → run = .div) := by
+  dsimp only
+  have okBegin : controller.transaction.WorldTransaction.begin journal.journal.connection journal.committed_world =
+      .ok (.Ok (env.onOwner (SandproofUnloadWorldBegin.originalOwner begun)).val, after.base) := by
+    unfold controller.transaction.WorldTransaction.begin
+    rw [show (⟨journal.journal.connection, env.observation⟩ : UnloadWorldBegin.Conn) = initial journal from rfl, started]
+    simp
+  constructor <;> intros
+  all_goals
+    rename_i stopped
+    unfold journalDecision proof_public_journal ControllerJournal.record_lifecycle_intent
+    simp [okBegin, core.result.Result.Insts.CoreOpsTry.branch, borrowed]
+    change (do
+      let entry ← record_transaction_using retirement terminal renewal unload graphic
+        (CallerBranches.actualEffects codec) hook (holder begun ns) intent context ()
+      let returned ← (let (reply, c) := entry
+        Result.ok (reply, {journal with journal := ⟨after.base⟩}, c))
+      let action ← data_revocation intent.request.operation (toRequestRustResult returned.1)
+      .ok (returned, action)) = _
+    unfold record_transaction_using
+    rw [show (CallerBranches.actualEffects codec).RecordEffectsInst = reads from rfl, stopped]
+    simp
+
+open InboxAppend
+/-- The actual fresh Unload's newly appended inbox is the encoding input.
+A missing owner or an outer stop at this call reaches the coordinator prior to
+UPDATE, the commit hooks and revocation selection. -/
+theorem fresh_encode_stops (inbox : model.Inbox) (afterLoad : StandardRecord Unit) (s : Usize)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+    (config : InboxAdmission.ContextMatches inbox context) (valid : Validation.ValidEnvelope intent context)
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (selected : ExistingSelection inbox intent s)
+    (accept : existingDecision inbox (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent =
+      .append false) :
+    let run := journalDecision journal intent context
+    ∃ (next : model.Inbox) (e : Usize), inbox.record intent = .ok (.Ok (s, e), next) ∧
+      (saveValidation next = .ok (.Ok ()) →
+        (afterLoad.tx.parent.transaction = none → run = .fail .panic) ∧
+        ∀ raw, afterLoad.tx.parent.transaction = some raw →
+          (∀ err, env.encodeInbox () raw.conn.base next = .fail err → run = .fail err) ∧
+          (env.encodeInbox () raw.conn.base next = .div → run = .div)) := by
+  dsimp only
+  obtain ⟨next, e, appended, _⟩ := append_current inbox intent s selected accept
+  refine ⟨next, e, appended, ?_⟩
+  intro checked
+  have entry := record_stops begun ns intent context inbox next afterLoad s e loaded
+    ((InboxAdmission.accepts_iff inbox intent context).mpr ⟨config, valid⟩)
+    ((InboxLookup.find_none_iff inbox intent).mpr selected.1) op appended
+  have saved := save_stops afterLoad next checked
+  have outer := journal_stops journal intent context begun after ns started borrowed
+  constructor
+  · intro missing
+    exact outer.1 _ (entry.1 _ (saved.1 _ (missing_transaction afterLoad next missing).2))
+  · intro raw live
+    have enc := live_encode afterLoad next raw live
+    constructor
+    · intro err failure
+      exact outer.1 _ (entry.1 _ (saved.1 _ (by simpa [failure] using enc)))
+    · intro diverged
+      exact outer.2 (entry.2 (saved.2 (by simpa [diverged] using enc)))
+
+end
+end SandproofActualRecordRust.RecordCodecPorts
+
+#audit_controller_proof SandproofActualRecordRust.RecordCodecPorts.load_save_encode
+#audit_controller_proof SandproofActualRecordRust.RecordCodecPorts.live_encode
+#audit_controller_proof SandproofActualRecordRust.RecordCodecPorts.missing_transaction
+#audit_controller_proof SandproofActualRecordRust.RecordCodecPorts.save_stops
+#audit_controller_proof SandproofActualRecordRust.RecordCodecPorts.record_stops
+#audit_controller_proof SandproofActualRecordRust.RecordCodecPorts.journal_stops
+#audit_controller_proof SandproofActualRecordRust.RecordCodecPorts.fresh_encode_stops
