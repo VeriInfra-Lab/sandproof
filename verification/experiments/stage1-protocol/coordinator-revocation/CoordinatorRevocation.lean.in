@@ -1,0 +1,64 @@
+import SandboxModel.Lifecycle.Protocol.InboxState
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service sandproof_protocol.lifecycle.request
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+open sandproof_controller_service.application.coordinator.lifecycle_intent
+
+namespace SandboxModel.Stage1Protocol.CoordinatorRevocation
+
+/-- Only these two operation kinds end existing data access. -/
+def endsAccess : LifecycleOperation → Bool
+  | .Unload .. | .Destroy => true
+  | _ => false
+
+/-- The success contract uses the session's mapping and the selected entry's currency. -/
+def selected (op : LifecycleOperation) (current : Bool) (mapping : Option InternalLocalBinding) :
+    DataRevocation :=
+  match mapping with
+  | some binding => if endsAccess op && current then .Sandbox binding.sandbox else .None
+  | none => .None
+
+/-- For every successful journal value, the generated decision names exactly the selected sandbox. -/
+theorem success (op : LifecycleOperation) (state : LifecycleWorkState) :
+    data_revocation op (.Ok state) = .ok (selected op state.current state.local) := by
+  cases op <;> cases h : state.current <;> cases l : state.local <;>
+    simp [data_revocation, selected, endsAccess, h, l]
+
+/-- An unknown commit on an access-ending operation is the sole broadcast case. -/
+theorem failure (op : LifecycleOperation) (err : JournalError) :
+    data_revocation op (.Err err) = .ok (match err with
+      | .CommitUncertain _ => if endsAccess op then .All else .None
+      | _ => .None) := by
+  cases op <;> cases err <;> simp [data_revocation, endsAccess]
+
+/-- The producer and consumer share one actual generated work-state type. The incoming
+operation is passed separately, exactly as in the coordinator. -/
+theorem from_indexed_state (op : LifecycleOperation) (inbox : Inbox) (s e : Usize)
+    (hs : s.val < inbox.sessions.val.length)
+    (he : e.val < inbox.sessions.val[s.val].entries.val.length) :
+    (do let state ← inbox.state s e
+        data_revocation op (.Ok state)) = .ok (selected op
+      (decide (inbox.sessions.val[s.val].entries.val[e.val].intent.accepted_version =
+        inbox.sessions.val[s.val].current_version)) inbox.sessions.val[s.val].local) := by
+  rw [InboxState.state_contract inbox s e hs he]
+  simp [success, InboxState.workState]
+
+/-- A retained entry from another version selects no revocation, even with a local mapping. -/
+theorem other_version (op : LifecycleOperation) (inbox : Inbox) (s e : Usize)
+    (hs : s.val < inbox.sessions.val.length)
+    (he : e.val < inbox.sessions.val[s.val].entries.val.length)
+    (older : inbox.sessions.val[s.val].entries.val[e.val].intent.accepted_version ≠
+      inbox.sessions.val[s.val].current_version) :
+    (do let state ← inbox.state s e
+        data_revocation op (.Ok state)) = .ok .None := by
+  rw [from_indexed_state op inbox s e hs he]
+  cases h : inbox.sessions.val[s.val].local <;> simp [selected, older]
+
+end SandboxModel.Stage1Protocol.CoordinatorRevocation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.success
+#audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.failure
+#audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.from_indexed_state
+#audit_controller_proof SandboxModel.Stage1Protocol.CoordinatorRevocation.other_version
