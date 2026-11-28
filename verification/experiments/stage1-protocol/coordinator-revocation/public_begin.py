@@ -19,10 +19,11 @@ import journal_decision
 from wiring import require
 
 RECORD = Path('verification/aeneas/actual-record/SandproofActualRecord')
-PAGE = str(RECORD/'PublicUnload.lean')
-MODULE = 'SandproofActualRecord.PublicUnload'
+PAGE = str(RECORD/'PublicUnloadRefusal.lean')
+MODULE = 'SandproofActualRecord.PublicUnloadRefusal'
 PKG = codec.PACKAGE/'public-begin'
-NEW = ('PublicHandle', 'PublicCalls', 'PublicBegin', 'PublicReplay', 'PublicLoaded', 'PublicUnload')
+NEW = ('PublicHandle', 'PublicCalls', 'PublicBegin', 'PublicReplay', 'PublicLoaded', 'PublicUnload',
+       'PublicUnloadRefusal')
 AUDITS = {'SandproofActualRecordRust.PublicBegin.'+n for n in (
     'begin_refusal', 'world_refusal', 'preparation_refusal', 'sqlite_refusal', 'allocator_refusal',
     'changed_version_refusal', 'started_reply', 'first_record_read_refusal')}
@@ -32,6 +33,8 @@ AUDITS.update('SandproofActualRecordRust.PublicLoaded.'+n for n in (
     'replay_return', 'retained', 'conflict', 'load_refusal'))
 AUDITS.update('SandproofActualRecordRust.PublicUnload.'+n for n in (
     'append_current', 'record_after_save', 'commit_reply', 'fresh_unload', 'mapped_append_witness'))
+AUDITS.update('SandproofActualRecordRust.PublicUnloadRefusal.'+n for n in (
+    'refusal_kind', 'fresh_refusal', 'mapped_guard_order'))
 APPEND_WITNESSES = {
     str(journal_decision.PROTOCOL/(name+'.lean')): codec.AREA/'inbox-append'/(name+'.lean.in')
     for name in ('InboxAppendValues', 'InboxAppendSelections')

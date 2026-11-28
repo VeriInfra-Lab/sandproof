@@ -133,6 +133,16 @@ BEGIN 成功后，`started_reply` 连接该次返回的原 owner、实际命名�
 
 正常见证复用原追加组件的合法 Unload、已有运行会话及映射到沙箱 10 的记录。证明给出实际追加后的状态。保存与提交的普通返回仍由 V5 提供，网关信号的送达仍由数据通路验收。ning 的同一原应用回归先检查旧请求重放，再首次录入后继 Unload。[原生交接](https://github.com/VeriInfra-Lab/sandproof/issues/635#issuecomment-7227746008)
 
+### 首次 Unload 在追加前被拒绝
+
+从同一次 BEGIN、命名空间借用和真实 `load_using` 的完整返回开始，若信封与配置通过认证、整个收件箱没有该键，录入会选择首个同会话行。`fresh_refusal` 使用原 `record_existing_contract` 的有序判定。该判定拒绝 Unload 时，`Inbox::record` 返回原收件箱，`record_using` 交回载入结束时的完整 holder，公开 journal 返回相同的首错，协调器选择不撤销。这个分支只可能返回 `Conflict` 或 `UnsupportedInput`。证明无需提供保存、提交或通知的执行结果。[首错与协调器决定](public-begin/PublicUnloadRefusal.lean.in)
+
+`mapped_guard_order` 固定同一个合法 Unload、映射到沙箱 10 的同一个会话和不匹配的执行代。容量为 2、已有一条记录时，保留给 Destroy 的最后一个位置先触发 `Conflict`。容量为 8 时，到达操作形状检查并返回 `UnsupportedInput`。两次调用的撤销选择均为 `None`。真实锁和网关信号的效果沿用原应用验收分工。
+
+已经按 #1081 和 #1083 组装协调器登记的候选，主控可在引入本页及 `public_begin.py` 后应用[首错证明的增量登记](refusal-integration-candidate.patch)。其中有一页、三项新审计，默认清单补入该页并更新物化入口和实际登记器的引用。五个组件把登记器本身列为输入，分别是 `digest-uses`、`record-reply`、`standard-blob`、`standard-digest` 和 `standard-save-digest`。主控采用这一版计数时，须取得这五个读取器对新登记器的复验。若同批采用 `protocol-record` 的协调器输入调整，先处理该组件，再应用增量登记。[组装基线](https://github.com/VeriInfra-Lab/sandproof/issues/635#issuecomment-7231590235)
+
+后三个读取器有内部依赖。先验收 `standard-blob`，再处理读取其清单的 `standard-digest`，最后处理同时读取前两份清单的 `standard-save-digest`。
+
 ## 复验与登记候选
 
 在证明机干净候选上使用固定工具和现有重锁，给出新的私有输出目录。
