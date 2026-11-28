@@ -1,0 +1,230 @@
+import SandproofActualRecord.ValidationErrors
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+
+namespace SandboxModel.Stage1Protocol.InboxLoad
+open SandproofStage1RequestRust sandproof_controller_service
+open controller.lifecycle_inbox.codec controller.lifecycle_inbox.model
+open controller.lifecycle_inbox.native_retirement controller.lifecycle_inbox.renewal_confirmation
+open controller.lifecycle_inbox.unload_resolution capture
+noncomputable section
+set_option autoImplicit false
+
+/-- Successful observations up to validation of the decoded stored row. Every read
+takes the state returned by its predecessor. The final policy read is outside this prefix. -/
+inductive ReachesValidation {E : Type} (io : InboxLoadEffects E) (start : E)
+    (inbox : Inbox) (after : E) : Prop where
+  | row {afterExists afterFormat afterSource afterInternal afterCapacity afterLengths afterBytes afterDecode afterDigest : E}
+      {cap : controller.capacity.CapacityConfig} {length reserve : I64} {size budget : U64}
+      {bytes sha : alloc.vec.Vec U8} {digest : Array U8 32#usize}
+      (existsRead : io.query_bool start existsStatement = .ok (.Ok true, afterExists))
+      (formatRead : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+        .ok (.Ok LIFECYCLE_STORE_FORMAT_VERSION, afterFormat))
+      (sourceRead : io.query_bool afterFormat sourceStatement = .ok (.Ok true, afterSource))
+      (internalRead : io.query_bool afterSource internalStatement = .ok (.Ok false, afterInternal))
+      (capacityRead : InboxLoadConfig.capacityReadView io.checkpointconfigReadConfigEffectsInst afterInternal =
+        .ok (.Ok (some cap), afterCapacity))
+      (lengths : io.query_i64_pair afterCapacity lengthsStatement = .ok (.Ok (length, reserve), afterLengths))
+      (lengthNonneg : ¬ length < 0#i64) (unsignedLength : core.num.I64.cast_unsigned length = .ok size)
+      (reserveNonneg : ¬ reserve < 0#i64) (unsignedReserve : core.num.I64.cast_unsigned reserve = .ok budget)
+      (fits : ¬ budget < size) (withinCap : ¬ budget > cap.max_sql_value_bytes)
+      (withinLimit : ¬ budget > maximumBytes)
+      (stored : io.query_bytes_pair afterLengths bodyStatement = .ok (.Ok (bytes, sha), afterBytes))
+      (decoded : io.decode_inbox afterBytes (alloc.vec.Vec.deref bytes) = .ok (.Ok inbox, afterDecode))
+      (digested : io.digest afterDecode (alloc.vec.Vec.deref bytes) = .ok (digest, afterDigest))
+      (matchesDigest : digest.val = sha.val)
+      (encoded : io.encode_inbox afterDigest inbox = .ok (.Ok bytes, after))
+      (charged : LifecycleInboxConfig.required_bytes inbox.config = .ok budget) :
+      ReachesValidation io start inbox after
+
+/-- The actual loader reaches the original validator on exactly this decoded value.
+Success continues at the actual policy suffix. A normal error retains the codec's
+last state. An outer failure or divergence never evaluates that suffix. -/
+theorem load_at_validation {E R T N U B : Type} (saved : RetirementEncoding R)
+    (terminal : TerminalEncoding T) (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) {io : InboxLoadEffects E} {start after : E} {inbox : Inbox}
+    (reached : ReachesValidation io start inbox after) :
+    load_using saved terminal renewal unload graphic io start = (do
+      let validated ← Inbox.validate_using saved terminal renewal unload graphic inbox
+      match validated with
+      | .Ok _ => finishView io inbox after
+      | .Err err => .ok (.Err err, after)) := by
+  cases reached with
+  | row existsRead formatRead sourceRead internalRead capacityRead lengths lengthNonneg unsignedLength
+      reserveNonneg unsignedReserve fits withinCap withinLimit stored decoded digested matchesDigest encoded charged =>
+    rw [load_control_flow_refines]
+    simp only [loadView, attempt, existsRead, bind_tc_ok, uncurry_apply_pair, formatRead, sourceRead,
+      decide_true, bne_self_eq_false, Bool.false_eq_true, ↓reduceIte,
+      currentView, internalRead, capacityView, capacityRead, lengths, limitsView,
+      lengthNonneg, unsignedLength, reserveNonneg, unsignedReserve, fits, withinCap, withinLimit,
+      bodyView, stored, decoded, digestView, digested, matchesDigest, ne_eq, not_true_eq_false,
+      canonicalView, encoded, InboxLoadLibrary.vec_ne, decide_false, validatedView, charged]
+    have literal : ((24#64)#iscalar : I64).val = 24 := by decide
+    split <;> simp_all [LIFECYCLE_STORE_FORMAT_VERSION, IScalar.eq_equiv]
+    rfl
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad
+
+namespace SandboxModel.Stage1Protocol.InboxLoad.Values
+open SandproofStage1RequestRust sandproof_controller_service
+open controller.lifecycle_inbox.codec controller.lifecycle_inbox.model
+noncomputable section
+set_option autoImplicit false
+
+private abbrev readsFor (inbox : Inbox) :=
+  effects (.Ok inbox) bytes bytes storedDigest 286720#i64 InboxLoadConfig.LifecycleValues.normal
+
+def throughValidation (inbox : Inbox) : Trace :=
+  [.boolQuery existsStatement, .integerQuery versionStatement, .boolQuery sourceStatement,
+    .boolQuery internalStatement] ++ policyTrace ++ [.lengthQuery lengthsStatement,
+    .bodyQuery bodyStatement, .decodedInbox bytes.val, .digested bytes.val, .encodedInbox inbox]
+
+private theorem reaches_fixture (trace : Trace) (inbox : Inbox)
+    (config : inbox.config = InboxValidation.Values.normal.config) :
+    ReachesValidation (readsFor inbox) trace inbox (trace ++ throughValidation inbox) := by
+  let one := trace ++ [Event.boolQuery existsStatement]
+  let two := one ++ [.integerQuery versionStatement]
+  let three := two ++ [.boolQuery sourceStatement]
+  let four := three ++ [.boolQuery internalStatement]
+  let five := four ++ policyTrace
+  let six := five ++ [.lengthQuery lengthsStatement]
+  let seven := six ++ [.bodyQuery bodyStatement]
+  let eight := seven ++ [.decodedInbox bytes.val]
+  let nine := eight ++ [.digested bytes.val]
+  have existsDifferent : existsStatement ≠ internalStatement := by
+    unfold existsStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have sourceDifferent : sourceStatement ≠ internalStatement := by
+    unfold sourceStatement internalStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  have versionDifferent : versionStatement ≠ InboxLoadConfig.formatStatement := by
+    unfold versionStatement InboxLoadConfig.formatStatement
+    apply sql_literal_ne_of_lengths
+    decide
+  refine ReachesValidation.row (afterExists := one) (afterFormat := two) (afterSource := three)
+    (afterInternal := four) (afterCapacity := five) (afterLengths := six) (afterBytes := seven)
+    (afterDecode := eight) (afterDigest := nine) (cap := InboxLoadConfig.LifecycleValues.capacity)
+    (length := 2#i64) (reserve := 286720#i64) (size := 2#u64) (budget := 286720#u64)
+    (bytes := bytes) (sha := storedDigest) (digest := digest) ?_ ?_ ?_ ?_ (capacity_read four)
+    rfl (by decide) rfl (by decide) rfl (by decide) (by decide) (by decide) rfl rfl rfl rfl ?_ ?_
+  · simp [readsFor, effects, existsDifferent, one]
+  · simp [readsFor, effects, policyEffects, versionDifferent, two]
+  · simp [readsFor, effects, sourceDifferent, three]
+  · simp [readsFor, effects, four]
+  · simp [readsFor, effects, nine, eight, seven, six, five, four, three, two, one,
+      throughValidation, List.append_assoc]
+  · rw [config, budget_refines, normal_budget]
+
+/-- A single changed field of the decoded row removes all retention slots.
+Both rows reach validation. Only the accepted row performs the second policy read. -/
+theorem load_validation_witnesses (trace : Trace) :
+    let normal := InboxValidation.Values.normal
+    let missing := {normal with lanes := SessionShape.Values.vector [] (by decide)}
+    let run := fun inbox => load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic (readsFor inbox) trace
+    run normal = .ok (.Ok (some normal), (trace ++ throughValidation normal) ++ policyTrace) ∧
+    run missing = .ok (.Err .CorruptStore, trace ++ throughValidation missing) := by
+  dsimp only
+  let normal := InboxValidation.Values.normal
+  let missing := {normal with lanes := SessionShape.Values.vector [] (by decide)}
+  have valid := ConfigValidation.Values.normal_valid ConfigValidation.Values.fixture (by simp)
+  have normalCheck := InboxValidation.inbox_refines saved terminal (N := Unit) ⟨renewal⟩
+    (U := Unit) ⟨unload⟩ ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract
+    normal InboxValidation.Values.fixture_representable
+  have missingCheck := InboxValidation.inbox_refines saved terminal (N := Unit) ⟨renewal⟩
+    (U := Unit) ⟨unload⟩ ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract
+    missing InboxValidation.Values.fixture_representable
+  have laneCount : missing.lanes.val.length ≠ missing.config.max_sessions.val := by decide
+  have denied : InboxValidation.inboxView saved terminal renewal unload missing = .ok (.Err .CorruptStore) := by
+    simp only [InboxValidation.inboxView, show ConfigValidation.Valid missing.config from valid,
+      show ¬ missing.sessions.val.length > missing.config.max_sessions.val from by decide,
+      show ¬ missing.owners.val.length > missing.config.max_sessions.val from by decide,
+      not_true_eq_false, ↓reduceIte, InboxValidation.rejected]
+    rw [if_pos laneCount]
+  constructor
+  · rw [load_at_validation _ _ _ _ _ (reaches_fixture trace normal rfl), normalCheck,
+      InboxValidation.Values.normal_model_accepted]
+    simp only [bind_tc_ok]
+    exact final_policy_accepts normal (by decide) _
+  · rw [load_at_validation _ _ _ _ _ (reaches_fixture trace missing rfl), missingCheck, denied]
+    simp only [bind_tc_ok]
+    rfl
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Values
+
+namespace SandproofActualRecordRust.PublicLoadValidation
+open controller.lifecycle_inbox recording PublicBegin PublicReplay SourceFlowLink
+open SandproofParentCommitRust.ErrorTransport
+noncomputable section
+set_option autoImplicit false
+
+variable [PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+abbrev loadIO := (ScopeTransport.recordEffects reads).codecInboxLoadEffectsInst
+
+/-- An outer loader failure or divergence ends the original record_using
+before authentication, lookup, admission, save and commit. -/
+theorem record_load_stops (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (ns : Str) (intent : Intent) (context : Context) :
+    let run := record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context
+    (∀ err, PublicLoaded.originalLoad begun ns = .fail err → run = .fail err) ∧
+    (PublicLoaded.originalLoad begun ns = .div → run = .div) := by
+  dsimp only
+  constructor <;> intros
+  all_goals
+    rename_i stopped
+    unfold PublicLoaded.originalLoad JournalLoadExit.originalLoad JournalLoadExit.sourceIO at stopped
+    change liftResult transferOutcome
+      (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+        (oldRetirement retirement) (oldTerminal terminal) (oldRenewal renewal) (oldUnload unload)
+        (oldGraphic graphic) (ScopeTransport.recordEffects reads) (holder begun ns) intent context) = _
+    unfold SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+    simp [reads, stopped, liftResult]
+
+/-- Any incoming operation gets the original normal validation error and no
+revocation. Neither the later policy read nor any authentication or write
+observation is needed. Non-returning validation ends the same public call. -/
+theorem journal_load_validation [FileHandle] (journal : controller.ControllerJournal)
+    (intent : Intent) (context : Context) (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (after : UnloadWorldBegin.Conn) (ns : Str)
+    (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+    (inbox : model.Inbox) (afterValidation : StandardRecord Unit)
+    (reached : InboxLoad.ReachesValidation loadIO (holder begun ns) inbox afterValidation) :
+    let run := journalDecision journal intent context
+    let check := PublicUnload.saveValidation inbox
+    (∀ err, check = .ok (.Err err) → InboxValidation.ValidationError err ∧
+      run = .ok ((.Err (fromRequest err), {journal with journal := ⟨after.base⟩}, ()), .None)) ∧
+    (∀ err, check = .fail err → run = .fail err) ∧ (check = .div → run = .div) := by
+  dsimp only
+  have loaded := InboxLoad.load_at_validation (oldRetirement retirement) (oldTerminal terminal)
+    (oldRenewal renewal) (oldUnload unload) (oldGraphic graphic) reached
+  change PublicLoaded.originalLoad begun ns = (do
+    let checked ← PublicUnload.saveValidation inbox
+    match checked with
+    | .Ok _ => InboxLoad.finishView loadIO inbox afterValidation
+    | .Err err => .ok (.Err err, afterValidation)) at loaded
+  constructor
+  · intro err refused
+    have allowed := PublicSaveValidation.save_validation_error inbox err refused
+    refine ⟨allowed, ?_⟩
+    have result := PublicLoaded.load_refusal journal intent context begun after ns started borrowed
+      afterValidation (fromRequest err) (Or.inl (by simpa [refused] using loaded))
+    simp only [toRequest_fromRequest] at result
+    cases err <;> first | exact result | contradiction
+  · have record := record_load_stops begun ns intent context
+    have publicRun := RecordCodecPorts.journal_stops journal intent context begun after ns started borrowed
+    exact ⟨fun err failed => publicRun.1 err (record.1 err (by simpa [failed] using loaded)),
+      fun diverged => publicRun.2 (record.2 (by simpa [diverged] using loaded))⟩
+
+end
+end SandproofActualRecordRust.PublicLoadValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.load_at_validation
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Values.load_validation_witnesses
+#audit_controller_proof SandproofActualRecordRust.PublicLoadValidation.record_load_stops
+#audit_controller_proof SandproofActualRecordRust.PublicLoadValidation.journal_load_validation
