@@ -1,0 +1,52 @@
+diff --git a/verification/experiments/stage1-protocol/lifetime-row/inventory.json b/verification/experiments/stage1-protocol/lifetime-row/inventory.json
+index a94e0e6e..7cdaeed9 100644
+--- a/verification/experiments/stage1-protocol/lifetime-row/inventory.json
++++ b/verification/experiments/stage1-protocol/lifetime-row/inventory.json
+@@ -311,7 +311,7 @@
+   },
+   "providers": {
+     "docs/formal/dependencies.md": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec",
+-    "docs/proof-workflow.md": "3e37433d68e7dd50725685ffe860e1fb8cb9701170669081e39494ce06fdc1c8",
++    "docs/proof-workflow.md": "8136d25c4ff7f40acb932d3b4712233e689eafba7fdf1a003d2abfa622196157",
+     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
+     "verification/experiments/stage1-protocol/formal.py": "59878b437b00bf4e2e36c32b315482e87147cf4f9255bebffbcf4a726697cc6d",
+diff --git a/verification/experiments/stage1-protocol/pause-request/inventory.json b/verification/experiments/stage1-protocol/pause-request/inventory.json
+index dcd6aa57..56ebebdc 100644
+--- a/verification/experiments/stage1-protocol/pause-request/inventory.json
++++ b/verification/experiments/stage1-protocol/pause-request/inventory.json
+@@ -322,7 +322,7 @@
+   },
+   "providers": {
+     "docs/formal/dependencies.md": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec",
+-    "docs/proof-workflow.md": "3e37433d68e7dd50725685ffe860e1fb8cb9701170669081e39494ce06fdc1c8",
++    "docs/proof-workflow.md": "8136d25c4ff7f40acb932d3b4712233e689eafba7fdf1a003d2abfa622196157",
+     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
+     "verification/experiments/stage1-protocol/formal.py": "59878b437b00bf4e2e36c32b315482e87147cf4f9255bebffbcf4a726697cc6d",
+diff --git a/verification/experiments/stage1-protocol/source-origin/inventory.json b/verification/experiments/stage1-protocol/source-origin/inventory.json
+index f9b4869d..768f0125 100644
+--- a/verification/experiments/stage1-protocol/source-origin/inventory.json
++++ b/verification/experiments/stage1-protocol/source-origin/inventory.json
+@@ -326,7 +326,7 @@
+     "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef",
+     "SandboxModel/ProofAuditCommand.lean": "b09359a4a61cf47f44cba861e5cb493046c3abe56206c62f3c8e5165f1992188",
+     "docs/formal/dependencies.md": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec",
+-    "docs/proof-workflow.md": "3e37433d68e7dd50725685ffe860e1fb8cb9701170669081e39494ce06fdc1c8",
++    "docs/proof-workflow.md": "8136d25c4ff7f40acb932d3b4712233e689eafba7fdf1a003d2abfa622196157",
+     "tools/lean_session.py": "346adcc6a2c78d57fbbbc372838b1438e9692455050e3a15b1e0b77973b3fdc3",
+     "tools/proof_batch.py": "e8c5cab7e5c13ce7eef157ff23c37b761a90ad1f49a8bc43da2ea482cf36887c",
+     "tools/proof_services.py": "3d2ba88bc2d008f1d788c86fd52dc044e2b129d410c873cecc727639d6273892",
+diff --git a/verification/experiments/stage1-protocol/source-question/inventory.json b/verification/experiments/stage1-protocol/source-question/inventory.json
+index 20552f58..0db3d60b 100644
+--- a/verification/experiments/stage1-protocol/source-question/inventory.json
++++ b/verification/experiments/stage1-protocol/source-question/inventory.json
+@@ -318,7 +318,7 @@
+   },
+   "providers": {
+     "docs/formal/dependencies.md": "409b7c1a758122b7562068d2a74e3dac2fb1aa216373cd80f9cbb9836d11eaec",
+-    "docs/proof-workflow.md": "3e37433d68e7dd50725685ffe860e1fb8cb9701170669081e39494ce06fdc1c8",
++    "docs/proof-workflow.md": "8136d25c4ff7f40acb932d3b4712233e689eafba7fdf1a003d2abfa622196157",
+     "verification/foundations-environment.json": "0495674b657f5564d45a5fffed0ba4cce3b436728e89681569050e5991a3508c",
+     "verification/experiments/stage1-protocol/formal_runtime.py": "3bdac2c82f25392752199c467935e95026c1d34214f9e10adb3b5afceb544bbf",
+     "verification/experiments/stage1-protocol/formal.py": "59878b437b00bf4e2e36c32b315482e87147cf4f9255bebffbcf4a726697cc6d",

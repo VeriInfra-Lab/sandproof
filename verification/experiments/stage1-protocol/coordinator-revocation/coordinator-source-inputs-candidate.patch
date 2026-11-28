@@ -1,0 +1,52 @@
+diff --git a/verification/experiments/stage1-protocol/lifetime-row/inventory.json b/verification/experiments/stage1-protocol/lifetime-row/inventory.json
+index 7cdaeed9b0c80ba1d9dac7d161fac2dd2cfe0ba7..88dbe02e3d5262d5858bd7f84cb87a7329d2a7ad 100644
+--- a/verification/experiments/stage1-protocol/lifetime-row/inventory.json
++++ b/verification/experiments/stage1-protocol/lifetime-row/inventory.json
+@@ -99,7 +99,7 @@
+     "controller-service/src/application/coordinator/lifecycle_unload.rs": "43637bd1f494d159d527a9fa91ad3e581fdaf892038eb6577ef775410cc2f89f",
+     "controller-service/src/application/coordinator/lifecycle_continued_exit.rs": "8bd1986a603a971b78a057385cf28f6f27e4ed2a36c12016c7c1fe58faa51e26",
+     "controller-service/src/application/coordinator/physical_storage.rs": "c151aeb9fa668b54bc4e40390ae448178c8612be3d5894a4c3ae40aee173e1d6",
+-    "controller-service/src/application/coordinator/lifecycle_intent.rs": "2277e296f74dfaa340423bdc5b62427e32f42e2a6d354045b6227e36c832d5dd",
++    "controller-service/src/application/coordinator/lifecycle_intent.rs": "ff56d460fa987e09463783986742de6be6773ee75a05c88291c96afa0a2cd897",
+     "controller-service/src/application/coordinator/template_commands.rs": "db7288cc67fffbeba3f15f0d286cc3436c244ffc5b7cc6a39824e1ffd0dab901",
+     "controller-service/src/application/coordinator/data_access.rs": "ecd49e57f260934b9e03a00a0de610df42714e27d1d1a4ac42ce782dcb6913e1",
+     "controller-service/src/application/coordinator/recovery.rs": "ce6878321cfe02f614dcf2f1e3edb48b8dcdff8f431fca357a439a64a26ff0fe",
+diff --git a/verification/experiments/stage1-protocol/pause-request/inventory.json b/verification/experiments/stage1-protocol/pause-request/inventory.json
+index 56ebebdcd1c686438997da9e25e8e1fd847cce2f..8c6672485fc3e8554408d8e4c3729c3664746955 100644
+--- a/verification/experiments/stage1-protocol/pause-request/inventory.json
++++ b/verification/experiments/stage1-protocol/pause-request/inventory.json
+@@ -111,7 +111,7 @@
+     "controller-service/src/application/coordinator/lifecycle_unload.rs": "43637bd1f494d159d527a9fa91ad3e581fdaf892038eb6577ef775410cc2f89f",
+     "controller-service/src/application/coordinator/lifecycle_continued_exit.rs": "8bd1986a603a971b78a057385cf28f6f27e4ed2a36c12016c7c1fe58faa51e26",
+     "controller-service/src/application/coordinator/physical_storage.rs": "c151aeb9fa668b54bc4e40390ae448178c8612be3d5894a4c3ae40aee173e1d6",
+-    "controller-service/src/application/coordinator/lifecycle_intent.rs": "2277e296f74dfaa340423bdc5b62427e32f42e2a6d354045b6227e36c832d5dd",
++    "controller-service/src/application/coordinator/lifecycle_intent.rs": "ff56d460fa987e09463783986742de6be6773ee75a05c88291c96afa0a2cd897",
+     "controller-service/src/application/coordinator/template_commands.rs": "db7288cc67fffbeba3f15f0d286cc3436c244ffc5b7cc6a39824e1ffd0dab901",
+     "controller-service/src/application/coordinator/data_access.rs": "ecd49e57f260934b9e03a00a0de610df42714e27d1d1a4ac42ce782dcb6913e1",
+     "controller-service/src/application/coordinator/recovery.rs": "ce6878321cfe02f614dcf2f1e3edb48b8dcdff8f431fca357a439a64a26ff0fe",
+diff --git a/verification/experiments/stage1-protocol/source-origin/inventory.json b/verification/experiments/stage1-protocol/source-origin/inventory.json
+index 768f01252089901a9d4b1a91d0fdee451b55be4e..e8b356e02fb8f9f40924df8bbab6a59f535f12c6 100644
+--- a/verification/experiments/stage1-protocol/source-origin/inventory.json
++++ b/verification/experiments/stage1-protocol/source-origin/inventory.json
+@@ -111,7 +111,7 @@
+     "controller-service/src/application/coordinator/lifecycle_unload.rs": "43637bd1f494d159d527a9fa91ad3e581fdaf892038eb6577ef775410cc2f89f",
+     "controller-service/src/application/coordinator/lifecycle_continued_exit.rs": "8bd1986a603a971b78a057385cf28f6f27e4ed2a36c12016c7c1fe58faa51e26",
+     "controller-service/src/application/coordinator/physical_storage.rs": "c151aeb9fa668b54bc4e40390ae448178c8612be3d5894a4c3ae40aee173e1d6",
+-    "controller-service/src/application/coordinator/lifecycle_intent.rs": "2277e296f74dfaa340423bdc5b62427e32f42e2a6d354045b6227e36c832d5dd",
++    "controller-service/src/application/coordinator/lifecycle_intent.rs": "ff56d460fa987e09463783986742de6be6773ee75a05c88291c96afa0a2cd897",
+     "controller-service/src/application/coordinator/template_commands.rs": "db7288cc67fffbeba3f15f0d286cc3436c244ffc5b7cc6a39824e1ffd0dab901",
+     "controller-service/src/application/coordinator/data_access.rs": "ecd49e57f260934b9e03a00a0de610df42714e27d1d1a4ac42ce782dcb6913e1",
+     "controller-service/src/application/coordinator/recovery.rs": "ce6878321cfe02f614dcf2f1e3edb48b8dcdff8f431fca357a439a64a26ff0fe",
+diff --git a/verification/experiments/stage1-protocol/source-question/inventory.json b/verification/experiments/stage1-protocol/source-question/inventory.json
+index 0db3d60ba9261f0a07f6f54955059a2d578d3df7..f6b02b2710502b13a92a0c1e2a3d1a852aae7101 100644
+--- a/verification/experiments/stage1-protocol/source-question/inventory.json
++++ b/verification/experiments/stage1-protocol/source-question/inventory.json
+@@ -107,7 +107,7 @@
+     "controller-service/src/application/coordinator/lifecycle_unload.rs": "43637bd1f494d159d527a9fa91ad3e581fdaf892038eb6577ef775410cc2f89f",
+     "controller-service/src/application/coordinator/lifecycle_continued_exit.rs": "8bd1986a603a971b78a057385cf28f6f27e4ed2a36c12016c7c1fe58faa51e26",
+     "controller-service/src/application/coordinator/physical_storage.rs": "c151aeb9fa668b54bc4e40390ae448178c8612be3d5894a4c3ae40aee173e1d6",
+-    "controller-service/src/application/coordinator/lifecycle_intent.rs": "2277e296f74dfaa340423bdc5b62427e32f42e2a6d354045b6227e36c832d5dd",
++    "controller-service/src/application/coordinator/lifecycle_intent.rs": "ff56d460fa987e09463783986742de6be6773ee75a05c88291c96afa0a2cd897",
+     "controller-service/src/application/coordinator/template_commands.rs": "db7288cc67fffbeba3f15f0d286cc3436c244ffc5b7cc6a39824e1ffd0dab901",
+     "controller-service/src/application/coordinator/data_access.rs": "ecd49e57f260934b9e03a00a0de610df42714e27d1d1a4ac42ce782dcb6913e1",
+     "controller-service/src/application/coordinator/recovery.rs": "ce6878321cfe02f614dcf2f1e3edb48b8dcdff8f431fca357a439a64a26ff0fe",
