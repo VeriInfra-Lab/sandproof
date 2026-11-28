@@ -141,6 +141,14 @@ BEGIN 成功后，`started_reply` 连接该次返回的原 owner、实际命名�
 
 主控可先按 [#1088 的公开组装步骤](https://github.com/VeriInfra-Lab/sandproof/pull/1088) 采用前序登记，再随本页与 `public_begin.py` 应用[本次增量](sqlite-outcome-integration-candidate.patch)。这会给原页面增加两项审计。五个把登记器列为输入的组件需要在选定的最终提交上复验。
 
+### 保存后提交未正常返回
+
+`recorded_commit_dispatch` 从同一次真实录入返回的 `Recorded` 工作状态和完整 holder 开始。实际事务提交消费这个 holder 的父事务。提交正常返回时，公开 journal 保留其错误或工作状态，协调器把同一个结果和原操作交给 `data_revocation`。[证明与审计](public-begin/PublicUnload.lean.in)
+
+`fresh_sqlite_dispatch` 将上述连接用于已认证、原库无键、现有会话允许追加且已成功保存的首次 Unload。在 V5 的四项校验通过、提交状态单元可借用的条件下，底层 SQLite 调用正常报错会保留错误载荷并选择广播。成功还要求候选状态单元可借用，随后有本地映射就选择本会话的 sandbox，没有映射就选择 `None`。两条决定都可从当次返回推出。若底层调用在 Aeneas 语义中返回 `.fail err` 或 `.div`，公开 journal 与撤销选择的组合分别返回同一错误或发散，调用方取不到撤销动作。该分支无需候选单元的借用条件。原提交状态单元的物理读回继续使用 `fresh_sqlite_outcome` 的 V5 观察前提，实际数据库持久性和网关送达由各提供方验收。
+
+主控在已采用 #1090 登记的组合上使用[提交返回的增量登记](commit-dispatch-integration-candidate.patch)。同一页新增两项审计。ning 在最终共享提交沿用父事务、收件与应用回归的原生回执。
+
 ### 首次 Unload 在追加前被拒绝
 
 从同一次 BEGIN、命名空间借用和真实 `load_using` 的完整返回开始，若信封与配置通过认证、整个收件箱没有该键且存在同一会话，录入会选择首个同会话行。`fresh_refusal` 使用原 `record_existing_contract` 的有序判定。该判定拒绝 Unload 时，`Inbox::record` 返回原收件箱，`record_using` 交回载入结束时的完整 holder，公开 journal 返回相同的首错，协调器选择不撤销。这个分支只可能返回 `Conflict` 或 `UnsupportedInput`。证明无需提供保存、提交或通知的执行结果。[首错与协调器决定](public-begin/PublicUnloadRefusal.lean.in)
