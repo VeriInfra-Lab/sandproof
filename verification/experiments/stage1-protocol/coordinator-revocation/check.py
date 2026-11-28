@@ -14,7 +14,7 @@ import tarfile
 
 import codec_reads
 import codec_receipt
-from parent_checkpoint import BASE, CALLER, parent_dispatch
+from parent_checkpoint import BASE, CALLER, parent_dispatch, parent_sources
 from journal_entry import CODEC, CONTROLLER, DATABASE, INBOX, PROVIDER, RECORD, RECORDING, TRANSACTION, check_entry, translated_entry
 from journal_entry_regressions import check_entry_rejections
 from journal_hook import check_joint_hook, check_journal_hook
@@ -107,9 +107,9 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
     view = load(source/AREA/'serde-binding/binding.py').Original(raw)
     if not joint:
         dispatch = parent_dispatch(view, refactored=refactored)
-        report = {'ir': sha(ir), 'caller': sha(source/CALLER), **dispatch,
-                  'journal_entry': check_entry(view), 'journal_hook': check_journal_hook(view, source),
-                  'coordinator': sha(source/'controller-service/src/application/coordinator.rs')}
+        sources = parent_sources(view, lambda path: (source/path).read_bytes())
+        report = {'ir': sha(ir), **sources, **dispatch,
+                  'journal_entry': check_entry(view), 'journal_hook': check_journal_hook(view, source)}
         if refactored:
             report['rejected_hook_metadata'] = check_parent_rejections(view, source)
             report['rejected_entry_metadata'] = check_entry_rejections(view)
