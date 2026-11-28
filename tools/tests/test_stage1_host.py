@@ -1,10 +1,12 @@
 """Check the Stage1 host's input admission without running a compiler."""
 from contextlib import chdir
+import fcntl
 import hashlib
 import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -13,6 +15,41 @@ from tools import stage1_host
 
 
 class ManagedHostBuildTests(unittest.TestCase):
+    def test_promotion_entrance_transfers_one_locked_fd_to_both_phases(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            lock = Path(tmp).resolve()/'shared.lock'
+            lock.touch(mode=0o600)
+            args = ['--candidate', 'approved.json', '--output', 'new-output']
+            env = dict(SANDPROOF_LOCK_FILE=str(lock), SANDPROOF_PROOF_HEAVY_LOCK=str(lock))
+            probe = """from tools.ci_promotion_acceptance import operator_lock
+import os
+with operator_lock(os.environ, 'SANDPROOF_PROOF_HEAVY_LOCK', 'SANDPROOF_PROOF_HEAVY_LOCK_FD') as native:
+    with operator_lock(os.environ, 'SANDPROOF_LOCK_FILE', 'SANDPROOF_LOCK_FD') as formal:
+        assert native == formal and os.path.samestat(os.fstat(native), os.stat(os.environ['SANDPROOF_LOCK_FILE']))
+"""
+
+            def observe_exec(executable, argv, child_env):
+                self.assertEqual(argv[1:], ['-B', '-m', 'tools.ci_promotion_acceptance', 'run', *args])
+                fd = int(child_env['SANDPROOF_LOCK_FD'])
+                self.assertTrue(os.get_inheritable(fd))
+                # Exercise actual exec inheritance and the original gate in a fresh interpreter.
+                subprocess.run([executable, '-B', '-c', probe], env=child_env, close_fds=False, check=True,
+                               cwd=Path(__file__).resolve().parents[2])
+                with lock.open('r+') as other:
+                    with self.assertRaises(BlockingIOError):
+                        fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return 0
+
+            with (patch.dict(os.environ, env), patch.object(stage1_host, 'cgroup') as group,
+                  patch.object(sys, 'argv', ['stage1_host.py', 'promotion', *args]),
+                  patch.object(os, 'execve', side_effect=observe_exec) as executable):
+                self.assertEqual(stage1_host.main(), 0)
+                group.assert_called_once_with('promotion')
+                with lock.open('r+') as other:
+                    fcntl.flock(other, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    self.assertEqual(stage1_host.main(), 75)
+                executable.assert_called_once()
+
     def test_managed_native_approval_requires_completed_retirement(self):
         with tempfile.TemporaryDirectory() as tmp:
             native = Path(tmp).resolve()

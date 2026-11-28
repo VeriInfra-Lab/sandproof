@@ -376,7 +376,27 @@ def execute(mode, commit, xfs, run, lock):
         return (128 - status if status < 0 else status) or int(bool(remaining or events["oom_kill"] or cleanup_error))
 
 
+def run_promotion(arguments):
+    """Give both phases the same open file description in the managed unit."""
+    cgroup("promotion")
+    lock = private_path(Path(os.environ["SANDPROOF_LOCK_FILE"]))
+    if not private_path(Path(os.environ["SANDPROOF_PROOF_HEAVY_LOCK"])).samefile(lock):
+        raise ValueError("host promotion requires one shared native and formal lock")
+    with lock.open("r+") as lease:
+        fd = lease.fileno()
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return 75
+        os.set_inheritable(fd, True)
+        env = dict(os.environ, SANDPROOF_LOCK_FD=str(fd), SANDPROOF_PROOF_HEAVY_LOCK_FD=str(fd))
+        return os.execve(sys.executable, [sys.executable, "-B", "-m", "tools.ci_promotion_acceptance",
+                                          "run", *arguments], env)
+
+
 def main():
+    if sys.argv[1:2] == ["promotion"]:
+        return run_promotion(sys.argv[2:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("mode", choices=("preflight", "native", "formal", "formal-worker", "formal-closeout"))
     parser.add_argument("commit")

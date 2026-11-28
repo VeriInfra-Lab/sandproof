@@ -110,7 +110,7 @@ for name in "${preserve[@]}"; do
 done
 command=(bash scripts/python-entry.sh tools/stage1_host.py "$mode" "$expected" "$xfs" "$run" "$native/formal.lock")
 if [[ $mode == promotion ]]; then
-    command=(bash scripts/python-entry.sh -m tools.ci_promotion_acceptance run
+    command=(bash scripts/python-entry.sh tools/stage1_host.py promotion
              --checkout "$PWD" --candidate "$candidate" --output "$run")
     if [[ $# == 6 ]]; then
         prior=$(physical_evidence "$6")
