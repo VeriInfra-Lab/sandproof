@@ -34,7 +34,7 @@ AUDITS.update('SandproofActualRecordRust.PublicLoaded.'+n for n in (
 AUDITS.update('SandproofActualRecordRust.PublicUnload.'+n for n in (
     'append_current', 'record_after_save', 'commit_reply', 'fresh_unload', 'mapped_append_witness'))
 AUDITS.update('SandproofActualRecordRust.PublicUnloadRefusal.'+n for n in (
-    'refusal_kind', 'fresh_refusal', 'mapped_guard_order'))
+    'refusal_kind', 'fresh_refusal', 'mapped_guard_order', 'missing_session', 'missing_session_guard_order'))
 APPEND_WITNESSES = {
     str(journal_decision.PROTOCOL/(name+'.lean')): codec.AREA/'inbox-append'/(name+'.lean.in')
     for name in ('InboxAppendValues', 'InboxAppendSelections')

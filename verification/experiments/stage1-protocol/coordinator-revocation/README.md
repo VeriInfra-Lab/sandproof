@@ -135,11 +135,13 @@ BEGIN 成功后，`started_reply` 连接该次返回的原 owner、实际命名�
 
 ### 首次 Unload 在追加前被拒绝
 
-从同一次 BEGIN、命名空间借用和真实 `load_using` 的完整返回开始，若信封与配置通过认证、整个收件箱没有该键，录入会选择首个同会话行。`fresh_refusal` 使用原 `record_existing_contract` 的有序判定。该判定拒绝 Unload 时，`Inbox::record` 返回原收件箱，`record_using` 交回载入结束时的完整 holder，公开 journal 返回相同的首错，协调器选择不撤销。这个分支只可能返回 `Conflict` 或 `UnsupportedInput`。证明无需提供保存、提交或通知的执行结果。[首错与协调器决定](public-begin/PublicUnloadRefusal.lean.in)
+从同一次 BEGIN、命名空间借用和真实 `load_using` 的完整返回开始，若信封与配置通过认证、整个收件箱没有该键且存在同一会话，录入会选择首个同会话行。`fresh_refusal` 使用原 `record_existing_contract` 的有序判定。该判定拒绝 Unload 时，`Inbox::record` 返回原收件箱，`record_using` 交回载入结束时的完整 holder，公开 journal 返回相同的首错，协调器选择不撤销。这个分支只可能返回 `Conflict` 或 `UnsupportedInput`。证明无需提供保存、提交或通知的执行结果。[首错与协调器决定](public-begin/PublicUnloadRefusal.lean.in)
 
 `mapped_guard_order` 固定同一个合法 Unload、映射到沙箱 10 的同一个会话和不匹配的执行代。容量为 2、已有一条记录时，保留给 Destroy 的最后一个位置先触发 `Conflict`。容量为 8 时，到达操作形状检查并返回 `UnsupportedInput`。两次调用的撤销选择均为 `None`。真实锁和网关信号的效果沿用原应用验收分工。
 
-已经按 #1081 和 #1083 组装协调器登记的候选，主控可在引入本页及 `public_begin.py` 后应用[首错证明的增量登记](refusal-integration-candidate.patch)。其中有一页、三项新审计，默认清单补入该页并更新物化入口和实际登记器的引用。五个组件把登记器本身列为输入，分别是 `digest-uses`、`record-reply`、`standard-blob`、`standard-digest` 和 `standard-save-digest`。主控采用这一版计数时，须取得这五个读取器对新登记器的复验。若同批采用 `protocol-record` 的协调器输入调整，先处理该组件，再应用增量登记。[组装基线](https://github.com/VeriInfra-Lab/sandproof/issues/635#issuecomment-7231590235)
+若整个收件箱既没有该完整键，也没有请求指定的会话，`missing_session` 复用 `record_new_session_contract`。按原 Rust 的 `freshDecision` 顺序，它必然拒绝 Unload，并把原错误带回公开 journal。收件箱和载入结束时的 holder 均保留，撤销选择是 `None`。`missing_session_guard_order` 固定一个合法 Unload，分别改变载入值的窗口和占用情况。窗口不匹配总是先报 `Conflict`，即使槽位已被另一会话占用。窗口匹配后，已占用报 `MaintenanceCapacity`，可用槽位才到达操作检查并报 `UnsupportedInput`。该结论从本次载入的返回值开始，物理收件箱及网关观察仍由提供方验收。[查无会话的实际录入和四个见证](public-begin/PublicUnloadRefusal.lean.in)
+
+已经按 #1081 和 #1083 组装协调器登记的候选，主控可在引入本页及 `public_begin.py` 后应用[首错证明的增量登记](refusal-integration-candidate.patch)，一次纳入一页、五项审计。已经采用 #1087 的组合使用[从 #1087 补入两项审计的增量登记](missing-session-integration-candidate.patch)。五个组件把登记器本身列为输入，分别是 `digest-uses`、`record-reply`、`standard-blob`、`standard-digest` 和 `standard-save-digest`。主控采用这一版计数时，须取得这五个读取器对新登记器的复验。若同批采用 `protocol-record` 的协调器输入调整，先处理该组件，再应用增量登记。[组装基线](https://github.com/VeriInfra-Lab/sandproof/issues/635#issuecomment-7231590235)
 
 后三个读取器有内部依赖。先验收 `standard-blob`，再处理读取其清单的 `standard-digest`，最后处理同时读取前两份清单的 `standard-save-digest`。
 
