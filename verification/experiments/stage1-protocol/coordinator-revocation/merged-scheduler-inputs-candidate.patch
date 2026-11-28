@@ -1,0 +1,83 @@
+diff --git a/verification/experiments/stage1-protocol/registered.py b/verification/experiments/stage1-protocol/registered.py
+index 5c8249e0..0de1c42e 100644
+--- a/verification/experiments/stage1-protocol/registered.py
++++ b/verification/experiments/stage1-protocol/registered.py
+@@ -970,9 +970,6 @@ def formal_plan(output, *, root=ROOT, profile='full'):
+         _append_create_jobs(jobs, output, root, profile,
+                             names=('create-attachment-flow',))
+         return CONVERGENCE.append_extra_jobs(jobs, output, root, profile=profile)
+-    add('coordinator-revocation', HERE/'coordinator-revocation/check.py',
+-        ['--tools', root/'.tools', '--packages', root/'.lake/packages'],
+-        native=('stage1-inbox-lookup', 'stage1-inbox-state', 'stage1-create-transaction-link'), cases=('correct',))
+     for prop, wrong in [('replay', 'key-only-replay'), ('validation', 'same-incarnation'),
+                         ('envelope', 'session-only-envelope')]:
+         add('replay-'+prop, HERE/'replay_formal.py', ['--property', prop], cases=('correct', wrong))
+@@ -1029,7 +1026,11 @@ def formal_plan(output, *, root=ROOT, profile='full'):
+         native=(UNLOAD.PARENT_LABEL,), cases=UNLOAD.PARENT_CASES)
+     CONVERGENCE.append_jobs(jobs, output, root, profile=profile)
+     _append_create_jobs(jobs, output, root, profile)
+-    return CONVERGENCE.append_extra_jobs(jobs, output, root, profile=profile)
++    CONVERGENCE.append_extra_jobs(jobs, output, root, profile=profile)
++    add('coordinator-revocation', HERE/'coordinator-revocation/check.py',
++        ['--tools', root/'.tools', '--packages', root/'.lake/packages'],
++        native=('stage1-inbox-lookup', 'stage1-inbox-state', 'stage1-create-transaction-link'), cases=('correct',))
++    return jobs
+
+
+ def _actuals(result):
+diff --git a/verification/experiments/stage1-protocol/test_registered.py b/verification/experiments/stage1-protocol/test_registered.py
+index 07b5a57e..440d25aa 100644
+--- a/verification/experiments/stage1-protocol/test_registered.py
++++ b/verification/experiments/stage1-protocol/test_registered.py
+@@ -782,9 +782,14 @@ class Registration(OriginalReadPlanFixture):
+     def test_full_cpu_budget_preserves_required_four_cpu_drivers_and_exhausts_sixty_four_slots(self):
+         plan = registered.formal_plan(Path('/unused'))
+         self.assertEqual([registered._formal_cpu_width(job) for job in plan].count(1), 126)
+-        self.assertEqual([registered._formal_cpu_width(job) for job in plan].count(4), 42)
++        self.assertEqual([registered._formal_cpu_width(job) for job in plan].count(4), 43)
+         four = [job for job in plan if registered.requires_formal_cpu_slot(job)]
+-        self.assertEqual(len(four), 42)
++        self.assertEqual(len(four), 43)
++        coordinator = plan[-1]
++        self.assertEqual(coordinator['name'], 'coordinator-revocation')
++        self.assertIsNone(registered._take_formal_slot([coordinator], [60, 61, 62], budgeted=True))
++        self.assertEqual(registered._take_formal_slot([coordinator], [60, 61, 62, 63], budgeted=True),
++                         (0, (60, 61, 62, 63)))
+         self.assertTrue(all(registered._formal_cpu_width(job) == 4 for job in four))
+         unknown = dict(name='untested', driver='unreviewed.py')
+         self.assertEqual(registered._formal_cpu_width(unknown), 4)
+diff --git a/verification/stage1-protocol-inputs.sha256 b/verification/stage1-protocol-inputs.sha256
+index 4a28eb08..ee6ca93e 100644
+--- a/verification/stage1-protocol-inputs.sha256
++++ b/verification/stage1-protocol-inputs.sha256
+@@ -902,7 +902,7 @@ b99e41ddf8777effe8089861034ee4d2eaf4f1b843cdb83b2b183e879a11abcf  verification/e
+ 71424a9b885ae1c5bae01fe3b1589f1f4ff7015b9abc51e4bffc30a1dd59ff08  verification/experiments/stage1-protocol/parser-binding/tests.rs
+ 6e81bc457ab04091eb1ee39b388ef93030ca924d6b01017b8f319e326e872d30  verification/experiments/stage1-protocol/protocol-record/evidence.py
+ 1f90402c3990cc7f5f16894f0ce94cea67412be4d82e3c0f5a8f37ed2612746a  verification/experiments/stage1-protocol/protocol-record/inventory.json
+-0994ac7f02a522a58365c772e82675bbf94e0a0eabb0d901e3c39574898d6234  verification/experiments/stage1-protocol/registered.py
++d376dd62c9ed87f4eb6eea706198e2ae2e6a556bb6df8d1f65bdd1499890d1e0  verification/experiments/stage1-protocol/registered.py
+ 397e631948d00d712937def8c4fcb275e2efda42adb1ffbe50d319803978fdd5  verification/experiments/stage1-protocol/registry_identity.py
+ a5307afee147cf203d295ba45aeb8d2f67f27329b5a656ea143ede533979be55  verification/experiments/stage1-protocol/renewal-confirmation/NegativeRenewalDeadline.lean.in
+ fb0123edb755e968618caa5fa8b898cfec7664b068ff57cad7adae8ed60c2fd9  verification/experiments/stage1-protocol/renewal-confirmation/NegativeRenewalFirst.lean.in
+@@ -1037,7 +1037,7 @@ e3eb35a40d563a8c3037582cb8482d4efa4477995b74655b53907771681656fe  verification/e
+ 46e1c1b071aaf03f5834cc3d03dd3e31d381b3d745510d26f8c3eef6e4ca5fa0  verification/experiments/stage1-protocol/terminal-binding/prepare.py
+ 4eb94c981d8bd6ec3cee2ea082195f0674c3310f09e4423e3b2f47c8a5ff0115  verification/experiments/stage1-protocol/terminal-binding/roots.rs.in
+ d17fe50c422ca1b425de04b2b3c5d2c4ece1e709db8c091bc19ad09d3529002b  verification/experiments/stage1-protocol/test_manifest_validation_formal.py
+-1016aba77a9008bc26f2845398735c1087c685f6dc81ed7361f22560a82e445f  verification/experiments/stage1-protocol/test_registered.py
++2ef80935b8a3071f2efb98d46fe9095c6318f3ae744a774a7da5fde91da3196d  verification/experiments/stage1-protocol/test_registered.py
+ efd023b98a9b795b4fa2d6a268f314917f376a6b39cd57d1802e81b1993973c9  verification/experiments/stage1-protocol/test_replay_formal.py
+ 63954d49c5951541c853e6bb87d8a280652076484a4e7164363537fe3b607782  verification/experiments/stage1-protocol/test_source_views.py
+ 503754f5a4eba7b399076d00887e51596eacd9c4a32b85e34fe0cf76d0259ff7  verification/experiments/stage1-protocol/unload-current-captures.json
+diff --git a/verification/v3-transaction-source-inputs.sha256 b/verification/v3-transaction-source-inputs.sha256
+index 62bdf80c..563675b7 100644
+--- a/verification/v3-transaction-source-inputs.sha256
++++ b/verification/v3-transaction-source-inputs.sha256
+@@ -345,7 +345,7 @@ fe63edcb5074ba6e0c9715477c5e2481c7480cdff2f49bd79538d4be0a4cc2f0  verification/e
+ 0750324493f8f67e15ef16b22f40ec7b766f8713b07cb2ad0cd7e8d814fe757c  verification/experiments/stage1-protocol/protocol-record/standard-read/TypesExternal.lean.in
+ c57b890e1f5eee5827316279b76e4cf8d7f8f16b34c6f5bf01015eb6f993a472  verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Funs.lean
+ c3d0a193cba91a5aa663cb257ce7902162f2f4128afe49f0fa3eddff674f6e2f  verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Types.lean
+-0994ac7f02a522a58365c772e82675bbf94e0a0eabb0d901e3c39574898d6234  verification/experiments/stage1-protocol/registered.py
++d376dd62c9ed87f4eb6eea706198e2ae2e6a556bb6df8d1f65bdd1499890d1e0  verification/experiments/stage1-protocol/registered.py
+ 178e9f432f8bf10a5ebd75c169b9b1788b28b66991167e61fbffec6b5e1595b1  verification/experiments/stage1-protocol/retention-lane/LaneLibrary.lean.in
+ b1f5519d7696c27e1b5779234d5bbfaefdd04a29471ab923f26291a19bebcc1d  verification/experiments/stage1-protocol/retention-lane/LaneModel.lean.in
+ 3f8771a4d4f4ac647bcc0c44ca6e30f2ea919f7f20e51fa4a12304480e055343  verification/experiments/stage1-protocol/retention-lane/LaneProofs.lean.in
