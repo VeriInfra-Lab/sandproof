@@ -174,6 +174,14 @@ BEGIN 成功后，`started_reply` 连接该次返回的原 owner、实际命名�
 
 主控采用组件内的 `validation-errors-integration-candidate.patch`。ning 使用同一候选的普通完整入口、已登记的 `stage1-inbox-validation` 和 `stage1-inbox-save` 原生用例。真实网关信号送达、SQLite 耐久性和崩溃恢复仍由各自提供方验收。
 
+### 载入已有收件箱时的校验首错
+
+在同一次 BEGIN 和命名空间借用之后，真实载入函数先读取布局和容量，再读取存储行、解码 Inbox、比较摘要和规范编码，最后核对预留容量。每个读取和编码观察都使用上一步返回的 holder。`load_at_validation` 将这一前缀接到原 Inbox 校验器。校验成功才继续第二次配置读取；正常拒绝时返回原错误和规范编码结束时的 holder。[载入与协调器证明](public-begin/LoadValidation.lean.in)
+
+`journal_load_validation` 适用于任意传入操作。若上述校验正常拒绝，协调器返回原 `CorruptStore` 或 `Json` 载荷并选择 `None`。外层失败或发散沿真实载入、录入和公开协调器原样返回。该分支无需请求认证、查重、写入或提交结果。正常见证和清空 retention 槽的见证共用一组观察器，前者记录两次策略读取，后者在第二次读取前返回 `CorruptStore`。
+
+SQLite 行、JSON 解码和编码以及摘要回调的实际结果构成本段的输入。回调参数及返回状态的对应关系由原载入函数给出，磁盘内容、字节真实性和网关送达仍需对应提供方的证据。主控在已采用保存前校验增量的组合上应用[本段登记候选](load-validation-integration-candidate.patch)，ning 复核 `stage1-inbox-load`、`functional` 与正式 Stage1 入口。
+
 ### 首次 Unload 的保存更新和事务返回
 
 首次 Unload 通过追加、新收件箱校验和编码后，`bounded_save_result` 处理编码长度小于或等于配置预算的路径。配置预算上界保证这条路径落在现有 SHA 库合同的正常长度域。借用同一存活连接的标准保存方法把全部编码字节送给摘要方法。实际更新语句的两个 BLOB 参数依次为这些字节和完整的 32 字节摘要。在当前 SQLite 适配合同下，每次正常返回均带回此次写入后的读视图。对应定理保留 owner 的其余字段。[保存更新证明](public-begin/PublicUnloadSave.lean.in)
