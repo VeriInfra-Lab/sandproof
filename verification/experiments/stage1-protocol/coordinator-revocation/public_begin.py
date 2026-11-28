@@ -33,7 +33,8 @@ AUDITS.update('SandproofActualRecordRust.PublicLoaded.'+n for n in (
     'replay_return', 'retained', 'conflict', 'load_refusal'))
 AUDITS.update('SandproofActualRecordRust.PublicUnload.'+n for n in (
     'append_current', 'record_after_save', 'commit_reply', 'fresh_unload', 'mapped_append_witness',
-    'commit_validation_error', 'fresh_sqlite_outcome', 'recorded_commit_dispatch', 'fresh_sqlite_dispatch'))
+    'commit_validation_error', 'fresh_sqlite_outcome', 'recorded_commit_dispatch', 'fresh_sqlite_dispatch',
+    'save_encode_returned', 'save_encoding_refusals', 'fresh_save_refusal'))
 AUDITS.update('SandproofActualRecordRust.PublicUnloadRefusal.'+n for n in (
     'refusal_kind', 'fresh_refusal', 'mapped_guard_order', 'missing_session', 'missing_session_guard_order'))
 APPEND_WITNESSES = {

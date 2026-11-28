@@ -153,6 +153,19 @@ BEGIN 成功后，`started_reply` 连接该次返回的原 owner、实际命名�
 
 主控在已采用 #1090 登记的组合上使用[提交返回的增量登记](commit-dispatch-integration-candidate.patch)。同一页新增两项审计。ning 在最终共享提交沿用父事务、收件与应用回归的原生回执。
 
+### 首次 Unload 的保存校验与编码首错
+
+`fresh_save_refusal` 从本次 BEGIN、完整载入和合法追加出发。真实保存先校验刚追加的同一收件箱。
+若校验返回业务错误，保存保留载入结束时的完整 holder，公开 journal 保留错误载荷。此分支的
+撤销选择由原错误类别决定，无需假设有可借用的 SQLite 连接，也无需提供编码结果。
+
+校验通过后，`save_encode_returned` 将 `StandardRecord` 的保存编码调用连接到同一存活事务的
+连接、完整新收件箱和公开方法所选的编码字典。若编码返回 JSON 错误，公开 journal 返回原
+`Json` 载荷。若编码成功且实际字节数严格大于新收件箱配置的预算，返回 `MaintenanceCapacity`。
+两者均保留该 holder，协调器选择 `None`，证明只需到该首错为止的调用结果。等于预算会进入
+后续摘要和更新步骤。具体 Serde 编码的字节语义、SQLite 持久化和网关送达分别由其提供方验收。
+[实际生成入口的证明与审计](public-begin/PublicUnload.lean.in) · [主控登记增量](save-encoding-integration-candidate.patch)
+
 ### 首次 Unload 在追加前被拒绝
 
 从同一次 BEGIN、命名空间借用和真实 `load_using` 的完整返回开始，若信封与配置通过认证、整个收件箱没有该键且存在同一会话，录入会选择首个同会话行。`fresh_refusal` 使用原 `record_existing_contract` 的有序判定。该判定拒绝 Unload 时，`Inbox::record` 返回原收件箱，`record_using` 交回载入结束时的完整 holder，公开 journal 返回相同的首错，协调器选择不撤销。这个分支只可能返回 `Conflict` 或 `UnsupportedInput`。证明无需提供保存、提交或通知的执行结果。[首错与协调器决定](public-begin/PublicUnloadRefusal.lean.in)
