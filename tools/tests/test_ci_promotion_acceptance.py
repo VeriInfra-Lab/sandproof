@@ -368,6 +368,28 @@ printf 'original formal executor log\n'
         self.assertFalse((output/'native').exists())
         self.assertFalse((output/'complete.json').exists())
 
+    def test_stage1_registration_checks_original_reviewed_input_guards(self):
+        registration = Mock()
+        guards = {name: Mock() for name in ('pause-request', 'source-question',
+                                            'source-origin', 'lifetime-row')}
+
+        def load(_name, path):
+            if path.name == 'registered.py':
+                return registration
+            self.assertEqual(path.name, 'support.py')
+            return guards[path.parent.name]
+
+        with patch('tools.proof_native_suite.load', side_effect=load):
+            gate.check_stage1_registration(self.path)
+            registration.validate_registration.assert_called_once_with(self.path, profile='full')
+            for guard in guards.values():
+                guard.source_guard.assert_called_once_with()
+
+            guards['pause-request'].source_guard.side_effect = ValueError(
+                'reviewed input changed: docs/proof-workflow.md')
+            with self.assertRaisesRegex(ValueError, r'pause-request: .*docs/proof-workflow\.md'):
+                gate.check_stage1_registration(self.path)
+
     def test_native_target_alias_cannot_hide_builds_in_candidate_or_evidence(self):
         checkout = self.path/'checkout'
         checkout.mkdir(mode=0o700)

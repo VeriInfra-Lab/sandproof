@@ -151,15 +151,26 @@ def run_entry(command, *, log, checkout, env, pass_fds=()):
                        stderr=subprocess.STDOUT, check=True, pass_fds=pass_fds)
 
 
-def check_stage1_inputs(checkout, output, env):
-    registration = '''
-from pathlib import Path
-from tools.proof_native_suite import load
+def check_stage1_registration(root):
+    from tools.proof_native_suite import load
 
-root = Path.cwd()
-registered = load('stage1_promotion_sources', root / 'verification/experiments/stage1-protocol/registered.py')
-registered.validate_registration(root, profile='full')
-'''
+    stage1 = root / 'verification/experiments/stage1-protocol'
+    registered = load('stage1_promotion_sources', stage1 / 'registered.py')
+    registered.validate_registration(root, profile='full')
+    # The original drivers check these reviewed input closures separately.
+    # Run those same guards before compiling the workspace and native cases.
+    for case in ('pause-request', 'source-question', 'source-origin', 'lifetime-row'):
+        support = load('stage1_promotion_' + case.replace('-', '_'), stage1 / case / 'support.py')
+        try:
+            support.source_guard()
+        except (OSError, ValueError) as error:
+            raise ValueError(f'{case}: {error}') from error
+
+
+def check_stage1_inputs(checkout, output, env):
+    registration = ('from pathlib import Path; '
+                    'from tools.ci_promotion_acceptance import check_stage1_registration; '
+                    'check_stage1_registration(Path.cwd())')
     checks = (
         ('stage1-freeze.log', ['shasum', '-a', '256', '--check', '--quiet',
                               'verification/stage1-protocol-inputs.sha256']),
