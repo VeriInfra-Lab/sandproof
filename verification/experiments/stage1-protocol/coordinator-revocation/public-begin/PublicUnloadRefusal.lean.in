@@ -1,0 +1,116 @@
+import SandproofActualRecord.PublicUnload
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol SandproofParentCommitRust.ErrorTransport
+open SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model (Session)
+namespace SandproofActualRecordRust.PublicUnloadRefusal
+open controller.lifecycle_inbox recording PublicBegin PublicReplay SourceFlowLink InboxAppend
+noncomputable section
+set_option autoImplicit false
+
+/-- The SDK-renewal gate is unreachable for an Unload. All earlier guards
+return Conflict, except the operation-shape guard which returns UnsupportedInput. -/
+theorem refusal_kind (inbox : model.Inbox) (session : Session) (intent : Intent) (error : RequestError)
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (refused : existingDecision inbox session intent = .reject error) :
+    error = .Conflict ∨ error = .UnsupportedInput := by
+  obtain ⟨source, capture, operation⟩ := op
+  have terminal : isDestroy intent.request.operation = false := by simp [operation, isDestroy]
+  have sdk : InboxRecord.sdkRenewal intent = false := by simp [InboxRecord.sdkRenewal, operation]
+  simp only [existingDecision, terminal, sdk, Bool.false_and, Bool.not_false, Bool.true_and] at refused
+  split_ifs at refused <;> simp_all
+
+variable [FileHandle] [PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+    (journal : controller.ControllerJournal) (intent : Intent) (context : Context)
+    (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (after : UnloadWorldBegin.Conn) (ns : Str)
+    (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+
+local notation "sourceRecord" =>
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+
+include started borrowed
+/-- A first Unload that fails an existing-session guard returns that guard's exact error.
+The original inbox and post-load holder are retained. The public decision needs no
+observation from attach, save, a crash hook or commit. -/
+theorem fresh_refusal (inbox : model.Inbox) (afterLoad : StandardRecord Unit) (s : Usize)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+    (config : InboxAdmission.ContextMatches inbox context) (valid : Validation.ValidEnvelope intent context)
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (selected : ExistingSelection inbox intent s) (error : RequestError)
+    (refused : existingDecision inbox (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected))
+      intent = .reject error) :
+    inbox.record intent = .ok (.Err error, inbox) ∧
+    record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
+      .ok (.Err (fromRequest error), afterLoad) ∧
+    journalDecision journal intent context =
+      .ok ((.Err (fromRequest error), {journal with journal := ⟨after.base⟩}, ()), .None) := by
+  obtain ⟨out, answer, post⟩ := WP.spec_imp_exists (record_existing_contract inbox intent s selected)
+  rw [refused] at post
+  change out = (.Err error, inbox) at post
+  subst out
+  have kind := refusal_kind inbox _ intent error op refused
+  have admitted := (InboxAdmission.accepts_iff inbox intent context).mpr ⟨config, valid⟩
+  have miss := (InboxLookup.find_none_iff inbox intent).mpr selected.1
+  obtain ⟨source, capture, operation⟩ := op
+  have recorded : record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
+      .ok (.Err (fromRequest error), afterLoad) := by
+    change liftResult transferOutcome (sourceRecord (oldRetirement retirement) (oldTerminal terminal)
+      (oldRenewal renewal) (oldUnload unload) (oldGraphic graphic) (ScopeTransport.recordEffects reads)
+      (holder begun ns) intent context) = _
+    unfold SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+    unfold PublicLoaded.originalLoad JournalLoadExit.originalLoad JournalLoadExit.sourceIO at loaded
+    simp only [reads]
+    rw [loaded]
+    simp [admitted, miss, operation, answer, liftResult, transferOutcome, convertOutcome,
+      core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.guard_destroy]
+  have parent : proof_record_actual_parent retirement terminal renewal unload graphic codec hook
+      (holder begun ns).tx ns () intent context () = .ok (.Err (fromRequest error), ()) := by
+    rw [CallerBranches.extraction_root_uses_real_constructor_and_dictionary]
+    simp [record_transaction_using, recorded, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  have decision := journal_error journal intent context (fromRequest error) _
+    (started_reply hook journal intent context () begun after ns started borrowed _ () parent)
+  refine ⟨answer, recorded, ?_⟩
+  rcases kind with rfl | rfl <;> exact decision
+
+/-- The accepted fixture with only its requested source incarnation changed. -/
+def otherIncarnation : Intent :=
+  {Values.unload with request := {Values.unload.request with operation := .Unload 2#u64 1#u64}}
+
+/-- Both observations use the original running session and the same request for a different
+incarnation. At capacity two the reserved slot refuses first. At capacity eight the
+operation check is reached. Neither result revokes the mapped sandbox. -/
+theorem mapped_guard_order (reserved : Bool) (afterLoad : StandardRecord Unit)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some
+      (Values.withSession Values.runningSession
+        (if reserved then 2#u16 else 8#u16))), afterLoad)) :
+    Values.runningSession.local = some ⟨10#u64, 20#u64, 30#u64⟩ ∧
+    Validation.ValidEnvelope otherIncarnation EnvelopeValues.context ∧
+    journalDecision journal otherIncarnation EnvelopeValues.context =
+      .ok ((.Err (if reserved then .Conflict else .UnsupportedInput),
+        {journal with journal := ⟨after.base⟩}, ()), .None) := by
+  let limit := if reserved then 2#u16 else 8#u16
+  let inbox := Values.withSession Values.runningSession limit
+  let error : RequestError := if reserved then .Conflict else .UnsupportedInput
+  have selected : ExistingSelection inbox otherIncarnation 0#usize := Values.unload_selection
+  have valid : Validation.ValidEnvelope otherIncarnation EnvelopeValues.context := Values.normal_unload_valid
+  have refused : existingDecision inbox Values.runningSession otherIncarnation = .reject error := by
+    cases reserved <;> simp [existingDecision, inbox, otherIncarnation, error, limit, Values.withSession,
+      Values.runningSession, InboxLookup.Witness.session, Values.createEntry, InboxRecord.pendingEntry,
+      InboxLookup.Witness.singleton, InboxLookup.Witness.inbox, Values.unload, Values.operationIntent,
+      EnvelopeValues.intent, isDestroy, operationAllowed, InboxRecord.Values.createIntent]
+  have result := fresh_refusal journal otherIncarnation EnvelopeValues.context begun after ns started borrowed
+    inbox afterLoad 0#usize loaded ⟨rfl,rfl⟩ valid ⟨_,_,rfl⟩ selected error refused
+  refine ⟨rfl, valid, ?_⟩
+  cases reserved <;> exact result.2.2
+
+end
+end SandproofActualRecordRust.PublicUnloadRefusal
+
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadRefusal.refusal_kind
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadRefusal.fresh_refusal
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadRefusal.mapped_guard_order
