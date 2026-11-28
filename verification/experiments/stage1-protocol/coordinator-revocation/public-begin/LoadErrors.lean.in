@@ -1,0 +1,429 @@
+import SandproofActualRecord.LoadValidation
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+
+namespace SandboxModel.Stage1Protocol.InboxLoadErrors
+open SandproofStage1RequestRust sandproof_controller_service
+open controller.lifecycle_inbox.codec controller.lifecycle_inbox.model
+open controller.lifecycle_inbox.native_retirement controller.lifecycle_inbox.renewal_confirmation
+open controller.lifecycle_inbox.unload_resolution capture
+open InboxLoad
+noncomputable section
+set_option autoImplicit false
+
+/-- Normal Rust errors from reading a stored inbox. Each payload remains the
+original one. Checked arithmetic in the maintenance policy can exhaust capacity. -/
+def LoadError : JournalError → Prop
+  | .Sqlite _ | .Json _ | .CorruptStore | .UnsupportedStore | .MaintenanceCapacity => True
+  | _ => False
+
+def Returns {α : Type} (p : α → Prop) (run : Result α) : Prop :=
+  match run.match with
+  | .ok a => p a
+  | _ => True
+
+def Allowed {α : Type} : core.result.Result α JournalError → Prop
+  | .Ok _ => True
+  | .Err err => LoadError err
+
+abbrev Read {α E : Type} (run : Result (core.result.Result α JournalError × E)) :=
+  Returns (fun pair => Allowed pair.1) run
+
+theorem bind_checked {α β : Type} {p : α → Prop} {q : β → Prop} {run : Result α}
+    (checked : Returns p run) {f : α → Result β}
+    (next : ∀ a, p a → Returns q (f a)) : Returns q (run >>= f) := by
+  cases run with
+  | ret a => simpa only [bind_tc_ok] using next a checked
+  | vis i k => simp [Returns]
+  | div => simp [Returns]
+
+theorem bind_any {α β : Type} (run : Result α) {q : β → Prop} {f : α → Result β}
+    (next : ∀ a, Returns q (f a)) : Returns q (run >>= f) := by
+  cases run <;> simp_all [Returns]
+
+private theorem checked_capacity {α : Type} (opt : Option U64) (next : U64 → Result (core.result.Result α JournalError))
+    (checked : ∀ bound, Returns Allowed (next bound)) :
+    Returns Allowed (InboxLoadCapacity.checkedCapacity opt next) := by
+  cases opt <;> simp_all [InboxLoadCapacity.checkedCapacity, Returns, Allowed, LoadError]
+
+private theorem branch {α : Type} (test : Prop) [Decidable test]
+    {left right : Result (core.result.Result α JournalError)}
+    (yes : Returns Allowed left) (no : Returns Allowed right) :
+    Returns Allowed (if test then left else right) := by
+  by_cases h : test
+  · rw [if_pos h]
+    exact yes
+  · rw [if_neg h]
+    exact no
+
+set_option maxRecDepth 8192 in
+private theorem maintenance (policy : controller.checkpoint.config.MaintenanceConfig) :
+    Returns Allowed (InboxLoadConfig.maintenanceResult policy) := by
+  classical
+  unfold InboxLoadConfig.maintenanceResult
+  split <;> first | trivial | skip
+  split <;> first | trivial | skip
+  split <;> first | trivial | skip
+  split <;> first | trivial | skip
+  unfold InboxLoadCapacity.capacityView
+  refine branch _ True.intro ?_
+  refine branch _ True.intro ?_
+  refine branch _ True.intro ?_
+  apply checked_capacity
+  intro transaction
+  refine branch _ True.intro ?_
+  refine branch _ True.intro ?_
+  refine branch _ True.intro ?_
+  apply checked_capacity
+  intro threeInputs
+  apply checked_capacity
+  intro computed
+  refine branch _ True.intro ?_
+  apply checked_capacity
+  intro receipt
+  refine branch _ True.intro ?_
+  refine branch _ True.intro ?_
+  apply checked_capacity
+  intro scratch
+  refine branch _ True.intro ?_
+  apply checked_capacity
+  intro databaseWal
+  apply checked_capacity
+  intro withShm
+  apply checked_capacity
+  intro total
+  exact branch _ True.intro True.intro
+
+/-- Error contracts for the callbacks whose normal errors the loader propagates.
+A refused Inbox decode is remapped to CorruptStore, so it needs no error premise.
+The digest returns only an array on normal completion. -/
+structure ReaderErrors {E : Type} (io : InboxLoadEffects E) : Prop where
+  integer : ∀ state sql, Read (io.checkpointconfigReadConfigEffectsInst.query_i64 state sql)
+  bytes : ∀ state sql, Read (io.checkpointconfigReadConfigEffectsInst.query_bytes state sql)
+  policy : ∀ state bytes, Read (io.checkpointconfigReadConfigEffectsInst.decode_maintenance state bytes)
+  boolean : ∀ state sql, Read (io.query_bool state sql)
+  lengths : ∀ state sql, Read (io.query_i64_pair state sql)
+  row : ∀ state sql, Read (io.query_bytes_pair state sql)
+  encode : ∀ state inbox, Read (io.encode_inbox state inbox)
+
+variable {E : Type} {io : InboxLoadEffects E} (effects : ReaderErrors io)
+
+include effects in
+private theorem policy_read (state : E) : Read (InboxLoadConfig.readFullView io.checkpointconfigReadConfigEffectsInst state) := by
+  unfold InboxLoadConfig.readFullView
+  apply bind_checked (effects.integer _ _)
+  rintro ⟨format, one⟩ checked
+  cases format with
+  | Err e => exact checked
+  | Ok version =>
+    simp only [uncurry_apply_pair]
+    split
+    · trivial
+    · apply bind_checked (effects.bytes _ _)
+      rintro ⟨bytes, two⟩ checked
+      cases bytes with
+      | Err e => exact checked
+      | Ok data =>
+        simp only [uncurry_apply_pair]
+        apply bind_checked (effects.policy _ _)
+        rintro ⟨decoded, three⟩ checked
+        cases decoded with
+        | Err e => exact checked
+        | Ok config =>
+          simp only [uncurry_apply_pair]
+          apply bind_checked (maintenance config)
+          intro validated checked
+          cases validated with
+          | Err e => exact checked
+          | Ok u => cases u; trivial
+
+include effects in
+private theorem capacity_read (state : E) : Read (InboxLoadConfig.capacityReadView io.checkpointconfigReadConfigEffectsInst state) := by
+  unfold InboxLoadConfig.capacityReadView
+  apply bind_checked (policy_read effects state)
+  rintro ⟨reply, after⟩ checked
+  cases reply with
+  | Err e => exact checked
+  | Ok opt =>
+    cases opt with
+    | none => trivial
+    | some config => simp only [uncurry_apply_pair]; cases config.capacity <;> trivial
+
+private theorem attempt_read {α : Type} {run : Result (core.result.Result α JournalError × E)}
+    (checked : Read run) {next : α → E → Outcome E} (cont : ∀ a s, Read (next a s)) :
+    Read (attempt run next) := by
+  unfold attempt
+  apply bind_checked checked
+  rintro ⟨reply, state⟩ h
+  cases reply with
+  | Err e => exact h
+  | Ok v => exact cont v state
+
+include effects in
+private theorem finish_read (inbox : Inbox) (state : E) : Read (finishView io inbox state) := by
+  unfold finishView
+  apply attempt_read (policy_read effects state)
+  intro policy after
+  cases policy with
+  | none => trivial
+  | some config => simp only; split <;> trivial
+
+variable {R T N U B : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U) (graphic : GraphicBytes B)
+local notation "validate" => Inbox.validate_using saved terminal renewal unload graphic
+local notation "budget" => LifecycleInboxConfig.required_bytes
+
+private theorem validation (inbox : Inbox) : Returns Allowed (validate inbox) := by
+  generalize eq : validate inbox = r
+  cases r with
+  | ret reply =>
+    cases reply with
+    | Ok u => trivial
+    | Err err =>
+      have ok := InboxValidation.validate_error saved terminal renewal unload graphic inbox err eq
+      cases err <;> trivial
+  | vis i k => trivial
+  | div => trivial
+
+include effects in
+private theorem validated_read (inbox : Inbox) (reserve : U64) (state : E) :
+    Read (validatedView io validate budget inbox reserve state) := by
+  unfold validatedView
+  apply bind_any
+  intro required
+  split
+  · trivial
+  · apply bind_checked (validation saved terminal renewal unload graphic inbox)
+    intro checked valid
+    cases checked with
+    | Err e => exact valid
+    | Ok u => exact finish_read effects inbox state
+
+include effects in
+private theorem body_read (reserve : U64) (state : E) : Read (bodyView io validate budget reserve state) := by
+  unfold bodyView
+  apply attempt_read (effects.row _ _)
+  rintro ⟨bytes, sha⟩ afterBytes
+  apply bind_any
+  rintro ⟨decoded, afterDecode⟩
+  cases decoded with
+  | Err _ => trivial
+  | Ok inbox =>
+    unfold digestView
+    apply bind_any
+    rintro ⟨digest, afterDigest⟩
+    simp only [uncurry_apply_pair]
+    split
+    · trivial
+    · unfold canonicalView
+      apply attempt_read (effects.encode _ _)
+      intro encoded afterEncode
+      apply bind_any
+      intro different
+      split
+      · trivial
+      · exact validated_read effects saved terminal renewal unload graphic inbox reserve afterEncode
+
+include effects in
+private theorem limits_read (cap : controller.capacity.CapacityConfig) (length reserve : I64) (state : E) :
+    Read (limitsView io validate budget cap length reserve state) := by
+  unfold limitsView
+  repeat' first | trivial | exact body_read effects saved terminal renewal unload graphic _ _ | (apply bind_any; intro value) | split
+
+include effects in
+private theorem current_read (state : E) : Read (currentView io validate budget state) := by
+  unfold currentView
+  apply attempt_read (effects.boolean _ _)
+  intro internal one
+  split
+  · trivial
+  · unfold capacityView
+    apply attempt_read (capacity_read effects _)
+    intro capacity two
+    cases capacity with
+    | none => trivial
+    | some cap =>
+      apply attempt_read (effects.lengths _ _)
+      rintro ⟨length, reserve⟩ three
+      exact limits_read effects saved terminal renewal unload graphic cap length reserve three
+
+include effects in
+/-- Any normal load error under the typed callback contracts belongs to the
+five listed cases, including both maintenance-policy reads and all schema branches. -/
+theorem load_errors (start : E) : Read (load_using saved terminal renewal unload graphic io start) := by
+  rw [load_control_flow_refines]
+  unfold loadView
+  apply attempt_read (effects.boolean _ _)
+  intro exists_ one
+  apply attempt_read (effects.integer _ _)
+  intro version two
+  apply attempt_read (effects.boolean _ _)
+  intro source three
+  repeat' first | trivial | exact current_read effects saved terminal renewal unload graphic _ | (apply bind_any; intro current) | split
+
+/-- Removing the first SQL adapter's error contract admits a spurious
+CommitUncertain before even reading the format. The other callbacks are unchanged. -/
+theorem unchecked_first_read (io : InboxLoadEffects E) (start after : E)
+    (err : SandproofSqliteSession.SqlError) :
+    let injected := {io with query_bool := fun _ _ => .ok (.Err (.CommitUncertain err), after)}
+    load_using saved terminal renewal unload graphic injected start = .ok (.Err (.CommitUncertain err), after) ∧
+      ¬ReaderErrors injected := by
+  dsimp only
+  constructor
+  · rw [load_control_flow_refines]
+    simp only [loadView, attempt, bind_tc_ok, uncurry_apply_pair]
+  · intro contracts
+    exact contracts.boolean start existsStatement
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadErrors
+
+namespace SandproofActualRecordRust.PublicLoadErrors
+open controller.lifecycle_inbox recording PublicBegin PublicReplay SourceFlowLink
+open SandproofParentCommitRust.ErrorTransport
+open InboxLoadErrors
+noncomputable section
+set_option autoImplicit false
+
+private theorem transfer {A D : Type} (before : IOOwnerTransport.Holder D)
+    {run : Result (RequestRustResult A × IOOwnerTransport.OldHolder D)} (safe : Read run) :
+    Read (toRequestStateResult (IOOwnerTransport.liftReply before run)) := by
+  cases run with
+  | ret pair =>
+    rcases pair with ⟨reply, after⟩
+    cases h : IOOwnerTransport.returnedHolder before after with
+    | ret owner =>
+      simpa [IOOwnerTransport.liftReply, h, toRequestStateResult, liftResult, Returns] using safe
+    | vis i k => simp [IOOwnerTransport.liftReply, h, toRequestStateResult, liftResult, Read, Returns]
+    | div => simp [IOOwnerTransport.liftReply, h, toRequestStateResult, liftResult, Read, Returns]
+  | vis i k => simp [IOOwnerTransport.liftReply, toRequestStateResult, liftResult, Read, Returns]
+  | div => simp [IOOwnerTransport.liftReply, toRequestStateResult, liftResult, Read, Returns]
+
+private theorem borrowed_read {A D X R : Type}
+    (observe : SandproofStage1RequestRust.rusqlite.Connection → X → Result (RequestRustResult A × R))
+    (before : IOOwnerTransport.OldHolder D) (input : X)
+    (checked : ∀ connection, Read (observe connection input)) :
+    Read (SandboxModel.StandardRecordIO.borrowedView observe before input) := by
+  unfold SandboxModel.StandardRecordIO.borrowedView
+  apply bind_any
+  intro raw
+  apply bind_any
+  intro connection
+  apply bind_checked (checked connection)
+  rintro ⟨reply, reader⟩ good
+  exact good
+
+private theorem codec_read {A D X : Type}
+    (call : D → SandproofStage1RequestRust.rusqlite.Connection → X →
+      Result (SandboxModel.StandardRecordCodec.JsonReply A × D))
+    (before : IOOwnerTransport.OldHolder D) (input : X) :
+    Read (SandboxModel.StandardRecordCodec.callView call before input) := by
+  unfold SandboxModel.StandardRecordCodec.callView
+  apply bind_any
+  intro raw
+  apply bind_any
+  intro connection
+  apply bind_any
+  rintro ⟨reply, state⟩
+  cases reply <;> trivial
+
+open SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts
+
+variable [PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+
+/-- Each propagated adapter error is constrained by its original SQLite or JSON
+return type, including the two-column row and the returned transaction owner. -/
+theorem standard_effects : ReaderErrors PublicLoadValidation.loadIO := by
+  constructor <;> intro before input <;> apply transfer before
+  · rw [SandboxModel.StandardRecordIO.actual_query_i64_call_contract]
+    apply borrowed_read
+    intro connection
+    unfold Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_i64
+    apply bind_any
+    intro reply
+    cases reply <;> trivial
+  · rw [SandboxModel.StandardRecordIO.actual_query_bytes_call_contract]
+    apply borrowed_read
+    intro connection
+    unfold Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_bytes
+    apply bind_any
+    intro reply
+    cases reply <;> trivial
+  · rw [SandboxModel.StandardRecordCodec.actual_decode_maintenance_call_contract]
+    apply codec_read
+  · rw [SandboxModel.StandardRecordIO.actual_query_bool_call_contract]
+    apply borrowed_read
+    intro connection
+    unfold Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bool
+    apply bind_any
+    intro reply
+    cases reply <;> trivial
+  · rw [SandboxModel.StandardRecordIO.actual_query_i64_pair_call_contract]
+    apply borrowed_read
+    intro connection
+    unfold Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_i64_pair
+    apply bind_any
+    intro reply
+    cases reply <;> trivial
+  · rw [SandboxModel.StandardRecordIO.actual_query_bytes_pair_call_contract]
+    apply borrowed_read
+    intro connection
+    unfold Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
+    apply bind_any
+    intro reply
+    cases reply <;> simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      SandproofStage1RequestRust.JournalErrorFromSqlite.from, Returns, Allowed, LoadError]
+  · rw [SandboxModel.StandardRecordCodec.actual_encode_for_load_call_contract]
+    apply codec_read
+
+theorem original_load_error (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (ns : Str) (afterLoad : StandardRecord Unit) (err : SandproofStage1RequestRust.sandproof_controller_service.JournalError)
+    (returned : PublicLoaded.originalLoad begun ns = .ok (.Err err, afterLoad)) : LoadError err := by
+  have safe := load_errors standard_effects (oldRetirement retirement) (oldTerminal terminal)
+    (oldRenewal renewal) (oldUnload unload) (oldGraphic graphic) (holder begun ns)
+  change Read (PublicLoaded.originalLoad begun ns) at safe
+  rw [returned] at safe
+  exact safe
+
+/-- The standard loader can never select a revocation on refusal, for any
+incoming operation. The empty store keeps its original UnsupportedStore reply.
+Both outer stops propagate before the original authentication and decision. -/
+theorem journal_load_refusal [FileHandle] (journal : controller.ControllerJournal)
+    (intent : Intent) (context : Context) (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (after : UnloadWorldBegin.Conn) (ns : Str)
+    (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns) :
+    let loaded := PublicLoaded.originalLoad begun ns
+    let run := journalDecision journal intent context
+    (∀ err state, loaded = .ok (.Err err, state) →
+      run = .ok ((.Err (fromRequest err), {journal with journal := ⟨after.base⟩}, ()), .None)) ∧
+    (∀ state, loaded = .ok (.Ok none, state) →
+      run = .ok ((.Err .UnsupportedStore, {journal with journal := ⟨after.base⟩}, ()), .None)) ∧
+    (∀ err, loaded = .fail err → run = .fail err) ∧ (loaded = .div → run = .div) := by
+  dsimp only
+  constructor
+  · intro err state failed
+    have allowed := original_load_error begun ns state err failed
+    have result := PublicLoaded.load_refusal journal intent context begun after ns started borrowed state
+      (fromRequest err) (Or.inl (by simpa using failed))
+    simp only [toRequest_fromRequest] at result
+    cases err <;> first | exact result | contradiction
+  constructor
+  · intro state empty
+    exact PublicLoaded.load_refusal journal intent context begun after ns started borrowed state
+      .UnsupportedStore (Or.inr ⟨empty, rfl⟩)
+  · have record := PublicLoadValidation.record_load_stops begun ns intent context
+    have publicRun := RecordCodecPorts.journal_stops journal intent context begun after ns started borrowed
+    exact ⟨fun err failed => publicRun.1 err (record.1 err failed),
+      fun diverged => publicRun.2 (record.2 diverged)⟩
+
+end
+end SandproofActualRecordRust.PublicLoadErrors
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadErrors.load_errors
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadErrors.unchecked_first_read
+#audit_controller_proof SandproofActualRecordRust.PublicLoadErrors.standard_effects
+#audit_controller_proof SandproofActualRecordRust.PublicLoadErrors.original_load_error
+#audit_controller_proof SandproofActualRecordRust.PublicLoadErrors.journal_load_refusal

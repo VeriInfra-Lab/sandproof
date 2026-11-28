@@ -182,6 +182,14 @@ BEGIN 成功后，`started_reply` 连接该次返回的原 owner、实际命名�
 
 SQLite 行、JSON 解码和编码以及摘要回调的实际结果构成本段的输入。回调参数及返回状态的对应关系由原载入函数给出，磁盘内容、字节真实性和网关送达仍需对应提供方的证据。主控在已采用保存前校验增量的组合上应用[本段登记候选](load-validation-integration-candidate.patch)，ning 复核 `stage1-inbox-load`、`functional` 与正式 Stage1 入口。
 
+### 完整载入失败时的撤销决定
+
+同一公开 BEGIN 成功并借用命名空间后，任意操作都使用原 `StandardRecord` 载入收件箱。载入正常返回错误时，`original_load_error` 将其限定在 `Sqlite`、`Json`、`UnsupportedStore`、`CorruptStore` 和 `MaintenanceCapacity` 五类。最后一项覆盖容量计算的受检算术溢出。证明遍历两次策略读取以及中间的全部布局、行、摘要、编码和 Inbox 校验分支。[完整载入证明](public-begin/LoadErrors.lean.in)
+
+`standard_effects` 核对五个标准 SQL 读取方法和两个 JSON 调用的错误映射，包括借用连接、返回 holder 和错误载荷。`journal_load_refusal` 将每个载入错误连同原载荷交还调用者，选择 `None`。空收件箱返回 `UnsupportedStore` 并选择 `None`。外层失败或发散在认证与事务提交之前传播。此处无需假定读取或编解码成功。真实提交阶段的 `CommitUncertain` 仍按原决策处理。
+
+`unchecked_first_read` 在同一载入函数上仅替换第一次使用的布尔读取回调，展示去掉该端口的错误合同后如何返回伪造的 `CommitUncertain`。实际标准端口的对应见 `standard_effects`，正常载入和保留槽缺失的同组见证见 `load_validation_witnesses`。具体 SQLite 数据、JSON 字节及网关信号送达由各自提供方验收。主控在 #1100 的组合上采用[本段登记候选](load-errors-integration-candidate.patch)，ning 在同一候选复核原生用例和正式入口。
+
 ### 首次 Unload 的保存更新和事务返回
 
 首次 Unload 通过追加、新收件箱校验和编码后，`bounded_save_result` 处理编码长度小于或等于配置预算的路径。配置预算上界保证这条路径落在现有 SHA 库合同的正常长度域。借用同一存活连接的标准保存方法把全部编码字节送给摘要方法。实际更新语句的两个 BLOB 参数依次为这些字节和完整的 32 字节摘要。在当前 SQLite 适配合同下，每次正常返回均带回此次写入后的读视图。对应定理保留 owner 的其余字段。[保存更新证明](public-begin/PublicUnloadSave.lean.in)
