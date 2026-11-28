@@ -14,20 +14,16 @@ import tarfile
 
 import codec_reads
 import codec_receipt
-from guard_binding import check_guard
+from parent_checkpoint import BASE, CALLER, parent_dispatch, parent_sources
 from journal_entry import CODEC, CONTROLLER, DATABASE, INBOX, PROVIDER, RECORD, RECORDING, TRANSACTION, check_entry, translated_entry
 from journal_entry_regressions import check_entry_rejections
 from journal_hook import check_joint_hook, check_journal_hook
 from hook_regressions import check_parent_rejections, check_joint_rejection
-from sender_binding import inspect_senders
-from sender_binding_regressions import check_guard_rejections, check_rejections
-from wiring import COORD, DECIDE, MODEL, MODULE, SERVICE, assignments_before, declaration, inspect_parent, nodes, origin, require
+from wiring import COORD, DECIDE, MODEL, MODULE, SERVICE, assignments_before, declaration, nodes, origin, require
 
 ROOT = Path(__file__).resolve().parents[4]
-BASE = 'd642a5f45253a716dbb8411a9942b8b9581dd5fb'
 AREA = Path('verification/experiments/stage1-protocol')
 PKG = AREA / 'coordinator-revocation'
-CALLER = Path('controller-service/src/application/coordinator/lifecycle_intent.rs')
 STATE = Path('controller-service/src/controller/lifecycle_inbox/model.rs')
 PROOFS = Path('SandboxModel/Lifecycle/Protocol')
 GENERATED = Path('verification/aeneas/stage1-protocol/request/SandproofStage1Request')
@@ -110,15 +106,11 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
             and not any(opts[k] for k in ('exclude', 'skip_borrowck', 'no_typecheck', 'monomorphize')), 'unexpected extraction')
     view = load(source/AREA/'serde-binding/binding.py').Original(raw)
     if not joint:
-        guard = check_guard(view)
-        broadcast = inspect_parent(raw, refactored=refactored, guard=guard)
-        senders = inspect_senders(view, broadcast)
-        report = {'ir': sha(ir), 'caller': sha(source/CALLER), 'senders': senders, 'guard_local': guard,
-                  'journal_entry': check_entry(view), 'journal_hook': check_journal_hook(view, source),
-                  'coordinator': sha(source/'controller-service/src/application/coordinator.rs')}
+        dispatch = parent_dispatch(view, refactored=refactored)
+        sources = parent_sources(view, lambda path: (source/path).read_bytes())
+        report = {'ir': sha(ir), **sources, **dispatch,
+                  'journal_entry': check_entry(view), 'journal_hook': check_journal_hook(view, source)}
         if refactored:
-            senders['rejected_metadata'] = check_rejections(view, broadcast)
-            report['rejected_guard_metadata'] = check_guard_rejections(view)
             report['rejected_hook_metadata'] = check_parent_rejections(view, source)
             report['rejected_entry_metadata'] = check_entry_rejections(view)
         return report

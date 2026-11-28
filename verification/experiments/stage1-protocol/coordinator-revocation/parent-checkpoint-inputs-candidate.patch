@@ -1,0 +1,119 @@
+diff --git a/verification/experiments/stage1-protocol/registered.py b/verification/experiments/stage1-protocol/registered.py
+index 0de1c42e..7a883e5f 100644
+--- a/verification/experiments/stage1-protocol/registered.py
++++ b/verification/experiments/stage1-protocol/registered.py
+@@ -1788,8 +1788,8 @@ def _checkpoint_evidence(helper, job, result, result_path, log):
+                     raise ValueError('linked original proof input')
+                 evidence[str(path.resolve())] = _sha(path)
+     if job['name'] == 'coordinator-revocation':
+-        for key, directory in [('original_parent', 'original-parent'), ('candidate_parent', 'candidate-parent'),
+-                               ('public_journal', 'public-journal'), ('joint', 'joint')]:
++        UNLOAD.journal_component(ROOT, 'parent_checkpoint').check_parent_evidence(ROOT, folder, result, evidence)
++        for key, directory in [('public_journal', 'public-journal'), ('joint', 'joint')]:
+             wanted = result[key]['ir']
+             if not re.fullmatch('[a-f0-9]{64}', wanted) or evidence.get(str(folder/directory/'actual.llbc')) != wanted:
+                 raise ValueError('missing or changed coordinator capture: ' + directory)
+diff --git a/verification/experiments/stage1-protocol/test_registered.py b/verification/experiments/stage1-protocol/test_registered.py
+index 440d25aa..eeeb06c4 100644
+--- a/verification/experiments/stage1-protocol/test_registered.py
++++ b/verification/experiments/stage1-protocol/test_registered.py
+@@ -736,6 +736,47 @@ class Registration(OriginalReadPlanFixture):
+                 with self.assertRaisesRegex(ValueError, 'concrete decoder page'):
+                     codec.check_page(root, row)
+
++    def test_coordinator_checkpoint_requires_the_original_parent_capture(self):
++        checker = registered.UNLOAD.journal_component(registered.ROOT, 'parent_checkpoint')
++        root = registered.ROOT
++        head, tree = registered.subprocess.check_output(
++            ['git', 'rev-parse', 'HEAD', 'HEAD^{tree}'], cwd=root, text=True).splitlines()
++        result = dict(original=checker.BASE, candidate=head, tree=tree)
++        job = dict(name='coordinator-revocation')
++        with tempfile.TemporaryDirectory() as directory:
++            folder = Path(directory)
++            helper = SimpleNamespace(evidence_files=lambda *args, **kwargs: {})
++            with self.assertRaisesRegex(ValueError, 'missing coordinator parent capture: original'):
++                registered._checkpoint_evidence(helper, job, result, folder/'result.json', folder/'command.log')
++            with self.assertRaisesRegex(ValueError, 'coordinator checkpoint source differs'):
++                checker.check_parent_evidence(root, folder, dict(result, original='unrelated'), {})
++
++    def test_parent_declarations_must_carry_their_complete_original_rust_files(self):
++        root = registered.ROOT
++        checker = registered.UNLOAD.journal_component(root, 'parent_checkpoint')
++        methods = [(checker.PARENT, checker.CALLER),
++                   (checker.ONE, Path('controller-service/src/application/coordinator.rs'))]
++        files = []
++        functions = {}
++        for index, (method, path) in enumerate(methods):
++            name = [{'Impl': {}} if piece == '{impl}' else {'Ident': [piece, 0]} for piece in method.split('::')]
++            span = {'Untagged': {'data': {'file_id': index}}}
++            functions[index] = {'item_meta': {'name': name, 'span': span}}
++            files.append({'name': {'Local': str(path)}, 'contents': (root/path).read_text()})
++        view = SimpleNamespace(functions=functions, data={'files': files})
++
++        def sources():
++            return checker.parent_sources(view, lambda path: (root/path).read_bytes())
++
++        self.assertEqual(sources(), dict(caller=registered._sha(root/methods[0][1]),
++                                         coordinator=registered._sha(root/methods[1][1])))
++        for index, (_, path) in enumerate(methods):
++            for edit in ({'contents': None}, {'contents': files[index]['contents'][:-1]},
++                         {'name': files[1-index]['name']}):
++                with self.subTest(path=path, edit=next(iter(edit))), patch.dict(files[index], edit):
++                    with self.assertRaisesRegex(ValueError, 'coordinator declaration source differs'):
++                        sources()
++
+     def test_public_journal_refuses_old_receipt_and_missing_generated_body(self):
+         with self.assertRaisesRegex(ValueError, 'journal entry evidence'):
+             registered._coordinator_entry({'candidate_parent': {}})
+diff --git a/verification/stage1-protocol-inputs.sha256 b/verification/stage1-protocol-inputs.sha256
+index ee6ca93e..66c3b9e3 100644
+--- a/verification/stage1-protocol-inputs.sha256
++++ b/verification/stage1-protocol-inputs.sha256
+@@ -204,7 +204,7 @@ fb2ac9b8af4813c277345760833212be71b61e99599e4b4fb223cd44c2d748a8  verification/e
+ c44ce95cd2720d3b81403389173ee3c85ef785a3ead06c7f77e0b816eafac5e5  verification/experiments/stage1-protocol/coordinator-revocation/JournalLoadExit.lean.in
+ 3c1ff7cbfd19fe51110b904d4c7a50ade4d1455d313e69d4094dd29a42efed9b  verification/experiments/stage1-protocol/coordinator-revocation/JournalReplayState.lean.in
+ e146b130219f84efa5696e41fbb82c02bff86716c14c089e1ffd3f84cdbbe594  verification/experiments/stage1-protocol/coordinator-revocation/JournalStartedHeader.lean.in
+-74286658f59cbd164850629727ac4092da278591b4b8baf5364027a3bbc1e82f  verification/experiments/stage1-protocol/coordinator-revocation/check.py
++1d21d35e70d0d6fbd0c91a71866210be81034eb381055ddebb98ba1b2fa44430  verification/experiments/stage1-protocol/coordinator-revocation/check.py
+ 39dd7eac3105524d6f0e8a5f26d56234bd8ccc2533ac8ff8eac91d908ad83025  verification/experiments/stage1-protocol/coordinator-revocation/codec-read/DecoderCalls.lean.in
+ f382c66227fad69a4c74b5350c88a2f8f25fddcc99c4397de42ec4f178bda66d  verification/experiments/stage1-protocol/coordinator-revocation/codec-read/FunsExternal.lean.in
+ 8a803487236aee0c58b7f70c9cb41953db6c3b3bacec8f8da22fe51b36c53690  verification/experiments/stage1-protocol/coordinator-revocation/codec-read/TypesExternal.lean.in
+@@ -219,6 +219,7 @@ e67a50c20f6c5a6a82e560e64d5b63ee979f2785384eacb672f5b9c0d25e9be2  verification/e
+ 00a226ed8e700efcb7cb6ced597453c253743cc04747bcfb50673fb9c63f9266  verification/experiments/stage1-protocol/coordinator-revocation/journal_entry_regressions.py
+ a0e416b51d54bf941910fd786f61808b80ecf6276ee53aac3d2d488b1af4c933  verification/experiments/stage1-protocol/coordinator-revocation/journal_hook.py
+ 0aa8dc267fec5350f48f92e3f86c8d907b029f95e5448daf8b057800d6732c45  verification/experiments/stage1-protocol/coordinator-revocation/journal_started.py
++f33308acae8176066efa84c89f1f7a1dadfb687e8ad14c8250561a25cdef143f  verification/experiments/stage1-protocol/coordinator-revocation/parent_checkpoint.py
+ 2434f5be8c72d004a31c65e136df7d1a5fce8de8c94a50fc9a6a7e219259f722  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/PublicBegin.lean.in
+ 380916781ab45d28926aff465f5086b110f1388487c6ac01638cd5dfc016e41d  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/PublicCalls.lean.in
+ dd194f4fc76c52e292bdbf7e039f9a3a446a90b8d8bb102d8a3a27c15aa0ad09  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/PublicHandle.lean.in
+@@ -902,7 +903,7 @@ b99e41ddf8777effe8089861034ee4d2eaf4f1b843cdb83b2b183e879a11abcf  verification/e
+ 71424a9b885ae1c5bae01fe3b1589f1f4ff7015b9abc51e4bffc30a1dd59ff08  verification/experiments/stage1-protocol/parser-binding/tests.rs
+ 6e81bc457ab04091eb1ee39b388ef93030ca924d6b01017b8f319e326e872d30  verification/experiments/stage1-protocol/protocol-record/evidence.py
+ 1f90402c3990cc7f5f16894f0ce94cea67412be4d82e3c0f5a8f37ed2612746a  verification/experiments/stage1-protocol/protocol-record/inventory.json
+-d376dd62c9ed87f4eb6eea706198e2ae2e6a556bb6df8d1f65bdd1499890d1e0  verification/experiments/stage1-protocol/registered.py
++a452868cbfdaf80e212c9f165b87edcc72aa6a47d86e8516963daa3a1b636f5c  verification/experiments/stage1-protocol/registered.py
+ 397e631948d00d712937def8c4fcb275e2efda42adb1ffbe50d319803978fdd5  verification/experiments/stage1-protocol/registry_identity.py
+ a5307afee147cf203d295ba45aeb8d2f67f27329b5a656ea143ede533979be55  verification/experiments/stage1-protocol/renewal-confirmation/NegativeRenewalDeadline.lean.in
+ fb0123edb755e968618caa5fa8b898cfec7664b068ff57cad7adae8ed60c2fd9  verification/experiments/stage1-protocol/renewal-confirmation/NegativeRenewalFirst.lean.in
+@@ -1037,7 +1038,7 @@ e3eb35a40d563a8c3037582cb8482d4efa4477995b74655b53907771681656fe  verification/e
+ 46e1c1b071aaf03f5834cc3d03dd3e31d381b3d745510d26f8c3eef6e4ca5fa0  verification/experiments/stage1-protocol/terminal-binding/prepare.py
+ 4eb94c981d8bd6ec3cee2ea082195f0674c3310f09e4423e3b2f47c8a5ff0115  verification/experiments/stage1-protocol/terminal-binding/roots.rs.in
+ d17fe50c422ca1b425de04b2b3c5d2c4ece1e709db8c091bc19ad09d3529002b  verification/experiments/stage1-protocol/test_manifest_validation_formal.py
+-2ef80935b8a3071f2efb98d46fe9095c6318f3ae744a774a7da5fde91da3196d  verification/experiments/stage1-protocol/test_registered.py
++37f2683e9ba5fd72dfd81e52aac2e3166dabb09cda6cb07765c4803e22c79564  verification/experiments/stage1-protocol/test_registered.py
+ efd023b98a9b795b4fa2d6a268f314917f376a6b39cd57d1802e81b1993973c9  verification/experiments/stage1-protocol/test_replay_formal.py
+ 63954d49c5951541c853e6bb87d8a280652076484a4e7164363537fe3b607782  verification/experiments/stage1-protocol/test_source_views.py
+ 503754f5a4eba7b399076d00887e51596eacd9c4a32b85e34fe0cf76d0259ff7  verification/experiments/stage1-protocol/unload-current-captures.json
+diff --git a/verification/v3-transaction-source-inputs.sha256 b/verification/v3-transaction-source-inputs.sha256
+index 563675b7..3a491013 100644
+--- a/verification/v3-transaction-source-inputs.sha256
++++ b/verification/v3-transaction-source-inputs.sha256
+@@ -345,7 +345,7 @@ fe63edcb5074ba6e0c9715477c5e2481c7480cdff2f49bd79538d4be0a4cc2f0  verification/e
+ 0750324493f8f67e15ef16b22f40ec7b766f8713b07cb2ad0cd7e8d814fe757c  verification/experiments/stage1-protocol/protocol-record/standard-read/TypesExternal.lean.in
+ c57b890e1f5eee5827316279b76e4cf8d7f8f16b34c6f5bf01015eb6f993a472  verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Funs.lean
+ c3d0a193cba91a5aa663cb257ce7902162f2f4128afe49f0fa3eddff674f6e2f  verification/experiments/stage1-protocol/protocol-record/standard-read/generated/SandproofStandardRecord/Types.lean
+-d376dd62c9ed87f4eb6eea706198e2ae2e6a556bb6df8d1f65bdd1499890d1e0  verification/experiments/stage1-protocol/registered.py
++a452868cbfdaf80e212c9f165b87edcc72aa6a47d86e8516963daa3a1b636f5c  verification/experiments/stage1-protocol/registered.py
+ 178e9f432f8bf10a5ebd75c169b9b1788b28b66991167e61fbffec6b5e1595b1  verification/experiments/stage1-protocol/retention-lane/LaneLibrary.lean.in
+ b1f5519d7696c27e1b5779234d5bbfaefdd04a29471ab923f26291a19bebcc1d  verification/experiments/stage1-protocol/retention-lane/LaneModel.lean.in
+ 3f8771a4d4f4ac647bcc0c44ca6e30f2ea919f7f20e51fa4a12304480e055343  verification/experiments/stage1-protocol/retention-lane/LaneProofs.lean.in

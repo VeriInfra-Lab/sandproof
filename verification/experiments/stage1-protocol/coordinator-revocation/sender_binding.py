@@ -143,20 +143,20 @@ def inspect_senders(view, broadcast):
     check_args(block, iterator, {}, (output(lookup), SOME_FIELD))
     check_vec_loop(view, block, loop, iterator, {})
 
-    if broadcast is not None:
-        # The caller checker already binds the original .values() receiver to the locked Inner's table.
-        check_definitions(broadcast, {0})
-        _, values, outer_iter, outer_loop = steps(broadcast, view, DEREF, VALUES, MAP_ITER, 'Loop')
-        check_args(broadcast, outer_iter, {}, (output(values),))
-        outer = outer_loop['kind']['Loop']
-        before = assignments_before(broadcast, outer_loop)
-        advance, branch = steps(outer, view, MAP_NEXT, 'Switch')
-        check_args(outer, advance, before, (output(outer_iter),))
-        exhausted, present = option_edges(view, branch, advance)
-        steps(exhausted, view, 'Break')
-        iterator, loop, _ = steps(present, view, VEC_ITER, 'Loop', 'Continue')
-        before_item = before | assignments_before(outer, branch)
-        check_args(present, iterator, before_item, (output(advance), SOME_FIELD))
-        check_vec_loop(view, present, loop, iterator, before_item)
+    require(broadcast is not None, 'missing coordinator broadcast arm')
+    # The caller checker already binds the original .values() receiver to the locked Inner's table.
+    check_definitions(broadcast, {0})
+    _, values, outer_iter, outer_loop = steps(broadcast, view, DEREF, VALUES, MAP_ITER, 'Loop')
+    check_args(broadcast, outer_iter, {}, (output(values),))
+    outer = outer_loop['kind']['Loop']
+    before = assignments_before(broadcast, outer_loop)
+    advance, branch = steps(outer, view, MAP_NEXT, 'Switch')
+    check_args(outer, advance, before, (output(outer_iter),))
+    exhausted, present = option_edges(view, branch, advance)
+    steps(exhausted, view, 'Break')
+    iterator, loop, _ = steps(present, view, VEC_ITER, 'Loop', 'Continue')
+    before_item = before | assignments_before(outer, branch)
+    check_args(present, iterator, before_item, (output(advance), SOME_FIELD))
+    check_vec_loop(view, present, loop, iterator, before_item)
     return {'method_def_id': method['def_id'], 'table_type': TABLE, 'targeted_loop': True,
-            'broadcast_loops': broadcast is not None}
+            'broadcast_loops': True}
