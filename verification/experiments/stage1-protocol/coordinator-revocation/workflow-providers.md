@@ -9,6 +9,8 @@
 | #1061 叠入 #1081 的协调器生产版本 | 每个组件均拒绝已改变的 `lifecycle_intent.rs`。该 Rust 引用需随生产版本单独复验。 |
 | 按 [#1090](https://github.com/VeriInfra-Lab/sandproof/pull/1090) 和 [#1089](https://github.com/VeriInfra-Lab/sandproof/pull/1089) 组装的公开源码 | 四个组件的两个原读取器仍各自拒绝同一个协调器 Rust 引用。共享 full 登记另外先停在 `digest-uses`。 |
 
+对于含 #1064 生产重构的组合，先采用工作流补丁，再由主控应用[协调器来源补丁](coordinator-source-inputs-candidate.patch)。第二份补丁更新四个组件各自的 `inputs` 中同一个 Rust 路径。这四份清单均由原组件入口直接读取。两份补丁都采用后，在下列命令中可逐项核对。仅采用原协调器的 #1061 使用上表第一行。
+
 在准备好的闭包中提交候选后，主控可在仓库根目录逐个执行原读取器。下面的命令会在第一个失败项退出。#1086 给公共晋升预检提供了相同来源检查的登记候选。[晋升预检](https://github.com/VeriInfra-Lab/sandproof/pull/1086)
 
 ```sh
