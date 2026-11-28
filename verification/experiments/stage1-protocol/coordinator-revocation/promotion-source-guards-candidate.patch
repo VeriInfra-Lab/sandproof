@@ -1,0 +1,74 @@
+diff --git a/tools/ci_promotion_acceptance.py b/tools/ci_promotion_acceptance.py
+index 8ec40640..3396ed06 100644
+--- a/tools/ci_promotion_acceptance.py
++++ b/tools/ci_promotion_acceptance.py
+@@ -157,8 +157,13 @@ from pathlib import Path
+ from tools.proof_native_suite import load
+
+ root = Path.cwd()
+-registered = load('stage1_promotion_sources', root / 'verification/experiments/stage1-protocol/registered.py')
++area = root / 'verification/experiments/stage1-protocol'
++registered = load('stage1_promotion_sources', area / 'registered.py')
+ registered.validate_registration(root, profile='full')
++# These four full-plan drivers also validate their providers, templates and drivers.
++for name in ('lifetime-row', 'pause-request', 'source-origin', 'source-question'):
++    support = load('stage1_preflight_' + name.replace('-', '_'), area / name / 'support.py')
++    support.source_guard()
+ '''
+     checks = (
+         ('stage1-freeze.log', ['shasum', '-a', '256', '--check', '--quiet',
+diff --git a/tools/tests/test_ci_promotion_acceptance.py b/tools/tests/test_ci_promotion_acceptance.py
+index e3303eb3..278b02af 100644
+--- a/tools/tests/test_ci_promotion_acceptance.py
++++ b/tools/tests/test_ci_promotion_acceptance.py
+@@ -4,6 +4,7 @@ import json
+ import os
+ from pathlib import Path
+ import subprocess
++import sys
+ import tempfile
+ import unittest
+ from unittest.mock import Mock, patch
+@@ -368,6 +369,42 @@ printf 'original formal executor log\n'
+         self.assertFalse((output/'native').exists())
+         self.assertFalse((output/'complete.json').exists())
+
++    def test_stage1_preflight_propagates_each_source_guard_refusal(self):
++        checkout = self.path/'checkout'
++        verification = checkout/'verification'
++        area = verification/'experiments/stage1-protocol'
++        area.mkdir(parents=True)
++        registered = area/'registered.py'
++        registered.write_text("def validate_registration(root, *, profile):\n    assert profile == 'full'\n")
++        manifest = verification/'stage1-protocol-inputs.sha256'
++        manifest.write_text(f'{gate.digest(registered)}  {registered.relative_to(checkout)}\n')
++
++        guards = []
++        for name in ('lifetime-row', 'pause-request', 'source-origin', 'source-question'):
++            package = area/name
++            package.mkdir()
++            (package/'support.py').write_text(
++                "from pathlib import Path\n"
++                "def source_guard():\n    Path(__file__).with_name('provider').read_bytes()\n")
++            provider = package/'provider'
++            provider.touch()
++            guards.append(provider)
++
++        env = dict(os.environ, PYTHONPATH=str(gate.ROOT), PYTHONDONTWRITEBYTECODE='1')
++        with patch.object(gate, 'BINARY', [sys.executable]):
++            passed = self.path/'passed'
++            passed.mkdir()
++            gate.check_stage1_inputs(checkout, passed, env)
++            for provider in guards:
++                with self.subTest(package=provider.parent.name):
++                    failed = self.path/provider.parent.name
++                    failed.mkdir()
++                    provider.unlink()
++                    with self.assertRaises(subprocess.CalledProcessError):
++                        gate.check_stage1_inputs(checkout, failed, env)
++                    self.assertIn(str(provider), (failed/'stage1-registration.log').read_text())
++                    provider.touch()
++
+     def test_native_target_alias_cannot_hide_builds_in_candidate_or_evidence(self):
+         checkout = self.path/'checkout'
+         checkout.mkdir(mode=0o700)
