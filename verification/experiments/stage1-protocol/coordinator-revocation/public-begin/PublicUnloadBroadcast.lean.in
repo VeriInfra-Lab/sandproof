@@ -1,0 +1,273 @@
+import SandproofActualRecord.UnloadCommitOrigin
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol
+
+namespace SandboxModel.Stage1Protocol.UnloadWorldBegin
+open SandproofUnloadWorldBegin UnloadStartedTransaction
+open SandboxModel.Stage1Protocol.InboxLoadErrors
+noncomputable section
+set_option autoImplicit false
+
+/-- A normal identity-check refusal can only be the original SQLite error or a
+changed data version. Borrow failure while invalidating the cache is an outer stop. -/
+def IdentityError : JournalError → Prop
+  | .Sqlite _ | .CorruptStore => True
+  | _ => False
+
+abbrev IdentityReply {A : Type} (result : core.result.Result A JournalError) :=
+  SandproofActualRecordRust.UnloadCommitOrigin.Permits IdentityError result
+
+private theorem version_errors (raw : Raw) : Returns IdentityReply (readVersion raw.conn) := by
+  unfold readVersion SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.data_version
+  apply bind_any
+  intro reply
+  cases reply <;> simp [core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    SandproofStage1RequestRust.JournalErrorFromSqlite.from, Returns, IdentityReply,
+    SandproofActualRecordRust.UnloadCommitOrigin.Permits, IdentityError]
+
+private theorem identity_errors (raw : Raw) (memo : Committed) :
+    Returns IdentityReply (checkIdentity memo raw.conn) := by
+  unfold checkIdentity SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.CommittedWorld.check_identity
+  apply bind_checked (version_errors raw)
+  intro reply good
+  cases reply with
+  | Ok version =>
+    dsimp only
+    split
+    · simp [Returns, IdentityReply, SandproofActualRecordRust.UnloadCommitOrigin.Permits]
+    · simp only [bind_assoc]
+      apply bind_any
+      intro u
+      simp [SandproofStage1RequestRust.core.result.Result.and, Returns, IdentityReply, SandproofActualRecordRust.UnloadCommitOrigin.Permits, IdentityError]
+  | Err error =>
+    simp only [bind_assoc]
+    apply bind_any
+    intro u
+    simpa [SandproofStage1RequestRust.core.result.Result.and, Returns, IdentityReply, SandproofActualRecordRust.UnloadCommitOrigin.Permits] using good
+
+theorem constructor_errors (raw : Raw) (memo : Committed) (start : U64) (world : World) :
+    Returns IdentityReply (makeOwner raw memo start world) := by
+  rw [original_owner_checks_its_transaction]
+  apply bind_checked (identity_errors raw memo)
+  intro reply good
+  cases reply with
+  | Ok _ => trivial
+  | Err err => exact good
+
+/-- Each alternative records the first uncertain call, its exact arguments and
+the connection actually returned to the public journal. Later observations are unnecessary. -/
+inductive EarlyUncertainty (conn : Conn) (memo : Memo) (error : SandproofSqliteSession.SqlError) : Conn → Prop where
+  | world (read : conn.calls.world (committedView memo) conn.base = .ok (.Err (.CommitUncertain error))) :
+      EarlyUncertainty conn memo error conn
+  | prepare (world : World) (prepared : SandproofStage1RequestRust.rusqlite.Connection)
+      (read : conn.calls.world (committedView memo) conn.base = .ok (.Ok world))
+      (failed : conn.calls.prepareWrite conn.base world (committedView memo) = .ok (.Err (.CommitUncertain error), prepared)) :
+      EarlyUncertainty conn memo error ⟨prepared, conn.calls⟩
+  | allocator (world : World) (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (raw : Raw)
+      (read : conn.calls.world (committedView memo) conn.base = .ok (.Ok world))
+      (prepare : conn.calls.prepareWrite conn.base world (committedView memo) = .ok (.Ok (), prepared))
+      (opened : conn.calls.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Ok raw, after))
+      (failed : conn.calls.readAllocator raw.conn inputKind inputScope = .ok (.Err (.CommitUncertain error))) :
+      EarlyUncertainty conn memo error ⟨after, conn.calls⟩
+
+private theorem early_of_return (conn after : Conn) (memo : Memo) (payload : SandproofSqliteSession.SqlError)
+    (returned : begin conn memo = .ok (.Err (.CommitUncertain payload), after)) :
+    EarlyUncertainty conn memo payload after := by
+  unfold begin controller.transaction.WorldTransaction.begin at returned
+  obtain ⟨worldReply, read, rest⟩ := InboxLoad.bind_success_value _ _ _ returned
+  change conn.calls.world (committedView memo) conn.base = .ok worldReply at read
+  cases worldReply with
+  | Err err =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at rest
+    obtain ⟨rfl, rfl⟩ := rest
+    exact .world read
+  | Ok world =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok] at rest
+    obtain ⟨_, preparation, rest⟩ := InboxLoad.bind_success_value _ _ _ rest
+    unfold controller.checkpoint.prepare_write at preparation
+    obtain ⟨⟨prepReply, prepared⟩, prep, mapped⟩ := InboxLoad.bind_success_value _ _ _ preparation
+    simp only [uncurry_apply_pair, Result.ok.injEq] at mapped
+    subst_vars
+    cases prepReply with
+    | Err err =>
+      simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at rest
+      obtain ⟨rfl, rfl⟩ := rest
+      exact .prepare world prepared read prep
+    | Ok u =>
+      cases u
+      simp only [uncurry_apply_pair, bind_tc_ok] at rest
+      obtain ⟨_, openedReply, rest⟩ := InboxLoad.bind_success_value _ _ _ rest
+      unfold rusqlite.transaction.Connection.transaction_with_behavior at openedReply
+      obtain ⟨⟨sqlReply, next⟩, opened, mapped⟩ := InboxLoad.bind_success_value _ _ _ openedReply
+      simp only [uncurry_apply_pair, Result.ok.injEq] at mapped
+      subst_vars
+      cases sqlReply with
+      | Err err =>
+        simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+          JournalError.Insts.CoreConvertFromError.from, SandproofStage1RequestRust.JournalErrorFromSqlite.from] at rest
+      | Ok raw =>
+        simp only [uncurry_apply_pair, bind_tc_ok,
+          rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref] at rest
+        obtain ⟨allocReply, frontier, rest⟩ := InboxLoad.bind_success_value _ _ _ rest
+        change conn.calls.readAllocator raw.conn inputKind inputScope = .ok allocReply at frontier
+        cases allocReply with
+        | Err err =>
+          simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at rest
+          obtain ⟨rfl, rfl⟩ := rest
+          exact .allocator world prepared next raw read prep opened frontier
+        | Ok start =>
+          simp only [bind_tc_ok, controller.transaction.WorldTransaction.from_started_transaction, bind_assoc] at rest
+          obtain ⟨owner, made, rest⟩ := InboxLoad.bind_success_value _ _ _ rest
+          have safe := constructor_errors raw (committedView memo) start world
+          rw [made] at safe
+          cases owner with
+          | Ok _ => simp at rest
+          | Err err =>
+            simp at rest
+            obtain ⟨rfl, rfl⟩ := rest
+            exact False.elim safe
+
+/-- Complete classification for an ordinary CommitUncertain returned by the actual BEGIN.
+SQLite BEGIN has a SQLite-only error type; original owner construction has the two errors above. -/
+theorem early_uncertainty_iff (conn after : Conn) (memo : Memo) (payload : SandproofSqliteSession.SqlError) :
+    begin conn memo = .ok (.Err (.CommitUncertain payload), after) ↔ EarlyUncertainty conn memo payload after := by
+  refine ⟨early_of_return conn after memo payload, ?_⟩
+  intro source
+  cases source with
+  | world read => exact world_error_precedes_later_calls _ _ _ read
+  | prepare world prepared read failed => exact preparation_error_precedes_sqlite _ _ _ _ _ read failed
+  | allocator world prepared after raw read prepare opened failed =>
+    exact allocator_error_precedes_owner_construction _ _ _ _ _ _ _ read prepare opened failed
+
+end
+end SandboxModel.Stage1Protocol.UnloadWorldBegin
+
+namespace SandproofActualRecordRust.PublicUnloadBroadcast
+open controller.lifecycle_inbox recording PublicBegin PublicReplay SourceFlowLink UnloadCommitOrigin
+open SandproofParentCommitRust.ErrorTransport
+open SandproofStage1RequestRust.sandproof_controller_service.application.coordinator.lifecycle_intent
+noncomputable section
+set_option autoImplicit false
+
+variable [FileHandle] [env : PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+    (journal : controller.ControllerJournal) (intent : Intent) (context : Context)
+
+/-- The complete returned journal identifies the connection from the failing BEGIN
+or the successful BEGIN whose recording transaction attempted the final commit. -/
+inductive Origin : JournalReply → Prop where
+  | before (error : SandproofSqliteSession.SqlError) (after : UnloadWorldBegin.Conn)
+      (observed : UnloadWorldBegin.EarlyUncertainty (initial journal) journal.committed_world error after) :
+      Origin (.Err (.CommitUncertain error), {journal with journal := ⟨after.base⟩}, ())
+  | recorded (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+      (after : UnloadWorldBegin.Conn) (ns : Str) (value : model.LifecycleWorkState)
+      (owner : StandardRecord Unit) (error : SandproofSqliteSession.SqlError)
+      (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+      (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+      (recording : originalRecording intent context begun ns = .ok (.Ok (.Recorded value), owner))
+      (committed : SandproofParentCommitRust.controller.transaction.WorldTransaction.commit owner.tx.parent =
+        .ok (.Err (.CommitUncertain error))) :
+      Origin (.Err (.CommitUncertain error), {journal with journal := ⟨after.base⟩}, ())
+
+/-- Classify the public Unload broadcast, including entry and namespace access. -/
+theorem broadcast_iff (unloading : ∃ source capture, intent.request.operation = .Unload source capture)
+    (reply : JournalReply) :
+    journalDecision journal intent context = .ok (reply, .All) ↔ Origin journal intent context reply := by
+  obtain ⟨source, capture, operation⟩ := unloading
+  constructor
+  · intro broadcast
+    have run := broadcast
+    unfold journalDecision at run
+    obtain ⟨_, journalCall, _⟩ := InboxLoad.bind_success_value _ _ _ run
+    unfold proof_public_journal ControllerJournal.record_lifecycle_intent at journalCall
+    obtain ⟨entry, beginCall, continuation⟩ := InboxLoad.bind_success_value _ _ _ journalCall
+    unfold controller.transaction.WorldTransaction.begin at beginCall
+    obtain ⟨⟨tag, after⟩, started, mapped⟩ := InboxLoad.bind_success_value _ _ _ beginCall
+    change UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (tag, after) at started
+    cases tag with
+    | Err err =>
+      have refused := begin_refusal hook journal intent context () err after started
+      have decision := journal_error journal intent context (fromRequest err) _ refused
+      rw [decision] at broadcast
+      cases err <;> simp [fromRequest, toRequest, operation, CoordinatorRevocation.endsAccess] at broadcast
+      rw [← broadcast]
+      exact .before _ after ((UnloadWorldBegin.early_uncertainty_iff _ _ _ _).mp started)
+    | Ok begun =>
+      simp only [uncurry_apply_pair, Result.ok.injEq] at mapped
+      subst entry
+      simp only [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok] at continuation
+      obtain ⟨ns, borrowed, _⟩ := InboxLoad.bind_success_value _ _ _ continuation
+      obtain ⟨value, owner, err, recording, committed, rfl⟩ :=
+        (broadcast_iff_commit journal intent context begun after ns started borrowed ⟨_, _, operation⟩ reply).mp broadcast
+      exact .recorded begun after ns value owner err started borrowed recording committed
+  · intro origin
+    cases origin with
+    | before err after observed =>
+      have refused := begin_refusal hook journal intent context () _ after
+        ((UnloadWorldBegin.early_uncertainty_iff _ _ _ _).mpr observed)
+      simpa [fromRequest, toRequest, operation, CoordinatorRevocation.endsAccess] using
+        journal_error journal intent context _ _ refused
+    | recorded begun after ns value owner err started borrowed recording committed =>
+      exact (broadcast_iff_commit journal intent context begun after ns started borrowed ⟨_, _, operation⟩ _).mpr
+        ⟨value, owner, err, recording, committed, rfl⟩
+
+/-- A preparation uncertainty returns before any SQL BEGIN observation, even
+when the connection supplied by preparation differs from the incoming one. -/
+theorem preparation_broadcast (world : UnloadStartedTransaction.World)
+    (prepared : SandproofStage1RequestRust.rusqlite.Connection) (payload : SandproofSqliteSession.SqlError)
+    (unloading : ∃ source capture, intent.request.operation = .Unload source capture)
+    (read : env.observation.world (SandproofUnloadWorldBegin.committedView journal.committed_world) journal.journal.connection =
+      .ok (.Ok world))
+    (failure : env.observation.prepareWrite journal.journal.connection world (SandproofUnloadWorldBegin.committedView journal.committed_world) =
+      .ok (.Err (.CommitUncertain payload), prepared)) :
+    journalDecision journal intent context =
+      .ok ((.Err (.CommitUncertain payload), {journal with journal := ⟨prepared⟩}, ()), .All) :=
+  (broadcast_iff journal intent context unloading _).mpr
+    (.before payload ⟨prepared, env.observation⟩ (.prepare world prepared read failure))
+
+/-- An error opening BEGIN IMMEDIATE preserves the SQLite error and returned
+connection, regardless of how the allocator or a later commit would respond. -/
+theorem open_refusal (world : UnloadStartedTransaction.World)
+    (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (error : SandproofSqliteSession.SqlError)
+    (read : env.observation.world (SandproofUnloadWorldBegin.committedView journal.committed_world) journal.journal.connection =
+      .ok (.Ok world))
+    (prepare : env.observation.prepareWrite journal.journal.connection world (SandproofUnloadWorldBegin.committedView journal.committed_world) =
+      .ok (.Ok (), prepared))
+    (failed : env.observation.beginSqlite prepared "BEGIN IMMEDIATE" = .ok (.Err error, after)) :
+    journalDecision journal intent context =
+      .ok ((.Err (.Sqlite error), {journal with journal := ⟨after⟩}, ()), .None) := by
+  have refused := sqlite_refusal hook journal intent context () world prepared after error read prepare failed
+  simpa [toRequest] using journal_error journal intent context _ _ refused
+
+/-- Start both runs with the same World and make SQLite BEGIN return the same
+error on any connection. Only the preparation reply changes. -/
+theorem preparation_first_error_witness (world : UnloadStartedTransaction.World)
+    (prepared after : SandproofStage1RequestRust.rusqlite.Connection) (payload : SandproofSqliteSession.SqlError)
+    (unloading : ∃ source capture, intent.request.operation = .Unload source capture) :
+    let calls (result : core.result.Result Unit SandproofUnloadWorldBegin.JournalError) : PublicCalls :=
+      {env with observation := {env.observation with
+        world := fun _ _ => .ok (.Ok world)
+        prepareWrite := fun _ _ _ => .ok (result, prepared)
+        beginSqlite := fun _ _ => .ok (.Err payload, after)}}
+    @journalDecision _ (calls (.Err (.CommitUncertain payload))) _ journal intent context =
+      .ok ((.Err (.CommitUncertain payload), {journal with journal := ⟨prepared⟩}, ()), .All) ∧
+    @journalDecision _ (calls (.Ok ())) _ journal intent context =
+      .ok ((.Err (.Sqlite payload), {journal with journal := ⟨after⟩}, ()), .None) := by
+  intro calls
+  constructor
+  · letI : PublicCalls := calls (.Err (.CommitUncertain payload))
+    exact preparation_broadcast journal intent context world prepared payload unloading rfl rfl
+  · letI : PublicCalls := calls (.Ok ())
+    exact open_refusal journal intent context world prepared after payload rfl rfl rfl
+
+end
+end SandproofActualRecordRust.PublicUnloadBroadcast
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadWorldBegin.constructor_errors
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadWorldBegin.early_uncertainty_iff
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadBroadcast.broadcast_iff
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadBroadcast.preparation_broadcast
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadBroadcast.open_refusal
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadBroadcast.preparation_first_error_witness

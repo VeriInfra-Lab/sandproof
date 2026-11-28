@@ -198,6 +198,19 @@ SQLite 行、JSON 解码和编码以及摘要回调的实际结果构成本段�
 
 `before_begin_witness` 说明 BEGIN 前提的作用。仅替换 World 读取函数的类型正确提供者可在打开事务前返回 `CommitUncertain`，同一协调器便选择 `All`。要将结论扩大到调用入口，需要 V5 核对实际 BEGIN 前的读取和写入准备。事务内部校验或底层数据库提交的物理结果、真实网关信号送达仍由各自提供方验收。主控在采用完整载入登记后应用[广播来源登记候选](unload-commit-origin-integration-candidate.patch)。
 
+### 从公开 journal 入口判定 Unload 广播
+
+对任意 journal、已解码 Unload、上下文和完整返回值，`PublicUnloadBroadcast.broadcast_iff` 从公开入口判定何时选择 `All`。它同时确定返回的错误载荷、连接和 journal 其余字段。可逐项检查两种来源。
+
+- BEGIN 返回不确定错误。`early_uncertainty_iff` 沿原调用次序给出首个错误及其实际连接。World 读取保留输入连接，准备返回自己的连接，分配器读取则保留 SQL BEGIN 返回的连接。准备和分配器的分支均要求之前的调用成功。SQL BEGIN 自身的正常错误映射为 `Sqlite`。从已打开事务构造 owner 时，原身份检查只能正常拒绝为 `Sqlite` 或 `CorruptStore`。
+- BEGIN 成功且读到命名空间。原录入在这个 holder 上返回 `Recorded`，然后在该次录入交回的同一事务上提交，返回 `CommitUncertain`。前一节的定理给出这一分支的完整分类。
+
+`preparation_first_error_witness` 使用同一个 World、同一份 SQLite 开事务错误和同一意图。准备先返回不确定错误时，结果带准备返回的连接并选择广播。将准备结果换为成功时，SQLite 的普通拒绝带回其连接，协调器选择无动作。
+
+生产 `prepare_write` 在录入 SQL BEGIN 之前有自己的维护提交。`commit_housekeeping` 将该提交的 SQLite 错误映射为 `CommitUncertain`。V5 的 `automatic_publication_unknown_commit_recovers_both_durable_roots` 从 `journal.apply` 验证检查点发布的两种耐久结果。World 和分配器在本证明中仍是类型化调用，其具体错误可达性由 V5 提供。Unload 的网关通知送达由数据通路验收。
+
+主控在 #1102 登记候选之后试套[公开入口登记候选](public-unload-broadcast-integration-candidate.patch)。ning 在同一候选的完整 `functional` 日志中核对已有的两个协调器用例和上述检查点维护用例。公共入口继续复用同一份原生封口。
+
 ### 首次 Unload 的保存更新和事务返回
 
 首次 Unload 通过追加、新收件箱校验和编码后，`bounded_save_result` 处理编码长度小于或等于配置预算的路径。配置预算上界保证这条路径落在现有 SHA 库合同的正常长度域。借用同一存活连接的标准保存方法把全部编码字节送给摘要方法。实际更新语句的两个 BLOB 参数依次为这些字节和完整的 32 字节摘要。在当前 SQLite 适配合同下，每次正常返回均带回此次写入后的读视图。对应定理保留 owner 的其余字段。[保存更新证明](public-begin/PublicUnloadSave.lean.in)
