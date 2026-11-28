@@ -67,6 +67,31 @@ bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-look
 bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-lookup/formal.py --variant key-only --output /private/lookup-key-only
 ```
 
+在证明机已配置的精确检出里，可以给这**一个**重任务分配总计 64 个 CPU。
+先据当前 CPU 余量确定可用的 64 个编号，把列表赋给 `SANDPROOF_EXCLUSIVE_CPUS`，
+例如 CPU 32–95 空闲时使用 `32-95`。下列命令占用同一 Stage1 协调锁。
+
+```sh
+base=${SANDPROOF_STAGE1_STORAGE_ROOT:?set the private Stage1 data-disk root}
+source "$base/bin/environment.sh"
+run=$(mktemp -d "$base/runs/lookup-heavy.XXXXXXXX")
+mkdir -m 700 "$run/tmp"
+(
+    test -f "$base/formal.lock" && test ! -L "$base/formal.lock" || exit 2
+    exec 9<>"$base/formal.lock"
+    flock -xn 9 || exit 75
+    export SANDPROOF_LOCK_FILE="$base/formal.lock" SANDPROOF_LOCK_FD=9
+    export SANDPROOF_STAGE1_NATIVE_JOBS=1 TMPDIR="$run/tmp"
+    taskset -c "${SANDPROOF_EXCLUSIVE_CPUS:?set the admitted CPU list}" \
+        bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-lookup/native.py \
+        --exclusive-64-cpus --output "$run/lookup"
+)
+```
+
+四个原有版本同时运行，每个版本的 Cargo 限于 16 个互不重叠的 CPU，并使用 16 个构建槽。
+`result.json` 有原断言结果、命令和日志摘要，各版本保留实际 CPU 读回。
+此入口单独执行。默认 Stage1 批次仍使用原有调度，也仍执行历史四核合同的检查。
+
 按工作流在外层取得共享重锁；每版使用自己的源码、Cargo target 与 `.lake/build`，
 只共享只读依赖。形式驱动重新抽取原版限制与候选，绑定全部当前输入、原生注册源、
 固定工具及完整后端/服务输入，再经原 `actual_files`/严格服务检查全部实际文件和审计。
