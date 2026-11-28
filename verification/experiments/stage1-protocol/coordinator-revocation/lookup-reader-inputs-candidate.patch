@@ -1,0 +1,22 @@
+diff --git a/verification/experiments/stage1-protocol/inbox-lookup/inventory.json b/verification/experiments/stage1-protocol/inbox-lookup/inventory.json
+index 972fd2e2..2b867784 100644
+--- a/verification/experiments/stage1-protocol/inbox-lookup/inventory.json
++++ b/verification/experiments/stage1-protocol/inbox-lookup/inventory.json
+@@ -82,5 +82,5 @@
+     "controller-service/src/application/coordinator/lifecycle_unload.rs": "43637bd1f494d159d527a9fa91ad3e581fdaf892038eb6577ef775410cc2f89f",
+     "controller-service/src/application/coordinator/physical_storage.rs": "c151aeb9fa668b54bc4e40390ae448178c8612be3d5894a4c3ae40aee173e1d6",
+-    "controller-service/src/application/coordinator/lifecycle_intent.rs": "2277e296f74dfaa340423bdc5b62427e32f42e2a6d354045b6227e36c832d5dd",
++    "controller-service/src/application/coordinator/lifecycle_intent.rs": "ff56d460fa987e09463783986742de6be6773ee75a05c88291c96afa0a2cd897",
+     "controller-service/src/application/coordinator/template_commands.rs": "db7288cc67fffbeba3f15f0d286cc3436c244ffc5b7cc6a39824e1ffd0dab901",
+     "controller-service/src/application/coordinator/data_access.rs": "ecd49e57f260934b9e03a00a0de610df42714e27d1d1a4ac42ce782dcb6913e1",
+diff --git a/verification/stage1-protocol-inputs.sha256 b/verification/stage1-protocol-inputs.sha256
+index 66c3b9e3..2083c78c 100644
+--- a/verification/stage1-protocol-inputs.sha256
++++ b/verification/stage1-protocol-inputs.sha256
+@@ -539,5 +539,5 @@ b11cdda8090d9c90350fec44d73d659ff97c0decbb95c010c6f104ccb615db00  verification/e
+ d7fca7f06ebae8e2bfe06130563c429044ebf16c45b7ad0adaa212e750f8bd6d  verification/experiments/stage1-protocol/inbox-lookup/extract-root.rs.in
+ 07be0705e5205c1a2d7a29baad7e79def3e4f40c703cd0b980462f03de962ef1  verification/experiments/stage1-protocol/inbox-lookup/formal.py
+-fcbb12a422a4e3066082d0c7961276f44b8b72b9ae538659dc8a69aa765af145  verification/experiments/stage1-protocol/inbox-lookup/inventory.json
++360ddc5d5afc2af0c9efb28e5853ec23a9fd148bda7fa3861ced0e48766c716b  verification/experiments/stage1-protocol/inbox-lookup/inventory.json
+ 1754c6dffa5e6f83e9766baec4f0d94daa0a61084ded30f702657d607f5d9a10  verification/experiments/stage1-protocol/inbox-lookup/journal_binding.py
+ aa400f58a07418df23c7d28bfd351d264516356ce026a23284902903c08b6394  verification/experiments/stage1-protocol/inbox-lookup/lib.rs
