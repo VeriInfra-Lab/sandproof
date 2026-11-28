@@ -151,15 +151,26 @@ def run_entry(command, *, log, checkout, env, pass_fds=()):
                        stderr=subprocess.STDOUT, check=True, pass_fds=pass_fds)
 
 
-def check_stage1_inputs(checkout, output, env):
-    registration = '''
-from pathlib import Path
-from tools.proof_native_suite import load
+def check_stage1_registration(root):
+    from tools.proof_native_suite import load
 
-root = Path.cwd()
-registered = load('stage1_promotion_sources', root / 'verification/experiments/stage1-protocol/registered.py')
-registered.validate_registration(root, profile='full')
-'''
+    stage1 = root / 'verification/experiments/stage1-protocol'
+    registered = load('stage1_promotion_sources', stage1 / 'registered.py')
+    registered.validate_registration(root, profile='full')
+    # The original drivers check these reviewed input closures separately.
+    # Run those same guards before compiling the workspace and native cases.
+    for case in ('pause-request', 'source-question', 'source-origin', 'lifetime-row'):
+        support = load('stage1_promotion_' + case.replace('-', '_'), stage1 / case / 'support.py')
+        try:
+            support.source_guard()
+        except (OSError, ValueError) as error:
+            raise ValueError(f'{case}: {error}') from error
+
+
+def check_stage1_inputs(checkout, output, env):
+    registration = ('from pathlib import Path; '
+                    'from tools.ci_promotion_acceptance import check_stage1_registration; '
+                    'check_stage1_registration(Path.cwd())')
     checks = (
         ('stage1-freeze.log', ['shasum', '-a', '256', '--check', '--quiet',
                               'verification/stage1-protocol-inputs.sha256']),
@@ -429,7 +440,9 @@ def run_stage(candidate, checkout, output, *, native=None, resume_from=None, reg
         with operator_lock(env, 'SANDPROOF_PROOF_HEAVY_LOCK',
                            'SANDPROOF_PROOF_HEAVY_LOCK_FD') as fd:
             native_env = dict(env, SANDPROOF_ACCEPTANCE_ROLE='native')
-            native_env.pop('SANDPROOF_LOCK_FD', None)
+            for formal_option in ('SANDPROOF_LOCK_FD', 'SANDPROOF_STAGE1_JOBS',
+                                  'SANDPROOF_STAGE1_RESUME_FROM', 'SANDPROOF_PROOF_RECOMPUTE'):
+                native_env.pop(formal_option, None)
             run_entry([*BINARY, 'tools/native_task.py', 'run', '--scope', SCOPE,
                        '--candidate', execution_commit, '--output', str(native), '--observer', str(observer)],
                       log=output/'native.log', checkout=checkout,

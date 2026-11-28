@@ -111,6 +111,10 @@ print('logged by original proof subprocess')
     def test_target_must_be_new_and_may_not_hold_evidence(self):
         with self.assertRaisesRegex(ValueError, 'private formal build paths'):
             self.enroll(targets=('correct/source/.lake/extract-target',))
+        with self.assertRaisesRegex(ValueError, 'private formal build paths'):
+            self.enroll(targets=('module/original-native/other/target',))
+        with self.assertRaisesRegex(ValueError, 'private formal build paths'):
+            self.enroll(targets=('target',))
         self.enroll()
         self.launch()
         proof_inside_target = self.run/self.targets[0]/'build-output'

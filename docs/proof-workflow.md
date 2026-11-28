@@ -146,6 +146,12 @@ GitHub CI 使用现有的隔离 runner。手动验收宿主执行 Rust/Python �
 某条证明需要本次新抽取或原生结果时，等对应的前置任务通过后再运行。
 晋升所需的完整原生验收和登记范围内的 Stage1 使用同一个固定候选。
 
+晋升整批先在 msra 的数据盘准备原生证据，再运行登记的 Lean 任务。
+宿主入口分别设置独立 Rust 组件、轻量工具测试和正式证明的并发上限，
+具体配置、CPU 分配和可并行的条件见[分阶段验收](ci.md#stage1-手动分阶段验收)。
+
+以下示例是全项目原生入口。Stage1 晋升使用 `--scope stage1-protocol`。
+
 ```sh
 # 在原协调锁下使用固定 Rust、Python、离线 Cargo 和真实 Redis。
 export CARGO_NET_OFFLINE=true
@@ -183,6 +189,8 @@ SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这�
 先查原退出记录和收据再决定是否启动新验收。只有全部子检查成功后才写
 `complete.json`。证明机必须检查完整记录及其所有日志摘要，缺一个、被修改或
 未完成都拒绝入场，不能只信文件名或一个 `success` 字段。
+正式登记入口在同一批次共享已完整核对的原生封口。每个证明仍重新核对其输入键、
+收据摘要、适用范围和原始文件，正反版本的原验收条件保持。整批结束再次完整核对。
 
 V3 的独立交付使用显式 `--scope stage1-protocol`，仍执行完整 Linux 基础检查、
 原协议组件和已登记的全部 V3 原生正确/错误版。记录必须标明范围；任何必需组件缺失、
@@ -217,13 +225,13 @@ Charon 或 Aeneas。原生入口在完整 `functional` 前核对整包和每个�
 不同均拒绝。原四份边界归档不改签；第五包沿原 `source_archives` 键进入本批四份
 原生封口，所以三个旧有限范围也保守地携带它，两机须设置同一变量/原字节。
 
-只有显式 Create profile 允许 `SANDPROOF_STAGE1_JOBS=8` 或 `12`；允许值为
+Create 及 protocol-convergence 的形式并行度允许值为
 1、2、4、8、12，默认仍为 1。父进程按实际获准 CPU 分成互不重叠的四核组，
 12 路须有 48 核、8 路须有 32 核；预算不足直接拒绝。每任务用新 Python 子进程
 设置并读回自己的四核组，再执行原驱动；多线程父进程不改自身 affinity，
 不使用 `preexec_fn`。同一锁 FD 继续贯穿，实际 CPU 准入记录进入原证据。
 每任务仍有独立构建、缓存和日志；首个失败后不再派发新任务，已启动任务保留结果。
-`full` 保留原 1、2、4 路及默认一路，不因机器核数自动增并行或缩减检查。
+`full` 允许 1、2、4、8、64 路；64 路模式使用恰好 64 个获准逻辑 CPU。
 
 当前捕获调用方的独立入口使用固定 `--scope capture-caller`，只包含完整 Linux 基础检查
 `functional` 和原 `capture-caller` 组件。组件仍运行其最终清单中的正确/错误版、实际编译
@@ -286,7 +294,7 @@ bash scripts/verify-capture-caller.sh
 并纳入此组件一次。本有限封口不能替代全 V3、事务来源、异步或物理资源验收。
 
 V3 原正式入口的登记子任务可通过 `SANDPROOF_STAGE1_JOBS=2` 并行执行；允许值为
-`1`、`2`、`4`，默认仍为 `1`，按宿主实际预算选择，不因 CPU 空闲自动增加。
+`1`、`2`、`4`、`8`、`64`，底层入口默认值为 `1`，按宿主实际预算选择，不因 CPU 空闲自动增加。
 每个任务使用独立进程、输出、Cargo target 和形式缓存，保留原清单、负例和汇总审计。
 入口接受的并行度、默认值和实际通过的并行资格分别记录；两任务/两路小样不能写成
 四路或全部登记任务已通过。操作者须同时核对外层 CPU 亲和性、内层 Lean 线程、内存
@@ -365,7 +373,7 @@ bash scripts/verify-controller.sh --recompute
 
 MIR 捕获须通过 `v0_use_inventory.py check-published`；已有捕获仍适用于当前输入时
 不重做十组编译。清单是防漏证据，不能解释成全部调用或异步行为已经证明。
-各单模块入口仍可单独运行，原生步骤同样要求上述 ning 证据；不经批次协调时，
+各单模块入口仍可单独运行，原生步骤同样要求上述原生验收证据；不经批次协调时，
 公共抽取步骤会正常重新执行，不存在无凭据的“跳过检查”开关。
 
 ### 一批去重与跨批复用
@@ -418,6 +426,27 @@ BTreeSet 插入、Metadata 目录判断和 Tokio Mutex 各有独立原生 case�
 不得从外部 PR 或其它未知来源导入成功记录。共享缓存写入加锁；并行分支使用
 独立工作区和 `.lake/build`，不能共写一个构建目录。Lake 原有增量缓存继续保留，
 不删除 `.lake`，也不通过修改工具版本或内核检查选项换取通过。
+
+## 收件查找的定向验收
+
+从提交干净的检出运行[定向入口](../verification/experiments/stage1-protocol/inbox-lookup/module_acceptance.py)，用 `--base <基线提交> --plan` 查看变更和下游。计划允许局部验收时，用 `--output <新建私有证据路径>`、`--formal-lock <现有证明锁路径>` 替代 `--plan`。入口执行原 Rust 测试和两份原 Lean 检查，`module-result.json` 记录实际候选、执行和复用范围。共享生产入口、合同或未知输入变化时，按计划扩展验收。计划本身只列检查项。
+
+只修改没有下游消费者的 `InboxLookupWrong.lean.in` 以及其派生摘要时，可以复用独立的原生收据。用同一入口从干净基线运行 `--prepare-native --base HEAD --output <新建私有证据路径>`，实际执行四个原 Rust 变体并写入 `lookup-native-receipt.json`。再从后继提交用 `--base <原收据提交>`、`--reuse-native <收据路径>` 和 `--reuse-native-sha256 <收据摘要>` 运行，保留原结果及命令日志。复用限于已登记的固定工具与配置。后继仍实际运行原 Lean 正确版和错误版检查，所产收据只覆盖这个模块。
+
+使用宿主已安装的观察器时，独立验收可用[托管入口](../tools/ci_lookup_acceptance.py)直接运行。运行前登记两个抽取 `extract-target`。如果本轮新跑原生检查，也登记它创建的四个 Cargo `target`，复用原生收据时只处理本轮的两个抽取目录。原模块输出位于 `$run/module`，保留收据、源码、LLBC、日志和 `.lake`。收尾待办时，在相同候选上执行 `closeout`，只读回原证据并续办回收。
+
+```sh
+bash scripts/python-entry.sh -m tools.ci_lookup_acceptance run \
+  --base "$base" --formal-lock "$formal_lock" --output "$run" --observer "$observer"
+bash scripts/python-entry.sh -m tools.ci_lookup_acceptance closeout \
+  --output "$run" --observer "$observer"
+```
+
+若从升级后的收尾工具恢复旧工作，使用 `closeout --checkout <原候选检出>`。入口读回原候选提交、代码树、待清理目录及真实终态。
+
+如果计划列出 `registered_impact`，可用 `--registered-native <同一候选的原生证据目录>` 运行列出的登记证明。目前这些作业仍按原入口要求同一代码树的完整原生封印和 `functional` 收据。该路径可以省去未受影响的 Lean 作业，原生封印无法用单个 crate 的测试记录代替。
+
+正确版证明页或共享模型的证明段发生变化时，可以先用 `--lookup-only` 加上述复用参数检查 Lookup 本身和原错误版。共享模型的定义与完整查找合同须保持原字节一致。`lookup-local-result.json` 列出待检查的下游，即使这两份证明通过也返回 `2`，直至另行完成所有必需检查。
 
 ## 局部证明经验
 
