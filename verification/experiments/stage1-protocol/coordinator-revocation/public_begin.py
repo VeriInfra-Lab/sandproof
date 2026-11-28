@@ -19,11 +19,11 @@ import journal_decision
 from wiring import require
 
 RECORD = Path('verification/aeneas/actual-record/SandproofActualRecord')
-PAGE = str(RECORD/'LoadValidation.lean')
-MODULE = 'SandproofActualRecord.LoadValidation'
+PAGE = str(RECORD/'LoadErrors.lean')
+MODULE = 'SandproofActualRecord.LoadErrors'
 PKG = codec.PACKAGE/'public-begin'
 NEW = ('PublicHandle', 'PublicCalls', 'PublicBegin', 'PublicReplay', 'PublicLoaded', 'PublicUnload',
-       'PublicUnloadRefusal', 'RecordCodecPorts', 'PublicUnloadSave', 'ValidationErrors', 'LoadValidation')
+       'PublicUnloadRefusal', 'RecordCodecPorts', 'PublicUnloadSave', 'ValidationErrors', 'LoadValidation', 'LoadErrors')
 AUDITS = {'SandproofActualRecordRust.PublicBegin.'+n for n in (
     'begin_refusal', 'world_refusal', 'preparation_refusal', 'sqlite_refusal', 'allocator_refusal',
     'changed_version_refusal', 'started_reply', 'first_record_read_refusal')}
@@ -49,6 +49,10 @@ AUDITS.update(('SandboxModel.Stage1Protocol.InboxLoad.load_at_validation',
                'SandboxModel.Stage1Protocol.InboxLoad.Values.load_validation_witnesses',
                'SandproofActualRecordRust.PublicLoadValidation.record_load_stops',
                'SandproofActualRecordRust.PublicLoadValidation.journal_load_validation'))
+
+AUDITS.update('SandboxModel.Stage1Protocol.InboxLoadErrors.'+n for n in ('load_errors', 'unchecked_first_read'))
+AUDITS.update('SandproofActualRecordRust.PublicLoadErrors.'+n for n in (
+    'standard_effects', 'original_load_error', 'journal_load_refusal'))
 
 APPEND_WITNESSES = {
     str(journal_decision.PROTOCOL/(name+'.lean')): codec.AREA/'inbox-append'/(name+'.lean.in')
