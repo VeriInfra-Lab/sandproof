@@ -1,0 +1,433 @@
+import SandproofActualRecord.LoadErrors
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol SandproofParentCommitRust.ErrorTransport
+
+namespace SandproofActualRecordRust.UnloadCommitOrigin
+open controller.lifecycle_inbox recording PublicBegin PublicReplay SourceFlowLink PublicUnload InboxLoadErrors
+noncomputable section
+set_option autoImplicit false
+
+/-- Four possible normal errors in the actual save. The two external error
+payloads survive the adapter and owner conversions. -/
+def SaveError : RequestError → Prop
+  | .CorruptStore | .MaintenanceCapacity | .Json _ | .Sqlite _ => True
+  | _ => False
+
+def Permits {A : Type} (p : RequestError → Prop) : RequestRustResult A → Prop
+  | .Ok _ => True
+  | .Err err => p err
+
+abbrev Replies {A E : Type} (p : RequestError → Prop) (run : Result (RequestRustResult A × E)) :=
+  Returns (fun pair => Permits p pair.1) run
+
+/-- Returning a holder through the parent/source boundary preserves the complete
+wrapped result, including the error payload. Owner reconstruction can stop. -/
+private theorem lift_reply {A D : Type} (before : IOOwnerTransport.Holder D)
+    (run : Result (RequestRustResult A × IOOwnerTransport.OldHolder D)) :
+    toRequestStateResult (IOOwnerTransport.liftReply before run) = (do
+      let (reply, after) ← run
+      let owner ← IOOwnerTransport.returnedHolder before after
+      .ok (reply, owner)) := by
+  cases run with
+  | ret pair =>
+    rcases pair with ⟨reply, after⟩
+    cases h : IOOwnerTransport.returnedHolder before after with
+    | ret owner => simp [IOOwnerTransport.liftReply, h, toRequestStateResult, liftResult]
+    | div => simp [IOOwnerTransport.liftReply, h, toRequestStateResult, liftResult]
+    | vis event k =>
+      simp [IOOwnerTransport.liftReply, h, toRequestStateResult, liftResult]
+      congr 1
+      funext x
+      cases event; cases x
+  | vis event k =>
+    simp [IOOwnerTransport.liftReply, toRequestStateResult, liftResult]
+    congr 1
+    funext x
+    cases event; cases x
+  | div => simp [IOOwnerTransport.liftReply, toRequestStateResult, liftResult]
+
+private theorem lifted {A D : Type} (before : IOOwnerTransport.Holder D)
+    {run : Result (RequestRustResult A × IOOwnerTransport.OldHolder D)} {p : RequestError → Prop}
+    (safe : Replies p run) : Replies p (toRequestStateResult (IOOwnerTransport.liftReply before run)) := by
+  rw [lift_reply]
+  apply bind_checked safe
+  rintro ⟨reply, after⟩ good
+  apply bind_any
+  intro owner
+  exact good
+
+variable [env : PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+
+private theorem encode (before : StandardRecord Unit) (inbox : model.Inbox) :
+    Replies SaveError (saveEffects.encode before inbox) := by
+  apply lifted before
+  rw [SandboxModel.StandardRecordCodec.actual_encode_for_save_call_contract]
+  unfold SandboxModel.StandardRecordCodec.callView
+  apply bind_any
+  intro raw
+  apply bind_any
+  intro connection
+  apply bind_any
+  rintro ⟨reply, after⟩
+  cases reply <;> trivial
+
+open SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.WorldTransaction
+  renaming execute_inbox_update → updateTransaction
+
+private theorem update (before : StandardRecord Unit) (sql : Str) (bytes digest : Slice U8) :
+    Replies SaveError (saveEffects.update before sql bytes digest) := by
+  apply lifted before
+  rw [SandboxModel.StandardRecordIO.actual_update_call_contract]
+  unfold SandboxModel.StandardRecordIO.updateView
+  have sqlSafe : Replies SaveError (updateTransaction (IOOwnerTransport.toSource before).tx sql bytes digest) := by
+    unfold updateTransaction
+    split
+    · trivial
+    · apply bind_any
+      rintro ⟨reply, tx⟩
+      cases reply <;> simp [core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        SandproofStage1RequestRust.JournalErrorFromSqlite.from, Returns, Permits, SaveError]
+  apply bind_checked sqlSafe
+  rintro ⟨reply, tx⟩ good
+  exact good
+
+omit [SandproofStandardRecordCodec.DecodeCalls] in
+private theorem validation (inbox : model.Inbox) : Returns (Permits SaveError) (saveValidation inbox) := by
+  generalize h : saveValidation inbox = run
+  cases run with
+  | ret result =>
+    cases result with
+    | Ok _ => trivial
+    | Err err =>
+      have classified := PublicSaveValidation.save_validation_error inbox err h
+      cases err <;> trivial
+  | vis i k => trivial
+  | div => trivial
+
+/-- Normal save errors, for any inbox and any holder. No successful validation,
+codec reply, live transaction, updated-row count or later commit is assumed. -/
+theorem save_errors (inbox : model.Inbox) (before : StandardRecord Unit) :
+    Replies SaveError (originalSave inbox before) := by
+  unfold originalSave SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.save_using
+  apply bind_checked (validation inbox)
+  intro checked good
+  cases checked with
+  | Err err => simpa [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, Returns, Permits] using good
+  | Ok u =>
+    simp only [core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok]
+    apply bind_checked (encode before inbox)
+    rintro ⟨encoded, afterEncode⟩ good
+    cases encoded with
+    | Err err => simpa [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, Returns, Permits] using good
+    | Ok bytes =>
+      simp only [uncurry_apply_pair, bind_tc_ok]
+      apply bind_any
+      intro length
+      apply bind_any
+      intro budget
+      split
+      · trivial
+      · apply bind_any
+        rintro ⟨sha, afterDigest⟩
+        simp only [uncurry_apply_pair]
+        apply bind_any
+        intro digest
+        apply bind_checked (update afterDigest _ _ _)
+        rintro ⟨written, after⟩ good
+        cases written with
+        | Err err => simpa [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch,
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, Returns, Permits] using good
+        | Ok count =>
+          simp only [uncurry_apply_pair, bind_tc_ok]
+          split <;> trivial
+
+section
+omit [PublicCalls] [SandproofStandardRecordCodec.DecodeCalls]
+
+def Ordinary : RequestError → Prop
+  | .CommitUncertain _ => False
+  | _ => True
+
+private theorem memory_error (inbox : model.Inbox) (intent : Intent) (after : model.Inbox)
+    (err : RequestError) (returned : inbox.record intent = .ok (.Err err, after)) : Ordinary err := by
+  obtain ⟨out, observed, post⟩ := WP.spec_imp_exists (InboxRecordTotal.record_contract inbox intent)
+  rw [returned] at observed
+  have eq := Result.ok_injective observed
+  subst out
+  unfold InboxRecordTotal.RecordPost at post
+  split at post
+  · cases post
+    trivial
+  · obtain ⟨si, ei, _, _, impossible⟩ := post
+    cases impossible
+  · split at post
+    · generalize d : InboxRecord.freshDecision inbox intent = decision at post
+      cases decision with
+      | reject denied =>
+        change ((core.result.Result.Err err : RequestRustResult (Usize × Usize)), after) = (.Err denied, inbox) at post
+        cases post
+        unfold InboxRecord.freshDecision at d
+        repeat' first | contradiction | (cases d <;> trivial) | split at d
+      | insert terminal inc =>
+        obtain ⟨i, _, impossible, _⟩ := post
+        cases impossible
+    · obtain ⟨s, bound, _, post⟩ := post
+      generalize d : InboxAppend.existingDecision inbox (inbox.sessions.val[s.val]'bound) intent = decision at post
+      cases decision with
+      | reject denied =>
+        change ((core.result.Result.Err err : RequestRustResult (Usize × Usize)), after) = (.Err denied, inbox) at post
+        cases post
+        simp only [InboxAppend.existingDecision] at d
+        repeat' first | contradiction | (cases d <;> trivial) | split at d
+      | append terminal =>
+        obtain ⟨entries, i, _, _, impossible⟩ := post
+        cases impossible
+
+private theorem find_safe (inbox : model.Inbox) (intent : Intent) :
+    Returns (Permits Ordinary) (inbox.find intent) := by
+  have post := InboxLookup.find_outcome inbox intent
+  cases h : InboxLookup.inboxSpec intent inbox.sessions.val 0 with
+  | absent => simp only [h] at post; rw [post]; trivial
+  | conflict => simp only [h] at post; rw [post]; trivial
+  | found i j =>
+    simp only [h] at post
+    obtain ⟨si, ei, _, _, returned⟩ := post
+    rw [returned]
+    trivial
+
+private theorem auth_safe (inbox : model.Inbox) (intent : Intent) (context : Context) :
+    Returns (Permits Ordinary) (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated inbox intent context) := by
+  classical
+  by_cases ok : InboxAdmission.ContextMatches inbox context ∧ Validation.ValidEnvelope intent context
+  · rw [(InboxAdmission.accepts_iff inbox intent context).mpr ok]
+    trivial
+  · rw [(InboxAdmission.refuses_iff inbox intent context).mpr (not_and_or.mp ok)]
+    trivial
+
+private theorem memory_safe (inbox : model.Inbox) (intent : Intent) : Replies Ordinary (inbox.record intent) := by
+  generalize h : inbox.record intent = run
+  cases run with
+  | ret pair =>
+    rcases pair with ⟨reply, after⟩
+    cases reply with
+    | Ok _ => trivial
+    | Err err => exact memory_error inbox intent after err h
+  | vis i k => trivial
+  | div => trivial
+
+end
+
+local notation "sourceRecord" => SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+private theorem source_errors (before : StandardRecord Unit) (intent : Intent) (context : Context)
+    (unloading : ∃ source capture, intent.request.operation = .Unload source capture) :
+    Replies Ordinary (sourceRecord (oldRetirement retirement) (oldTerminal terminal)
+      (oldRenewal renewal) (oldUnload unload) (oldGraphic graphic) (ScopeTransport.recordEffects reads)
+      before intent context) := by
+  obtain ⟨source, capture, operation⟩ := unloading
+  unfold SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+  apply bind_checked (load_errors PublicLoadErrors.standard_effects (oldRetirement retirement) (oldTerminal terminal)
+    (oldRenewal renewal) (oldUnload unload) (oldGraphic graphic) before)
+  rintro ⟨loaded, after⟩ good
+  cases loaded with
+  | Err err =>
+    change LoadError err at good
+    simp [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, Returns, Permits]
+    cases err <;> trivial
+  | Ok opt =>
+    cases opt with
+    | none =>
+      simp [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, Returns, Permits, Ordinary]
+    | some inbox =>
+      simp only [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or, bind_tc_ok]
+      apply bind_checked (auth_safe inbox intent context)
+      intro accepted good
+      cases accepted with
+      | Err err =>
+        simpa [core.result.Result.Insts.CoreOpsTry.branch,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, Returns, Permits] using good
+      | Ok u =>
+        simp only [bind_tc_ok]
+        apply bind_checked (find_safe inbox intent)
+        intro lookup good
+        cases lookup with
+        | Err err =>
+          simpa [core.result.Result.Insts.CoreOpsTry.branch,
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, Returns, Permits] using good
+        | Ok index =>
+          cases index with
+          | some pair =>
+            rcases pair with ⟨s, e⟩
+            simp only [bind_tc_ok]
+            apply bind_any
+            intro replay
+            trivial
+          | none =>
+            simp only [bind_tc_ok, SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.guard_destroy, operation, Bool.false_eq_true, if_false, uncurry_apply_pair]
+            apply bind_checked (memory_safe inbox intent)
+            rintro ⟨appended, next⟩ good
+            cases appended with
+            | Err err =>
+              simpa [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch,
+                core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, Returns, Permits] using good
+            | Ok pair =>
+              rcases pair with ⟨s, e⟩
+              simp only [uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok, SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.attach_destroy, operation, Bool.false_eq_true, if_false]
+              apply bind_checked (save_errors next after)
+              rintro ⟨written, saved⟩ good
+              cases written with
+              | Err err =>
+                change SaveError err at good
+                simp [uncurry_apply_pair,
+                  core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, Returns, Permits]
+                cases err <;> trivial
+              | Ok u =>
+                simp only [uncurry_apply_pair, bind_tc_ok]
+                apply bind_any
+                intro state
+                trivial
+
+/-- The entire actual recording body for Unload, on an arbitrary original holder.
+Every normal refusal precedes commit and retains an ordinary error. -/
+theorem record_errors (before : StandardRecord Unit) (intent : Intent) (context : Context)
+    (unloading : ∃ source capture, intent.request.operation = .Unload source capture) :
+    Returns (fun pair => Permits Ordinary (toRequestRustResult pair.1))
+      (record_using retirement terminal renewal unload graphic reads before intent context) := by
+  change Returns _ (liftResult transferOutcome _)
+  unfold liftResult
+  apply bind_checked (source_errors before intent context unloading)
+  rintro ⟨result, state⟩ good
+  cases result with
+  | Ok outcome => trivial
+  | Err err => simpa [transferOutcome, convertOutcome, toRequestRustResult, Returns, Permits] using good
+
+open SandproofStage1RequestRust.sandproof_controller_service.application.coordinator.lifecycle_intent
+
+variable [FileHandle] (journal : controller.ControllerJournal) (intent : Intent) (context : Context)
+    (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (after : UnloadWorldBegin.Conn) (ns : Str)
+    (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+
+abbrev originalRecording := record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context
+abbrev JournalReply := core.result.Result model.LifecycleWorkState JournalError × controller.ControllerJournal × Unit
+
+include started borrowed in
+private theorem early (result : core.result.Result model.LifecycleWorkState JournalError) (state : StandardRecord Unit)
+    (recorded : (∃ error, originalRecording intent context begun ns = .ok (.Err error, state) ∧ result = .Err error) ∨
+      (∃ value, originalRecording intent context begun ns = .ok (.Ok (.Replay value), state) ∧ result = .Ok value)) :
+    proof_public_journal hook journal intent context () =
+      .ok (result, {journal with journal := ⟨after.base⟩}, ()) := by
+  apply started_reply hook journal intent context () begun after ns started borrowed result ()
+  rw [CallerBranches.extraction_root_uses_real_constructor_and_dictionary]
+  rcases recorded with ⟨error, stopped, rfl⟩ | ⟨value, stopped, rfl⟩
+  · unfold record_transaction_using
+    rw [show (CallerBranches.actualEffects codec).RecordEffectsInst = reads from rfl]
+    change record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context = _ at stopped
+    rw [stopped]
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  · exact CallerBranches.actual_replay_return retirement terminal renewal unload graphic
+      (CallerBranches.actualEffects codec) hook (holder begun ns) state intent context () value stopped
+
+omit env [SandproofStandardRecordCodec.DecodeCalls] [FileHandle] in
+private theorem selected_ne_all (op : SandproofStage1RequestRust.sandproof_protocol.lifecycle.request.LifecycleOperation)
+    (value : model.LifecycleWorkState) :
+    CoordinatorRevocation.selected op value.current value.local ≠ .All := by
+  unfold CoordinatorRevocation.selected
+  cases value.local <;> simp
+  split <;> simp
+
+include started borrowed in
+/-- After a successful BEGIN, a broadcast for Unload occurs exactly when the
+original recording returned Recorded and the commit on that very holder
+returned CommitUncertain. The public reply retains that error's payload. -/
+theorem broadcast_iff_commit (unloading : ∃ source capture, intent.request.operation = .Unload source capture)
+    (reply : JournalReply) :
+    journalDecision journal intent context = .ok (reply, .All) ↔
+      ∃ (value : model.LifecycleWorkState) (owner : StandardRecord Unit) (error : SandproofSqliteSession.SqlError),
+        originalRecording intent context begun ns = .ok (.Ok (.Recorded value), owner) ∧
+        SandproofParentCommitRust.controller.transaction.WorldTransaction.commit owner.tx.parent =
+          .ok (.Err (.CommitUncertain error)) ∧
+        reply = (.Err (.CommitUncertain error), {journal with journal := ⟨after.base⟩}, ()) := by
+  obtain ⟨source, capture, operation⟩ := unloading
+  constructor
+  · intro broadcast
+    cases recorded : originalRecording intent context begun ns with
+    | vis event k =>
+      cases event with
+      | fail err =>
+        have same : k = PEmpty.elim := funext fun x => nomatch x
+        rw [same, ← Result.fail_eq_vis] at recorded
+        have stop := (RecordCodecPorts.journal_stops journal intent context begun after ns started borrowed).1 err recorded
+        rw [stop] at broadcast
+        simp at broadcast
+    | div =>
+      have stop := (RecordCodecPorts.journal_stops journal intent context begun after ns started borrowed).2 recorded
+      rw [stop] at broadcast
+      simp at broadcast
+    | ret pair =>
+      rcases pair with ⟨result, owner⟩
+      cases result with
+      | Err error =>
+        have safe := record_errors (holder begun ns) intent context ⟨source,capture,operation⟩
+        change Returns _ (originalRecording intent context begun ns) at safe
+        rw [recorded] at safe
+        change Ordinary (toRequest error) at safe
+        have publicReply := early journal intent context begun after ns started borrowed (.Err error) owner
+          (Or.inl ⟨error, recorded, rfl⟩)
+        have decision := journal_error journal intent context error _ publicReply
+        rw [decision] at broadcast
+        cases h : toRequest error <;> simp_all [Ordinary]
+      | Ok outcome =>
+        cases outcome with
+        | Replay value =>
+          have publicReply := early journal intent context begun after ns started borrowed (.Ok value) owner
+            (Or.inr ⟨value, recorded, rfl⟩)
+          simp only [journalDecision, publicReply, bind_tc_ok, toRequestRustResult,
+            CoordinatorRevocation.success, Result.ok.injEq, Prod.mk.injEq] at broadcast
+          exact False.elim (selected_ne_all _ value broadcast.2)
+        | Recorded value =>
+          have route := recorded_commit_dispatch journal intent context begun after ns started borrowed owner value recorded
+          rw [route] at broadcast
+          obtain ⟨result, committed, continued⟩ := InboxLoad.bind_success_value _ _ _ broadcast
+          cases result with
+          | Ok u =>
+            cases u
+            simp only [toRequestRustResult, CoordinatorRevocation.success, bind_tc_ok,
+              Result.ok.injEq, Prod.mk.injEq] at continued
+            exact False.elim (selected_ne_all _ value continued.2)
+          | Err error =>
+            cases error <;> simp_all [toRequestRustResult, toRequest, CoordinatorRevocation.failure,
+              CoordinatorRevocation.endsAccess]
+  · rintro ⟨value, owner, err, recorded, committed, rfl⟩
+    rw [recorded_commit_dispatch journal intent context begun after ns started borrowed owner value recorded, committed]
+    simp [toRequestRustResult, toRequest, CoordinatorRevocation.failure, operation, CoordinatorRevocation.endsAccess]
+
+/-- A typed World-read provider can itself supply an uncertainty before opening
+a transaction. Keep the successful-BEGIN premise until V5 excludes this outcome. -/
+theorem before_begin_witness (payload : SandproofSqliteSession.SqlError)
+    (unloading : ∃ source capture, intent.request.operation = .Unload source capture) :
+    let refused : PublicCalls := {env with observation := {env.observation with
+      world := fun _ _ => .ok (.Err (.CommitUncertain payload))}}
+    @journalDecision _ refused _ journal intent context = .ok ((.Err (.CommitUncertain payload), journal, ()), .All) := by
+  let refused : PublicCalls := {env with observation := {env.observation with
+    world := fun _ _ => .ok (.Err (.CommitUncertain payload))}}
+  letI : PublicCalls := refused
+  obtain ⟨source, capture, operation⟩ := unloading
+  have stopped := world_refusal hook journal intent context () (.CommitUncertain payload) (by rfl)
+  have choice := journal_error journal intent context (.CommitUncertain payload) journal stopped
+  simpa [operation, toRequest, CoordinatorRevocation.endsAccess] using choice
+
+end
+end SandproofActualRecordRust.UnloadCommitOrigin
+
+#audit_controller_proof SandproofActualRecordRust.UnloadCommitOrigin.save_errors
+#audit_controller_proof SandproofActualRecordRust.UnloadCommitOrigin.record_errors
+#audit_controller_proof SandproofActualRecordRust.UnloadCommitOrigin.broadcast_iff_commit
+#audit_controller_proof SandproofActualRecordRust.UnloadCommitOrigin.before_begin_witness
