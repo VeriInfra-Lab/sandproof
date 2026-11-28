@@ -119,6 +119,65 @@ theorem record_after_save (begun : SandproofUnloadWorldBegin.controller.transact
     SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.guard_destroy,
     SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.attach_destroy]
 
+abbrev saveValidation (inbox : model.Inbox) :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.validate_using
+    (oldRetirement retirement) (oldTerminal terminal) (oldRenewal renewal) (oldUnload unload) (oldGraphic graphic) inbox
+
+abbrev saveEffects := (ScopeTransport.recordEffects reads).codecInboxSaveEffectsInst
+
+/-- The save encoder borrows the live connection of this holder, supplies the complete
+inbox, maps the JSON reply, and returns the same public standard holder. -/
+theorem save_encode_returned (before : StandardRecord Unit) (inbox : model.Inbox)
+    (raw : IOOwnerTransport.ParentRaw) (slot : before.tx.parent.transaction = some raw)
+    (reply : SandboxModel.StandardRecordCodec.JsonReply (alloc.vec.Vec U8))
+    (returned : env.encodeInbox () raw.conn.base inbox = .ok (reply, ())) :
+    saveEffects.encode before inbox = .ok (SandboxModel.StandardRecordCodec.mapJson reply, before) := by
+  have live : (IOOwnerTransport.toSource before).tx.transaction =
+      some (SandproofParentCommitRust.CurrentViews.rawToSource raw) := by
+    simp [IOOwnerTransport.toSource, SandproofParentCommitRust.CurrentViews.ownerToSource, slot]
+  have ran := SandboxModel.StandardRecordCodec.actual_encode_for_save_returned_state
+    (IOOwnerTransport.codecToSource codec) (IOOwnerTransport.toSource before) inbox
+    (SandproofParentCommitRust.CurrentViews.rawToSource raw) reply () live returned
+  change toRequestStateResult (IOOwnerTransport.liftReply before _) = _
+  rw [ran]
+  have holder : {IOOwnerTransport.toSource before with codec := ()} = IOOwnerTransport.toSource before := rfl
+  simp [holder, IOOwnerTransport.liftReply, JournalHeaderReads.returned_borrowed_holder,
+    toRequestStateResult, liftResult]
+
+/-- A failed validation returns the incoming holder. After a successful validation,
+both kinds of encoding refusal return before digest or update. -/
+theorem save_encoding_refusals (inbox : model.Inbox) (before : StandardRecord Unit) :
+    (∀ err, saveValidation inbox = .ok (.Err err) → originalSave inbox before = .ok (.Err err, before)) ∧
+    (saveValidation inbox = .ok (.Ok ()) →
+      ∀ raw : IOOwnerTransport.ParentRaw, before.tx.parent.transaction = some raw →
+        (∀ err, env.encodeInbox () raw.conn.base inbox = .ok (.Err err, ()) →
+          originalSave inbox before = .ok (.Err (.Json err), before)) ∧
+        (∀ bytes, env.encodeInbox () raw.conn.base inbox = .ok (.Ok bytes, ()) →
+          ConfigBudget.bytes inbox.config < bytes.val.length →
+          originalSave inbox before = .ok (.Err .MaintenanceCapacity, before))) := by
+  constructor
+  · intro err refused
+    unfold originalSave SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.save_using
+    unfold saveValidation at refused
+    simp [refused, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  · intro checked raw slot
+    have encoded := save_encode_returned before inbox raw slot
+    unfold saveValidation at checked
+    unfold originalSave SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.save_using
+    constructor
+    · intro err failed
+      have reply := encoded (.Err err) failed
+      unfold saveEffects at reply
+      simp [checked, core.result.Result.Insts.CoreOpsTry.branch, reply, SandboxModel.StandardRecordCodec.mapJson,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    · intro bytes returned over
+      have reply := encoded (.Ok bytes) returned
+      unfold saveEffects at reply
+      obtain ⟨budget, cost, exactCost⟩ := ConfigBudget.required_bytes_refines inbox.config
+      simp [checked, core.result.Result.Insts.CoreOpsTry.branch, reply, SandboxModel.StandardRecordCodec.mapJson,
+        lift, cost, UScalar.lt_equiv, exactCost, over]
+
 variable [FileHandle] (journal : controller.ControllerJournal) (intent : Intent) (context : Context)
     (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
     (after : UnloadWorldBegin.Conn) (ns : Str)
@@ -358,6 +417,46 @@ theorem fresh_sqlite_dispatch (inbox : model.Inbox) (afterLoad : StandardRecord 
     rw [SandproofParentCommitRust.ActualFinish.actual_finish_div owner raw live available diverged]
     simp only [bind_tc_div]
 
+/-- A first Unload passes the existing-session guards. Its own appended inbox and
+the post-load holder determine the validation, JSON and budget refusal reaching
+the public decision. Later effects need no observations on these branches. -/
+theorem fresh_save_refusal (inbox : model.Inbox) (afterLoad : StandardRecord Unit) (s : Usize)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+    (config : InboxAdmission.ContextMatches inbox context) (valid : Validation.ValidEnvelope intent context)
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (selected : ExistingSelection inbox intent s)
+    (accept : existingDecision inbox (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent =
+      .append false) :
+    let session := inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)
+    let returned := {journal with journal := ⟨after.base⟩}
+    let run := journalDecision journal intent context
+    ∃ (next : model.Inbox) (e : Usize), inbox.record intent = .ok (.Ok (s,e), next) ∧
+      next.state s e = .ok (appendedState session intent) ∧
+      (∀ err, saveValidation next = .ok (.Err err) →
+        run = .ok ((.Err (fromRequest err), returned, ()), match err with
+          | .CommitUncertain _ => .All | _ => .None)) ∧
+      (saveValidation next = .ok (.Ok ()) →
+        ∀ raw : IOOwnerTransport.ParentRaw, afterLoad.tx.parent.transaction = some raw →
+          (∀ err, env.encodeInbox () raw.conn.base next = .ok (.Err err, ()) →
+            run = .ok ((.Err (.Json err), returned, ()), .None)) ∧
+          (∀ bytes, env.encodeInbox () raw.conn.base next = .ok (.Ok bytes, ()) →
+            ConfigBudget.bytes next.config < bytes.val.length →
+            run = .ok ((.Err .MaintenanceCapacity, returned, ()), .None))) := by
+  dsimp only
+  obtain ⟨next, e, appended, state, saveError, _⟩ :=
+    fresh_unload journal intent context begun after ns started borrowed inbox afterLoad s loaded config valid op selected accept
+  obtain ⟨validation, encoding⟩ := save_encoding_refusals next afterLoad
+  refine ⟨next, e, appended, state, ?_, ?_⟩
+  · intro err refused
+    have saved := validation err refused
+    have dispatched := saveError afterLoad (fromRequest err) (by simpa only [toRequest_fromRequest] using saved)
+    rw [toRequest_fromRequest] at dispatched
+    cases err <;> exact dispatched
+  · intro checked raw slot
+    obtain ⟨json, budget⟩ := encoding checked raw slot
+    exact ⟨fun err failed => saveError afterLoad (.Json err) (json err failed),
+      fun bytes returned over => saveError afterLoad .MaintenanceCapacity (budget bytes returned over)⟩
+
 omit started borrowed [FileHandle] [PublicCalls] [SandproofStandardRecordCodec.DecodeCalls] in
 /-- The original valid Unload from the append suite is absent from a mapped running session.
 The real record call appends it and state returns its full current version and original local. -/
@@ -386,3 +485,6 @@ end SandproofActualRecordRust.PublicUnload
 #audit_controller_proof SandproofActualRecordRust.PublicUnload.fresh_sqlite_outcome
 #audit_controller_proof SandproofActualRecordRust.PublicUnload.recorded_commit_dispatch
 #audit_controller_proof SandproofActualRecordRust.PublicUnload.fresh_sqlite_dispatch
+#audit_controller_proof SandproofActualRecordRust.PublicUnload.save_encode_returned
+#audit_controller_proof SandproofActualRecordRust.PublicUnload.save_encoding_refusals
+#audit_controller_proof SandproofActualRecordRust.PublicUnload.fresh_save_refusal
