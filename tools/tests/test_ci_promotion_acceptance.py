@@ -314,6 +314,10 @@ printf 'original formal executor log\n'
                 def ordinary(command, *, log, checkout, env, pass_fds):
                     self.assertEqual(pass_fds, (9, 37))
                     self.assertNotIn('GH_TOKEN', env)
+                    for key in ('SANDPROOF_STAGE1_JOBS', 'SANDPROOF_STAGE1_RESUME_FROM',
+                                'SANDPROOF_PROOF_RECOMPUTE'):
+                        self.assertNotIn(key, env)
+                    self.assertEqual(env['SANDPROOF_STAGE1_NATIVE_JOBS'], '16')
                     self.assertIn('tools/native_task.py', command)
                     self.assertIn('stage1-protocol', command)
                     self.assertEqual(env['TMPDIR'], '/mnt/xfs')
@@ -331,12 +335,16 @@ printf 'original formal executor log\n'
                       patch.object(formal_builds, 'execute', side_effect=self.formal_fixture()) as formal,
                       patch.object(native_task, 'observe'),
                       patch.dict(os.environ, dict(GH_TOKEN='test-only', TMPDIR='/mnt/xfs',
-                                                 CARGO_TARGET_DIR=str(cache),
+                                                 CARGO_TARGET_DIR=str(cache), SANDPROOF_STAGE1_JOBS='64',
+                                                 SANDPROOF_STAGE1_NATIVE_JOBS='16',
+                                                 SANDPROOF_STAGE1_RESUME_FROM='previous',
+                                                 SANDPROOF_PROOF_RECOMPUTE='1',
                                                  SANDPROOF_NATIVE_OBSERVER=str(self.observer)))):
                     result = gate.run_stage(self.candidate, checkout, output, native=prior, registration_fd=37)
                 self.assertEqual(entries.call_count, 0 if prior else 1)
                 self.assertEqual(preflight.call_count, 0 if prior else 1)
                 formal.assert_called_once()
+                self.assertEqual(formal.call_args.kwargs['env']['SANDPROOF_STAGE1_JOBS'], '64')
                 self.assertEqual(formal.call_args.kwargs['pass_fds'], (9, 37))
                 self.assertEqual(formal.call_args.kwargs['cwd'], checkout)
                 self.assertEqual(formal.call_args.kwargs['env']['SANDPROOF_NATIVE_EVIDENCE'],
