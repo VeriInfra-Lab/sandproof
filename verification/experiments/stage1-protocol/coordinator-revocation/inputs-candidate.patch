@@ -1,5 +1,5 @@
 diff --git a/verification/stage1-protocol-inputs.sha256 b/verification/stage1-protocol-inputs.sha256
-index ca1460e0..3293f633 100644
+index ca1460e0..f5fcd99f 100644
 --- a/verification/stage1-protocol-inputs.sha256
 +++ b/verification/stage1-protocol-inputs.sha256
 @@ -68,6 +68,9 @@ c3d56aae0daf302271a97f8f1509a6d6e415b13a92a68e087e9418b266d6ef19  SandboxModel/L
@@ -53,9 +53,9 @@ index ca1460e0..3293f633 100644
 +90fae467abb027b956fd603faac3d59e53faa8a396cc5943970164576e3996ab  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/PublicLoaded.lean.in
 +c5b015cbdcc080d5e266544ef3d6ab0125e22eb934d8bb7108617f521a90d05a  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/PublicReplay.lean.in
 +0b6453083c239bafbbf5a0778e05140e9c5dd1c92390be800d0a9d7230178d8e  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/PublicUnload.lean.in
-+34bc7ccef4a98239bb1397740d9acb9b149267f172ef9af830c9440f5dcb31e5  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/PublicUnloadRefusal.lean.in
++25cd52dc1b137a9bd2dfdaa28418e0a9d28c28c3ed20e08b6665c931746df3c2  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/PublicUnloadRefusal.lean.in
 +00b9c3d4a94d227d4a7ddec2a727f6ffa85d5e6feecea5165315e2ce0d714a30  verification/experiments/stage1-protocol/coordinator-revocation/public-journal-root.rs.in
-+a62e0ddb0b13c476632cbc716152e7b582fa13fe80f6ced76bebf42b5254ebc9  verification/experiments/stage1-protocol/coordinator-revocation/public_begin.py
++edf4d72c0b2216df73113ff09aadc664aa490ec8d3b47f96fe486248435175a0  verification/experiments/stage1-protocol/coordinator-revocation/public_begin.py
 +95b39faf6f366e8ccccd859476fb704a01392b44596e5b08c09cce24ed137d93  verification/experiments/stage1-protocol/coordinator-revocation/root.rs.in
 +c822bf2028fc78a568f9331961d188bee68610ef4e7e6388bf392460ccd9e633  verification/experiments/stage1-protocol/coordinator-revocation/sender_binding.py
 +9ab0aa899834fbe209e5071c7e41d53d726f068eb984cd63e9d869849f75ac59  verification/experiments/stage1-protocol/coordinator-revocation/sender_binding_regressions.py

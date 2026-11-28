@@ -1,4 +1,5 @@
 import SandproofActualRecord.PublicUnload
+import SandboxModel.Lifecycle.Protocol.InboxRecordNewSession
 
 open Aeneas Aeneas.Std
 open SandboxModel.Stage1Protocol SandproofParentCommitRust.ErrorTransport
@@ -31,28 +32,18 @@ local notation "sourceRecord" =>
   SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
 
 include started borrowed
-/-- A first Unload that fails an existing-session guard returns that guard's exact error.
-The original inbox and post-load holder are retained. The public decision needs no
-observation from attach, save, a crash hook or commit. -/
-theorem fresh_refusal (inbox : model.Inbox) (afterLoad : StandardRecord Unit) (s : Usize)
+private theorem record_refusal (inbox : model.Inbox) (afterLoad : StandardRecord Unit)
     (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
     (config : InboxAdmission.ContextMatches inbox context) (valid : Validation.ValidEnvelope intent context)
     (op : ∃ source capture, intent.request.operation = .Unload source capture)
-    (selected : ExistingSelection inbox intent s) (error : RequestError)
-    (refused : existingDecision inbox (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected))
-      intent = .reject error) :
-    inbox.record intent = .ok (.Err error, inbox) ∧
+    (miss : inbox.find intent = .ok (.Ok none)) (error : RequestError)
+    (answer : inbox.record intent = .ok (.Err error, inbox))
+    (kind : error = .Conflict ∨ error = .MaintenanceCapacity ∨ error = .UnsupportedInput) :
     record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
       .ok (.Err (fromRequest error), afterLoad) ∧
     journalDecision journal intent context =
       .ok ((.Err (fromRequest error), {journal with journal := ⟨after.base⟩}, ()), .None) := by
-  obtain ⟨out, answer, post⟩ := WP.spec_imp_exists (record_existing_contract inbox intent s selected)
-  rw [refused] at post
-  change out = (.Err error, inbox) at post
-  subst out
-  have kind := refusal_kind inbox _ intent error op refused
   have admitted := (InboxAdmission.accepts_iff inbox intent context).mpr ⟨config, valid⟩
-  have miss := (InboxLookup.find_none_iff inbox intent).mpr selected.1
   obtain ⟨source, capture, operation⟩ := op
   have recorded : record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
       .ok (.Err (fromRequest error), afterLoad) := by
@@ -74,8 +65,64 @@ theorem fresh_refusal (inbox : model.Inbox) (afterLoad : StandardRecord Unit) (s
       core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
   have decision := journal_error journal intent context (fromRequest error) _
     (started_reply hook journal intent context () begun after ns started borrowed _ () parent)
-  refine ⟨answer, recorded, ?_⟩
-  rcases kind with rfl | rfl <;> exact decision
+  refine ⟨recorded, ?_⟩
+  rcases kind with rfl | rfl | rfl <;> exact decision
+
+/-- A first Unload that fails an existing-session guard returns that guard's exact error.
+The original inbox and post-load holder are retained. The public decision needs no
+observation from attach, save, a crash hook or commit. -/
+theorem fresh_refusal (inbox : model.Inbox) (afterLoad : StandardRecord Unit) (s : Usize)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+    (config : InboxAdmission.ContextMatches inbox context) (valid : Validation.ValidEnvelope intent context)
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (selected : ExistingSelection inbox intent s) (error : RequestError)
+    (refused : existingDecision inbox (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected))
+      intent = .reject error) :
+    inbox.record intent = .ok (.Err error, inbox) ∧
+    record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
+      .ok (.Err (fromRequest error), afterLoad) ∧
+    journalDecision journal intent context =
+      .ok ((.Err (fromRequest error), {journal with journal := ⟨after.base⟩}, ()), .None) := by
+  obtain ⟨out, answer, post⟩ := WP.spec_imp_exists (record_existing_contract inbox intent s selected)
+  rw [refused] at post
+  change out = (.Err error, inbox) at post
+  subst out
+  have kind := refusal_kind inbox _ intent error op refused
+  exact ⟨answer, record_refusal journal intent context begun after ns started borrowed inbox afterLoad
+    loaded config valid op ((InboxLookup.find_none_iff inbox intent).mpr selected.1) error answer
+    (kind.elim Or.inl (fun h => Or.inr (Or.inr h)))⟩
+
+/-- No retained key and no matching session. The existing fresh-record contract supplies
+the first error even if several guards fail; Unload cannot create a new session. -/
+theorem missing_session (inbox : model.Inbox) (afterLoad : StandardRecord Unit)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+    (config : InboxAdmission.ContextMatches inbox context) (valid : Validation.ValidEnvelope intent context)
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (missing : InboxRecord.NewSession inbox intent) :
+    ∃ error : RequestError, InboxRecord.freshDecision inbox intent = .reject error ∧
+      (error = .Conflict ∨ error = .MaintenanceCapacity ∨ error = .UnsupportedInput) ∧
+      inbox.record intent = .ok (.Err error, inbox) ∧
+      record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
+        .ok (.Err (fromRequest error), afterLoad) ∧
+      journalDecision journal intent context =
+        .ok ((.Err (fromRequest error), {journal with journal := ⟨after.base⟩}, ()), .None) := by
+  obtain ⟨source, capture, operation⟩ := op
+  have first : ∃ error : RequestError, InboxRecord.freshDecision inbox intent = .reject error ∧
+      (error = .Conflict ∨ error = .MaintenanceCapacity ∨ error = .UnsupportedInput) := by
+    simp only [InboxRecord.freshDecision, operation]
+    repeat' first
+      | exact ⟨.Conflict, rfl, Or.inl rfl⟩
+      | exact ⟨.MaintenanceCapacity, rfl, Or.inr (Or.inl rfl)⟩
+      | exact ⟨.UnsupportedInput, rfl, Or.inr (Or.inr rfl)⟩
+      | split
+  obtain ⟨error, refused, kind⟩ := first
+  obtain ⟨out, answer, post⟩ := WP.spec_imp_exists (InboxRecord.record_new_session_contract inbox intent missing)
+  rw [refused] at post
+  change out = (.Err error, inbox) at post
+  subst out
+  exact ⟨error, refused, kind, answer, record_refusal journal intent context begun after ns started borrowed
+    inbox afterLoad loaded config valid ⟨source, capture, operation⟩
+    ((InboxLookup.find_none_iff inbox intent).mpr missing.1) error answer kind⟩
 
 /-- The accepted fixture with only its requested source incarnation changed. -/
 def otherIncarnation : Intent :=
@@ -108,9 +155,53 @@ theorem mapped_guard_order (reserved : Bool) (afterLoad : StandardRecord Unit)
   refine ⟨rfl, valid, ?_⟩
   cases reserved <;> exact result.2.2
 
+/-- The same valid Unload with an unrepresented session ID. -/
+def unseen : Intent := {Values.unload with request := {Values.unload.request with
+  binding := {Values.unload.request.binding with session := "unseen"} }}
+
+/-- A single loaded lane, optionally occupied by the original mapped session. -/
+def laneInbox (openWindow occupied : Bool) : model.Inbox :=
+  {InboxRecord.Values.emptyInbox with
+    lanes := InboxLookup.Witness.singleton ⟨1#u16, 0#u64, some (if openWindow then 1#u64 else 2#u64), none⟩
+    sessions := if occupied then InboxLookup.Witness.singleton Values.runningSession else InboxLookup.Witness.empty _}
+
+/-- Hold the valid incoming Unload fixed and vary the lane in the loaded inbox. A foreign
+window wins even with the slot occupied. The open lane refuses an occupied slot before
+checking the operation, and an available slot reaches UnsupportedInput. -/
+theorem missing_session_guard_order (openWindow occupied : Bool) (afterLoad : StandardRecord Unit)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some (laneInbox openWindow occupied)), afterLoad)) :
+    Validation.ValidEnvelope unseen EnvelopeValues.context ∧
+    journalDecision journal unseen EnvelopeValues.context =
+      .ok ((.Err (if openWindow then (if occupied then .MaintenanceCapacity else .UnsupportedInput) else .Conflict),
+        {journal with journal := ⟨after.base⟩}, ()), .None) := by
+  classical
+  let inbox := laneInbox openWindow occupied
+  let error : RequestError := if openWindow then (if occupied then .MaintenanceCapacity else .UnsupportedInput)
+                             else .Conflict
+  have valid : Validation.ValidEnvelope unseen EnvelopeValues.context := Values.normal_unload_valid
+  have missing : InboxRecord.NewSession inbox unseen := by
+    cases occupied <;> simp [InboxRecord.NewSession, InboxLookup.NoKey, inbox, laneInbox, unseen,
+      InboxLookup.Witness.singleton, InboxLookup.Witness.empty, Values.runningSession, InboxLookup.Witness.session,
+      Values.createEntry, InboxRecord.pendingEntry, InboxRecord.Values.createIntent, Values.unload,
+      Values.operationIntent, EnvelopeValues.intent]
+  have order : InboxRecord.freshDecision inbox unseen = .reject error := by
+    cases openWindow <;> cases occupied <;> simp [InboxRecord.freshDecision, inbox, laneInbox, error, unseen,
+      InboxRecord.Values.emptyInbox, InboxLookup.Witness.inbox, InboxLookup.Witness.empty, InboxLookup.Witness.singleton,
+      InboxRecord.retiredMatch, InboxRecord.firstIndex, Values.runningSession, InboxLookup.Witness.session,
+      Values.unload, Values.operationIntent, EnvelopeValues.intent]
+  obtain ⟨actual, decision, _, _, _, reply⟩ :=
+    missing_session journal unseen EnvelopeValues.context begun after ns started borrowed inbox afterLoad
+      loaded ⟨rfl,rfl⟩ valid ⟨_,_,rfl⟩ missing
+  rw [order] at decision
+  cases decision
+  refine ⟨valid, ?_⟩
+  cases openWindow <;> cases occupied <;> exact reply
+
 end
 end SandproofActualRecordRust.PublicUnloadRefusal
 
 #audit_controller_proof SandproofActualRecordRust.PublicUnloadRefusal.refusal_kind
 #audit_controller_proof SandproofActualRecordRust.PublicUnloadRefusal.fresh_refusal
 #audit_controller_proof SandproofActualRecordRust.PublicUnloadRefusal.mapped_guard_order
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadRefusal.missing_session
+#audit_controller_proof SandproofActualRecordRust.PublicUnloadRefusal.missing_session_guard_order
