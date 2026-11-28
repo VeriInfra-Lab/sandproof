@@ -310,7 +310,8 @@ theorem validation_witnesses :
 variable [SandproofStandardRecordCodec.DecodeCalls]
 
 /-- A freshly appended Unload whose saved Inbox fails validation returns the
-original journal error without selecting a targeted or broadcast revocation. -/
+original journal error without selecting a targeted or broadcast revocation.
+An outer failure or divergence of validation ends the public call before dispatch. -/
 theorem fresh_validation_refusal [FileHandle] (journal : controller.ControllerJournal)
     (intent : Intent) (context : Context) (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
     (after : UnloadWorldBegin.Conn) (ns : Str)
@@ -326,19 +327,36 @@ theorem fresh_validation_refusal [FileHandle] (journal : controller.ControllerJo
     let returned := {journal with journal := ⟨after.base⟩}
     ∃ (next : model.Inbox) (e : Usize), inbox.record intent = .ok (.Ok (s,e), next) ∧
       next.state s e = .ok (appendedState (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent) ∧
-      ∀ err, saveValidation next = .ok (.Err err) →
+      (∀ err, saveValidation next = .ok (.Err err) →
         InboxValidation.ValidationError err ∧
-        journalDecision journal intent context = .ok ((.Err (fromRequest err), returned, ()), .None) := by
+        journalDecision journal intent context = .ok ((.Err (fromRequest err), returned, ()), .None)) ∧
+      (∀ err, saveValidation next = .fail err → journalDecision journal intent context = .fail err) ∧
+      (saveValidation next = .div → journalDecision journal intent context = .div) := by
   dsimp only
   obtain ⟨next, e, appended, state, refuse, _⟩ :=
     fresh_save_refusal journal intent context begun after ns started borrowed inbox afterLoad s
       loaded config valid op selected accept
-  refine ⟨next, e, appended, state, ?_⟩
-  intro err stopped
-  have allowed := save_validation_error next err stopped
-  refine ⟨allowed, ?_⟩
-  have result := refuse err stopped
-  cases err <;> first | exact result | contradiction
+  refine ⟨next, e, appended, state, ?_, ?_⟩
+  · intro err stopped
+    have allowed := save_validation_error next err stopped
+    refine ⟨allowed, ?_⟩
+    have result := refuse err stopped
+    cases err <;> first | exact result | contradiction
+  · have recorded := RecordCodecPorts.record_stops begun ns intent context inbox next afterLoad s e loaded
+      ((InboxAdmission.accepts_iff inbox intent context).mpr ⟨config, valid⟩)
+      ((InboxLookup.find_none_iff inbox intent).mpr selected.1) op appended
+    have publicRun := RecordCodecPorts.journal_stops journal intent context begun after ns started borrowed
+    constructor
+    · intro error failed
+      apply publicRun.1 _ (recorded.1 _ ?_)
+      unfold saveValidation at failed
+      unfold originalSave SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.save_using
+      simp only [failed, bind_tc_fail]
+    · intro diverged
+      apply publicRun.2 (recorded.2 ?_)
+      unfold saveValidation at diverged
+      unfold originalSave SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.save_using
+      simp only [diverged, bind_tc_div]
 
 end
 end SandproofActualRecordRust.PublicSaveValidation

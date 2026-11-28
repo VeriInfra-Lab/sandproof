@@ -170,7 +170,7 @@ BEGIN 成功后，`started_reply` 连接该次返回的原 owner、实际命名�
 
 `ValidationErrors` 从实际的 `Inbox.validate_using` 开始，覆盖配置检查、保留槽、退役身份、宿主、所有者和会话，以及会话内的条目、续期和来源记录。对任意解码后的 Inbox 和类型正确的回调，校验正常返回的 Rust 错误只可能是 `CorruptStore` 或携带原错误的 `Json`。该分类无需假定编码成功、长度可表示或已存在可用事务。外层失败和发散沿用原抽取语义。
 
-在首次 Unload 已经通过认证、未命中旧请求并允许追加的路径上，`fresh_validation_refusal` 取同一次追加产生的 Inbox。若保存前校验正常拒绝，协调器返回原错误，选择 `None`。此时无需外层 Inbox 编码、写入或提交的回执。事务提交阶段的 `CommitUncertain` 仍由原 `fresh_sqlite_dispatch` 给出全部撤销的结论。两种见证共用实际公开字典，正常 Inbox 校验通过，只将其会话容量改为零就返回 `CorruptStore`。
+在首次 Unload 已经通过认证、未命中旧请求并允许追加的路径上，`fresh_validation_refusal` 取同一次追加产生的 Inbox。若保存前校验正常拒绝，协调器返回原错误，选择 `None`。此时无需外层 Inbox 编码、写入或提交的回执。外层失败或发散则在外层 Inbox 编码、UPDATE 和撤销选择之前原样返回。事务提交阶段的 `CommitUncertain` 仍由原 `fresh_sqlite_dispatch` 给出全部撤销的结论。两种见证共用实际公开字典，正常 Inbox 校验通过，只将其会话容量改为零就返回 `CorruptStore`。
 
 主控采用组件内的 `validation-errors-integration-candidate.patch`。ning 使用同一候选的普通完整入口、已登记的 `stage1-inbox-validation` 和 `stage1-inbox-save` 原生用例。真实网关信号送达、SQLite 耐久性和崩溃恢复仍由各自提供方验收。
 
