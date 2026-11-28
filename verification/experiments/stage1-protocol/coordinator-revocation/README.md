@@ -190,6 +190,14 @@ SQLite 行、JSON 解码和编码以及摘要回调的实际结果构成本段�
 
 `unchecked_first_read` 在同一载入函数上仅替换第一次使用的布尔读取回调，展示去掉该端口的错误合同后如何返回伪造的 `CommitUncertain`。实际标准端口的对应见 `standard_effects`，正常载入和保留槽缺失的同组见证见 `load_validation_witnesses`。具体 SQLite 数据、JSON 字节及网关信号送达由各自提供方验收。主控在 #1100 的组合上采用[本段登记候选](load-errors-integration-candidate.patch)，ning 在同一候选复核原生用例和正式入口。
 
+### Unload 广播撤销的提交来源
+
+同一次公开 BEGIN 成功并借用命名空间后，`broadcast_iff_commit` 对任意完整 Unload 和认证上下文给出双向结论。协调器选择 `All`，当且仅当原录入返回 `Recorded`，随后在该次录入返回的同一事务上调用 `WorldTransaction::commit` 并收到 `CommitUncertain`。定理保留原错误载荷和公开 journal 的返回值。历史重放与当前重放均按返回状态选择 `None` 或对应 sandbox。[广播来源证明](public-begin/UnloadCommitOrigin.lean.in)
+
+`record_errors` 覆盖完整载入、认证、全文查重、内存录入和保存。Unload 跳过 Destroy 独有的释放检查和本地终止。`save_errors` 将正常保存错误限定为 `CorruptStore`、`MaintenanceCapacity`、`Json` 和 `Sqlite`。在公开方法的两个提交故障点，实际 `NeverCrash` 均返回成功。
+
+`before_begin_witness` 说明 BEGIN 前提的作用。仅替换 World 读取函数的类型正确提供者可在打开事务前返回 `CommitUncertain`，同一协调器便选择 `All`。要将结论扩大到调用入口，需要 V5 核对实际 BEGIN 前的读取和写入准备。事务内部校验或底层数据库提交的物理结果、真实网关信号送达仍由各自提供方验收。主控在采用完整载入登记后应用[广播来源登记候选](unload-commit-origin-integration-candidate.patch)。
+
 ### 首次 Unload 的保存更新和事务返回
 
 首次 Unload 通过追加、新收件箱校验和编码后，`bounded_save_result` 处理编码长度小于或等于配置预算的路径。配置预算上界保证这条路径落在现有 SHA 库合同的正常长度域。借用同一存活连接的标准保存方法把全部编码字节送给摘要方法。实际更新语句的两个 BLOB 参数依次为这些字节和完整的 32 字节摘要。在当前 SQLite 适配合同下，每次正常返回均带回此次写入后的读视图。对应定理保留 owner 的其余字段。[保存更新证明](public-begin/PublicUnloadSave.lean.in)
