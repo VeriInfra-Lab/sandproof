@@ -16,8 +16,9 @@ pkg=verification/experiments/stage1-protocol/coordinator-revocation
 suite=controller-service/src/controller/checkpoint/tests.rs
 test_name=controller::checkpoint::tests::unload_revocation::maintenance_commit_uncertainty_revokes_both_routes_before_unload_is_recorded
 
-git clone --quiet --shared --no-checkout "$root" "$source_dir"
+git init --quiet "$source_dir"
 cd "$source_dir"
+git fetch --quiet --no-tags --depth=1 "$root" "$head"
 git switch --quiet --detach "$head"
 git show --no-patch --format='%H %T' HEAD > "$output/source.txt"
 git apply --index "$pkg/unload-maintenance-watch-registration-candidate.patch"
