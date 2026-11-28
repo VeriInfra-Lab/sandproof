@@ -15,12 +15,13 @@ import tarfile
 import codec_reads
 import codec_receipt
 from guard_binding import check_guard
+from inline_binding import inspect_inline
 from journal_entry import CODEC, CONTROLLER, DATABASE, INBOX, PROVIDER, RECORD, RECORDING, TRANSACTION, check_entry, translated_entry
 from journal_entry_regressions import check_entry_rejections
 from journal_hook import check_joint_hook, check_journal_hook
 from hook_regressions import check_parent_rejections, check_joint_rejection
 from sender_binding import inspect_senders
-from sender_binding_regressions import check_guard_rejections, check_rejections
+from sender_binding_regressions import check_guard_rejections, check_inline_rejections, check_rejections
 from wiring import COORD, DECIDE, MODEL, MODULE, SERVICE, assignments_before, declaration, inspect_parent, nodes, origin, require
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -112,6 +113,8 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
     if not joint:
         guard = check_guard(view)
         broadcast = inspect_parent(raw, refactored=refactored, guard=guard)
+        if not refactored:
+            broadcast = inspect_inline(view, guard)
         senders = inspect_senders(view, broadcast)
         report = {'ir': sha(ir), 'caller': sha(source/CALLER), 'senders': senders, 'guard_local': guard,
                   'journal_entry': check_entry(view), 'journal_hook': check_journal_hook(view, source),
@@ -121,6 +124,8 @@ def capture(source, evidence, tools, fixed, *, joint=False, refactored=False):
             report['rejected_guard_metadata'] = check_guard_rejections(view)
             report['rejected_hook_metadata'] = check_parent_rejections(view, source)
             report['rejected_entry_metadata'] = check_entry_rejections(view)
+        else:
+            report['rejected_inline_metadata'] = check_inline_rejections(view)
         return report
     load(source/AREA/'inbox-lookup/journal_binding.py').admit(raw)
     dest = evidence/'generated'

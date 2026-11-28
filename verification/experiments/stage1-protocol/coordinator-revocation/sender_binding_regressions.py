@@ -2,7 +2,8 @@
 from copy import deepcopy
 
 from guard_binding import RESULT, check_guard
-from sender_binding import ALL, GET, ONE, VEC_ITER, inspect_senders
+from inline_binding import ERROR, OPERATION, inspect_inline
+from sender_binding import ALL, GET, ONE, VALUES, VEC_ITER, inspect_senders
 from wiring import PARENT, SERVICE, declaration, name, nodes, require
 
 
@@ -68,3 +69,31 @@ def check_rejections(view, broadcast):
         expect_rejection(label, diagnostic, inspect_senders, fixture, all_arm)
         rejected.append(label)
     return rejected
+
+
+def check_inline_rejections(view):
+    """Alter only a copied pre-refactor capture; the original packet remains available for readback."""
+    cases = [('operation', 'original operation guard selects a different action'),
+             ('current', 'original inactive arm has an effect'),
+             ('sandbox', 'sender call operand has a different origin'),
+             ('error', 'original inactive arm has an effect'),
+             ('table', 'sender call operand has a different origin')]
+    for label, diagnostic in cases:
+        fixture = deepcopy(view)
+        body = declaration(fixture.functions.values(), PARENT)['body']['Structured']['body']
+        if label in ('operation', 'error'):
+            domain = OPERATION if label == 'operation' else ERROR
+            switch, = [sw for sw in nodes(body, 'Switch') if 'Discriminant' in sw['data']['scrutinee']
+                       and fixture.type_name(sw['data']['scrutinee']['Discriminant']['ty']) == domain]
+            switch['branches'].reverse()
+        elif label == 'current':
+            _, current = [sw for sw in nodes(body, 'Switch') if 'Value' in sw['data']['scrutinee']]
+            current['branches'].reverse()
+        else:
+            symbol, index = (ONE, 1) if label == 'sandbox' else (VALUES, 0)
+            call, = [entry['call'] for entry in nodes(body, 'Call') if
+                     name(fixture.functions[entry['call']['func']['Regular']['kind']['Fun']]) == symbol]
+            call['args'][index]['Move']['kind'] = call['dest']['kind']
+        expect_rejection('original-'+label, diagnostic, inspect_inline, fixture, check_guard(fixture))
+    expect_rejection('original-missing-broadcast', 'missing coordinator broadcast arm', inspect_senders, view, None)
+    return [label for label, _ in cases] + ['missing-broadcast']

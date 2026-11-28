@@ -14,6 +14,8 @@
 
 ## 实际对应
 
+基线父方法内联了撤销选择。[旧分支检查](inline_binding.py)沿传入操作、同一 journal 返回的 `current`、`local.sandbox` 和错误变体逐条核对实际 Charon 分支。只有 Unload、Destroy 的 `CommitUncertain` 分支进入同一 guard 的发送表。基线和候选的定向调用、广播双层循环及 `send_replace(true)` 均经过同一个发送检查器。原入口在基线回执中记录六项检查器回归，涉及操作、当前标志、沙箱、错误、发送表和缺失广播体。主控在已采用 #1093 的组合上可应用[输入增量](inline-dispatch-inputs-candidate.patch)。
+
 `check.py` 对基线和候选分别抽取完整父函数。`wiring.py` 从真实 LLBC 检查锁、日志参数及原结果返回，核对候选把传入 `intent.request.operation` 和同一个结果交给决策。三个返回变体分别对应空分支、`revoke_data` 的原 sandbox 参数、原锁下 `data_revocations.values()` 的双层循环与 `send_replace(true)`。这是结构化调用接线检查。固定 Aeneas 翻译完整父方法时停在 `ControllerApplication` 的函数指针标记字段。
 
 `guard_binding.py` 跟踪两版父函数从 `self.inner.lock()` 经 `Result::map_err`、`Try::branch` 到 journal 的正常控制流。它按本次 `FnOnce` 实例读取实际错误闭包，检查其返回 `JournalError::ControllerBusy`。在 `Break` 边，父函数把该边的残余交给 `from_residual`，随即返回。在 `Continue` 边，后续 journal 和撤销分支引用的 guard 来自这次成功载荷，guard 的释放发生在分派之后。三项检查器回归分别改变 guard 来源、错误闭包的返回变体和残余实参。该检查记录标准库调用及其操作数，锁的运行时行为与这些标准库函数的实现语义仍需各自的依据。
