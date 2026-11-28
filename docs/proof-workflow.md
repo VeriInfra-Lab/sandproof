@@ -419,6 +419,27 @@ BTreeSet 插入、Metadata 目录判断和 Tokio Mutex 各有独立原生 case�
 独立工作区和 `.lake/build`，不能共写一个构建目录。Lake 原有增量缓存继续保留，
 不删除 `.lake`，也不通过修改工具版本或内核检查选项换取通过。
 
+## 收件查找的定向验收
+
+从提交干净的检出运行[定向入口](../verification/experiments/stage1-protocol/inbox-lookup/module_acceptance.py)，用 `--base <基线提交> --plan` 查看变更和下游。计划允许局部验收时，用 `--output <新建私有证据路径>`、`--formal-lock <现有证明锁路径>` 替代 `--plan`。入口执行原 Rust 测试和两份原 Lean 检查，`module-result.json` 记录实际候选、执行和复用范围。共享生产入口、合同或未知输入变化时，按计划扩展验收。计划本身只列检查项。
+
+只修改没有下游消费者的 `InboxLookupWrong.lean.in` 以及其派生摘要时，可以复用独立的原生收据。用同一入口从干净基线运行 `--prepare-native --base HEAD --output <新建私有证据路径>`，实际执行四个原 Rust 变体并写入 `lookup-native-receipt.json`。再从后继提交用 `--base <原收据提交>`、`--reuse-native <收据路径>` 和 `--reuse-native-sha256 <收据摘要>` 运行，保留原结果及命令日志。复用限于已登记的固定工具与配置。后继仍实际运行原 Lean 正确版和错误版检查，所产收据只覆盖这个模块。
+
+使用宿主已安装的观察器时，独立验收可用[托管入口](../tools/ci_lookup_acceptance.py)直接运行。运行前登记两个抽取 `extract-target`。如果本轮新跑原生检查，也登记它创建的四个 Cargo `target`，复用原生收据时只处理本轮的两个抽取目录。原模块输出位于 `$run/module`，保留收据、源码、LLBC、日志和 `.lake`。收尾待办时，在相同候选上执行 `closeout`，只读回原证据并续办回收。
+
+```sh
+bash scripts/python-entry.sh -m tools.ci_lookup_acceptance run \
+  --base "$base" --formal-lock "$formal_lock" --output "$run" --observer "$observer"
+bash scripts/python-entry.sh -m tools.ci_lookup_acceptance closeout \
+  --output "$run" --observer "$observer"
+```
+
+若从升级后的收尾工具恢复旧工作，使用 `closeout --checkout <原候选检出>`。入口读回原候选提交、代码树、待清理目录及真实终态。
+
+如果计划列出 `registered_impact`，可用 `--registered-native <同一候选的原生证据目录>` 运行列出的登记证明。目前这些作业仍按原入口要求同一代码树的完整原生封印和 `functional` 收据。该路径可以省去未受影响的 Lean 作业，原生封印无法用单个 crate 的测试记录代替。
+
+正确版证明页或共享模型的证明段发生变化时，可以先用 `--lookup-only` 加上述复用参数检查 Lookup 本身和原错误版。共享模型的定义与完整查找合同须保持原字节一致。`lookup-local-result.json` 列出待检查的下游，即使这两份证明通过也返回 `2`，直至另行完成所有必需检查。
+
 ## 局部证明经验
 
 - 手写模式匹配与生成代码可能使用不同内部函数；先看完整目标，再证明固定生成版本所需的小引理，不盲目展开枚举组合或增加计算限额。
