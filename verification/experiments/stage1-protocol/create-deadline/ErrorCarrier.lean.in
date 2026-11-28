@@ -1,0 +1,3 @@
+-- The actual fixed Std wrapper contains the complete generated error enum.
+-- This alias is local to this view; the original fixed backend stays unchanged.
+abbrev core.num.error.TryFromIntError := core.num.error.IntErrorKind

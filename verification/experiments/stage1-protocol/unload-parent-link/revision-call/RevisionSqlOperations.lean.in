@@ -1,0 +1,68 @@
+-- Fields in the existing explicit base operation dictionary.
+  queryRow {T P F : Type} : rusqlite.params.Params P →
+    core.ops.function.FnOnce F rusqlite.row.Row (core.result.Result T rusqlite.error.Error) →
+    rusqlite.Connection → Str → P → F → Result (core.result.Result T rusqlite.error.Error)
+  bindOne {T : Type} : rusqlite.types.to_sql.ToSql T → Array T 1#usize →
+    rusqlite.statement.Statement → Result
+      ((core.result.Result Unit rusqlite.error.Error) × rusqlite.statement.Statement)
+  rowGet {I T : Type} : rusqlite.row.RowIndex I → rusqlite.types.from_sql.FromSql T →
+    rusqlite.row.Row → I → Result (core.result.Result T rusqlite.error.Error)
+  columnIndex : Usize → rusqlite.statement.Statement →
+    Result (core.result.Result Usize rusqlite.error.Error)
+  intColumn : rusqlite.types.value_ref.ValueRef →
+    Result (core.result.Result I64 rusqlite.types.from_sql.FromSqlError)
+  borrowedToSql {T : Type} : rusqlite.types.to_sql.ToSql T → T →
+    Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error)
+  strToSql : Str → Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error)
+  sandboxIdText : sandproof_protocol.SandboxId → Result Str
+  sandboxId : Str → sandbox_controller_core.ids.SandboxId →
+    Result (core.result.Result sandproof_protocol.SandboxId JournalError)
+
+-- Definitions in the scope of that dictionary.
+def core.option.Option.filter {T P : Type} (callback : core.ops.function.FnOnce P T Bool)
+    (option : Option T) (state : P) : Result (Option T) :=
+  match option with
+  | none => .ok none
+  | some value => do
+    let keep ← callback.call_once state value
+    .ok (if keep then some value else none)
+
+def U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from
+    (value : I64) : Result (core.result.Result U64 core.num.error.TryFromIntError) :=
+  .ok (if 0 ≤ value.val then .Ok (IScalar.hcast .U64 value) else .Err ())
+
+abbrev rusqlite.Connection.query_row {T P F : Type}
+    (params : rusqlite.params.Params P)
+    (callback : core.ops.function.FnOnce F rusqlite.row.Row (core.result.Result T rusqlite.error.Error)) :
+    rusqlite.Connection → Str → P → F → Result (core.result.Result T rusqlite.error.Error) :=
+  ops.queryRow params callback
+
+abbrev ArrayT1.Insts.RusqliteParamsParams.bindIn {T : Type}
+    (toSql : rusqlite.types.to_sql.ToSql T) : Array T 1#usize →
+    rusqlite.statement.Statement → Result
+      ((core.result.Result Unit rusqlite.error.Error) × rusqlite.statement.Statement) := ops.bindOne toSql
+
+abbrev rusqlite.row.Row.get {I T : Type}
+    (index : rusqlite.row.RowIndex I) (decode : rusqlite.types.from_sql.FromSql T) :
+    rusqlite.row.Row → I → Result (core.result.Result T rusqlite.error.Error) := ops.rowGet index decode
+
+abbrev Usize.Insts.RusqliteRowRowIndex.idx : Usize → rusqlite.statement.Statement →
+    Result (core.result.Result Usize rusqlite.error.Error) := ops.columnIndex
+
+abbrev I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result : rusqlite.types.value_ref.ValueRef →
+    Result (core.result.Result I64 rusqlite.types.from_sql.FromSqlError) := ops.intColumn
+
+abbrev Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql {T : Type}
+    (toSql : rusqlite.types.to_sql.ToSql T) : T →
+    Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error) := ops.borrowedToSql toSql
+
+abbrev Str.Insts.RusqliteTypesTo_sqlToSql.to_sql : Str →
+    Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error) := ops.strToSql
+
+abbrev sandproof_protocol.SandboxId.as_str : sandproof_protocol.SandboxId → Result Str := ops.sandboxIdText
+
+abbrev controller.identity.sandbox_id : Str → sandbox_controller_core.ids.SandboxId →
+    Result (core.result.Result sandproof_protocol.SandboxId JournalError) := ops.sandboxId
+
+def JournalError.Insts.CoreConvertFromError.from (error : rusqlite.error.Error) : Result JournalError :=
+  .ok (.Sqlite error)

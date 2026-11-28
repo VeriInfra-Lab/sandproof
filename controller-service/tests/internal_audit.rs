@@ -1,10 +1,8 @@
 //! Checked read-only snapshots of the actual original journal/application.
-#[allow(
-    dead_code,
-    reason = "shared original application fixture supports several suites"
-)]
-#[path = "support/internal_application.rs"]
-mod fixture;
+#[allow(dead_code, reason = "shared current lifecycle application fixture")]
+#[path = "support/lifecycle_application.rs"]
+mod current;
+use current::fixture;
 use fixture::{State, TestClock, complete_fixture, wire};
 use sandproof_controller_service::{ControllerJournal, InternalInboxConfig, NeverCrash};
 use sandproof_protocol::internal::lifecycle::{Intent, LifecycleFact};
@@ -83,61 +81,155 @@ fn assert_no_authority_write(root: &Path, mut before: BTreeMap<PathBuf, (usize, 
 
 #[test]
 fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired_responsibility() {
+    use current::fixture::{State, TestClock, TestEpoch};
+    use sandproof_controller_service::capture::SourceProcessIdentity;
+    use sandproof_protocol::lifecycle::{ExpectedSession, LifecycleOperation};
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("controller.db");
-    let state = Arc::new(Mutex::new(State::default()));
-    let mut inbox = inbox();
-    inbox.max_sandboxes = 1;
-    let mut bounded = host(&path);
-    bounded.maintenance.max_host_slots = 1;
-    bounded.physical_storage.as_mut().unwrap().pools[0].max_host_slots = 1;
-    let app = fixture::application_with_host_config(
+    let state = Arc::new(Mutex::new(State {
+        epoch: TestEpoch::Matching,
+        // Prepare/Activate receipts and later probes name the same boot/process.
+        source: Some(SourceProcessIdentity {
+            pid: 1234,
+            start_time_ticks: 5678,
+            boot_id: "fixture-boot".into(),
+        }),
+        ..State::default()
+    }));
+    let mut inbox = current::config();
+    inbox.max_sessions = 1;
+    // Match the current lifecycle application's full storage/cleanup envelope;
+    // host() above belongs to the smaller legacy internal-inbox fixture.
+    let bounded = complete_fixture::host(
+        &path,
+        NAMESPACE,
+        1,
+        2 * 1024 * 1024,
+        current::CLEANUP_BYTES + 1000,
+    );
+    let app = current::application_with_host_configuration(
         &path,
         state.clone(),
-        Arc::new(TestClock(AtomicI64::new(100))),
         true,
         inbox.clone(),
-        bounded,
-    );
+        bounded.clone(),
+    )
+    .with_clock(Arc::new(TestClock(AtomicI64::new(100))));
+    let audit = || {
+        ControllerJournal::audit_lifecycle_complete(
+            &path,
+            NAMESPACE,
+            &bounded,
+            &current::maintenance(),
+            &inbox,
+        )
+        .unwrap()
+    };
     let free = || {
         let (observed_at_ms, resources) = app
-            .internal_free_resources(&inbox.node, fixture::compute())
+            .internal_free_resources(&inbox.node, current::fixture::compute())
             .unwrap();
         assert_eq!(observed_at_ms, 100);
         resources.instances
     };
-    assert!(app.internal_audit().unwrap().host_slots.is_empty());
+    assert!(audit().host_slots.is_empty());
     assert_eq!(
         free(),
         1,
         "an initialized empty host must accept its first VM"
     );
-    let create = fixture::request();
-    app.record_internal_intent(&create).unwrap();
+    let create = current::request();
+    let context = current::context();
+    app.record_lifecycle_intent(&create, &context).unwrap();
     assert_eq!(
         free(),
         0,
         "Recorded without a native mapping still occupies its lane"
     );
-    let ready = app
-        .advance_internal_lifecycle(&create, Some(fixture::template()), fixture::compute())
-        .unwrap();
-    assert!(matches!(ready.fact, LifecycleFact::Ready { .. }));
+    app.establish_lifecycle_host_epoch().unwrap();
+    let local = current::advance(&app).unwrap().local.unwrap();
+    assert!(matches!(
+        app.observe_lifecycle_create(&create, &context)
+            .unwrap()
+            .readiness,
+        sandproof_controller_service::CreateReadiness::Observed(_)
+    ));
     assert_eq!(free(), 0);
     let mut destroy = create;
-    destroy.intent = Intent::Destroy;
-    destroy.identity.intent_version = 2.try_into().unwrap();
-    destroy.identity.operation_id = "destroy-1".try_into().unwrap();
-    app.record_internal_intent(&destroy).unwrap();
+    destroy.accepted_version = 2;
+    destroy.request.binding.expected = ExpectedSession::Version(1);
+    destroy.request.binding.key.sequence = 2.try_into().unwrap();
+    destroy.request.operation = LifecycleOperation::Destroy {};
+    app.record_lifecycle_intent(&destroy, &context).unwrap();
+    assert_current_health_retirement(
+        &app,
+        &state,
+        &free,
+        &audit,
+        destroy,
+        &context,
+        local.sandbox,
+    );
+    assert_current_health_successor(&app, &state, &context, &free);
+}
+
+fn assert_current_health_successor(
+    app: &sandproof_controller_service::application::ControllerApplication<fixture::TestHost>,
+    state: &Mutex<State>,
+    context: &sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    free: &impl Fn() -> u64,
+) {
+    use sandproof_controller_service::capture::SourceProcessIdentity;
+    // The next VM has its own process identity on the same registered boot.
+    state.lock().unwrap().source = Some(SourceProcessIdentity {
+        pid: 1235,
+        start_time_ticks: 5679,
+        boot_id: "fixture-boot".into(),
+    });
+    let mut next = current::request();
+    next.retention.window = 2.try_into().unwrap();
+    next.request.binding.key.window = 2.try_into().unwrap();
+    next.request.binding.session = "successor".try_into().unwrap();
+    app.record_lifecycle_intent(&next, context).unwrap();
+    app.advance_lifecycle_create_with_verification(
+        &next,
+        context,
+        Some(current::fixture::template()),
+        current::fixture::compute(),
+        None,
+    )
+    .unwrap();
+    assert!(matches!(
+        app.observe_lifecycle_create(&next, context)
+            .unwrap()
+            .readiness,
+        sandproof_controller_service::CreateReadiness::Observed(_)
+    ));
+    assert_eq!(free(), 0);
+}
+
+fn assert_current_health_retirement(
+    app: &sandproof_controller_service::application::ControllerApplication<
+        current::fixture::TestHost,
+    >,
+    state: &Mutex<current::fixture::State>,
+    free: &impl Fn() -> u64,
+    audit: &impl Fn() -> sandproof_controller_service::LifecycleAudit,
+    destroy: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+    context: &sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    sandbox: sandbox_controller_core::SandboxId,
+) {
+    use sandproof_protocol::lifecycle::{
+        LifecycleWindowClose, TerminalLifecycleObservation, TerminalStatus,
+    };
     state.lock().unwrap().release_unknown = true;
     assert_eq!(
-        app.advance_internal_lifecycle(&destroy, None, fixture::compute())
-            .unwrap()
-            .fact,
-        LifecycleFact::Stopped
+        app.advance_current_workflow(sandbox),
+        Err(sandproof_controller_service::application::ApplicationError::Busy)
     );
+    assert!(!app.lifecycle_destroy_cleaned(&destroy, context).unwrap());
     assert_eq!(
-        app.internal_audit().unwrap().host_slots[0].1,
+        audit().host_slots[0].1,
         sandbox_controller_core::maintenance::slots::HostSlotPhase::Releasing
     );
     assert_eq!(
@@ -146,14 +238,16 @@ fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired
         "unknown physical release cannot advertise capacity"
     );
     state.lock().unwrap().release_unknown = false;
-    let cleaned = app
-        .advance_internal_lifecycle(&destroy, None, fixture::compute())
-        .unwrap();
-    assert_eq!(cleaned.fact, LifecycleFact::Cleaned);
+    assert!(app.advance_current_workflow(sandbox).unwrap());
+    assert!(app.lifecycle_destroy_cleaned(&destroy, context).unwrap());
     assert_eq!(free(), 0, "physical Free does not retire the retained lane");
-    app.confirm_internal_result(&cleaned).unwrap();
+    let cleaned = TerminalLifecycleObservation {
+        request: destroy,
+        status: TerminalStatus::Cleaned,
+    };
+    app.confirm_lifecycle_terminal(&cleaned, context).unwrap();
     assert_eq!(free(), 0, "confirmation alone does not close the lane");
-    app.close_internal_window(&WindowCloseRequest::new(cleaned))
+    app.close_lifecycle_window(&LifecycleWindowClose { terminal: cleaned }, context)
         .unwrap();
     assert_eq!(free(), 1);
     let actions = state.lock().unwrap().actions.len();
@@ -163,18 +257,6 @@ fn original_host_health_counts_fresh_positions_but_retains_unknown_and_unretired
         actions,
         "health is read-only"
     );
-    let mut next = fixture::request();
-    next.identity.request_window = 2.try_into().unwrap();
-    next.identity.sandbox_id = "successor".try_into().unwrap();
-    next.identity.operation_id = "create-successor".try_into().unwrap();
-    app.record_internal_intent(&next).unwrap();
-    assert!(matches!(
-        app.advance_internal_lifecycle(&next, Some(fixture::template()), fixture::compute())
-            .unwrap()
-            .fact,
-        LifecycleFact::Ready { .. }
-    ));
-    assert_eq!(free(), 0);
 }
 
 #[test]

@@ -1,0 +1,56 @@
+import SandproofStandardCreate.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStandardCreateRust
+namespace SandboxModel.Stage1Protocol.StandardCreate
+
+abbrev Effects := sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment
+abbrev WorldTx := sandproof_controller_service.controller.transaction.WorldTransaction
+abbrev DbTx := rusqlite.transaction.Transaction
+abbrev World := sandbox_controller_core.model.World
+
+abbrev readWorld :=
+  sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.world
+abbrev beginLifetime :=
+  sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_lifetime_update
+abbrev beginSave :=
+  sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.begin_inbox_save
+abbrev txDeref :=
+  sandproof_controller_service.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref
+abbrev connectionDeref := rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref
+abbrev txWorld := sandproof_controller_service.controller.transaction.WorldTransaction.world
+
+/-- The live-cell premise belongs to the concrete candidate object at this call.
+It does not assert that begin/recovery established or preserved it. -/
+def CandidateAt (tx : WorldTx) (world : World) : Prop :=
+  NormalWorldBorrow tx.candidate.beforeBorrowCount ∧ tx.candidate.value = some world
+
+
+/-- Exact value result of this ordinary read interval. The actual library
+conformance/normal allocation and live-object providers remain explicit. -/
+def expectedTxWorld (tx : WorldTx) : Result World :=
+  if NormalWorldBorrow tx.candidate.beforeBorrowCount then
+    match tx.candidate.value with
+    | some world => .ok world
+    | none => .fail .panic
+  else .fail .panic
+
+def expectedRead (effects : Effects) : Result (World × Effects) := do
+  let world ← expectedTxWorld effects.tx
+  .ok (world, effects)
+
+/-- Each stage reads only the actual live transaction slot. In particular it
+does not demand or read a candidate World. All other complete fields persist. -/
+def expectedRebind (effects : Effects) : Result Effects :=
+  match effects.tx.transaction with
+  | some db => .ok { effects with connection := db.conn }
+  | none => .fail .panic
+
+def FullReadAndRebindContract
+    (readFn : Effects → Result (World × Effects))
+    (lifetimeFn saveFn : Effects → Result Effects) : Prop :=
+  (∀ effects, readFn effects = expectedRead effects) ∧
+  (∀ effects, lifetimeFn effects = expectedRebind effects) ∧
+  (∀ effects, saveFn effects = expectedRebind effects)
+
+end SandboxModel.Stage1Protocol.StandardCreate

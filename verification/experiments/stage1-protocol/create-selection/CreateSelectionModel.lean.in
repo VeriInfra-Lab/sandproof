@@ -1,0 +1,41 @@
+import SandboxModel.Lifecycle.Protocol.InboxLookupModel
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.CreateSelection
+abbrev JournalError := sandproof_controller_service.JournalError
+abbrev Answer (I : Type) := core.result.Result (I × I × U64) JournalError
+
+def forSession {I : Type} (session : Session) (intent : AcceptedLifecycleIntent) (s e : I) : Answer I :=
+  if session.terminal then .Err .Conflict
+  else if session.refusal.isSome then .Err .Conflict
+  else if session.current_version != intent.accepted_version then .Err .Conflict
+  else if session.local.isSome then .Err .Conflict
+  else match intent.request.operation with
+    | .Create create _ => .Ok (s, e, create.startup_deadline_ms)
+    | _ => .Err .Conflict
+
+noncomputable def expected (inbox : Inbox) (intent : AcceptedLifecycleIntent) : Answer Nat :=
+  match InboxLookup.inboxSpec intent inbox.sessions.val 0 with
+  | .absent | .conflict => .Err .Conflict
+  | .found s e => match inbox.sessions.val[s]? with
+    | some session => forSession session intent s e
+    | none => .Err .Conflict
+
+def observe : Answer Usize → Answer Nat
+  | .Ok (s, e, deadline) => .Ok (s.val, e.val, deadline)
+  | .Err error => .Err error
+
+def FullSelectionContract (run : Inbox → AcceptedLifecycleIntent → Result (Answer Usize)) : Prop :=
+  ∀ inbox intent, run inbox intent ⦃ answer => observe answer = expected inbox intent ⦄
+
+theorem observe_session (session : Session) (intent : AcceptedLifecycleIntent) (s e : Usize) :
+    observe (forSession session intent s e) = forSession session intent s.val e.val := by
+  unfold forSession
+  split_ifs <;> simp only [observe]
+  cases intent.request.operation <;> rfl
+
+
+end SandboxModel.Stage1Protocol.CreateSelection
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateSelection.observe_session

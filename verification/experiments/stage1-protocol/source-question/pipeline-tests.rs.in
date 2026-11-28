@@ -1,0 +1,12 @@
+#[cfg(test)]
+mod proof_source_question_pipeline_tests {
+    use super::*;
+
+    #[test]
+    fn proof_source_question_contract_pipeline() {
+        let path = std::env::var("SANDPROOF_SOURCE_QUESTION_FIXTURE").unwrap();
+        let saved: SourceWork = serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        let value = question(saved.anchor.clone(), &saved.requirement.limits).unwrap();
+        assert_eq!(value, saved);
+    }
+}

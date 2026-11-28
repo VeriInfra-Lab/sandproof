@@ -1,0 +1,28 @@
+import SandboxModel.Lifecycle.Protocol.InboxOriginSupport
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.OriginSelection
+noncomputable section
+
+theorem loop_done (values : alloc.vec.Vec Entry) (index : Usize) (result : Option Entry)
+    (body : Session.current_execution_origin_loop.body values index = .ok (.done result)) :
+    Session.current_execution_origin_loop values index = .ok result := by
+  unfold Session.current_execution_origin_loop
+  rw [loop, body]
+  simp only [bind_ok]
+
+theorem loop_continue (values : alloc.vec.Vec Entry) (index next : Usize)
+    (body : Session.current_execution_origin_loop.body values index = .ok (.cont next)) :
+    Session.current_execution_origin_loop values index =
+      Session.current_execution_origin_loop values next := by
+  unfold Session.current_execution_origin_loop
+  conv_lhs => rw [loop]
+  rw [body]
+  simp only [bind_ok]
+
+end
+end SandboxModel.Stage1Protocol.OriginSelection
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.loop_done
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.loop_continue

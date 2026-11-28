@@ -12,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+mod preparation;
 mod reaper;
 use reaper::Slot;
 
@@ -49,6 +50,7 @@ const CHUNK_BYTES: usize = 8192;
 pub struct OwnedChild {
     child: Option<Child>,
     slot: Option<Slot>,
+    retain_on_drop: bool,
 }
 impl OwnedChild {
     /// Admit before spawning; a full helper budget cannot launch a child.
@@ -59,6 +61,7 @@ impl OwnedChild {
         Ok(Self {
             child: Some(command.spawn()?),
             slot: Some(slot),
+            retain_on_drop: false,
         })
     }
     #[cfg(test)]
@@ -66,6 +69,7 @@ impl OwnedChild {
         Self {
             child: Some(child),
             slot: Some(Slot::acquire().unwrap()),
+            retain_on_drop: false,
         }
     }
     /// Transfer stop/reap responsibility to a separately bounded lifetime owner.
@@ -74,6 +78,20 @@ impl OwnedChild {
     #[must_use]
     pub fn into_child(mut self) -> Child {
         self.child.take().expect("owned child")
+    }
+
+    /// The durable Full owner has accepted this exact worker. Waiting no longer
+    /// owns permission to stop it; its original slot follows it to actual exit.
+    pub(crate) fn retain_until_exit(&mut self) {
+        self.retain_on_drop = true;
+    }
+
+    fn retain_running(&mut self) {
+        let mut child = self.child.take().expect("owned child");
+        drop(child.stdin.take());
+        drop(child.stdout.take());
+        drop(child.stderr.take());
+        self.slot.take().expect("helper admission").retain(child);
     }
 
     fn stop_and_reap(&mut self) -> io::Result<std::process::ExitStatus> {
@@ -121,7 +139,7 @@ impl OwnedChild {
         complete: impl Fn(&[u8]) -> bool,
     ) -> io::Result<Output> {
         let result = self.pump(input, limits, complete);
-        if result.is_err() && self.child.is_some() {
+        if result.is_err() && self.child.is_some() && !self.retain_on_drop {
             let _ = self.stop_and_reap();
         }
         result
@@ -297,7 +315,11 @@ impl DerefMut for OwnedChild {
 impl Drop for OwnedChild {
     fn drop(&mut self) {
         if self.child.is_some() {
-            let _ = self.stop_and_reap();
+            if self.retain_on_drop {
+                self.retain_running();
+            } else {
+                let _ = self.stop_and_reap();
+            }
         }
     }
 }

@@ -1,0 +1,4 @@
+#[expect(dead_code, reason = "selected by fixed Charon")]
+fn proof_state(inbox: &Inbox, session: usize, entry: usize) -> LifecycleWorkState {
+    inbox.state(session, entry)
+}

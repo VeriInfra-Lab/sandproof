@@ -1,0 +1,222 @@
+import SourceAgreement
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandproofOriginalSourceRowsRust.SourceUsingSuccess
+open SourceAgreement
+
+local instance : DecidableEq sandbox_controller_core.model.Phase := by
+  intro left right
+  cases left <;> cases right <;>
+    first | exact isTrue rfl | exact isFalse (by intro equal; cases equal)
+
+local instance : DecidableEq sandbox_controller_core.model.VmStatus := by
+  intro left right
+  cases left <;> cases right <;>
+    first | exact isTrue rfl | exact isFalse (by intro equal; cases equal)
+
+/-- Inversion of the existing Aeneas result, including failure and divergence.
+This does not add a success or termination hypothesis to a library call. -/
+theorem bind_normal_iff {A B : Type} (action : Result A) (next : A → Result B)
+    (answer : B) :
+    (action >>= next) = .ok answer ↔
+      ∃ value, action = .ok value ∧ next value = .ok answer := by
+  cases action with
+  | ret value => simp
+  | vis effect continuation => simp
+  | div => simp
+
+theorem phase_ne_running (phase : sandbox_controller_core.model.Phase) :
+    core.cmp.PartialEq.ne.trait_default
+      sandbox_controller_core.model.Phase.Insts.CoreCmpPartialEqPhase
+      phase .Running = .ok (decide (phase ≠ .Running)) := by
+  cases phase <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      sandbox_controller_core.model.Phase.Insts.CoreCmpPartialEqPhase.eq,
+      sandbox_controller_core.model.Phase.read_discriminant]
+
+theorem status_ne_executing (status : sandbox_controller_core.model.VmStatus) :
+    core.cmp.PartialEq.ne.trait_default
+      sandbox_controller_core.model.VmStatus.Insts.CoreCmpPartialEqVmStatus
+      status .Executing = .ok (decide (status ≠ .Executing)) := by
+  cases status <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      sandbox_controller_core.model.VmStatus.Insts.CoreCmpPartialEqVmStatus.eq,
+      sandbox_controller_core.model.VmStatus.read_discriminant]
+
+private theorem u64_full_equality (left right : U64) : left = right ↔ left.val = right.val := by
+  exact ⟨UScalar.val_eq_of_eq, UScalar.eq_of_val_eq⟩
+
+private theorem tenant_ne (left right : sandbox_controller_core.ids.TenantId) :
+    core.cmp.PartialEq.ne.trait_default
+      sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId left right =
+      .ok (decide (left ≠ right)) := by
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq]
+  exact u64_full_equality left right
+
+private theorem sandbox_ne (left right : sandbox_controller_core.ids.SandboxId) :
+    core.cmp.PartialEq.ne.trait_default
+      sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId left right =
+      .ok (decide (left ≠ right)) := by
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    sandbox_controller_core.ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq]
+  exact u64_full_equality left right
+
+abbrev Mapper {E D : Type} (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E) :=
+  controller.capture.original_source_using.closure.Insts.CoreOpsFunctionFnMutTupleSharedRowResultPairVecU8VecU8Error
+    evidence ops
+
+abbrev Acceptor {E D : Type} (evidence : host_contract.HostEvidence E)
+    (ops : controller.capture.OriginalRowCodec D E) :=
+  controller.capture.original_source_using.closure_1.Insts.CoreOpsFunctionFnMutPairResultPairVecU8VecU8ErrorOriginalSourceRowsPairResultTupleJournalErrorOriginalSourceRows
+    evidence ops
+
+def sourceSql : Str := toStr
+  "SELECT action_json,receipt_json FROM outbox\n         WHERE sandbox_id=?1 AND dispatch_state='receipted' ORDER BY id"
+
+/-- A trace of actual operations, rather than a second implementation. The
+statement successor and the complete final two slots are retained. Library
+observations do not promise physical liveness or an active transaction on Err. -/
+def SuccessfulPath {E D : Type}
+    (evidence : host_contract.HostEvidence E) (ops : controller.capture.OriginalRowCodec D E)
+    (transaction : rusqlite.transaction.Transaction) (ns : Str)
+    (world : sandbox_controller_core.model.World)
+    (sandbox : sandbox_controller_core.ids.SandboxId) (codec : D)
+    (source : capture.SourceProcessIdentity) : Prop :=
+  ∃ (current : sandbox_controller_core.model.SandboxRecord)
+    (vm : sandbox_controller_core.ids.VmId) (physical : sandbox_controller_core.model.Vm)
+    (statement : rusqlite.statement.Statement) (publicSandbox : sandproof_protocol.SandboxId)
+    (parameter : Str) (cursor : rusqlite.row.MappedRows Unit)
+    (afterStatement : rusqlite.statement.Statement) (rows : controller.capture.OriginalSourceRows),
+    sandbox_controller_core.model.World.sandbox_record world sandbox = .ok (some current) ∧
+    current.phase = .Running ∧ current.terminal = false ∧ current.current_vm = some vm ∧
+    sandbox_controller_core.model.World.vm_record world vm = .ok (some physical) ∧
+    physical.owner = current.owner ∧ physical.sandbox = sandbox ∧
+    physical.generation = current.generation ∧ physical.status = .Executing ∧
+    rusqlite.Connection.prepare transaction.conn sourceSql = .ok (.Ok statement) ∧
+    controller.identity.sandbox_id ns sandbox = .ok (.Ok publicSandbox) ∧
+    sandproof_protocol.SandboxId.as_str publicSandbox = .ok parameter ∧
+    rusqlite.statement.Statement.query_map
+      (ArrayT1.Insts.RusqliteParamsParams
+        (Shared0T.Insts.RusqliteTypesTo_sqlToSql Str.Insts.RusqliteTypesTo_sqlToSql))
+      (Mapper evidence ops) statement (Array.make 1#usize [parameter]) () =
+        .ok (.Ok cursor, afterStatement) ∧
+    controller.capture.accept_original_rows
+      (rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError
+        (Mapper evidence ops)) (Acceptor evidence ops) cursor
+      { prepared := none, activated := none }
+      (world, ns, current, (sandbox, vm, publicSandbox), codec) = .ok (.Ok (), rows) ∧
+    rows.prepared = some source ∧ rows.activated = some source
+
+theorem actual_success_has_complete_path {E D : Type}
+    (evidence : host_contract.HostEvidence E) (ops : controller.capture.OriginalRowCodec D E)
+    (transaction : rusqlite.transaction.Transaction) (ns : Str)
+    (world : sandbox_controller_core.model.World)
+    (sandbox : sandbox_controller_core.ids.SandboxId) (codec : D)
+    (source : capture.SourceProcessIdentity)
+    (returned : controller.capture.original_source_using evidence ops
+      transaction ns world sandbox codec = .ok (.Ok source)) :
+    SuccessfulPath evidence ops transaction ns world sandbox codec source := by
+  unfold controller.capture.original_source_using at returned
+  obtain ⟨lookup, lookupEq, returned⟩ := (bind_normal_iff _ _ _).mp returned
+  cases lookup with
+  | none =>
+    simp [lift, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+  | some current =>
+    simp only [lift, core.option.Option.ok_or, bind_tc_ok,
+      core.result.Result.Insts.CoreOpsTry.branch] at returned
+    by_cases running : current.phase = .Running
+    · simp only [phase_ne_running, running, ne_self_iff_false, decide_false,
+        bind_tc_ok, Bool.false_eq_true, ↓reduceIte] at returned
+      cases terminal : current.terminal with
+      | true => simp [terminal] at returned
+      | false =>
+        simp only [terminal, Bool.false_eq_true, ↓reduceIte] at returned
+        cases vmPresent : current.current_vm with
+        | none =>
+          simp [vmPresent, core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+        | some vm =>
+          simp only [vmPresent, bind_tc_ok] at returned
+          obtain ⟨physicalLookup, physicalEq, returned⟩ := (bind_normal_iff _ _ _).mp returned
+          cases physicalLookup with
+          | none =>
+            simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+          | some physical =>
+            simp only [bind_tc_ok] at returned
+            by_cases owner : physical.owner = current.owner
+            · simp [tenant_ne, owner] at returned
+              by_cases sandboxSame : physical.sandbox = sandbox
+              · simp [sandbox_ne, sandboxSame] at returned
+                by_cases generation : physical.generation = current.generation
+                · simp [generation] at returned
+                  by_cases executing : physical.status = .Executing
+                  · simp [status_ne_executing, executing,
+                      SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.transactionDeref]
+                      at returned
+                    obtain ⟨prepared, preparedEq, returned⟩ := (bind_normal_iff _ _ _).mp returned
+                    cases prepared with
+                    | Err failure =>
+                      simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                        JournalErrorFromSqlite.from] at returned
+                    | Ok statement =>
+                      simp only [bind_tc_ok] at returned
+                      obtain ⟨publicReply, publicEq, returned⟩ := (bind_normal_iff _ _ _).mp returned
+                      cases publicReply with
+                      | Err failure =>
+                        simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+                      | Ok publicSandbox =>
+                        simp only [bind_tc_ok] at returned
+                        obtain ⟨parameter, parameterEq, returned⟩ := (bind_normal_iff _ _ _).mp returned
+                        obtain ⟨⟨queryReply, afterStatement⟩, queryEq, returned⟩ :=
+                          (bind_normal_iff _ _ _).mp returned
+                        cases queryReply with
+                        | Err failure =>
+                          simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                            JournalErrorFromSqlite.from] at returned
+                        | Ok cursor =>
+                          simp at returned
+                          obtain ⟨⟨driverReply, rows⟩, driverEq, returned⟩ :=
+                            (bind_normal_iff _ _ _).mp returned
+                          cases driverReply with
+                          | Err failure =>
+                            simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at returned
+                          | Ok completed =>
+                            cases completed
+                            simp at returned
+                            cases preparedPresent : rows.prepared with
+                            | none => simp [preparedPresent] at returned
+                            | some first =>
+                              cases activatedPresent : rows.activated with
+                              | none => simp [preparedPresent, activatedPresent] at returned
+                              | some second =>
+                                simp only [preparedPresent, activatedPresent,
+                                  actual_source_equality_checks_all_three_fields, bind_tc_ok] at returned
+                                by_cases same : SameSource first second
+                                · simp [same] at returned
+                                  have identical := (same_source_is_complete_record_equality first second).mp same
+                                  subst source
+                                  subst second
+                                  exact ⟨current, vm, physical, statement, publicSandbox,
+                                    parameter, cursor, afterStatement, rows, lookupEq, running,
+                                    terminal, vmPresent, physicalEq, owner, sandboxSame, generation,
+                                    executing, preparedEq, publicEq, parameterEq, queryEq,
+                                    driverEq, preparedPresent, activatedPresent⟩
+                                · simp [same] at returned
+                  · simp [status_ne_executing, executing] at returned
+                · have valuesDifferent : physical.generation.val ≠ current.generation.val := by
+                    intro same
+                    exact generation ((u64_full_equality _ _).mpr same)
+                  simp [valuesDifferent] at returned
+              · simp [sandbox_ne, sandboxSame] at returned
+            · simp [tenant_ne, owner] at returned
+    · simp [phase_ne_running, running] at returned
+
+end SandproofOriginalSourceRowsRust.SourceUsingSuccess
+
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceUsingSuccess.bind_normal_iff
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceUsingSuccess.phase_ne_running
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceUsingSuccess.status_ne_executing
+#audit_controller_proof SandproofOriginalSourceRowsRust.SourceUsingSuccess.actual_success_has_complete_path

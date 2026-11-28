@@ -1,0 +1,421 @@
+{
+  "schema": 1,
+  "baseline": "0c8f457a7a047e2ba49ac4e36452703f28f7333b",
+  "status": "reviewed source adoption; fresh generation, kernel checks and counterexamples still required",
+  "semantic_changes": [
+    "#698 continued-StateLost shape keeps the complete original/current binding; current Rust replaces the exhaustive fallback by NotCurrent explicitly",
+    "adopted decode_accepted_with and bounded Writer/response seams preserve ordered checks, original limits and error priority",
+    "source-local Lake view and exact retained-module admission replace historical global patches; no global linter option"
+  ],
+  "generated_expectations": "unchanged pending fresh comparison; no generated file or complete-LLBC digest refreshed",
+  "inventories": [
+    {
+      "inventory": "verification/experiments/stage1-protocol/access-identity/inventory.json",
+      "changes": [
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume.rs",
+          "before": "99137eab63e6c433357d18aa595549b671dedd7fac31501c443317ceccfd3a21",
+          "after": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad"
+        },
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume_tests.rs",
+          "before": "e4e46d93996e947b32457aab1984d65e53a030f862bbe47465c0d6b2ad3375f6",
+          "after": "b6328ec886e6740a8c4caabc07f613ab09cff0473e3883cb9c47aab601a58df7"
+        }
+      ]
+    },
+    {
+      "inventory": "verification/experiments/stage1-protocol/create-observation/inventory.json",
+      "changes": [
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume.rs",
+          "before": "99137eab63e6c433357d18aa595549b671dedd7fac31501c443317ceccfd3a21",
+          "after": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad"
+        },
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume_tests.rs",
+          "before": "e4e46d93996e947b32457aab1984d65e53a030f862bbe47465c0d6b2ad3375f6",
+          "after": "b6328ec886e6740a8c4caabc07f613ab09cff0473e3883cb9c47aab601a58df7"
+        }
+      ]
+    },
+    {
+      "inventory": "verification/experiments/stage1-protocol/envelope-budget/inventory.json",
+      "changes": [
+        {
+          "section": "inputs",
+          "path": "controller-service/src/template_registry/evidence.rs",
+          "before": "151ceac8bbf11f207d4b89588b7103db9fc84682b3946ce59c6ac411a2d688e4",
+          "after": "e3604762f19cf379ca1e830e175aacd79187973e778c41b2ba436c0a1bd736ae"
+        },
+        {
+          "section": "inputs",
+          "path": "docs/formal/03-protocol-inbox.md",
+          "before": "0e85a8fe2d1f22aeca5fe8ec688f56a0399f81d688a7afa834cab24be416dd35",
+          "after": "0d9b7230c50d24d071ca341c4ff344b617dfa2da2e7d1126eb960237510b1951"
+        },
+        {
+          "section": "inputs",
+          "path": "sandbox-internal/src/lifecycle.rs",
+          "before": "c3f9d9039c6611ecd21594e0fd52326410fb53a7e4280a78d713529dc4d2e139",
+          "after": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7"
+        },
+        {
+          "section": "inputs",
+          "path": "sandbox-internal/src/server/lifecycle.rs",
+          "before": "4431706adf7fab1fac53b8853ca64388cfba058a0d54c556b98757bbdef06261",
+          "after": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0"
+        },
+        {
+          "section": "inputs",
+          "path": "tools/proof_batch.py",
+          "before": "abea3ac6e42c698ff44cf5807359828362912c6a46df64b23ae679d7f6873e0c",
+          "after": "6396b8589a1c4b4814d58942d8cec592b2dc74eca88e42b6d0a1b6204eea7af8"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-budget/formal.py",
+          "before": "38dab52dbafe1c4282516e80fa33d4d0017ca5262089c39350b907120824e419",
+          "after": "d2b4bb51ff86098594dc3e5c368824e6a81c69157d3fb132a571955b6e31a0a5"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-bytes/extract-json.py",
+          "before": "0c63945c9a314226a7fcb07d1d556e80afe5312027debb2af1f1be8d839650da",
+          "after": "24d873c825bc80c73dd9aa47636c990e1033ceaa17cbf7b3b4b8f0cd8ab00095"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-bytes/formal.py",
+          "before": "7e0b59b32586392e50d54f0032cf1f06d7a3c1ab4a74cfbca9ae65d3ed747997",
+          "after": "8262207e13865d96ec3ee478996b3f12e8b209bb992c57d2c857007e111053ff"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-schema/formal.py",
+          "before": "131b47a4f7075f27ee4b7088c7cdce19b4d8398560eca8d6cc69ac4eb09095cc",
+          "after": "7464940d477a482371f2aa41c0588a8bd6e1137ee338f8a8c2e15eb4d3f119be"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/formal.py",
+          "before": "cb577c5177197395891deb560dd8593ee308ed7af2856bb32e47836cac588b41",
+          "after": "5a7fe67cad7f0ffa96819f34a95ea4a163804510e4f00a0675d33547dd6f6b6e"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/schema-leaves/formal.py",
+          "before": "0e6aa4bc9b62618b95b028569ffd49efb6d73c4cf127ff63c37db3bfdaf0bfe2",
+          "after": "ab2a9fbd549d0232b47547087ce2cf43f044cb9a4b5d46499fd37d7fb4120de9"
+        }
+      ]
+    },
+    {
+      "inventory": "verification/experiments/stage1-protocol/envelope-bytes/inventory.json",
+      "changes": [
+        {
+          "section": "inputs",
+          "path": "docs/formal/03-protocol-inbox.md",
+          "before": "0e85a8fe2d1f22aeca5fe8ec688f56a0399f81d688a7afa834cab24be416dd35",
+          "after": "0d9b7230c50d24d071ca341c4ff344b617dfa2da2e7d1126eb960237510b1951"
+        },
+        {
+          "section": "inputs",
+          "path": "sandbox-internal/src/lifecycle.rs",
+          "before": "c3f9d9039c6611ecd21594e0fd52326410fb53a7e4280a78d713529dc4d2e139",
+          "after": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7"
+        },
+        {
+          "section": "inputs",
+          "path": "sandbox-internal/src/server/lifecycle.rs",
+          "before": "4431706adf7fab1fac53b8853ca64388cfba058a0d54c556b98757bbdef06261",
+          "after": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0"
+        },
+        {
+          "section": "inputs",
+          "path": "tools/proof_batch.py",
+          "before": "abea3ac6e42c698ff44cf5807359828362912c6a46df64b23ae679d7f6873e0c",
+          "after": "6396b8589a1c4b4814d58942d8cec592b2dc74eca88e42b6d0a1b6204eea7af8"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-bytes/extract-json.py",
+          "before": "0c63945c9a314226a7fcb07d1d556e80afe5312027debb2af1f1be8d839650da",
+          "after": "24d873c825bc80c73dd9aa47636c990e1033ceaa17cbf7b3b4b8f0cd8ab00095"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-bytes/formal.py",
+          "before": "7e0b59b32586392e50d54f0032cf1f06d7a3c1ab4a74cfbca9ae65d3ed747997",
+          "after": "8262207e13865d96ec3ee478996b3f12e8b209bb992c57d2c857007e111053ff"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-schema/formal.py",
+          "before": "131b47a4f7075f27ee4b7088c7cdce19b4d8398560eca8d6cc69ac4eb09095cc",
+          "after": "7464940d477a482371f2aa41c0588a8bd6e1137ee338f8a8c2e15eb4d3f119be"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/formal.py",
+          "before": "cb577c5177197395891deb560dd8593ee308ed7af2856bb32e47836cac588b41",
+          "after": "5a7fe67cad7f0ffa96819f34a95ea4a163804510e4f00a0675d33547dd6f6b6e"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/schema-leaves/formal.py",
+          "before": "0e6aa4bc9b62618b95b028569ffd49efb6d73c4cf127ff63c37db3bfdaf0bfe2",
+          "after": "ab2a9fbd549d0232b47547087ce2cf43f044cb9a4b5d46499fd37d7fb4120de9"
+        }
+      ]
+    },
+    {
+      "inventory": "verification/experiments/stage1-protocol/envelope-schema/inventory.json",
+      "changes": [
+        {
+          "section": "inputs",
+          "path": "sandbox-internal/src/lifecycle.rs",
+          "before": "c3f9d9039c6611ecd21594e0fd52326410fb53a7e4280a78d713529dc4d2e139",
+          "after": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7"
+        },
+        {
+          "section": "inputs",
+          "path": "sandbox-internal/src/server/lifecycle.rs",
+          "before": "4431706adf7fab1fac53b8853ca64388cfba058a0d54c556b98757bbdef06261",
+          "after": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-schema/formal.py",
+          "before": "131b47a4f7075f27ee4b7088c7cdce19b4d8398560eca8d6cc69ac4eb09095cc",
+          "after": "7464940d477a482371f2aa41c0588a8bd6e1137ee338f8a8c2e15eb4d3f119be"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/formal.py",
+          "before": "cb577c5177197395891deb560dd8593ee308ed7af2856bb32e47836cac588b41",
+          "after": "5a7fe67cad7f0ffa96819f34a95ea4a163804510e4f00a0675d33547dd6f6b6e"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/schema-leaves/formal.py",
+          "before": "0e6aa4bc9b62618b95b028569ffd49efb6d73c4cf127ff63c37db3bfdaf0bfe2",
+          "after": "ab2a9fbd549d0232b47547087ce2cf43f044cb9a4b5d46499fd37d7fb4120de9"
+        }
+      ]
+    },
+    {
+      "inventory": "verification/experiments/stage1-protocol/envelope-writer/inventory.json",
+      "changes": [
+        {
+          "section": "inputs",
+          "path": "controller-service/src/lib.rs",
+          "before": "f5b6a2730b10d23a3e44e8314de1a7ca28bd403091009792c7c292835e1d4745",
+          "after": "bc15a0989bca7001b2927e6c912601832bf01601cf83e3cfac34351e4fbd6f73"
+        },
+        {
+          "section": "inputs",
+          "path": "controller-service/src/template_registry/evidence.rs",
+          "before": "151ceac8bbf11f207d4b89588b7103db9fc84682b3946ce59c6ac411a2d688e4",
+          "after": "e3604762f19cf379ca1e830e175aacd79187973e778c41b2ba436c0a1bd736ae"
+        },
+        {
+          "section": "inputs",
+          "path": "docs/formal/03-protocol-inbox.md",
+          "before": "0e85a8fe2d1f22aeca5fe8ec688f56a0399f81d688a7afa834cab24be416dd35",
+          "after": "0d9b7230c50d24d071ca341c4ff344b617dfa2da2e7d1126eb960237510b1951"
+        },
+        {
+          "section": "inputs",
+          "path": "sandbox-internal/src/lib.rs",
+          "before": "a621dedc2b596f1dbe63412127285b98cb43e2856264ecb52be28ce81d3a698e",
+          "after": "5f7892147b835443ab166b6ab782de3e70ab9c3d271b588ed2fe72775bd5f8f1"
+        },
+        {
+          "section": "inputs",
+          "path": "sandbox-internal/src/lifecycle.rs",
+          "before": "c3f9d9039c6611ecd21594e0fd52326410fb53a7e4280a78d713529dc4d2e139",
+          "after": "ad58856dd6b4e0666048ea14c1103cd7836884bbf71051c85863c20db3755ea7"
+        },
+        {
+          "section": "inputs",
+          "path": "sandbox-internal/src/server.rs",
+          "before": "a04497b38f81a1717a0af61f88e5552a27224f2617b3ff0f353fb02fd770523e",
+          "after": "8e46a23776716d7b42e8107d29d454626230e540881ba1a11c59ed275b4dd620"
+        },
+        {
+          "section": "inputs",
+          "path": "sandbox-internal/src/server/lifecycle.rs",
+          "before": "4431706adf7fab1fac53b8853ca64388cfba058a0d54c556b98757bbdef06261",
+          "after": "6c086cbb4914518adc883ae28f9982d89d3a28b9b1608d20b90819e38af9c1c0"
+        },
+        {
+          "section": "inputs",
+          "path": "tools/proof_batch.py",
+          "before": "abea3ac6e42c698ff44cf5807359828362912c6a46df64b23ae679d7f6873e0c",
+          "after": "6396b8589a1c4b4814d58942d8cec592b2dc74eca88e42b6d0a1b6204eea7af8"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-budget/formal.py",
+          "before": "38dab52dbafe1c4282516e80fa33d4d0017ca5262089c39350b907120824e419",
+          "after": "d2b4bb51ff86098594dc3e5c368824e6a81c69157d3fb132a571955b6e31a0a5"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-budget/inventory.json",
+          "before": "6c4d6b431476104fc06ef9bb0651db640d248fe113d05013fdec569ae1dbf5f5",
+          "after": "8476cde06a6aeed3f2ef81e60b5f3ecb3b55402237c25e9005e7790ceb5de1b5"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-bytes/extract-json.py",
+          "before": "0c63945c9a314226a7fcb07d1d556e80afe5312027debb2af1f1be8d839650da",
+          "after": "24d873c825bc80c73dd9aa47636c990e1033ceaa17cbf7b3b4b8f0cd8ab00095"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-bytes/formal.py",
+          "before": "7e0b59b32586392e50d54f0032cf1f06d7a3c1ab4a74cfbca9ae65d3ed747997",
+          "after": "8262207e13865d96ec3ee478996b3f12e8b209bb992c57d2c857007e111053ff"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-bytes/inventory.json",
+          "before": "bdd607f665d1f8a0a21b183eb9cd88782f711719267b2c0e26078d9cd550a746",
+          "after": "c547555349484e2dfe7ffc6012dba782cac4345907f0db02fca5937c97cc58f0"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-schema/formal.py",
+          "before": "131b47a4f7075f27ee4b7088c7cdce19b4d8398560eca8d6cc69ac4eb09095cc",
+          "after": "7464940d477a482371f2aa41c0588a8bd6e1137ee338f8a8c2e15eb4d3f119be"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-schema/inventory.json",
+          "before": "1196a7c0600b8da1f6271fbaa838e932807224c841c7f18d6555b9309f978a49",
+          "after": "5b5049fe62d43efb536a4b3de92c7bdf7e80d6006d6f35a9829a4fb09775cc42"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-writer/formal.py",
+          "before": "b296c29500da4640e78efdf8f325bfadb98698455aae6d97432a130d0670b765",
+          "after": "4e65099a3b363e87ba5ef4c10ba79cce651eb7c992a940cf8a109c54f61df827"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/envelope-writer/prepare.py",
+          "before": "bb80425730d529c2fc56bc911d226d204ffcfedc99ddf3aab208770ac9adafa7",
+          "after": "06a193f3c924bbd345a8a6dae4171be30809d6bbeeb78ac43d8d4a834a3ef736"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/formal.py",
+          "before": "cb577c5177197395891deb560dd8593ee308ed7af2856bb32e47836cac588b41",
+          "after": "5a7fe67cad7f0ffa96819f34a95ea4a163804510e4f00a0675d33547dd6f6b6e"
+        },
+        {
+          "section": "inputs",
+          "path": "verification/experiments/stage1-protocol/schema-leaves/formal.py",
+          "before": "0e6aa4bc9b62618b95b028569ffd49efb6d73c4cf127ff63c37db3bfdaf0bfe2",
+          "after": "ab2a9fbd549d0232b47547087ce2cf43f044cb9a4b5d46499fd37d7fb4120de9"
+        }
+      ]
+    },
+    {
+      "inventory": "verification/experiments/stage1-protocol/observation-bindings/inventory.json",
+      "changes": [
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume.rs",
+          "before": "99137eab63e6c433357d18aa595549b671dedd7fac31501c443317ceccfd3a21",
+          "after": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad"
+        },
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume_tests.rs",
+          "before": "e4e46d93996e947b32457aab1984d65e53a030f862bbe47465c0d6b2ad3375f6",
+          "after": "b6328ec886e6740a8c4caabc07f613ab09cff0473e3883cb9c47aab601a58df7"
+        }
+      ]
+    },
+    {
+      "inventory": "verification/experiments/stage1-protocol/renewal-confirmation/inventory.json",
+      "changes": [
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume.rs",
+          "before": "99137eab63e6c433357d18aa595549b671dedd7fac31501c443317ceccfd3a21",
+          "after": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad"
+        },
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume_tests.rs",
+          "before": "e4e46d93996e947b32457aab1984d65e53a030f862bbe47465c0d6b2ad3375f6",
+          "after": "b6328ec886e6740a8c4caabc07f613ab09cff0473e3883cb9c47aab601a58df7"
+        }
+      ]
+    },
+    {
+      "inventory": "verification/experiments/stage1-protocol/result-confirmation/inventory.json",
+      "changes": [
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume.rs",
+          "before": "99137eab63e6c433357d18aa595549b671dedd7fac31501c443317ceccfd3a21",
+          "after": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad"
+        },
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume_tests.rs",
+          "before": "e4e46d93996e947b32457aab1984d65e53a030f862bbe47465c0d6b2ad3375f6",
+          "after": "b6328ec886e6740a8c4caabc07f613ab09cff0473e3883cb9c47aab601a58df7"
+        }
+      ]
+    },
+    {
+      "inventory": "verification/experiments/stage1-protocol/resume-observation/inventory.json",
+      "changes": [
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume.rs",
+          "before": "2c22dbe439e24c77ed04188804d839ea983e535ee57f2e1423a20374b6aad00a",
+          "after": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad"
+        }
+      ]
+    },
+    {
+      "inventory": "verification/experiments/stage1-protocol/serde-binding/candidate.json",
+      "changes": [
+        {
+          "section": "inputs",
+          "path": "controller-service/src/template_registry/evidence.rs",
+          "before": "151ceac8bbf11f207d4b89588b7103db9fc84682b3946ce59c6ac411a2d688e4",
+          "after": "e3604762f19cf379ca1e830e175aacd79187973e778c41b2ba436c0a1bd736ae"
+        }
+      ]
+    },
+    {
+      "inventory": "verification/experiments/stage1-protocol/unload-observation/inventory.json",
+      "changes": [
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume.rs",
+          "before": "99137eab63e6c433357d18aa595549b671dedd7fac31501c443317ceccfd3a21",
+          "after": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad"
+        },
+        {
+          "section": "base_sources",
+          "path": "sandbox-protocol/src/lifecycle/resume_tests.rs",
+          "before": "e4e46d93996e947b32457aab1984d65e53a030f862bbe47465c0d6b2ad3375f6",
+          "after": "b6328ec886e6740a8c4caabc07f613ab09cff0473e3883cb9c47aab601a58df7"
+        }
+      ]
+    }
+  ]
+}

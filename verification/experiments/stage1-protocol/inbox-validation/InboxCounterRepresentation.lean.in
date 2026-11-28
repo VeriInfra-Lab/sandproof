@@ -1,0 +1,45 @@
+import SandboxModel.Lifecycle.Protocol.InboxCompositionModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.InboxValidation
+noncomputable section
+
+def arraySummary (maximum : U64) (kinds : Array U16 5#usize) : EntrySummary :=
+  ⟨maximum, fun index => (kinds.val[index.val]'(by simp)).val⟩
+
+theorem counter_bound (maximum : U64) (kinds : Array U16 5#usize) (index : Fin 5) :
+    (arraySummary maximum kinds).counts index ≤ U16.max := by
+  unfold arraySummary
+  scalar_tac
+
+theorem counter_updated (maximum : U64) (kinds : Array U16 5#usize)
+    (index : Usize) (value : U16) (selected : Fin 5) :
+    (arraySummary maximum (kinds.set index value)).counts selected =
+      if selected.val = index.val then value.val else (arraySummary maximum kinds).counts selected := by
+  by_cases same : index.val = selected.val
+  · simp [arraySummary, Array.set_val_eq, List.getElem_set, same]
+  · have reverse : selected.val ≠ index.val := Ne.symm same
+    simp [arraySummary, Array.set_val_eq, List.getElem_set, same, reverse]
+
+theorem zero_array_summary :
+    arraySummary 0#u64 (Array.repeat 5#usize 0#u16) = initialSummary := by
+  unfold arraySummary initialSummary
+  congr 1
+  funext index
+  fin_cases index <;> simp
+
+theorem maximum_comparison (previous accepted : U64) :
+    (if previous > accepted then previous else accepted).val = max previous.val accepted.val := by
+  split <;> rename_i comparison
+  · have less : accepted.val < previous.val := comparison
+    simp [max_eq_left (by omega : accepted.val ≤ previous.val)]
+  · have less : ¬ accepted.val < previous.val := comparison
+    simp [max_eq_right (by omega : previous.val ≤ accepted.val)]
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.counter_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.counter_updated
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.zero_array_summary
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.maximum_comparison

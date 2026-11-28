@@ -1,0 +1,82 @@
+import ContinuedDriverActual
+import OriginalRowsDriver
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofUnloadContinuedReady
+
+namespace SandboxModel.Stage1Protocol.ContinuedDriverAgreement
+open SandproofUnloadContinuedReady.controller.lifecycle_inbox.source_work.full.continuation
+
+variable [Representations]
+
+theorem actual_step_is_original {I F Item S : Type}
+    (iter : core.iter.traits.iterator.Iterator I Item)
+    (accept : core.ops.function.FnMut F (Item × S) (core.result.Result Unit JournalError × S))
+    (current : I × S × F) :
+    scan_continued_rows_loop.body iter accept current.1 current.2.1 current.2.2 =
+      OriginalRowsDriver.step iter accept current := by
+  rcases current with ⟨rows, state, callback⟩
+  unfold scan_continued_rows_loop.body OriginalRowsDriver.step
+  apply congrArg (fun next => iter.next rows >>= next)
+  funext item
+  rcases item with ⟨row, rows'⟩
+  cases row with
+  | none => rfl
+  | some row =>
+    apply congrArg (fun next => accept.call_mut callback (row, state) >>= next)
+    funext accepted
+    rcases accepted with ⟨⟨reply, state'⟩, callback'⟩
+    cases reply <;> rfl
+
+
+theorem actual_run_is_original {I F Item S : Type}
+    (iter : core.iter.traits.iterator.Iterator I Item)
+    (accept : core.ops.function.FnMut F (Item × S) (core.result.Result Unit JournalError × S))
+    (rows : I) (state : S) (callback : F) :
+    scan_continued_rows iter accept rows state callback =
+      OriginalRowsDriver.run iter accept rows state callback := by
+  unfold scan_continued_rows scan_continued_rows_loop OriginalRowsDriver.run
+  congr 1
+  funext current
+  rcases current with ⟨currentRows, currentState, currentCallback⟩
+  exact actual_step_is_original iter accept (currentRows, currentState, currentCallback)
+
+theorem actual_eof_returns_current_state {I F Item S : Type}
+    (iter : core.iter.traits.iterator.Iterator I Item)
+    (accept : core.ops.function.FnMut F (Item × S) (core.result.Result Unit JournalError × S))
+    (rows rows' : I) (state : S) (callback : F)
+    (next : iter.next rows = .ok (none, rows')) :
+    scan_continued_rows iter accept rows state callback = .ok (.Ok (), state) := by
+  rw [actual_run_is_original]
+  exact OriginalRowsDriver.run_next_none iter accept rows rows' state callback next
+
+theorem actual_first_error_stops {I F Item S : Type}
+    (iter : core.iter.traits.iterator.Iterator I Item)
+    (accept : core.ops.function.FnMut F (Item × S) (core.result.Result Unit JournalError × S))
+    (rows rows' : I) (state state' : S) (callback callback' : F) (row : Item) (error : JournalError)
+    (next : iter.next rows = .ok (some row, rows'))
+    (handled : accept.call_mut callback (row, state) = .ok ((.Err error, state'), callback')) :
+    scan_continued_rows iter accept rows state callback = .ok (.Err error, state') := by
+  rw [actual_run_is_original]
+  exact OriginalRowsDriver.run_some_callback_error iter accept rows rows' state state' callback
+    callback' row error next handled
+
+theorem actual_success_continues_with_new_state {I F Item S : Type}
+    (iter : core.iter.traits.iterator.Iterator I Item)
+    (accept : core.ops.function.FnMut F (Item × S) (core.result.Result Unit JournalError × S))
+    (rows rows' : I) (state state' : S) (callback callback' : F) (row : Item)
+    (next : iter.next rows = .ok (some row, rows'))
+    (handled : accept.call_mut callback (row, state) = .ok ((.Ok (), state'), callback')) :
+    scan_continued_rows iter accept rows state callback =
+      scan_continued_rows iter accept rows' state' callback' := by
+  simp only [actual_run_is_original]
+  exact OriginalRowsDriver.run_some_callback_ok iter accept rows rows' state state' callback
+    callback' row next handled
+
+end SandboxModel.Stage1Protocol.ContinuedDriverAgreement
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuedDriverAgreement.actual_step_is_original
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuedDriverAgreement.actual_run_is_original
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuedDriverAgreement.actual_eof_returns_current_state
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuedDriverAgreement.actual_first_error_stops
+#audit_controller_proof SandboxModel.Stage1Protocol.ContinuedDriverAgreement.actual_success_continues_with_new_state

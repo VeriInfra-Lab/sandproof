@@ -1,0 +1,66 @@
+import SandboxModel.Lifecycle.Protocol.InboxLifetimesReduction
+import SandboxModel.Lifecycle.Protocol.InboxLifetimesValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+namespace SandboxModel.Stage1Protocol.InboxLifetimes.WrongGap
+open Values
+
+theorem actual_return :
+    validate_lifetimes gap (lifetime 400#i64) = .ok (.Err .CorruptStore) := by
+  let values := alloc.vec.Vec.deref gap.entries
+  let body : LoopState → Result (ControlFlow LoopState Return) := fun value =>
+    validate_applied_lifetimes_loop.body (lifetime 400#i64) 10#i64
+      value.1 value.2.1 value.2.2.1 value.2.2.2
+  have body0 : body (cursor values 0, some 110#i64, 0#u64, none) = .ok (.cont (cursor values 1, some 110#i64, 1#u64, none)) := by
+    dsimp only [body]
+    unfold validate_applied_lifetimes_loop.body
+    rw [next_some values 0 (by decide)]
+    simp only [bind_tc_ok]
+    have selected : values.val[0] = entry create none none := by rfl
+    rw [selected]
+    simp [entry, create, EnvelopeValues.intent]
+  have body1 : body (cursor values 1, some 110#i64, 1#u64, none) = .ok (.done (.Err .CorruptStore)) := by
+    dsimp only [body]
+    unfold validate_applied_lifetimes_loop.body
+    rw [next_some values 1 (by decide)]
+    simp only [bind_tc_ok]
+    have selected : values.val[1] = entry (renewal 4#u64 3#u64 400#i64)
+        (some 300#i64) (some 400#i64) := by rfl
+    rw [selected]
+    simp [entry, renewal, create, EnvelopeValues.intent, lifetime,
+      core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, Replay.expected_eq,
+      core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      core.convert.FromSame.from, core.option.Option.is_some_and,
+      SandproofFoundationsRust.core.option.Option.is_some_and,
+      validate_applied_lifetimes.closure.Insts.CoreOpsFunctionFnOnceTupleI64Bool.call_once]
+  have completed : loop body (cursor values 0, some 110#i64, 0#u64, none) = .ok (.Err .CorruptStore) := by
+    rw [loop_continue body (cursor values 0, some 110#i64, 0#u64, none) (cursor values 1, some 110#i64, 1#u64, none) body0]
+    exact loop_done body (cursor values 1, some 110#i64, 1#u64, none) _ body1
+  have sum : I64.checked_add 10#i64 (UScalar.hcast .I64 100#u64) = some 110#i64 := by decide
+  have bootstrap : validate_lifetimes gap (lifetime 400#i64) =
+      validate_applied_lifetimes gap (lifetime 400#i64) 10#i64 110#i64 := by
+    simp [validate_lifetimes, lifetime, gap, session, entry, create,
+      alloc.vec.Vec.deref, core.slice.Slice.first, core.option.Option.and_then,
+      core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      core.convert.FromSame.from, core.result.Result.ok, SandproofFoundationsRust.core.result.Result.ok,
+      I64.Insts.CoreConvertTryFromU64TryFromIntError.try_from, I64.max_eq, sum,
+      validate_lifetimes.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryOptionI64.call_once,
+      validate_lifetimes.closure.closure.Insts.CoreOpsFunctionFnOnceTupleI64OptionI64.call_once]
+  rw [bootstrap]
+  simpa only [validate_applied_lifetimes, validate_applied_lifetimes_loop,
+    SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter, core.slice.Slice.iter,
+    bind_tc_ok, cursor, values, body] using completed
+
+theorem rejects_same_full_contract : ¬ FullLifetimeContract validate_lifetimes := by
+  intro contract
+  have required := contract gap (lifetime 400#i64)
+  rw [actual_return, expected_outcomes.2.2.1] at required
+  cases (Result.ok_injective required)
+
+end SandboxModel.Stage1Protocol.InboxLifetimes.WrongGap
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.WrongGap.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLifetimes.WrongGap.rejects_same_full_contract

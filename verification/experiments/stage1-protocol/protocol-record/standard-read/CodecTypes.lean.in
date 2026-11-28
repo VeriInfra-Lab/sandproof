@@ -1,0 +1,13 @@
+import SandproofStage1Request.Types
+
+namespace SandproofStandardRecordRust
+
+abbrev sandproof_controller_service.controller.checkpoint.config.MaintenanceConfig :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.checkpoint.config.MaintenanceConfig
+
+abbrev sandproof_controller_service.controller.lifecycle_inbox.model.Inbox :=
+  SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox
+
+abbrev serde_json.error.Error := SandproofStage1RequestRust.serde_json.error.Error
+
+end SandproofStandardRecordRust

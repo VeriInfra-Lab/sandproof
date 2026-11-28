@@ -1,0 +1,47 @@
+import StartupReadAgreement
+
+open Aeneas Aeneas.Std
+open SandproofUnloadStartupJoint
+open SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot
+open SandproofUnloadStartupJoint.sandbox_controller_core.model (World SandboxRecord OperationPlan)
+
+namespace StartupReadAgreement
+
+variable [Representations] [Operations]
+
+/-- Follow the actual Rust guard. An unsealed plan cannot return commands,
+    whether or not its sandbox record has a current VM and network slot. -/
+theorem expected_commands_requires_sealed
+    (world : World) (binding : UnloadFirstActualStartup.Local)
+    (record : SandboxRecord) (plan : OperationPlan)
+    (commands : alloc.vec.Vec UnloadFirstActualStartup.Command)
+    (recordRead : World.sandbox_record world binding.sandbox = .ok (some record))
+    (planRead : World.operation_plan world (startupKey binding) = .ok (some plan))
+    (returned : expected_commands world binding = .ok (.Ok commands)) :
+    plan.sealed = true := by
+  unfold startupKey at planRead
+  cases sealed : plan.sealed with
+  | true => rfl
+  | false =>
+    cases vm : record.current_vm <;> cases slot : record.net_slot <;>
+      simp [expected_commands, recordRead, planRead, vm, slot, sealed,
+        core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        bind_tc_ok] at returned
+
+/-- The value in the actual scan's second read must be sealed because it is
+    the same value used by the successful command builder. -/
+theorem startup_selected_plan_is_sealed {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (tx : rusqlite.transaction.Transaction)
+    (ns : Str) (world : World) (binding : UnloadFirstActualStartup.Local)
+    (calls : UnloadFirstActualStartup.Opened host serde tx ns world binding) :
+    calls.plan.sealed = true := by
+  obtain ⟨record, plan, recordRead, planRead, same⟩ :=
+    startup_reuses_command_plan host serde tx ns world binding calls
+  exact same ▸ expected_commands_requires_sealed world binding record plan calls.commands
+    recordRead planRead calls.expected
+
+end StartupReadAgreement
+
+#audit_controller_proof StartupReadAgreement.expected_commands_requires_sealed
+#audit_controller_proof StartupReadAgreement.startup_selected_plan_is_sealed

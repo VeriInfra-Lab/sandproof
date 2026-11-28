@@ -19,6 +19,7 @@ import http.client
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import socket
@@ -105,7 +106,8 @@ def interrupted_host_request(
 
 
 def prepare_fault_services(args, root, settings, *, slots, key, port, job_count=4,
-                           extra_credentials=None, shared_template=False, checkpoint_tail_inputs=1000):
+                           extra_credentials=None, shared_template=False, checkpoint_tail_inputs=1000,
+                           activation_ceiling_bytes=None):
     """Construct fresh explicit native/catalog inputs for the one real fixture.
 
     No retired public-host field is translated or accepted. The production
@@ -142,15 +144,16 @@ def prepare_fault_services(args, root, settings, *, slots, key, port, job_count=
         "max_lifetime_secs": settings.get("max_lifetime_secs", settings["max_timeout_secs"]),
         "startup_timeout_secs": settings.get("startup_timeout_secs", 300),
         "public_ipv4_enabled": settings.get("public_ipv4_enabled", False)}
-    native = complete_runtime(settings, slots=slots, checkpoint_tail_inputs=checkpoint_tail_inputs)
+    native = complete_runtime(settings, slots=slots, inbox_sessions=job_count+settings["max_active_global"], checkpoint_tail_inputs=checkpoint_tail_inputs)
     artifact_bytes = kernel.stat().st_size + rootfs.stat().st_size
     registry = {"root": str(root / "registry"), "max_templates_global": 1,
         "max_templates_per_tenant": 1, "max_artifact_bytes_global": artifact_bytes,
         "max_artifact_bytes_per_tenant": artifact_bytes, "validation_timeout_secs": 60}
     return RuntimeServices.prepare(args, root=root, native_pools=[native],
         registered_catalogs=[catalog], key=key, public_address=f"127.0.0.1:{port}",
-        record=args.service_cgroup_record, job_count=job_count,
-        private_builds=None, registry_config=registry, extra_credentials=extra_credentials)
+        record=args.service_cgroup_record, retained_sessions=(job_count) + native['max_active_global'],
+        private_builds=None, registry_config=registry, extra_credentials=extra_credentials,
+        activation_ceiling_bytes=activation_ceiling_bytes)
 
 
 def original_create_identity(services, metadata):
@@ -234,7 +237,7 @@ def exercise(args: argparse.Namespace) -> None:
     vm_name = f"vm-{namespace}-0"
     api_key = secrets.token_hex(32)
     port = free_loopback_port()
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     kernel = root / "vmlinux"
     rootfs = root / "rootfs.ext4"
@@ -250,7 +253,7 @@ def exercise(args: argparse.Namespace) -> None:
         "node_state_dir": str(root / "state"),
         "jailer": str(Path(args.jailer).resolve(strict=True)),
         "firecracker": str(Path(args.firecracker).resolve(strict=True)),
-        "chroot_base": str(root / "jails"),
+        "chroot_base": str(root / "p/v"),
         "kernel": str(kernel),
         "rootfs": str(rootfs),
         "uid_base": args.uid_base,
@@ -309,14 +312,14 @@ def exercise(args: argparse.Namespace) -> None:
             assert not list((root / "state/fences").glob("*.json")), (
                 "opening fence was written before injected exit"
             )
-            assert not (root / "jails/.claims" / vm_name).exists(), (
+            assert not (original_chroot(root) / ".claims" / vm_name).exists(), (
                 "VM was launched before opening fence"
             )
             assert not Path(f"/run/netns/{vm_name}").exists(), (
                 "network was created before opening fence"
             )
         else:
-            record = json.loads((root / "jails/.claims" / vm_name / "record.json").read_text())
+            record = json.loads((original_chroot(root) / ".claims" / vm_name / "record.json").read_text())
             assert record["resource_id"] == vm_name
             pid, ticks = record["pid"], record["start_time_ticks"]
             assert process_start_ticks(pid) == ticks, "first VM is not running after server exit"
@@ -332,7 +335,7 @@ def exercise(args: argparse.Namespace) -> None:
         sandbox_id = items[0]["sandboxID"]
         assert sandbox_id == identity['binding']['session'], "recovery published a different admitted create"
         if before_host:
-            record = json.loads((root / "jails/.claims" / vm_name / "record.json").read_text())
+            record = json.loads((original_chroot(root) / ".claims" / vm_name / "record.json").read_text())
             assert record["resource_id"] == vm_name
             pid, ticks = record["pid"], record["start_time_ticks"]
         assert process_start_ticks(pid) == ticks, "server restart replaced the VM"
@@ -366,7 +369,7 @@ def exercise(args: argparse.Namespace) -> None:
         assert status == 200 and json.loads(body) == [], status
         assert fetch(opener, base_url, "GET", f"/sandboxes/{sandbox_id}", api_key)[0] == 404
         assert not Path(f"/run/netns/{vm_name}").exists(), "network namespace survived cleanup"
-        jail = root / "jails" / Path(args.firecracker).name / vm_name
+        jail = original_chroot(root) / Path(args.firecracker).name / vm_name
         assert not jail.exists(), "private VM jail survived cleanup"
         assert process_start_ticks(pid) != ticks, "VM was relaunched during recovery"
         completed = True

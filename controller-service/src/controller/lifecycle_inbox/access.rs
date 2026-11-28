@@ -66,19 +66,27 @@ impl ControllerJournal {
                     && entry.intent.request.binding.node == identity.node
             })
             .ok_or(JournalError::Conflict)?;
-        // Resume is enabled only with its explicit incarnation/native mapping
-        // in batch C. A valid header cannot enable that unsupported transition.
+        let local = session.local.ok_or(JournalError::Conflict)?;
+        // A continued Unload retains this execution/incarnation but has its
+        // own exact current access key. Historical Ready alone grants nothing.
         if !(matches!(
             entry.intent.request.operation,
-            LifecycleOperation::Create { .. }
-        ) || matches!(
-            entry.intent.request.operation,
-            LifecycleOperation::Renew { .. }
-        ) && entry.applied_deadline.is_some())
+            LifecycleOperation::Create { .. } | LifecycleOperation::Resume { .. }
+        ) && entry.local_operation == Some(local.operation)
+            || matches!(
+                entry.intent.request.operation,
+                LifecycleOperation::Renew { .. }
+            ) && entry.applied_deadline.is_some()
+            || matches!(
+                entry.intent.request.operation,
+                LifecycleOperation::Unload { .. }
+            ) && entry
+                .unload_resolution
+                .as_ref()
+                .is_some_and(|r| r.result().is_some()))
         {
             return Err(JournalError::Conflict);
         }
-        let local = session.local.ok_or(JournalError::Conflict)?;
         let record = world
             .sandbox_record(local.sandbox)
             .ok_or(JournalError::CorruptStore)?;
@@ -121,6 +129,9 @@ pub(super) fn destroy_cleaned(
     }
     if super::source_work::retains_session(connection, &intent.request.binding.session)? {
         return Ok(false);
+    }
+    if super::native_retirement::cleaned(&inbox.sessions[s], world)? {
+        return Ok(true);
     }
     let Some(local) = state.local else {
         return Ok(true);

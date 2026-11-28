@@ -1,6 +1,6 @@
-//! Schema 2 adds one first-generation pause to the original create/kill image.
+//! Every capture belongs to its original generation and operation plan.
 //! These are structural checks, not host authenticity or reachability proofs.
-use super::{Reject, record, resources::observed, startup_plan};
+use super::{Reject, history, record, resources::observed};
 use crate::capture::{CaptureCommit, RestoreEligibility};
 use crate::{
     Authority, Command, Operation, OperationInput, OperationKey, OperationKind,
@@ -23,8 +23,8 @@ pub(super) fn ledger(key: OperationKey, row: &OperationLedgerRecord) -> Result<(
     if row.sandbox != key.sandbox
         || row.operation.id != key.operation
         || row.operation.kind != OperationKind::Pause
-        || row.operation.epoch != 2
-        || row.input != (OperationInput::Pause { generation: 1 })
+        || row.operation.epoch < 2
+        || !matches!(row.input, OperationInput::Pause {generation} if generation>0)
         || !status
     {
         return Err(Reject::InvalidLedger);
@@ -33,48 +33,33 @@ pub(super) fn ledger(key: OperationKey, row: &OperationLedgerRecord) -> Result<(
 }
 
 pub(super) fn operation_history(world: &World, sandbox: SandboxId) -> Result<(), Reject> {
-    let mut pauses = 0;
-    let mut latest = 1;
-    for (key, row) in world.operations.entries() {
-        if key.sandbox != sandbox {
-            continue;
-        }
-        if row.operation.kind == OperationKind::Pause {
-            pauses += 1;
-            if pauses > 1 {
-                return Err(Reject::UnsupportedSnapshotHistory);
-            }
-        }
-        latest = latest.max(row.operation.epoch);
-    }
-    for (key, row) in world.operations.entries() {
-        if key.sandbox != sandbox {
-            continue;
-        }
-        if row.operation.kind == OperationKind::Kill && row.operation.epoch != 2 + pauses {
-            return Err(Reject::InvalidLedger);
-        }
-    }
-    if record(world, sandbox)?.epoch != latest {
-        return Err(Reject::InvalidLedger);
-    }
-    if pauses != 0
-        && startup_plan(world, sandbox)
-            .and_then(|p| world.operation_record(p.key))
-            .is_none_or(|r| r.operation.status != OperationStatus::Succeeded)
-    {
-        return Err(Reject::InvalidLedger);
-    }
-    Ok(())
+    history::validate(world, sandbox)
 }
 
 fn pause_plan(world: &World, sandbox: SandboxId) -> Result<&OperationPlan, Reject> {
+    let row = record(world, sandbox)?;
+    let operation = row.current_operation.ok_or(Reject::InvalidReference)?;
+    let key = OperationKey {
+        sandbox,
+        operation: operation.id,
+    };
+    if operation.kind != OperationKind::Pause {
+        return Err(Reject::InvalidReference);
+    }
+    world.operation_plan(key).ok_or(Reject::InvalidReference)
+}
+fn target_plan(
+    world: &World,
+    sandbox: SandboxId,
+    target: RestoreSource,
+) -> Result<&OperationPlan, Reject> {
     world
         .operation_plans
         .entries()
         .iter()
         .find_map(|(key, plan)| {
             (key.sandbox == sandbox
+                && plan.target_snapshot == Some(target)
                 && world
                     .operation_record(*key)
                     .is_some_and(|r| r.operation.kind == OperationKind::Pause))
@@ -83,7 +68,11 @@ fn pause_plan(world: &World, sandbox: SandboxId) -> Result<&OperationPlan, Rejec
         .ok_or(Reject::InvalidReference)
 }
 
-fn source(world: &World, sandbox: SandboxId, target: RestoreSource) -> Result<(), Reject> {
+pub(super) fn source(
+    world: &World,
+    sandbox: SandboxId,
+    target: RestoreSource,
+) -> Result<(), Reject> {
     let row = record(world, sandbox)?;
     let snapshot = world
         .snapshots
@@ -91,7 +80,8 @@ fn source(world: &World, sandbox: SandboxId, target: RestoreSource) -> Result<()
         .ok_or(Reject::InvalidReference)?;
     if snapshot.owner != row.owner
         || snapshot.sandbox != sandbox
-        || snapshot.source_generation != 1
+        || snapshot.source_generation == 0
+        || snapshot.source_generation > row.generation
         || snapshot.workspace != row.workspace
         || snapshot.manifest != target.manifest
         || snapshot.stage != SnapshotStage::Durable
@@ -102,12 +92,41 @@ fn source(world: &World, sandbox: SandboxId, target: RestoreSource) -> Result<()
     Ok(())
 }
 
+fn terminal_drain_record(
+    world: &World,
+    key: OperationKey,
+    startup: &OperationPlan,
+    drained: crate::capture::drain::CaptureDrainCoverage,
+) -> Result<(), Reject> {
+    let seal = crate::EffectId {
+        logical: crate::LogicalEffectId {
+            command: drained.end_receipt.seal.command(drained.identity),
+        },
+        attempt: drained.end_receipt.seal.attempt,
+    };
+    if drained.identity.key != key
+        || startup.vm != Some(drained.identity.vm)
+        || world.effect_status(&seal) != Some(crate::EffectStatus::RetiredByCaptureDrain(drained))
+        || !crate::capture::drain::retired_capture_drain_valid(world, &seal, drained)
+    {
+        return Err(Reject::InvalidLedger);
+    }
+    Ok(())
+}
+
 pub(super) fn plan(world: &World, key: OperationKey, plan: &OperationPlan) -> Result<(), Reject> {
-    let startup = startup_plan(world, key.sandbox).ok_or(Reject::InvalidReference)?;
+    let startup =
+        history::startup(world, key.sandbox, plan.generation).ok_or(Reject::InvalidReference)?;
     let capture = plan.capture.ok_or(Reject::InvalidLedger)?;
     if plan.key != key
-        || plan.epoch != 2
-        || plan.generation != 1
+        || world.operation_record(key).is_none_or(|r| {
+            r.operation.epoch != plan.epoch
+                || r.input
+                    != (OperationInput::Pause {
+                        generation: plan.generation,
+                    })
+        })
+        || plan.generation == 0
         || plan.retry_limit != crate::transition::DEFAULT_RETRY_LIMIT
         || plan.restore_from.is_some()
         || plan.slot.is_some()
@@ -116,9 +135,31 @@ pub(super) fn plan(world: &World, key: OperationKey, plan: &OperationPlan) -> Re
         || plan.sealed != plan.target_snapshot.is_some()
         || plan.vm.is_some() != plan.target_snapshot.is_some()
         || plan.vm.is_some_and(|vm| startup.vm != Some(vm))
-        || !capture.has_capture_work()
+        || capture.has_capture_work()
+            != (capture.original_continuation().is_none() && capture.terminal_drain().is_none())
+        || (capture.original_continuation().is_some() && capture.terminal_drain().is_some())
     {
         return Err(Reject::InvalidLedger);
+    }
+    if let Some(continued) = capture.original_continuation() {
+        if !capture.may_reactivate_original() || startup.vm != Some(continued.vm) {
+            return Err(Reject::InvalidLedger);
+        }
+        let command = Command::ActivateVm {
+            sandbox: key.sandbox,
+            epoch: plan.epoch,
+            generation: plan.generation,
+            vm: continued.vm,
+        };
+        if !world
+            .logical_effect(&crate::LogicalEffectId { command })
+            .is_some_and(|logical| logical.origin == crate::EffectOrigin::Operation(key))
+        {
+            return Err(Reject::InvalidEffect);
+        }
+    }
+    if let Some(drained) = capture.terminal_drain() {
+        terminal_drain_record(world, key, startup, drained)?;
     }
     if let Some(target) = plan.target_snapshot {
         if target.snapshot.0 >= world.next_snapshot_id
@@ -176,10 +217,17 @@ pub(super) fn plan(world: &World, key: OperationKey, plan: &OperationPlan) -> Re
 pub(super) fn snapshots(world: &World) -> Result<(), Reject> {
     for (id, snapshot) in world.snapshots.entries() {
         let row = record(world, snapshot.sandbox)?;
-        let plan = pause_plan(world, snapshot.sandbox)?;
+        let plan = target_plan(
+            world,
+            snapshot.sandbox,
+            RestoreSource {
+                snapshot: *id,
+                manifest: snapshot.manifest,
+            },
+        )?;
         let vm = plan.vm.ok_or(Reject::InvalidReference)?;
         if snapshot.owner != row.owner
-            || snapshot.source_generation != 1
+            || snapshot.source_generation != plan.generation
             || snapshot.workspace != row.workspace
             || plan.target_snapshot
                 != Some(RestoreSource {
@@ -196,8 +244,8 @@ pub(super) fn snapshots(world: &World) -> Result<(), Reject> {
         }
         let seal = Command::SealSnapshot {
             sandbox: snapshot.sandbox,
-            epoch: 2,
-            generation: 1,
+            epoch: plan.epoch,
+            generation: plan.generation,
             vm,
             workspace: snapshot.workspace,
             snapshot: *id,
@@ -209,8 +257,8 @@ pub(super) fn snapshots(world: &World) -> Result<(), Reject> {
         if snapshot.stage == SnapshotStage::Durable {
             let commit = Command::CommitSnapshot {
                 sandbox: snapshot.sandbox,
-                epoch: 2,
-                generation: 1,
+                epoch: plan.epoch,
+                generation: plan.generation,
                 snapshot: *id,
                 manifest: snapshot.manifest,
             };
@@ -233,9 +281,39 @@ pub(super) fn record_sources(
 ) -> Result<(), Reject> {
     if let Some(target) = row.durable_snapshot {
         source(world, sandbox, target)?;
-        if pause_plan(world, sandbox)?.target_snapshot != Some(target) {
+        target_plan(world, sandbox, target)?;
+        let latest = world
+            .operations
+            .entries()
+            .iter()
+            .filter(|(key, r)| {
+                key.sandbox == sandbox
+                    && r.operation.kind == OperationKind::Pause
+                    && r.operation.status == OperationStatus::Succeeded
+            })
+            .max_by_key(|(_, r)| r.operation.epoch);
+        if latest.is_none_or(|(_, r)| r.result != Some(OperationResult::Paused(target))) {
             return Err(Reject::InvalidReference);
         }
+    }
+    if let Some(target) = row.restore_from {
+        source(world, sandbox, target)?;
+        if history::startup(world, sandbox, row.generation)
+            .is_none_or(|p| p.restore_from != Some(target))
+            || world
+                .snapshots
+                .get(&target.snapshot)
+                .is_none_or(|s| s.source_generation.checked_add(1) != Some(row.generation))
+            || matches!(row.phase, Phase::Running | Phase::Pausing | Phase::Paused)
+        {
+            return Err(Reject::InvalidReference);
+        }
+    } else if row.phase == Phase::Starting
+        && row
+            .current_operation
+            .is_some_and(|o| o.kind == OperationKind::Resume)
+    {
+        return Err(Reject::InvalidReference);
     }
     Ok(())
 }
@@ -262,13 +340,18 @@ pub(super) fn phase(
     row: &SandboxRecord,
     operation: Operation,
 ) -> Result<(), Reject> {
-    if row.terminal || operation.kind != OperationKind::Pause || row.epoch != 2 {
+    if row.terminal || operation.kind != OperationKind::Pause || row.epoch != operation.epoch {
         return Err(Reject::InvalidAuthority);
     }
     if row.phase == Phase::Pausing {
         if row.desired != Authority::Closed
             || row.current_vm.is_none()
-            || row.durable_snapshot.is_some()
+            || row.durable_snapshot.is_some_and(|target| {
+                world
+                    .snapshots
+                    .get(&target.snapshot)
+                    .is_none_or(|s| s.source_generation >= row.generation)
+            })
             || !matches!(
                 operation.status,
                 OperationStatus::Pending
@@ -297,7 +380,7 @@ pub(super) fn phase(
             })
         || world.worker_fences.get(&sandbox)
             != Some(&WorkerFence {
-                epoch: 2,
+                epoch: plan.epoch,
                 terminal: false,
             })
         || world.resource_index(sandbox).vms.iter().any(|id| {
@@ -316,19 +399,19 @@ pub(super) fn phase(
     let commands = [
         Command::InstallFence {
             sandbox,
-            epoch: 2,
+            epoch: plan.epoch,
             terminal: false,
         },
         Command::FreezeVm {
             sandbox,
-            epoch: 2,
-            generation: 1,
+            epoch: plan.epoch,
+            generation: plan.generation,
             vm,
         },
         Command::SealSnapshot {
             sandbox,
-            epoch: 2,
-            generation: 1,
+            epoch: plan.epoch,
+            generation: plan.generation,
             vm,
             workspace: row.workspace,
             snapshot: target.snapshot,
@@ -336,15 +419,15 @@ pub(super) fn phase(
         },
         Command::CommitSnapshot {
             sandbox,
-            epoch: 2,
-            generation: 1,
+            epoch: plan.epoch,
+            generation: plan.generation,
             snapshot: target.snapshot,
             manifest: target.manifest,
         },
         Command::StopVm {
             sandbox,
-            epoch: 2,
-            generation: 1,
+            epoch: plan.epoch,
+            generation: plan.generation,
             vm,
         },
     ];
@@ -382,12 +465,12 @@ pub(super) fn command(
 ) -> Result<(), Reject> {
     let sandbox = command.sandbox();
     let row = record(world, sandbox)?;
-    let original = startup_plan(world, sandbox)
+    let original = history::startup(world, sandbox, plan.generation)
         .and_then(|p| p.vm)
         .ok_or(Reject::InvalidReference)?;
     if plan.key.sandbox != sandbox
-        || plan.epoch != 2
-        || plan.generation != 1
+        || command.epoch() != Some(plan.epoch)
+        || plan.generation == 0
         || world
             .operation_record(plan.key)
             .is_none_or(|r| r.operation.kind != OperationKind::Pause)
@@ -395,7 +478,11 @@ pub(super) fn command(
         return Err(Reject::InvalidEffect);
     }
     match command {
-        Command::FreezeVm { generation, vm, .. } if *generation == 1 && *vm == original => Ok(()),
+        Command::FreezeVm { generation, vm, .. }
+            if *generation == plan.generation && *vm == original =>
+        {
+            Ok(())
+        }
         Command::SealSnapshot {
             generation,
             vm,
@@ -403,7 +490,7 @@ pub(super) fn command(
             snapshot,
             manifest,
             ..
-        } if *generation == 1
+        } if *generation == plan.generation
             && *vm == original
             && *workspace == row.workspace
             && plan.sealed
@@ -420,7 +507,7 @@ pub(super) fn command(
             snapshot,
             manifest,
             ..
-        } if *generation == 1
+        } if *generation == plan.generation
             && plan.sealed
             && plan.target_snapshot
                 == Some(RestoreSource {

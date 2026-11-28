@@ -1,0 +1,20 @@
+{
+  "provider": "verification/experiments/stage1-protocol/inbox-record/InboxRecordCloning.lean.in",
+  "provider_sha256": "0026a0ee554a7e7eaba1786de874debb3d03a164832d83f1c56d13809b04f7af",
+  "replacements": [
+    [
+      "import SandboxModel.Lifecycle.Protocol.Library",
+      "import SandproofRestoreWork.Funs"
+    ],
+    [
+      "SandproofStage1RequestRust",
+      "SandproofRestoreWorkRust"
+    ],
+    [
+      "SandboxModel.Stage1Protocol.InboxRecord",
+      "SandboxModel.Stage1Protocol.RestoreWork.ReusedProtocolCloning"
+    ]
+  ],
+  "rendered_module": "SandboxModel/Lifecycle/Protocol/RestoreWork/ProtocolCloning.lean",
+  "new_protocol_mathematical_claims": 0
+}

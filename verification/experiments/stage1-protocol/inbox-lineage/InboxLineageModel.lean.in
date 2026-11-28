@@ -1,0 +1,74 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendArithmetic
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.identity sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxLineage
+
+structure LineageState where
+  incarnation : Option IncarnationId
+  previous : Option Entry
+  frontier : U64
+
+inductive Rejection where
+  | createIncarnation | createPrevious | unloadSource | unloadCapture
+  | resumeSource | resumeSuccessor | resumePrevious | renewSource | finalIncarnation
+  deriving DecidableEq
+
+def priorMatches (source : IncarnationId) (capture : CaptureId) : Option Entry → Bool
+  | none => false
+  | some entry => match entry.intent.request.operation with
+    | .Unload old oldCapture => decide (old = source ∧ oldCapture = capture)
+    | _ => false
+
+/-- Ghost rejection labels preserve the source's check order. The Rust API
+returns the same CorruptStore for all of them, not the labels themselves. -/
+def step (state : LineageState) (entry : Entry) : Except Rejection LineageState :=
+  let next := { state with previous := some entry }
+  match entry.intent.request.operation with
+  | .Create _ target =>
+      if state.incarnation.isSome then .error .createIncarnation
+      else if state.previous.isSome then .error .createPrevious
+      else .ok { next with incarnation := some target }
+  | .Unload source capture =>
+      if state.incarnation ≠ some source then .error .unloadSource
+      else if capture ≤ state.frontier then .error .unloadCapture
+      else .ok { next with frontier := capture }
+  | .Resume source capture target _ =>
+      if state.incarnation ≠ some source then .error .resumeSource
+      else if U64.checked_add source 1#u64 ≠ some target then .error .resumeSuccessor
+      else if priorMatches source capture state.previous = false then .error .resumePrevious
+      else .ok { next with incarnation := if entry.local_operation.isSome then some target else state.incarnation }
+  | .Renew current _ _ =>
+      if state.incarnation ≠ some current then .error .renewSource else .ok next
+  | .Destroy => .ok next
+
+def scan (expected : Option IncarnationId) : List Entry → LineageState → Except Rejection Unit
+  | [], state => if expected = state.incarnation then .ok () else .error .finalIncarnation
+  | entry :: tail, state => match step state entry with
+    | .error reason => .error reason
+    | .ok next => scan expected tail next
+
+def initial : LineageState := ⟨none, none, 0#u64⟩
+
+def observed : Except Rejection Unit → core.result.Result Unit sandproof_controller_service.JournalError
+  | .ok () => .Ok ()
+  | .error _ => .Err .CorruptStore
+
+def expectedResult (session : Session) := observed (scan session.incarnation session.entries.val initial)
+
+def FullLineageContract (validate : Session → Result (core.result.Result Unit sandproof_controller_service.JournalError)) : Prop :=
+  ∀ session, validate session = .ok (expectedResult session)
+
+def cursor (values : Slice Entry) (index : Nat) : core.slice.iter.Iter Entry := ⟨values, index⟩
+
+abbrev LoopState := core.slice.iter.Iter Entry × Option IncarnationId × Option Entry × U64
+abbrev Return := core.result.Result Unit sandproof_controller_service.JournalError
+
+def bodyResult (values : Slice Entry) (index : Nat) (state : LineageState)
+    (entry : Entry) : ControlFlow LoopState Return :=
+  match step state entry with
+  | .error _ => .done (.Err sandproof_controller_service.JournalError.CorruptStore)
+  | .ok next => .cont (cursor values (index + 1), next.incarnation, next.previous, next.frontier)
+
+end SandboxModel.Stage1Protocol.InboxLineage

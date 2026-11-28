@@ -24,6 +24,7 @@ pub enum ControllerInput {
     RpcTimeout(SandboxId),
     Access(AccessInput),
     Runtime(RuntimeInput),
+    Capture(crate::capture::CaptureInput),
 }
 
 /// Events from all controller sub-protocols, kept tagged so the public entry
@@ -36,6 +37,7 @@ pub enum ControllerEvent {
     Publication(PublicationEvent),
     Auxiliary(AuxiliaryEvent),
     Runtime(RuntimeEvent),
+    Capture(crate::capture::continuation::CaptureEvent),
 }
 
 /// Rejections from all controller sub-protocols.  Machine-boundary failures
@@ -50,6 +52,7 @@ pub enum ControllerReject {
     Publication(PublicationReject),
     Auxiliary(AuxiliaryReject),
     Runtime(RuntimeReject),
+    Capture(crate::capture::continuation::CaptureReject),
 }
 
 /// A successful pure reduction.  The caller must atomically persist `next`
@@ -114,6 +117,14 @@ pub fn handle_controller(
     input: ControllerInput,
 ) -> Result<ControllerDecision, ControllerReject> {
     match input {
+        ControllerInput::Capture(input) => {
+            crate::capture::continuation::handle_capture(world, input)
+                .map(|decision| ControllerDecision {
+                    event: ControllerEvent::Capture(decision.event),
+                    next: decision.next,
+                })
+                .map_err(ControllerReject::Capture)
+        }
         ControllerInput::Maintenance(input) => crate::maintenance::handle_maintenance(world, input)
             .map_err(ControllerReject::Maintenance),
         ControllerInput::Request(request_input) => {

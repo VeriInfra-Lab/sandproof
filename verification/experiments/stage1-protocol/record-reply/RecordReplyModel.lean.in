@@ -1,0 +1,52 @@
+import SandboxModel.Lifecycle.Protocol.Recorded
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.RecordReply
+noncomputable section
+
+abbrev ReplyError := server.lifecycle.RecordReplyError
+abbrev Reply := core.result.Result RecordedLifecycleIntent ReplyError
+abbrev ReceiverError := server.ReceiveError
+abbrev Received := core.result.Result RecordedLifecycleIntent ReceiverError
+
+/-- The same existing full receipt relation is used for every source view.
+Neither a matching value nor a transport response establishes durable effects. -/
+def expected (intent : AcceptedLifecycleIntent) (received : Received) : Reply :=
+  match received with
+  | .Ok recorded =>
+    if Validation.expectedRecorded recorded intent then .Ok recorded else .Err .Unavailable
+  | .Err .Conflict => .Err .Conflict
+  | .Err .Capacity | .Err .Unavailable => .Err .Unavailable
+
+def FullReplyContract (run : AcceptedLifecycleIntent → Received → Result Reply) : Prop :=
+  ∀ intent received, run intent received = .ok (expected intent received)
+
+theorem expected_payload_iff (intent : AcceptedLifecycleIntent) (received : Received)
+    (recorded : RecordedLifecycleIntent) :
+    expected intent received = .Ok recorded ↔
+      received = .Ok recorded ∧ Validation.RecordsOriginal recorded intent := by
+  classical
+  cases received with
+  | Err error => cases error <;> simp [expected]
+  | Ok returned =>
+    by_cases matched : Validation.RecordsOriginal returned intent
+    · constructor
+      · intro same
+        have equal : returned = recorded := by
+          simpa [expected, Validation.expectedRecorded, matched] using same
+        cases equal
+        exact ⟨rfl, matched⟩
+      · rintro ⟨same, _⟩
+        cases same
+        simp [expected, Validation.expectedRecorded, matched]
+    · constructor
+      · intro impossible
+        simp [expected, Validation.expectedRecorded, matched] at impossible
+      · rintro ⟨same, valid⟩
+        cases same
+        exact False.elim (matched valid)
+
+end
+end SandboxModel.Stage1Protocol.RecordReply
+#audit_controller_proof SandboxModel.Stage1Protocol.RecordReply.expected_payload_iff

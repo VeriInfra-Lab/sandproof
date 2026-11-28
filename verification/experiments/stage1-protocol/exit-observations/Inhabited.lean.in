@@ -1,0 +1,74 @@
+import SandboxModel.Lifecycle.Protocol.ExitObservations.Spec
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofExitObservationsRust
+namespace SandboxModel.Stage1Protocol.ExitObservations.InhabitedValues
+deriving instance Inhabited for sandbox_controller_core.model.OperationKey
+deriving instance Inhabited for sandbox_controller_core.capture.continuation.OriginalContinueIdentity
+deriving instance Inhabited for sandbox_controller_core.model.SnapshotManifestRef
+deriving instance Inhabited for sandbox_controller_core.capture.continuation.CaptureSealEnd
+deriving instance Inhabited for sandbox_controller_core.capture.continuation.CaptureWorkEnd
+deriving instance Inhabited for sandbox_controller_core.capture.continuation.CaptureWorkEndReceipt
+deriving instance Inhabited for sandbox_controller_core.model.Phase
+deriving instance Inhabited for sandbox_controller_core.model.WorkspaceApiAccess
+deriving instance Inhabited for sandbox_controller_core.model.FilePolicyRef
+deriving instance Inhabited for sandbox_controller_core.model.RestoreSource
+deriving instance Inhabited for sandbox_controller_core.model.Protocol
+deriving instance Inhabited for sandbox_controller_core.model.Endpoint
+deriving instance Inhabited for sandbox_controller_core.model.Ipv4Cidr
+deriving instance Inhabited for sandbox_controller_core.model.NetworkPolicy
+deriving instance Inhabited for sandbox_controller_core.model.FailureKind
+deriving instance Inhabited for sandbox_controller_core.model.OperationKind
+deriving instance Inhabited for sandbox_controller_core.model.OperationStatus
+deriving instance Inhabited for sandbox_controller_core.model.Operation
+deriving instance Inhabited for sandbox_controller_core.model.Authority
+deriving instance Inhabited for sandbox_controller_core.model.Command
+deriving instance Inhabited for sandbox_controller_core.model.LogicalEffectId
+deriving instance Inhabited for sandbox_controller_core.model.EffectId
+deriving instance Inhabited for sandbox_controller_core.model.SandboxRecord
+deriving instance Inhabited for sandproof_protocol.internal.lifecycle.Resources
+deriving instance Inhabited for sandproof_protocol.internal.lifecycle.CreateBinding
+deriving instance Inhabited for sandproof_protocol.internal.NodeIdentity
+deriving instance Inhabited for sandproof_protocol.ResourceKind
+deriving instance Inhabited for sandproof_protocol.ResourceRef
+deriving instance Inhabited for sandproof_protocol.ActionIdentity
+deriving instance Inhabited for sandproof_protocol.WorkAction
+deriving instance Inhabited for sandproof_protocol.lifecycle.authority.CenterIdentity
+deriving instance Inhabited for sandproof_protocol.lifecycle.request.LifecycleOperation
+deriving instance Inhabited for sandproof_protocol.lifecycle.identity.ExpectedSession
+deriving instance Inhabited for sandproof_protocol.lifecycle.identity.OperationKey
+deriving instance Inhabited for sandproof_protocol.lifecycle.identity.OperationBinding
+deriving instance Inhabited for sandproof_protocol.lifecycle.request.LifecycleRequest
+deriving instance Inhabited for sandproof_protocol.lifecycle.identity.RetentionBinding
+deriving instance Inhabited for sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+deriving instance Inhabited for sandproof_protocol.lifecycle.manifest.CaptureBinding
+deriving instance Inhabited for sandproof_protocol.lifecycle.manifest.WritableDrive
+deriving instance Inhabited for sandproof_protocol.lifecycle.manifest.VmCompatibility
+deriving instance Inhabited for sandproof_protocol.lifecycle.observation.CurrentReadyFacts
+deriving instance Inhabited for capture.SourceProcessIdentity
+deriving instance Inhabited for capture.continuation.OriginalContinueExitObservation
+deriving instance Inhabited for capture.work.PauseWorkRequest
+deriving instance Inhabited for capture.work.FullCaptureWorkRequest
+deriving instance Inhabited for capture.HostEpochRegistration
+deriving instance Inhabited for capture.source.SourceObservationConfig
+deriving instance Inhabited for capture.source.SourceObservationRequirement
+deriving instance Inhabited for capture.continuation.OriginalContinueWorkRequest
+deriving instance Inhabited for capture.restore.RestoreCandidateExitObservation
+deriving instance Inhabited for capture.CommittedCaptureExpectation
+deriving instance Inhabited for capture.restore.RestoreWorkRequest
+deriving instance Inhabited for controller.admission.Lifetime
+deriving instance Inhabited for controller.internal_inbox.model.InternalLocalBinding
+deriving instance Inhabited for controller.lifecycle_inbox.readiness.NativeCreateSnapshot
+deriving instance Inhabited for controller.lifecycle_inbox.unload_resolution.UnloadResolution
+deriving instance Inhabited for controller.lifecycle_inbox.source_work.restore.continued_exit.ContinuedAuthority
+deriving instance Inhabited for controller.lifecycle_inbox.source_work.restore.continued_exit.BeforeAdmissionExitCandidate
+deriving instance Inhabited for controller.lifecycle_inbox.source_work.restore.continued_exit.ContinuedExitCandidate
+deriving instance Inhabited for controller.lifecycle_inbox.source_work.restore.exit.RestoreExitCandidate
+
+theorem direct_nonempty : Nonempty SandboxModel.Stage1Protocol.ExitObservations.Direct := inferInstance
+theorem before_nonempty : Nonempty SandboxModel.Stage1Protocol.ExitObservations.Before := inferInstance
+theorem continued_nonempty : Nonempty SandboxModel.Stage1Protocol.ExitObservations.Continued := inferInstance
+end SandboxModel.Stage1Protocol.ExitObservations.InhabitedValues
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.InhabitedValues.direct_nonempty
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.InhabitedValues.before_nonempty
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.InhabitedValues.continued_nonempty

@@ -1,0 +1,164 @@
+use super::lifetime_matches;
+use crate::{Lifetime, NativeCreateSnapshot};
+use sandbox_controller_core as core;
+use sandproof_protocol::lifecycle::CurrentReadyFacts;
+
+fn values() -> (NativeCreateSnapshot, CurrentReadyFacts) {
+    (
+        NativeCreateSnapshot {
+            owner: core::TenantId(11),
+            phase: core::Phase::Running,
+            terminal: false,
+            epoch: 3,
+            generation: 37,
+            current_vm: Some(core::VmId(19)),
+            current_operation: None,
+            lifetime: Some(Lifetime {
+                started_at_ms: Some(10),
+                deadline_ms: 100,
+                max_deadline_ms: 200,
+                startup_deadline_ms: 25,
+                disk_bytes: 999,
+            }),
+            uncertain_actions: Vec::new(),
+        },
+        CurrentReadyFacts {
+            started_at_ms: 10,
+            end_at_ms: 100,
+            max_end_at_ms: 200,
+            startup_deadline_ms: 25,
+            observed_at_ms: 40,
+        },
+    )
+}
+
+#[test]
+fn normal_full_timing_fields() {
+    let (native, saved) = values();
+    assert!(lifetime_matches(&native, &saved, 50));
+}
+
+#[test]
+fn changed_started_is_rejected() {
+    let (native, mut saved) = values();
+    saved.started_at_ms = 11;
+    assert!(!lifetime_matches(&native, &saved, 50));
+}
+
+#[test]
+fn changed_end_is_rejected() {
+    let (native, mut saved) = values();
+    saved.end_at_ms = 101;
+    assert!(!lifetime_matches(&native, &saved, 50));
+}
+
+#[test]
+fn changed_maximum_is_rejected() {
+    let (native, mut saved) = values();
+    saved.max_end_at_ms = 201;
+    assert!(!lifetime_matches(&native, &saved, 50));
+}
+
+#[test]
+fn changed_startup_deadline_is_rejected() {
+    let (native, mut saved) = values();
+    saved.startup_deadline_ms = 26;
+    assert!(!lifetime_matches(&native, &saved, 50));
+}
+
+#[test]
+fn future_observation_is_rejected() {
+    let (native, mut saved) = values();
+    saved.observed_at_ms = 51;
+    assert!(!lifetime_matches(&native, &saved, 50));
+}
+
+#[test]
+fn deadline_is_strict() {
+    let (native, saved) = values();
+    assert!(!lifetime_matches(&native, &saved, 100));
+}
+
+#[test]
+fn maximum_deadline_is_strict() {
+    let (mut native, mut saved) = values();
+    native.lifetime.as_mut().unwrap().deadline_ms = 200;
+    native.lifetime.as_mut().unwrap().max_deadline_ms = 100;
+    saved.end_at_ms = 200;
+    saved.max_end_at_ms = 100;
+    assert!(!lifetime_matches(&native, &saved, 100));
+}
+
+#[test]
+fn missing_lifetime_is_rejected() {
+    let (mut native, saved) = values();
+    native.lifetime = None;
+    assert!(!lifetime_matches(&native, &saved, 50));
+}
+
+#[test]
+fn missing_started_is_rejected() {
+    let (mut native, saved) = values();
+    native.lifetime.as_mut().unwrap().started_at_ms = None;
+    assert!(!lifetime_matches(&native, &saved, 50));
+}
+
+#[test]
+fn negative_time_is_rejected() {
+    let (native, saved) = values();
+    assert!(!lifetime_matches(&native, &saved, -1));
+    for field in 0..4 {
+        let mut native = native.clone();
+        let life = native.lifetime.as_mut().unwrap();
+        match field {
+            0 => life.started_at_ms = Some(-1),
+            1 => life.deadline_ms = -1,
+            2 => life.max_deadline_ms = -1,
+            3 => life.startup_deadline_ms = -1,
+            _ => unreachable!(),
+        }
+        assert!(!lifetime_matches(&native, &saved, 50));
+    }
+}
+
+#[test]
+fn future_start_is_rejected() {
+    let (mut native, mut saved) = values();
+    let life = native.lifetime.as_mut().unwrap();
+    life.started_at_ms = Some(60);
+    life.startup_deadline_ms = 70;
+    saved.started_at_ms = 60;
+    saved.startup_deadline_ms = 70;
+    assert!(!lifetime_matches(&native, &saved, 50));
+}
+
+#[test]
+fn late_start_is_rejected() {
+    let (mut native, mut saved) = values();
+    native.lifetime.as_mut().unwrap().started_at_ms = Some(30);
+    saved.started_at_ms = 30;
+    assert!(!lifetime_matches(&native, &saved, 50));
+}
+
+#[test]
+fn saved_before_start_is_allowed() {
+    let (native, mut saved) = values();
+    saved.observed_at_ms = 5;
+    assert!(lifetime_matches(&native, &saved, 50));
+}
+
+#[test]
+fn maximum_i64_values_are_exact() {
+    let (mut native, mut saved) = values();
+    let life = native.lifetime.as_mut().unwrap();
+    life.started_at_ms = Some(0);
+    life.deadline_ms = i64::MAX;
+    life.max_deadline_ms = i64::MAX;
+    life.startup_deadline_ms = 0;
+    saved.started_at_ms = 0;
+    saved.end_at_ms = u64::try_from(i64::MAX).unwrap();
+    saved.max_end_at_ms = u64::try_from(i64::MAX).unwrap();
+    saved.startup_deadline_ms = 0;
+    saved.observed_at_ms = u64::try_from(i64::MAX - 1).unwrap();
+    assert!(lifetime_matches(&native, &saved, i64::MAX - 1));
+}

@@ -1,0 +1,115 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolDestroyRecordValues
+import SandboxModel.Lifecycle.Protocol.InboxProtocolFixtureValues
+import SandboxModel.Lifecycle.Protocol.InboxProtocolGuard
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+namespace SandboxModel.Stage1Protocol.ProtocolRecord.DestroyFlowValues
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+open DestroyValues DestroyRecordValues
+open InboxLoad.Values (saved terminal renewal unload)
+
+-- An explicit value provider: the queried current operation is 32; the old
+-- binding still contains 30. This asserts no physical termination or SQL fact.
+def effects : RecordEffects InboxLoad.Values.Trace := {
+  Values.normalIO with
+  codecInboxLoadEffectsInst := Fixture.readEffects before,
+  current_operation := fun trace _ => .ok (some 32#u64, trace) }
+
+theorem guard_model (trace : InboxLoad.Values.Trace) :
+    guardView effects before destroyIntent trace = .ok (.Ok (), trace) := by
+  obtain ⟨session, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec before.sessions 0#usize (by decide))
+  have selectedSession : session = beforeSession := by
+    simpa [before, container, vector] using same
+  have isDestroy : destroy destroyIntent = true := rfl
+  simp only [guardView, isDestroy, ↓reduceIte]
+  rw [DestroyRecordValues.session_index]
+  simp only [bind_tc_ok]
+  simp only [alloc.vec.Vec.index_slice_index]
+  rw [indexed]
+  simp [selectedSession, beforeSession, effects, Values.normalIO]
+
+theorem attached_model (trace : InboxLoad.Values.Trace) :
+    attachView effects pending destroyIntent 0#usize 1#usize trace =
+      .ok (.Ok (), trace, after 32#u64) := by
+  obtain ⟨session, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec pending.sessions 0#usize (by decide))
+  have selectedSession : session = pendingSession := by
+    simpa [pending, container, vector] using same
+  obtain ⟨entry, entryIndexed, entrySame⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec pendingSession.entries 1#usize (by decide))
+  have selectedEntry : entry = InboxRecord.pendingEntry destroyIntent := by
+    simpa [pendingSession, pendingEntries, vector] using entrySame
+  have isDestroy : destroy destroyIntent = true := rfl
+  simp only [attachView, isDestroy, ↓reduceIte]
+  simp only [alloc.vec.Vec.index_slice_index]
+  rw [indexed]
+  simp only [bind_tc_ok, selectedSession]
+  have localBinding : pendingSession.local = some binding := rfl
+  simp only [localBinding, effects, Values.normalIO, bind_tc_ok, uncurry_apply_pair]
+  rw [entryIndexed]
+  simp only [bind_tc_ok, selectedEntry]
+  simp [InboxAppend.replaceSession, pending, container, pendingSession, pendingEntries,
+    after, afterSession, destroyed, vector]
+  apply alloc.vec.Vec.ext
+  simp [beforeSession]
+  apply alloc.vec.Vec.ext
+  simp
+
+def resultState (operation : U64) : LifecycleWorkState :=
+  InboxState.workState (afterSession operation) (destroyed operation)
+
+theorem query (operation : U64) : (after operation).state 0#usize 1#usize = .ok (resultState operation) := by
+  simpa [resultState, after, container, vector, afterSession] using
+    InboxState.state_contract (after operation) 0#usize 1#usize
+      (by simp [after, container, vector]) (by simp [after, container, afterSession, vector])
+
+theorem state_different : resultState 32#u64 ≠ resultState 30#u64 := by
+  intro same
+  have operations := congrArg LifecycleWorkState.local_operation same
+  change some 32#u64 = some 30#u64 at operations
+  contradiction
+
+theorem saved_model (trace : InboxLoad.Values.Trace) :
+    InboxSave.saveView saved terminal renewal unload Values.writeIO (after 32#u64) trace =
+      .ok (.Ok (), trace ++ [.encodedInbox (after 32#u64), .digested InboxLoad.Values.bytes.val]) := by
+  have fits : ¬ InboxLoad.Values.bytes.val.length > ConfigBudget.bytes (after 32#u64).config := by
+    change ¬ 2 > 286720
+    decide
+  have accepted : InboxValidation.inboxView saved terminal renewal unload (after 32#u64) = .ok (.Ok ()) :=
+    DestroyValues.after_accepted _
+  simp [InboxSave.saveView, accepted, InboxSave.encodeAndSave, Values.writeIO, fits,
+    alloc.vec.Vec.deref, List.append_assoc]
+
+theorem flow_model (trace : InboxLoad.Values.Trace) :
+    flowView saved terminal renewal unload effects destroyIntent EnvelopeValues.context trace =
+      .ok (.Ok (.Recorded (resultState 32#u64)),
+        (trace ++ InboxLoad.Values.completeTrace before) ++
+          [.encodedInbox (after 32#u64), .digested InboxLoad.Values.bytes.val]) := by
+  have loaded := Fixture.loaded_model before before_accepted before_budget (by decide) trace
+  unfold flowView
+  change Bind.bind (m := Result)
+    (InboxLoad.fullLoadView saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      (Fixture.readEffects before) trace) _ = _
+  rw [loaded]
+  simp only [bind_tc_ok, uncurry_apply_pair, loadedView, DestroyRecordValues.authenticated,
+    not_found, guard_model, recordThenSave, recorded, attached_model, saveThenState]
+  change Bind.bind (m := Result)
+    (InboxSave.saveView saved terminal renewal unload Values.writeIO (after 32#u64)
+      (trace ++ InboxLoad.Values.completeTrace before)) _ = _
+  rw [saved_model]
+  simp [query]
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord.DestroyFlowValues
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyFlowValues.guard_model
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyFlowValues.attached_model
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyFlowValues.query
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyFlowValues.state_different
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyFlowValues.saved_model
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.DestroyFlowValues.flow_model

@@ -1,0 +1,29 @@
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Equality
+open Aeneas Aeneas.Std SandproofSourcePreservationRust
+namespace SandboxModel.Stage1Protocol.SourcePreservation
+open controller.lifecycle_inbox.source_work.retirement
+noncomputable section
+
+theorem settlement_eq (a b : Settlement) :
+    MaterialRetirementSettlement.Insts.CoreCmpPartialEqMaterialRetirementSettlement.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [MaterialRetirementSettlement.Insts.CoreCmpPartialEqMaterialRetirementSettlement.eq,
+    digest_eq]; split_ifs <;> simp_all
+
+theorem state_eq (a b : State) :
+    MaterialRetirementState.Insts.CoreCmpPartialEqMaterialRetirementState.eq a b =
+      .ok (decide (a = b)) := by
+  cases a <;> cases b <;>
+    simp [MaterialRetirementState.Insts.CoreCmpPartialEqMaterialRetirementState.eq,
+      MaterialRetirementState.read_discriminant, plan_eq, settlement_eq]; split_ifs <;> simp_all
+
+theorem option_state_eq (a b : Option State) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      MaterialRetirementState.Insts.CoreCmpPartialEqMaterialRetirementState a b =
+      .ok (decide (a = b)) := option_eq_of _ state_eq a b
+end
+end SandboxModel.Stage1Protocol.SourcePreservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.settlement_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.state_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.option_state_eq

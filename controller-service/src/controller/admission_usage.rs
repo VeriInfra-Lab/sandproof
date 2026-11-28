@@ -15,6 +15,7 @@ pub(super) fn usage(
     owner: core::TenantId,
     compute: bool,
 ) -> Result<(Resources, Resources), AdmissionError> {
+    let releases = super::checkpoint::release_witnesses(tx, world)?;
     let mut global = Resources::ZERO;
     let mut tenant = Resources::ZERO;
     for (id, record) in world.sandbox_records() {
@@ -23,8 +24,26 @@ pub(super) fn usage(
         }
         let lifetime = read_lifetime(tx, namespace, *id, record.owner)?
             .ok_or(AdmissionError::UnmanagedActive)?;
+        let resources = world.resource_index(*id);
+        let runtime_released = record.current_vm.is_none()
+            && record.net_slot.is_none()
+            && releases.iter().any(|w| {
+                w.context.binding.sandbox == *id
+                    && w.context.binding.owner == record.owner
+                    && w.context.binding.generation == record.generation
+            })
+            && resources.vms.iter().all(|vm| {
+                world
+                    .vm_record(*vm)
+                    .is_some_and(|v| v.status == core::VmStatus::Reclaimed)
+            })
+            && resources.slots.iter().all(|slot| {
+                world
+                    .slot_record(*slot)
+                    .is_some_and(|s| s.reclaimed && !s.active)
+            });
         let mut instance = Resources {
-            instances: 1,
+            instances: u64::from(!runtime_released),
             cpu: 0,
             memory_bytes: 0,
             disk_bytes: lifetime.disk_bytes,
@@ -38,8 +57,10 @@ pub(super) fn usage(
             {
                 return Err(AdmissionError::CorruptLifetime);
             }
-            instance.cpu = u64::from(template.resources.cpu_count);
-            instance.memory_bytes = template.resources.host_memory_bytes;
+            if !runtime_released {
+                instance.cpu = u64::from(template.resources.cpu_count);
+                instance.memory_bytes = template.resources.host_memory_bytes;
+            }
         }
         global = global
             .checked_add(instance)

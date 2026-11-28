@@ -1,0 +1,45 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendShape
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.identity sandproof_protocol.internal
+namespace SandboxModel.Stage1Protocol.InboxAppend
+open scoped Classical
+
+@[simp] theorem incarnation_option_eq (left right : Option IncarnationId) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      IncarnationId.Insts.CoreCmpPartialEqIncarnationId left right =
+      .ok (decide (left = right)) := by
+  cases left <;> cases right <;>
+    simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq,
+      IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq,
+      PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq]
+
+/-- This is the inbox's immediate-successor guard, distinct from the DTO's
+strictly-greater Resume rule. The arithmetic contract is the fixed U64 model. -/
+theorem checked_next_option (source : IncarnationId) :
+    (do let result ← source.checked_next; core.result.Result.ok result) =
+      .ok (U64.checked_add source 1#u64) := by
+  have arithmetic := U64.checked_add_bv_spec source 1#u64
+  cases result : U64.checked_add source 1#u64 with
+  | none =>
+    simp [IncarnationId.checked_next, PositiveCounter.checked_next, PositiveCounter.get,
+      lift, result, core.result.Result.ok]
+  | some next =>
+    have nonzero : next ≠ 0#u64 := by
+      simp only [result] at arithmetic
+      scalar_tac
+    simp [IncarnationId.checked_next, PositiveCounter.checked_next, PositiveCounter.get,
+      lift, result, PositiveCounter.Insts.CoreConvertTryFromU64InternalError.try_from,
+      nonzero, core.result.Result.ok]
+
+@[simp] theorem checked_next_bind (source : IncarnationId) (next : Option IncarnationId → Result T) :
+    (do let result ← source.checked_next; let option ← core.result.Result.ok result; next option) =
+      next (U64.checked_add source 1#u64) := by
+  rw [← bind_assoc_eq, checked_next_option]
+  simp only [bind_tc_ok]
+
+end SandboxModel.Stage1Protocol.InboxAppend
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.incarnation_option_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.checked_next_option
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.checked_next_bind

@@ -1,0 +1,63 @@
+trait SourceSaveEffects<C, N, R, Db, Keys, Rows> {
+    fn read(db: &Db) -> Result<Option<Sources<C, N, R>>, JournalError>;
+    fn limit(db: &Db, sessions: u16) -> Result<u64, JournalError>;
+    fn encode(sources: &Sources<C, N, R>) -> Result<(Keys, Rows), JournalError>;
+    fn retains(current: &Sources<C, N, R>, sources: &Sources<C, N, R>, keys: &Keys) -> bool;
+    fn write(db: &Db, rows: Rows) -> Result<(), JournalError>;
+}
+
+struct JournalSourceSave;
+
+impl SourceSaveEffects<
+    SourceObservationConfig,
+    sandproof_protocol::internal::NodeIdentity,
+    SourceWorkRecord,
+    Connection,
+    BTreeSet<[u8; 32]>,
+    Vec<EncodedSourceRow>,
+> for JournalSourceSave
+{
+    fn read(db: &Connection) -> Result<Option<Sources>, JournalError> {
+        load(db)
+    }
+
+    fn limit(db: &Connection, sessions: u16) -> Result<u64, JournalError> {
+        reserved_records(db, sessions)
+    }
+
+    fn encode(
+        sources: &Sources,
+    ) -> Result<(BTreeSet<[u8; 32]>, Vec<EncodedSourceRow>), JournalError> {
+        encode_candidate_records(sources)
+    }
+
+    fn retains(current: &Sources, sources: &Sources, keys: &BTreeSet<[u8; 32]>) -> bool {
+        retains_saved_records(current, sources, keys)
+    }
+
+    fn write(db: &Connection, rows: Vec<EncodedSourceRow>) -> Result<(), JournalError> {
+        write_candidate_records(db, rows)
+    }
+}
+
+pub(super) fn save(
+    connection: &Connection,
+    sources: &Sources,
+    max_sessions: u16,
+) -> Result<(), JournalError> {
+    save_using::<_, _, _, _, _, _, JournalSourceSave>(connection, sources, max_sessions)
+}
+
+fn save_using<
+    C: PartialEq,
+    N: PartialEq,
+    R,
+    Db,
+    Keys,
+    Rows,
+    Save: SourceSaveEffects<C, N, R, Db, Keys, Rows>,
+>(
+    connection: &Db,
+    sources: &Sources<C, N, R>,
+    max_sessions: u16,
+) -> Result<(), JournalError> {

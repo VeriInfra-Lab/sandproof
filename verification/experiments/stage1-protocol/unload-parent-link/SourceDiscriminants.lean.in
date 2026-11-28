@@ -1,0 +1,11 @@
+import SandproofOriginalSourceRows.Types
+
+-- Original generated attributes consumed by the generated comparison bodies.
+attribute [discriminant isize] SandproofOriginalSourceRowsRust.sandbox_controller_core.capture.RestoreEligibility
+attribute [discriminant isize] SandproofOriginalSourceRowsRust.sandbox_controller_core.capture.CaptureCommit
+attribute [discriminant isize] SandproofOriginalSourceRowsRust.sandbox_controller_core.model.Protocol
+attribute [discriminant isize] SandproofOriginalSourceRowsRust.sandbox_controller_core.model.NetworkPolicy
+attribute [discriminant isize] SandproofOriginalSourceRowsRust.sandbox_controller_core.model.Command
+attribute [discriminant isize] SandproofOriginalSourceRowsRust.sandbox_controller_core.model.Phase
+attribute [discriminant isize] SandproofOriginalSourceRowsRust.sandbox_controller_core.model.VmStatus
+attribute [discriminant isize] SandproofOriginalSourceRowsRust.sandproof_protocol.ResourceKind

@@ -86,6 +86,25 @@ def contract_versions(binary, env):
     return bounded_json_command([binary, 'contract-versions'], env, timeout=5, max_bytes=1024)
 
 
+def check_candidate_arguments(command, config):
+    """Parse this exact DK/task argv without starting any product action.
+
+    This only checks the candidate's command-line interface. It is neither
+    host admission, resource cleanup nor a successful runtime result.
+    """
+    checkout = Path(config['checkout'])
+    if (len(command) < 2 or command[0] != str(checkout / 'benchmarks/.venv/bin/python')
+            or command[1] not in {str(checkout / 'tests/system' / name) for name in
+                                 ('center_host_faults.py', 'harbor_generic_chain.py')}
+            or '--check-arguments' in command):
+        raise ValueError('original candidate DK or task command required')
+    result = bounded_json_command([*command, '--check-arguments'], build_environment(config),
+                                  timeout=15, max_bytes=1024)
+    if (type(result) is not dict or result.get('arguments_valid') is not True
+            or result != dict(entry=Path(command[1]).name, arguments_valid=True)):
+        raise ValueError('candidate argument preflight response differs')
+
+
 def prepare(config):
     checkout = private_path(config['checkout'], directory=True)
     if git('rev-parse', 'HEAD', cwd=checkout) != config['candidate'] or git('status', '--porcelain', cwd=checkout):

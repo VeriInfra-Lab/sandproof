@@ -14,7 +14,7 @@ from unittest.mock import patch
 from benchmarks.ci_fixtures import FORBIDDEN_PATHS, MIB, load_ci_fixtures
 from benchmarks.ci_verifier import REQUIREMENTS_TEXT
 from benchmarks.prepare_ci_fixtures import (
-    MAX_UV_BYTES, RECIPE, archive_ci_context, make_ci_fixture_manifest, publish_ready_fixture,
+    MAX_UV_BYTES, RECIPE, archive_ci_context, make_prepared_manifest, publish_ready_fixture,
 )
 from tools.benchmark_tasks import InvalidInput, PIN, canonical
 
@@ -243,7 +243,7 @@ class PrepareCiFixturesTests(unittest.TestCase):
         second = self.publish(entry=second_entry, dest=self.root / 'second')
         lock = dict(dataset='terminal-bench@2.0', source=dict(repository=PIN.repository, commit=PIN.commit),
                     tasks=[self.entry, second_entry])
-        manifest = make_ci_fixture_manifest([first, second], lock)
+        manifest = make_prepared_manifest([first, second], lock, source_kind='prepared-ci')
         path = self.root / 'manifest.json'
         data = canonical(manifest)
         path.write_bytes(data)
@@ -252,13 +252,13 @@ class PrepareCiFixturesTests(unittest.TestCase):
         self.assertEqual(set(values), {'first-task', 'second-task'})
         self.assertFalse(values['first-task'].evidence()['original_environment'])
         with self.assertRaises(InvalidInput):
-            make_ci_fixture_manifest([first, first], lock)
+            make_prepared_manifest([first, first], lock, source_kind='prepared-ci')
         with self.assertRaises(InvalidInput):
-            make_ci_fixture_manifest([first], lock)
+            make_prepared_manifest([first], lock, source_kind='prepared-ci')
         changed = copy.deepcopy(second)
         changed['resources']['cpus'] = 3
         with self.assertRaises(InvalidInput):
-            make_ci_fixture_manifest([first, changed], lock)
+            make_prepared_manifest([first, changed], lock, source_kind='prepared-ci')
         self.assertEqual(json.loads(data)['fixtures'][0]['startup'], self.template['startup'])
 
 

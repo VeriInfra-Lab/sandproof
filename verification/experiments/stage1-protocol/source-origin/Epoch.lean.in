@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.SourceOrigin.Spec
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofSourceOriginRust
+namespace SandboxModel.Stage1Protocol.SourceOrigin
+open sandbox_controller_core
+theorem identity_eq (left right : Identity) :
+    capture.continuation.OriginalContinueIdentity.Insts.CoreCmpPartialEqOriginalContinueIdentity.eq
+      left right = .ok (decide (left = right)) := by
+  rcases left with ⟨⟨ls, lo⟩, le, lg, lv⟩
+  rcases right with ⟨⟨rs, ro⟩, re, rg, rv⟩
+  simp [capture.continuation.OriginalContinueIdentity.Insts.CoreCmpPartialEqOriginalContinueIdentity.eq,
+    model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq,
+    ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq,
+    ids.VmId.Insts.CoreCmpPartialEqVmId.eq]
+  split_ifs <;> simp_all
+  by_cases same_operation : lo = ro <;> simp_all
+
+theorem option_identity_eq (left right : Option Identity) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      capture.continuation.OriginalContinueIdentity.Insts.CoreCmpPartialEqOriginalContinueIdentity
+      left right = .ok (decide (left = right)) := by
+  cases left <;> cases right <;>
+    simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq, identity_eq]
+
+theorem epoch_actual (world : World) (anchor : Anchor) (plan : Plan) :
+    epochRun world anchor plan = EpochExpected world anchor plan := by
+  classical
+  cases h : anchor.continued_from <;>
+    simp [epochRun,
+      controller.lifecycle_inbox.source_work.snapshot.source_origin_epoch_matches,
+      EpochExpected, h, option_identity_eq]
+end SandboxModel.Stage1Protocol.SourceOrigin
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.identity_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.option_identity_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.epoch_actual

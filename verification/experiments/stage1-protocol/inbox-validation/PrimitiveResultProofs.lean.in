@@ -1,0 +1,14 @@
+import SandproofStage1Graphic.Funs
+import SandboxModel.Lifecycle.Protocol.RenewalResultTag
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.PrimitiveResult
+
+theorem refines {T E : Type} (value : core.result.Result T E) :
+    SandproofStage1GraphicRust.core.result.Result.is_err value =
+      .ok (RenewalResultTag.IsError value) := by
+  cases value <;>
+    simp [SandproofStage1GraphicRust.core.result.Result.is_err, RenewalResultTag.IsError,
+      read_discriminant, Aeneas.Std.core.result.Result.read_discriminant]
+
+end SandboxModel.Stage1Protocol.PrimitiveResult
+#audit_controller_proof SandboxModel.Stage1Protocol.PrimitiveResult.refines

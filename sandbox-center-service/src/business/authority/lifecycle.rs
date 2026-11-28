@@ -1,5 +1,9 @@
 //! Public lifecycle decisions remain in the original complete business CAS.
-use super::{SharedBusinessAuthority, to_authority};
+use super::{
+    DiagnosticFailure, DiagnosticStage, Envelope, SharedBusinessAuthority, diagnostics,
+    to_authority,
+};
+use crate::business::LifecycleQuery;
 use crate::{LifecyclePolicy, application::authority_error};
 use sandproof_api::PortError;
 use sandproof_center_core::{CenterState, DecisionError, LifecycleSubmission, SessionPhase};
@@ -11,13 +15,81 @@ use sandproof_controller_service::{
 use sandproof_protocol::{
     TenantId,
     lifecycle::{
-        AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, OperationKey,
-        PublicCreateRequest, PublicDestroyRequest, PublicSessionPhase, PublicSessionView,
-        PublicUnloadRequest, SessionId,
+        AcceptedLifecycleIntent, CreateObservation, CurrentCreateReadiness, LifecycleOperation,
+        OperationKey, PublicCreateRequest, PublicDestroyRequest, PublicResumeRequest,
+        PublicSessionPhase, PublicSessionView, PublicUnloadRequest, SessionId,
     },
 };
 
 impl SharedBusinessAuthority {
+    /// One confirmed envelope supplies lookup, expiry and the Unloaded view.
+    /// The actual shared authority mutex stays held throughout; a pure no-op
+    /// needs no second confirmation. A changed expiry is committed before its
+    /// view escapes. Other phases retain the existing detached observation path.
+    pub(crate) fn begin_lifecycle_query(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+        now: impl FnOnce() -> Result<u64, PortError>,
+    ) -> Result<LifecycleQuery, PortError> {
+        let mut authority = self.0.lock().map_err(|_| {
+            diagnostics::emit(
+                DiagnosticStage::AuthoritySnapshotLock,
+                DiagnosticFailure::Port(PortError::OutcomeUnknown),
+            );
+            PortError::OutcomeUnknown
+        })?;
+        let current = authority
+            .snapshot_envelope()
+            .inspect_err(|error| {
+                diagnostics::emit(
+                    DiagnosticStage::AuthoritySnapshot,
+                    DiagnosticFailure::Authority(*error),
+                );
+            })
+            .map_err(authority_error)?;
+        let record = public_record(&current, owner, session)?;
+        if record.phase() != SessionPhase::Unloaded {
+            return Ok(LifecycleQuery::Current {
+                intent: record
+                    .operations()
+                    .last()
+                    .ok_or(PortError::OutcomeUnknown)?
+                    .intent()
+                    .clone(),
+                phase: record.phase(),
+            });
+        }
+        let _expiry = sandproof_center_store::DiagnosticScope::step(
+            sandproof_center_store::DiagnosticStep::Expiry,
+        );
+        let view = (|| {
+            let next = current
+                .center
+                .terminate_expired(now()?)
+                .map_err(|error| authority_error(error.into()))?;
+            if next == current.center {
+                return public_view(record);
+            }
+            authority
+                .decide(|confirmed| {
+                    // The same inner mutex has remained held since confirmation.
+                    let updated = confirmed.with_center(next);
+                    let record = public_record(&updated, owner, session).map_err(to_authority)?;
+                    let view = public_view(record).map_err(to_authority)?;
+                    Ok((updated, view))
+                })
+                .map_err(authority_error)
+        })()
+        .inspect_err(|error| {
+            diagnostics::emit(
+                DiagnosticStage::LifecycleQueryExpiry,
+                DiagnosticFailure::Port(*error),
+            );
+        })?;
+        Ok(LifecycleQuery::Ready(view))
+    }
+
     pub(crate) fn public_lifecycle_intent(
         &self,
         owner: &TenantId,
@@ -39,18 +111,7 @@ impl SharedBusinessAuthority {
         session: &SessionId,
     ) -> Result<sandproof_center_core::Sandbox, PortError> {
         let current = self.snapshot()?;
-        if current
-            .metadata
-            .private_sandboxes()
-            .contains(session.as_protocol_id())
-        {
-            return Err(PortError::NotFound);
-        }
-        let record = current
-            .center
-            .lifecycle_session(owner, session)
-            .ok_or(PortError::NotFound)?;
-        Ok(record.clone())
+        Ok(public_record(&current, owner, session)?.clone())
     }
     pub(super) fn accept_bound_destroy(
         &self,
@@ -397,6 +458,97 @@ impl SharedBusinessAuthority {
     }
 
     /// # Errors
+    /// Material, source and target identities come only from the original
+    /// Unloaded record in this same CAS, never from public input.
+    pub fn accept_public_resume(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+        request: &PublicResumeRequest,
+        now: impl FnOnce() -> Result<u64, PortError>,
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
+        check_public_window(request.window)?;
+        let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        authority.snapshot_envelope().map_err(authority_error)?;
+        authority
+            .decide(|current| {
+                if current
+                    .metadata
+                    .private_sandboxes()
+                    .contains(session.as_protocol_id())
+                {
+                    return Err(DecisionError::NotFound.into());
+                }
+                let submission = LifecycleSubmission::Resume {
+                    key: key(&current.center, owner, request.window, request.sequence),
+                    session: session.clone(),
+                    expected_version: request.expected_version,
+                };
+                if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
+                    return Ok((current.clone(), intent));
+                }
+                let (next, intent) = current.center.accept_lifecycle(
+                    owner,
+                    &submission,
+                    now().map_err(to_authority)?,
+                )?;
+                Ok((current.with_center(next), intent))
+            })
+            .map_err(authority_error)
+    }
+
+    /// # Errors
+    /// A second Unload is bound to the current resumed execution and lifetime,
+    /// not the historical first Create. The original replay still comes first.
+    pub fn accept_public_resumed_unload(
+        &self,
+        owner: &TenantId,
+        session: &SessionId,
+        request: &PublicUnloadRequest,
+        observation: &sandproof_protocol::lifecycle::ResumeObservation,
+        now_ms: u64,
+    ) -> Result<AcceptedLifecycleIntent, PortError> {
+        check_public_window(request.window)?;
+        let mut authority = self.0.lock().map_err(|_| PortError::OutcomeUnknown)?;
+        authority.snapshot_envelope().map_err(authority_error)?;
+        authority
+            .decide(|current| {
+                if current
+                    .metadata
+                    .private_sandboxes()
+                    .contains(session.as_protocol_id())
+                {
+                    return Err(DecisionError::NotFound.into());
+                }
+                let submission = LifecycleSubmission::Unload {
+                    key: key(&current.center, owner, request.window, request.sequence),
+                    session: session.clone(),
+                    expected_version: request.expected_version,
+                };
+                if let Some(intent) = current.center.replay_lifecycle(owner, &submission)? {
+                    return Ok((current.clone(), intent));
+                }
+                let sandproof_protocol::lifecycle::CurrentResumeReadiness::Observed { facts } =
+                    &observation.readiness
+                else {
+                    return Err(DecisionError::Unavailable.into());
+                };
+                if observation.request.request.binding.key.owner != *owner
+                    || &observation.request.request.binding.session != session
+                    || now_ms >= facts.end_at_ms
+                {
+                    return Err(DecisionError::Stale.into());
+                }
+                let observed = current
+                    .center
+                    .accept_lifecycle_resume_observation(observation)?;
+                let (next, intent) = observed.accept_lifecycle(owner, &submission, now_ms)?;
+                Ok((current.with_center(next), intent))
+            })
+            .map_err(authority_error)
+    }
+
+    /// # Errors
     /// Fresh original authority, full owner and full session are mandatory.
     pub fn query_public_lifecycle(
         &self,
@@ -404,33 +556,68 @@ impl SharedBusinessAuthority {
         session: &SessionId,
     ) -> Result<PublicSessionView, PortError> {
         let record = self.public_lifecycle_record(owner, session)?;
-        let current = record
+        public_view(&record)
+    }
+}
+
+fn public_record<'a>(
+    current: &'a Envelope,
+    owner: &TenantId,
+    session: &SessionId,
+) -> Result<&'a sandproof_center_core::Sandbox, PortError> {
+    if current
+        .metadata
+        .private_sandboxes()
+        .contains(session.as_protocol_id())
+    {
+        return Err(PortError::NotFound);
+    }
+    current
+        .center
+        .lifecycle_session(owner, session)
+        .ok_or(PortError::NotFound)
+}
+
+/// Pure projection; callers must supply their same-operation confirmed state.
+fn public_view(record: &sandproof_center_core::Sandbox) -> Result<PublicSessionView, PortError> {
+    let current = record
+        .operations()
+        .last()
+        .ok_or(PortError::OutcomeUnknown)?
+        .intent();
+    let phase = match record.phase() {
+        SessionPhase::Creating => PublicSessionPhase::Creating,
+        // The ledger retains a historical Ready. A current publishable
+        // Running needs the original host observation provider, still
+        // absent here. A new query timestamp cannot supply that evidence.
+        SessionPhase::Running => return Err(PortError::Busy),
+        SessionPhase::Renewing => PublicSessionPhase::Renewing,
+        SessionPhase::Unloading => PublicSessionPhase::Unloading,
+        SessionPhase::Unloaded => PublicSessionPhase::Unloaded,
+        SessionPhase::Resuming => PublicSessionPhase::Resuming,
+        SessionPhase::StateLost => PublicSessionPhase::StateLost,
+        SessionPhase::Terminating => PublicSessionPhase::Terminating,
+        SessionPhase::Cleaned => PublicSessionPhase::Cleaned,
+    };
+    Ok(PublicSessionView {
+        session: current.request.binding.session.clone(),
+        operation: current.request.binding.key.clone(),
+        current_version: current.accepted_version,
+        phase,
+        unload_outcome: record
             .operations()
             .last()
-            .ok_or(PortError::OutcomeUnknown)?
-            .intent();
-        let phase = match record.phase() {
-            SessionPhase::Creating => PublicSessionPhase::Creating,
-            // The ledger retains a historical Ready. A current publishable
-            // Running needs the original host observation provider, still
-            // absent here. A new query timestamp cannot supply that evidence.
-            SessionPhase::Running => return Err(PortError::Busy),
-            SessionPhase::Renewing => PublicSessionPhase::Renewing,
-            SessionPhase::Unloading => PublicSessionPhase::Unloading,
-            SessionPhase::Terminating => PublicSessionPhase::Terminating,
-            SessionPhase::Cleaned => PublicSessionPhase::Cleaned,
-        };
-        Ok(PublicSessionView {
-            session: current.request.binding.session.clone(),
-            operation: current.request.binding.key.clone(),
-            current_version: current.accepted_version,
-            phase,
-            create_refusal: record
-                .operations()
-                .first()
-                .and_then(sandproof_center_core::LifecycleOperationRecord::create_refusal),
-        })
-    }
+            .and_then(|operation| operation.unloaded())
+            .map(|observation| observation.outcome.clone())
+            .or_else(|| {
+                matches!(current.request.operation, LifecycleOperation::Unload { .. })
+                    .then_some(sandproof_protocol::lifecycle::UnloadOutcome::Pending)
+            }),
+        create_refusal: record
+            .operations()
+            .first()
+            .and_then(sandproof_center_core::LifecycleOperationRecord::create_refusal),
+    })
 }
 
 #[derive(Clone, Copy)]

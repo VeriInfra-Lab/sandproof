@@ -1,13 +1,162 @@
 import base64
+import hashlib
 import json
 import os
 from pathlib import Path
+import stat
 import subprocess
 import tempfile
 import unittest
 from types import SimpleNamespace
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 from tools import ci_vm
+
+
+class CowScratchTests(unittest.TestCase):
+    def recipe(self):
+        namespace = {'__name__': 'scratch_recipe_unit_test'}
+        exec(compile(ci_vm.COW_SCRATCH_SETUP, '<trusted-scratch-recipe>', 'exec'), namespace)
+        # Exercise the actual emitted recipe's control flow without formatting
+        # any disk or requiring privilege in ordinary unit tests.
+        root = MagicMock(spec=Path)
+        root.parent.parents = ()
+        root.parent.lstat.return_value = SimpleNamespace(st_mode=stat.S_IFDIR | 0o755, st_uid=0)
+        image, mount, tmp = MagicMock(spec=Path), MagicMock(spec=Path), MagicMock(spec=Path)
+        root.__truediv__.side_effect = lambda name: {'scratch.img': image, 'mount': mount}[name]
+        mount.__truediv__.return_value = tmp
+        mount.__str__.return_value = '/var/lib/sandproof-ci-cow/mount'
+        image.__str__.return_value = '/var/lib/sandproof-ci-cow/scratch.img'
+        image.lstat.return_value = SimpleNamespace(st_dev=7, st_ino=19)
+        system = Mock(wraps=os)
+        for name in ('O_RDWR', 'O_CREAT', 'O_EXCL', 'O_NOFOLLOW'):
+            setattr(system, name, getattr(os, name))
+        system.geteuid.return_value = 0
+        system.umask = Mock()
+        system.open.return_value = 91
+        system.posix_fallocate = Mock()
+        system.fsync = Mock()
+        system.close = Mock()
+        system.chown = Mock()
+        system.fstat.return_value = SimpleNamespace(st_mode=stat.S_IFREG | 0o600,
+            st_uid=0, st_nlink=1, st_size=1024 ** 3, st_dev=7, st_ino=19, st_blocks=2000000)
+        process = Mock()
+        filesystem = {'filesystems': [{'target': str(mount), 'fstype': 'xfs',
+                                       'options': 'rw,nodev,nosuid,prjquota'}]}
+        witness = {'runner_uid': 1000, 'python_optimize': 0, 'clone_and_write_isolation': True,
+                   'executable_tmpdir': True}
+        def command(argv, **kwargs):
+            if argv[0] == '/usr/bin/findmnt':
+                return SimpleNamespace(stdout=json.dumps(filesystem))
+            if argv[0] == '/usr/sbin/runuser':
+                return SimpleNamespace(stdout=json.dumps(witness))
+            return SimpleNamespace()
+        process.run.side_effect = command
+        namespace.update(ROOT=root, os=system, subprocess=process,
+            pwd=SimpleNamespace(getpwnam=lambda name: SimpleNamespace(pw_uid=1000, pw_gid=1000)),
+            sys=SimpleNamespace(flags=SimpleNamespace(optimize=0)), print=Mock())
+        return namespace, root, image, system, process, filesystem, witness
+
+    def test_only_rust_and_sdk_prepare_before_listener_without_giving_runner_privilege(self):
+        jit = base64.b64encode(b'opaque-test-jit-configuration').decode()
+        for role in ci_vm.RUNNER_JOBS:
+            with self.subTest(role=role):
+                config = ci_vm.cloud_config(role, jit)
+                files = {item['path']: item for item in config['write_files']}
+                shell = config['runcmd'][-1][-1]
+                cargo_jobs = 4 if role == 'sdk' else 2
+                self.assertIn(f'CARGO_BUILD_JOBS={cargo_jobs}\nRUST_TEST_THREADS=2\n',
+                              files['/etc/sandproof-ci.env']['content'])
+                if role == 'sdk':
+                    self.assertEqual(ci_vm.ROLES[role], (6144, 8, 32))
+                if role in {'rust', 'sdk'}:
+                    self.assertIn('TMPDIR=/var/lib/sandproof-ci-cow/mount/tmp\n',
+                                  files['/etc/sandproof-ci.env']['content'])
+                    recipe = files['/root/ci-cow-scratch.py']
+                    self.assertEqual((recipe['permissions'], recipe['owner']), ('0500', 'root:root'))
+                    self.assertEqual(recipe['content'], ci_vm.COW_SCRATCH_SETUP)
+                    self.assertIn('if /usr/bin/python3 -I /root/ci-cow-scratch.py && runuser ', shell)
+                else:
+                    self.assertNotIn('/root/ci-cow-scratch.py', files)
+                    self.assertNotIn('TMPDIR=', files['/etc/sandproof-ci.env']['content'])
+                self.assertTrue(shell.endswith('else poweroff; fi'))
+                unit = files['/etc/systemd/system/sandproof-ci-job.service']['content']
+                for setting in ('User=runner', 'PrivateTmp=true', 'NoNewPrivileges=true',
+                                'CapabilityBoundingSet=\n'):
+                    self.assertIn(setting, unit)
+                self.assertIsNone(config['users'][0]['sudo'])
+
+    def test_preexisting_path_or_unsafe_ancestor_is_never_formatted(self):
+        for reason in ('nonroot', 'optimized', 'ancestor', 'existing'):
+            with self.subTest(reason=reason):
+                ns, root, _, system, process, _, _ = self.recipe()
+                if reason == 'nonroot':
+                    system.geteuid.return_value = 1000
+                elif reason == 'optimized':
+                    ns['sys'].flags.optimize = 1
+                elif reason == 'ancestor':
+                    root.parent.lstat.return_value.st_mode = stat.S_IFDIR | 0o777
+                else:
+                    root.mkdir.side_effect = FileExistsError('already present')
+                with self.assertRaises((ValueError, FileExistsError)):
+                    ns['run']()
+                system.open.assert_not_called()
+                process.run.assert_not_called()
+
+    def test_fresh_bounded_file_and_fd_are_used_before_unprivileged_probe(self):
+        ns, root, image, system, process, _, _ = self.recipe()
+        ns['run']()
+        root.mkdir.assert_called_once_with(mode=0o711)
+        system.open.assert_called_once_with(image,
+            os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        system.posix_fallocate.assert_called_once_with(91, 0, 1024 ** 3)
+        commands = [call.args[0] for call in process.run.call_args_list]
+        self.assertEqual([argv[0] for argv in commands], ['/usr/sbin/mkfs.xfs',
+            '/usr/bin/mount', '/usr/bin/findmnt', '/usr/sbin/runuser'])
+        self.assertEqual(commands[0][-1], '/proc/self/fd/91')
+        self.assertIn('-K', commands[0])
+        self.assertEqual(process.run.call_args_list[0].kwargs['pass_fds'], (91,))
+        self.assertEqual(commands[1][2], 'loop,prjquota,nodev,nosuid')
+        self.assertEqual(commands[3][:4], ['/usr/sbin/runuser', '-u', 'runner', '--'])
+        self.assertEqual(commands[3][4:7], ['/usr/bin/python3', '-I', '-c'])
+        system.close.assert_called_once_with(91)
+        line = ns['print'].call_args.args[0]
+        self.assertTrue(line.startswith('SANDPROOF_CI_COW_READY '))
+        self.assertEqual(json.loads(line.partition(' ')[2])['logical_bytes'], 1024 ** 3)
+
+    def test_any_setup_command_failure_closes_fd_and_prevents_later_steps(self):
+        for failed in range(4):
+            with self.subTest(failed=failed):
+                ns, _, _, system, process, _, _ = self.recipe()
+                execute = process.run.side_effect
+                def fail(argv, **kwargs):
+                    if process.run.call_count == failed + 1:
+                        raise subprocess.CalledProcessError(1, argv)
+                    return execute(argv, **kwargs)
+                process.run.side_effect = fail
+                with self.assertRaises(subprocess.CalledProcessError):
+                    ns['run']()
+                self.assertEqual(process.run.call_count, failed + 1)
+                system.close.assert_called_once_with(91)
+                ns['print'].assert_not_called()
+
+    def test_missing_quota_wrong_filesystem_noexec_or_incomplete_probe_fail_closed(self):
+        for failure in ('quota', 'filesystem', 'noexec', 'probe'):
+            with self.subTest(failure=failure):
+                ns, _, _, system, process, filesystem, witness = self.recipe()
+                entry = filesystem['filesystems'][0]
+                if failure == 'quota':
+                    entry['options'] = 'rw,nodev,nosuid'
+                elif failure == 'filesystem':
+                    entry['fstype'] = 'ext4'
+                elif failure == 'noexec':
+                    entry['options'] += ',noexec'
+                else:
+                    witness['clone_and_write_isolation'] = False
+                with self.assertRaises(ValueError):
+                    ns['run']()
+                self.assertEqual(process.run.call_count, 4 if failure == 'probe' else 3)
+                system.close.assert_called_once_with(91)
+                ns['print'].assert_not_called()
 
 
 class RunnerDeadlineTests(unittest.TestCase):
@@ -163,7 +312,9 @@ class CiVmTests(unittest.TestCase):
 
     def test_roles_fit_current_host_with_reserve(self):
         self.assertEqual(len(ci_vm.ROLES) - len(ci_vm.PREPARATION_ROLES), 5)
-        self.assertLess(sum(v[0] for k, v in ci_vm.ROLES.items() if k not in ci_vm.PREPARATION_ROLES), 12 * 1024)
+        first_slots_mib = sum(ci_vm.ROLES[role][0] for role in ci_vm.RUNNER_JOBS)
+        self.assertEqual(first_slots_mib, 13824)
+        self.assertLess(first_slots_mib + 5 * 256 + 2048, 31 * 1024)
 
     def test_restricted_network_and_no_host_sharing(self):
         args = ci_vm.qemu_command(Path('/var/lib/sandproof-ci/runs/owned'), 'rust')
@@ -197,6 +348,47 @@ class CiVmTests(unittest.TestCase):
         self.assertNotIn(jit, unit)
         for forbidden in ('GH_TOKEN=', 'GITHUB_APP_PRIVATE_KEY=', 'BEGIN PRIVATE KEY'):
             self.assertNotIn(forbidden, str(config))
+
+    def test_optional_checkout_archive_verifies_protected_fixed_content(self):
+        content = b'pinned checkout archive fixture'
+        with tempfile.TemporaryDirectory() as temp, patch.object(ci_vm, 'ROOT', Path(temp)), \
+                patch.object(ci_vm, 'CHECKOUT_ARCHIVE_BYTES', len(content)), \
+                patch.object(ci_vm, 'CHECKOUT_ARCHIVE_SHA256', hashlib.sha256(content).hexdigest()):
+            self.assertIsNone(ci_vm.load_checkout_archive())
+            path = Path(temp) / ci_vm.CHECKOUT_ARCHIVE_NAME
+            path.write_bytes(content)
+            path.chmod(0o444)
+            protected = SimpleNamespace(st_mode=stat.S_IFREG | 0o444, st_uid=0, st_size=len(content))
+            with patch.object(ci_vm.os, 'fstat', return_value=protected):
+                self.assertEqual(ci_vm.load_checkout_archive(), content)
+                protected.st_mode = stat.S_IFREG | 0o644
+                with self.assertRaisesRegex(ValueError, 'root-owned, read-only'):
+                    ci_vm.load_checkout_archive()
+                protected.st_mode = stat.S_IFREG | 0o444
+                with patch.object(ci_vm, 'CHECKOUT_ARCHIVE_SHA256', '0' * 64), \
+                        self.assertRaisesRegex(ValueError, 'pinned SHA256'):
+                    ci_vm.load_checkout_archive()
+
+    def test_checkout_archive_uses_upstream_layout_alongside_source_disk(self):
+        jit = base64.b64encode(b'opaque-test-jit-configuration').decode()
+        cache = ci_vm.ci_source_cache
+        disk = cache.SourceDisk(Path('/private/source.iso'), cache.PullSource(1, 'a' * 40, 'b' * 40),
+                                'c' * 40, 'd' * 40)
+        original = ci_vm.cloud_config('sdk', jit, source_disk=disk)
+        payload = b'reviewed checkout archive'
+        config = ci_vm.cloud_config('sdk', jit, source_disk=disk, checkout_archive=payload)
+        files = {entry['path']: entry for entry in config['write_files']}
+        env = files['/etc/sandproof-ci.env']['content']
+        archive_path = f'{ci_vm.ACTION_ARCHIVE_CACHE}/actions_checkout/{ci_vm.CHECKOUT_REF}.tar.gz'
+        archive = files[archive_path]
+        self.assertIn(f'ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE={ci_vm.ACTION_ARCHIVE_CACHE}\n', env)
+        self.assertEqual((archive['owner'], archive['permissions'], archive['encoding']), ('root:root', '0444', 'b64'))
+        self.assertEqual(base64.b64decode(archive['content'], validate=True), payload)
+        self.assertIn(cache.GUEST_BIN + '/git', files)
+        self.assertEqual(config['runcmd'], original['runcmd'])
+        self.assertNotIn('ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE', str(original))
+        with self.assertRaisesRegex(ValueError, 'only for ordinary job disks'):
+            ci_vm.cloud_config('preheat', checkout_archive=payload)
 
     def test_invalid_jit_rejected(self):
         for value in ('', 'bad secret', 'x' * 131073, 'invalid-length-jit='):

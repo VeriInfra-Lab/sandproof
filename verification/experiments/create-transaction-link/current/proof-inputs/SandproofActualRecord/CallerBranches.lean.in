@@ -1,0 +1,110 @@
+import SandproofActualRecord.Funs
+import SandproofActualRecord.BranchScope
+import SandproofParentCommit.ParentResults
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofActualRecordRust.CallerBranches
+noncomputable section
+
+open controller.lifecycle_inbox
+open recording
+
+abbrev Intent := sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+abbrev Context := sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
+
+-- The real extracted parent returns here before either crash point or commit.
+-- The separate old-body composition supplies this Replay observation from the
+-- complete authenticated request lookup, rather than an output label.
+theorem actual_replay_return
+    {R T N U B E C : Type}
+    (retirement : native_retirement.RetirementEncoding R)
+    (terminal : model.TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (graphic : capture.GraphicBytes B)
+    (effects : RecordTransaction E) (crash : CrashInjector C)
+    (before after : E) (intent : Intent) (context : Context) (crashes : C)
+    (replay : model.LifecycleWorkState)
+    (recorded : record_using retirement terminal renewal unload graphic
+      effects.RecordEffectsInst before intent context = .ok (.Ok (.Replay replay), after)) :
+    record_transaction_using retirement terminal renewal unload graphic
+      effects crash before intent context crashes = .ok (.Ok replay, crashes) := by
+  simp [record_transaction_using, recorded,
+    core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem actual_recorded_success
+    {R T N U B E C : Type}
+    (retirement : native_retirement.RetirementEncoding R)
+    (terminal : model.TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (graphic : capture.GraphicBytes B)
+    (effects : RecordTransaction E) (crash : CrashInjector C)
+    (before after : E) (intent : Intent) (context : Context)
+    (crashes afterBefore afterAfter : C) (value : model.LifecycleWorkState)
+    (recorded : record_using retirement terminal renewal unload graphic
+      effects.RecordEffectsInst before intent context = .ok (.Ok (.Recorded value), after))
+    (beforeCommit : crash.hit crashes .BeforeCommit = .ok (.Ok (), afterBefore))
+    (committed : effects.commit after = .ok (.Ok ()))
+    (afterCommit : crash.hit afterBefore .AfterCommit = .ok (.Ok (), afterAfter)) :
+    record_transaction_using retirement terminal renewal unload graphic
+      effects crash before intent context crashes = .ok (.Ok value, afterAfter) := by
+  simp [record_transaction_using, recorded, beforeCommit, committed, afterCommit,
+    core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem actual_recorded_commit_error
+    {R T N U B E C : Type}
+    (retirement : native_retirement.RetirementEncoding R)
+    (terminal : model.TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (graphic : capture.GraphicBytes B)
+    (effects : RecordTransaction E) (crash : CrashInjector C)
+    (before after : E) (intent : Intent) (context : Context)
+    (crashes afterBefore : C) (value : model.LifecycleWorkState) (error : JournalError)
+    (recorded : record_using retirement terminal renewal unload graphic
+      effects.RecordEffectsInst before intent context = .ok (.Ok (.Recorded value), after))
+    (beforeCommit : crash.hit crashes .BeforeCommit = .ok (.Ok (), afterBefore))
+    (committed : effects.commit after = .ok (.Err error)) :
+    record_transaction_using retirement terminal renewal unload graphic
+      effects crash before intent context crashes = .ok (.Err error, afterBefore) := by
+  simp [record_transaction_using, recorded, beforeCommit, committed,
+    core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+abbrev actualEffects {D : Type} (codec : RecordCodec D) : RecordTransaction (StandardRecord D) :=
+  StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxRecordingRecordTransaction codec
+
+theorem actual_standard_record_uses_original_commit {D : Type}
+    (codec : RecordCodec D) (state : StandardRecord D) :
+    (actualEffects codec).commit state =
+      SandproofParentCommitRust.controller.transaction.WorldTransaction.commit state.tx.parent := by
+  rfl
+
+theorem extraction_root_uses_real_constructor_and_dictionary
+    {R T N U B D C : Type}
+    (retirement : native_retirement.RetirementEncoding R)
+    (terminal : model.TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (graphic : capture.GraphicBytes B)
+    (codecEffects : RecordCodec D) (crash : CrashInjector C)
+    (tx : CallerOwnerView) (namespaceName : Str) (codec : D)
+    (intent : Intent) (context : Context) (crashes : C) :
+    proof_record_actual_parent retirement terminal renewal unload graphic codecEffects crash
+      tx namespaceName codec intent context crashes =
+      record_transaction_using retirement terminal renewal unload graphic
+        (actualEffects codecEffects) crash ⟨tx, namespaceName, codec⟩ intent context crashes := by
+  rfl
+
+end
+end SandproofActualRecordRust.CallerBranches
+
+#audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_replay_return
+#audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_recorded_success
+#audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_standard_record_uses_original_commit
+#audit_controller_proof SandproofActualRecordRust.CallerBranches.extraction_root_uses_real_constructor_and_dictionary
+#audit_controller_proof SandproofActualRecordRust.CallerBranches.actual_recorded_commit_error

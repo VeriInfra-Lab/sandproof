@@ -1,0 +1,74 @@
+import SandboxModel.Lifecycle.Protocol.ShapeLibrary
+import SandboxModel.Lifecycle.Protocol.ComposedConfigProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority sandproof_protocol.internal
+namespace SandboxModel.Stage1Protocol.InboxValidation
+noncomputable section
+open scoped Classical
+
+/-- Value agreement only; there is no claim that a peer was independently authenticated. -/
+def HostMatches (inbox : Inbox) : Prop :=
+  ∀ observed, inbox.host_epoch_observation = some observed →
+    observed.node = inbox.config.node ∧ some observed.registration = inbox.config.host_epoch
+
+def decodedContext (config : LifecycleInboxConfig) : AuthenticatedCenterContext :=
+  ⟨config.center, config.node⟩
+
+theorem registration_eq (left right : HostEpochRegistration) :
+    HostEpochRegistration.Insts.CoreCmpPartialEqHostEpochRegistration.eq left right =
+      .ok (decide (left = right)) := by
+  cases left; cases right
+  simp [HostEpochRegistration.Insts.CoreCmpPartialEqHostEpochRegistration.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest.eq,
+    Replay.array_eq]
+  split_ifs <;> simp_all
+
+theorem context_fields (config : LifecycleInboxConfig) :
+    LifecycleInboxConfig.context config = .ok (decodedContext config) := by
+  simp [LifecycleInboxConfig.context, decodedContext,
+    CenterIdentity.Insts.CoreCloneClone.clone, CenterId.Insts.CoreCloneClone.clone,
+    NodeIdentity.Insts.CoreCloneClone.clone, PositiveCounter.Insts.CoreCloneClone.clone,
+    sandproof_protocol.DeploymentId.Insts.CoreCloneClone.clone,
+    sandproof_protocol.NodeId.Insts.CoreCloneClone.clone,
+    alloc.string.String.Insts.CoreCloneClone.clone,
+    AuthenticatedCenterContext.from_verified_peer_registration]
+
+variable {R T N U B : Type}
+variable (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+variable (renewal : RenewalEncoding N) (unload : UnloadEncoding U) (graphic : GraphicBytes B)
+
+theorem host_callback (inbox : Inbox) (observed : HostEpochObservation) :
+    Inbox.validate_using.closure.Insts.CoreOpsFunctionFnOnceTupleSharedHostEpochObservationBool.call_once
+      saved terminal renewal unload graphic inbox observed =
+      .ok (decide (observed.node ≠ inbox.config.node ∨ some observed.registration ≠ inbox.config.host_epoch)) := by
+  unfold Inbox.validate_using.closure.Insts.CoreOpsFunctionFnOnceTupleSharedHostEpochObservationBool.call_once
+  cases registered : inbox.config.host_epoch <;>
+    simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, Replay.node_eq,
+      core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+      core.option.Option.Insts.CoreCmpPartialEqOption.eq, registration_eq]
+  split_ifs <;> simp_all
+
+theorem host_option (inbox : Inbox) :
+    core.option.Option.is_some_and
+      (Inbox.validate_using.closure.Insts.CoreOpsFunctionFnOnceTupleSharedHostEpochObservationBool
+        saved terminal renewal unload graphic) inbox.host_epoch_observation inbox =
+      .ok (decide (¬HostMatches inbox)) := by
+  cases observed : inbox.host_epoch_observation <;>
+    simp [core.option.Option.is_some_and, SandproofFoundationsRust.core.option.Option.is_some_and,
+      host_callback, HostMatches, observed]
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.registration_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.context_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.host_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.host_option

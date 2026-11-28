@@ -1,0 +1,53 @@
+import SandboxModel.Lifecycle.Protocol.InboxEntryOrderLoop
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxValidation
+noncomputable section
+
+-- Decoded values only. This theorem uses the already named borrowed-Vec call
+-- binding; it does not establish that library binding for original Rust.
+theorem entry_order_with_binding (binding : InboxEntry.BorrowedVecBinding Entry)
+    {U : Type} (encoding : UnloadEncoding U) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) :
+    (do let result ← Inbox.validate_entry_order_using encoding inbox session context
+        .ok (observeSummary result)) =
+      entryScan encoding.encode inbox session context session.entries.val initialSummary := by
+  unfold Inbox.validate_entry_order_using
+  rw [binding]
+  simp only [bind_tc_ok]
+  change (do
+    let result ← entryLoop encoding inbox session context
+      (InboxEntry.cursor (alloc.vec.Vec.deref session.entries) 0) 0#u64 (Array.repeat 5#usize 0#u16)
+    .ok (observeSummary result)) = _
+  rw [entry_loop_refines_storage, stored_scan_refines, zero_array_summary]
+  simp [alloc.vec.Vec.deref]
+
+theorem entry_order_refines {U : Type} (encoding : UnloadEncoding U) (inbox : Inbox)
+    (session : Session) (context : AuthenticatedCenterContext) :
+    (do let result ← Inbox.validate_entry_order_using encoding inbox session context
+        .ok (observeSummary result)) =
+      entryScan encoding.encode inbox session context session.entries.val initialSummary :=
+  entry_order_with_binding (InboxEntry.candidate_iterator_binding Entry) encoding inbox session context
+
+theorem empty_entry_order {U : Type} (encoding : UnloadEncoding U) (inbox : Inbox)
+    (session : Session) (context : AuthenticatedCenterContext) (empty : session.entries.val = []) :
+    Inbox.validate_entry_order_using encoding inbox session context =
+      .ok (.Ok (0#u64, Array.repeat 5#usize 0#u16)) := by
+  unfold Inbox.validate_entry_order_using
+  rw [InboxEntry.candidate_iterator_binding Entry]
+  simp only [bind_tc_ok]
+  change entryLoop encoding inbox session context
+    (InboxEntry.cursor (alloc.vec.Vec.deref session.entries) 0) 0#u64 (Array.repeat 5#usize 0#u16) = _
+  rw [entry_loop_refines_storage]
+  simp [alloc.vec.Vec.deref, empty, storedScan]
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.entry_order_with_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.entry_order_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.empty_entry_order

@@ -1,0 +1,74 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolFixtureValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+namespace SandboxModel.Stage1Protocol.ProtocolRecord.ReplayValues
+noncomputable section
+open Values
+open InboxLoad.Values (saved terminal renewal unload)
+
+theorem stored_find :
+    InboxValidation.Values.recorded.find SavedRetirement.Values.createIntent =
+      .ok (.Ok (some (0#usize, 0#usize))) := by
+  have shape : InboxLookup.inboxSpec SavedRetirement.Values.createIntent
+      InboxValidation.Values.recorded.sessions.val 0 = .found 0 0 := by
+    simp [InboxLookup.inboxSpec, InboxLookup.entrySpec, InboxValidation.Values.recorded,
+      InboxValidation.Values.recordedSession, SessionShape.Values.normal, SessionShape.Values.entry,
+      SessionShape.Values.vector]
+  have actual := InboxLookup.find_outcome InboxValidation.Values.recorded SavedRetirement.Values.createIntent
+  simp only [shape] at actual
+  obtain ⟨s, e, sessionValue, entryValue, returned⟩ := actual
+  have sessionZero : s = 0#usize := UScalar.eq_of_val_eq (by simpa using sessionValue)
+  have entryZero : e = 0#usize := UScalar.eq_of_val_eq (by simpa using entryValue)
+  simpa [sessionZero, entryZero] using returned
+
+theorem stored_record :
+    InboxValidation.Values.recorded.record SavedRetirement.Values.createIntent =
+      .ok (.Ok (0#usize, 0#usize), InboxValidation.Values.recorded) := by
+  have shape : InboxLookup.inboxSpec SavedRetirement.Values.createIntent
+      InboxValidation.Values.recorded.sessions.val 0 = .found 0 0 := by
+    simp [InboxLookup.inboxSpec, InboxLookup.entrySpec, InboxValidation.Values.recorded,
+      InboxValidation.Values.recordedSession, SessionShape.Values.normal, SessionShape.Values.entry,
+      SessionShape.Values.vector]
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists
+    (InboxRecordTotal.record_contract InboxValidation.Values.recorded SavedRetirement.Values.createIntent)
+  simp only [InboxRecordTotal.RecordPost, shape] at post
+  obtain ⟨s, e, sessionValue, entryValue, outputSame⟩ := post
+  have sessionZero : s = 0#usize := UScalar.eq_of_val_eq (by simpa using sessionValue)
+  have entryZero : e = 0#usize := UScalar.eq_of_val_eq (by simpa using entryValue)
+  simp only [sessionZero, entryZero] at outputSame
+  simpa only [outputSame] using returned
+
+
+theorem stored_authenticated :
+    authenticated InboxValidation.Values.recorded SavedRetirement.Values.createIntent
+      EnvelopeValues.context = .ok (.Ok ()) := by
+  apply (InboxAdmission.accepts_iff _ _ _).mpr
+  refine ⟨?_, SavedRetirement.Values.normal_envelopes.1⟩
+  constructor <;> rfl
+
+theorem stored_query : InboxValidation.Values.recorded.state 0#usize 0#usize = .ok normalState := by
+  simpa [normalState, InboxValidation.Values.recorded, SessionShape.Values.vector,
+    SessionShape.Values.entry, InboxRecord.pendingEntry, InboxValidation.Values.recordedSession,
+    SessionShape.Values.normal] using
+    InboxState.state_contract InboxValidation.Values.recorded 0#usize 0#usize (by decide) (by decide)
+
+-- The already recorded full intent returns its original state before any native
+-- query, recording or save callback, for every explicit effect state/provider.
+theorem stored_replay_model {E : Type} (io : RecordEffects E) (state : E) :
+    loadedView saved terminal renewal unload io InboxValidation.Values.recorded
+      SavedRetirement.Values.createIntent EnvelopeValues.context state =
+      .ok (.Ok (.Replay normalState), state) := by
+  simp [loadedView, stored_authenticated, stored_find, stored_query]
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord.ReplayValues
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.ReplayValues.stored_find
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.ReplayValues.stored_authenticated
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.ReplayValues.stored_query
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.ReplayValues.stored_replay_model
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.ReplayValues.stored_record

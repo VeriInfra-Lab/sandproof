@@ -1,0 +1,55 @@
+import SandboxModel.Lifecycle.Protocol.StandardDigestLibrary
+import SandboxModel.Lifecycle.Protocol.StandardDigestValues
+open Aeneas Aeneas.Std SandproofStandardDigestRust
+namespace SandboxModel.Stage1Protocol.StandardDigestTailCounter
+open StandardDigest
+
+theorem wrong_common_normal : actual Values.normal Values.empty = expected Values.normal Values.empty := by
+  simp only [actual, expected,
+    controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest,
+    library_normal _ Values.empty_normal, core.slice.Slice.is_empty, bind_tc_ok]
+  simp [Values.empty, Slice.length]
+
+theorem actual_abc_tail_overwritten : actual Values.normal Values.abc =
+    .ok ((DigestByteBridge.referenceOutput Values.abc).set 31#usize 0#u8, Values.normal) := by
+  have valid : (31#usize).val < (DigestByteBridge.referenceOutput Values.abc).length := by simp
+  obtain ⟨out, updated, full⟩ := Aeneas.Std.WP.spec_imp_exists
+    (Array.update_spec (DigestByteBridge.referenceOutput Values.abc) 31#usize 0#u8 valid)
+  rw [full] at updated
+  have nonempty : core.slice.Slice.is_empty Values.abc = .ok false := by
+    simp [core.slice.Slice.is_empty, Values.abc, Slice.length]
+  unfold actual
+    controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest
+  rw [library_normal _ Values.abc_normal]
+  simp only [bind_tc_ok]
+  rw [nonempty]
+  simp only [bind_tc_ok]
+  rw [updated]
+  simp only [bind_tc_ok]
+  simp
+
+/-- Exact reuse of the existing arbitrary-array overwrite observation. -/
+theorem overwritten_byte_zero (output : Array U8 32#usize) :
+    (SandproofFoundationsRust.IdentifierLibrary.byteArray (output.set 31#usize 0#u8).val).toList[31]? =
+      some 0 := by
+  rw [SandboxModel.Foundations.byteArray_toList_data]
+  simp only [SandproofFoundationsRust.IdentifierLibrary.byteArray, Array.set_val_eq,
+    List.toList_toArray, List.getElem?_map]
+  simp
+
+theorem same_full_contract_rejected : ¬ FullDigestContract actual := by
+  intro law
+  have promised := law Values.normal Values.abc Values.abc_normal
+  rw [actual_abc_tail_overwritten] at promised
+  have values := congrArg Prod.fst (Result.ok_injective promised)
+  have payload := congrArg
+    (fun output : Array U8 32#usize =>
+      (SandproofFoundationsRust.IdentifierLibrary.byteArray output.val).toList[31]?) values
+  rw [overwritten_byte_zero, Values.abc_full_payload] at payload
+  exact (by decide : (some (0 : UInt8)) ≠ some 0xad) payload
+
+end SandboxModel.Stage1Protocol.StandardDigestTailCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestTailCounter.wrong_common_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestTailCounter.actual_abc_tail_overwritten
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestTailCounter.overwritten_byte_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardDigestTailCounter.same_full_contract_rejected

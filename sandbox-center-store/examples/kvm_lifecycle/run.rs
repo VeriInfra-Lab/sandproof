@@ -5,26 +5,37 @@ use axum::{
 use rustls::pki_types::{CertificateDer, PrivatePkcs8KeyDer};
 use sandproof_api::admission::{RequestAdmission, RequestAdmissionLimits};
 use sandproof_center_core::{
-    AvailableTemplate, Bounds, CenterState, NodeMode, NodeRegistration, TenantBudget,
+    AvailableTemplate, Bounds, CenterState, LifecycleSubmission, LifecycleWindow, NodeMode,
+    NodeRegistration, TenantBudget,
 };
 use sandproof_center_store::{
     RedisEndpoint, RedisLedger, StoreConfig, WriterLease, authority::CenterAuthority,
 };
 use sandproof_controller_service::{
-    AdmissionLimits, ControllerJournal, InternalInboxConfig, InternalTemplate, MaintenanceConfig,
+    AdmissionLimits, ControllerJournal, InternalTemplate, LifecycleInboxConfig, MaintenanceConfig,
     NeverCrash,
-    application::{ApplicationConfig, ControllerApplication, TemplateArtifacts},
+    application::{ApplicationConfig, ApplicationError, ControllerApplication, TemplateArtifacts},
+    capture::SourceObservationConfig,
     templates::{ComputeLimits, TemplateBinding},
 };
-use sandproof_host_service::{HostFacade, data_gateway::TransferLimits};
+use sandproof_host_service::{
+    DriverConfig, HostFacade, TemplateSource, data_gateway::TransferLimits,
+};
 use sandproof_internal::{
     CertificatePin, ClientTls, InternalClient, InternalServer, Limits, RegisteredEndpoint,
-    ServerTls, TlsIdentity,
+    ServerTls, TlsIdentity, lifecycle::CenterPeerRegistration,
 };
-use sandproof_node::{LinuxWorker, NodeConfig, NodeHost, PhysicalProfileLease};
+use sandproof_node::{
+    LinuxWorker, NodeConfig, NodeHost, PhysicalProfileLease, ProtectedHostEpochSource,
+};
 use sandproof_protocol::internal::{
     NodeIdentity,
-    lifecycle::{CreateBinding, Intent, LifecycleFact, Resources},
+    lifecycle::{CreateBinding, Resources},
+};
+use sandproof_protocol::lifecycle::{
+    AcceptedLifecycleIntent, CenterIdentity, CreateObservation, CreateParameters,
+    CurrentCreateReadiness, LifecycleAccessIdentity, LifecycleOperation, OperationKey,
+    TerminalLifecycleObservation, TerminalStatus,
 };
 use serde::Deserialize;
 use std::{
@@ -83,6 +94,9 @@ struct HostConfig {
     maintenance: MaintenanceConfig,
     database: PathBuf,
     identity: NodeIdentity,
+    lifecycle: LifecycleInboxConfig,
+    source_limits: SourceObservationConfig,
+    host_epoch_source: PathBuf,
     template: TemplateBinding,
     template_digest: [u8; 32],
     template_revision: sandproof_protocol::ResourceId,
@@ -94,7 +108,9 @@ struct HostConfig {
 #[serde(deny_unknown_fields)]
 struct CenterConfig {
     identity: NodeIdentity,
-    binding: CreateBinding,
+    center: CenterIdentity,
+    parameters: CreateParameters,
+    result_retention_ms: u64,
     redis: SocketAddrV4,
     password: String,
     tls: PathBuf,
@@ -117,6 +133,14 @@ fn application(cfg: &HostConfig) -> Result<Arc<ControllerApplication<NodeHost>>>
         &cfg.node.kernel,
     )?;
     let worker = LinuxWorker::new(cfg.node.clone())?;
+    let epoch_source = ProtectedHostEpochSource::at(cfg.host_epoch_source.clone())?;
+    if cfg.lifecycle.node != cfg.identity
+        || cfg.lifecycle.max_sessions != 1
+        || cfg.lifecycle.host_epoch.as_ref()
+            != Some(&worker.host_epoch_registration(&epoch_source, &cfg.identity)?)
+    {
+        return Err("lifecycle registration differs from the original protected host".into());
+    }
     let inventory = worker.inventory()?;
     if !inventory.slots.is_empty()
         || !inventory.unbound_claims.is_empty()
@@ -132,16 +156,13 @@ fn application(cfg: &HostConfig) -> Result<Arc<ControllerApplication<NodeHost>>>
         cfg.maintenance.clone(),
         now()?,
     )?;
-    journal.initialize_internal_inbox(
-        InternalInboxConfig {
-            node: cfg.identity.clone(),
-            max_sandboxes: 1,
-            operations_per_sandbox: 2,
-            max_options_bytes: 1024,
-        },
+    journal.initialize_lifecycle_inbox(
+        cfg.lifecycle.clone(),
+        cfg.source_limits.clone(),
         &mut NeverCrash,
     )?;
-    let node = NodeHost::new(worker, storage, cfg.relay.clone());
+    let node =
+        NodeHost::new(worker, storage, cfg.relay.clone()).with_host_epoch_source(epoch_source);
     checked(node.validate_template(&cfg.template))?;
     Ok(Arc::new(ControllerApplication::new(
         journal,
@@ -169,9 +190,47 @@ fn application(cfg: &HostConfig) -> Result<Arc<ControllerApplication<NodeHost>>>
     )))
 }
 
+struct Templates(InternalTemplate);
+impl TemplateSource for Templates {
+    fn bound(
+        &self,
+        binding: &CreateBinding,
+    ) -> std::result::Result<InternalTemplate, ApplicationError> {
+        if self.0.revision != binding.template_revision || self.0.digest != binding.template_digest
+        {
+            return Err(ApplicationError::NotFound);
+        }
+        Ok(self.0.clone())
+    }
+}
+
+fn confirmed_cleaned(cfg: &HostConfig) -> Result<bool> {
+    let audit = ControllerJournal::audit_lifecycle_complete(
+        &cfg.database,
+        &cfg.node.namespace,
+        &cfg.node.bounded_host,
+        &cfg.maintenance,
+        &cfg.lifecycle,
+    )?;
+    // The original durable host confirmation follows a real Cleaned query.
+    // A terminal intent or a released native slot alone is insufficient.
+    Ok(audit.operations.iter().any(|operation| {
+        operation.current
+            && operation.terminal
+            && operation.confirmed_terminal.as_ref().is_some_and(|result| {
+                result.status == TerminalStatus::Cleaned
+                    && result.matches_request(&result.request)
+                    && result.request.request.binding == operation.binding
+                    && result.request.accepted_version == operation.accepted_version
+                    && result.request.center == cfg.lifecycle.center
+            })
+    }))
+}
+
 async fn host(path: &Path) -> Result<()> {
     let cfg: HostConfig = serde_json::from_slice(&fs::read(path)?)?;
     let app = application(&cfg)?;
+    checked(app.establish_lifecycle_host_epoch())?;
     let shape = cfg.template.resources;
     let facade = HostFacade::new(
         Arc::clone(&app),
@@ -201,6 +260,12 @@ async fn host(path: &Path) -> Result<()> {
         max_memory_bytes_per_tenant: shape.host_memory_bytes,
     };
     checked(inbox.recover().await)?;
+    let templates = Arc::new(Templates(InternalTemplate {
+        revision: cfg.template_revision.clone(),
+        digest: cfg.template_digest,
+        registered: cfg.template.clone(),
+        local: cfg.template.clone(),
+    }));
     let server = InternalServer::new(
         ServerTls::new(
             identity(&cfg.tls, "host")?,
@@ -212,7 +277,14 @@ async fn host(path: &Path) -> Result<()> {
         cfg.identity.clone(),
         limits()?,
         sandproof_internal::diagnostic::RejectTemplateCache::new(facade),
-    );
+    )
+    .with_center_peer(CenterPeerRegistration::new(
+        cfg.lifecycle.center.clone(),
+        cfg.identity.clone(),
+        vec![CertificatePin::from_certificate(&certificate(
+            &cfg.tls, "center",
+        )?)],
+    )?)?;
     let listener = tokio::net::TcpListener::bind(cfg.bind).await?;
     write(&cfg.tls.join("listening"), b"authenticated host listening")?;
     let (stop, shutdown) = tokio::sync::oneshot::channel();
@@ -223,30 +295,23 @@ async fn host(path: &Path) -> Result<()> {
             if tokio::time::Instant::now() >= until {
                 return Err("host acceptance deadline; resources may remain".into());
             }
-            for request in checked(app.internal_pending(&cfg.identity))? {
-                let template = (request.intent == Intent::Create).then(|| InternalTemplate {
-                    revision: cfg.template_revision.clone(),
-                    digest: cfg.template_digest,
-                    registered: cfg.template.clone(),
-                    local: cfg.template.clone(),
-                });
-                match inbox.advance(request.clone(), template, compute).await {
-                    Ok(response)
-                        if request.intent == Intent::Destroy
-                            && response.fact == LifecycleFact::Cleaned =>
-                    {
-                        // Allow the center to fetch the DURABLE cached fact. The
-                        // parent terminates only after exact residual checks.
-                        write(&cfg.tls.join("cleaned"), b"original host cleanup confirmed")?;
-                        return Ok(());
-                    }
-                    Ok(_)
-                    | Err(sandproof_controller_service::application::ApplicationError::Busy) => (),
-                    Err(error) => eprintln!("host advancement: {error:?}"),
-                }
+            // Use the original recorded-work driver, not another request queue.
+            checked(
+                inbox
+                    .drive_once(
+                        DriverConfig {
+                            node: cfg.identity.clone(),
+                            compute,
+                            interval: Duration::from_millis(100),
+                        },
+                        Arc::clone(&templates),
+                    )
+                    .await,
+            )?;
+            if confirmed_cleaned(&cfg)? {
+                write(&cfg.tls.join("cleaned"), b"original host cleanup confirmed")?;
+                return Ok(());
             }
-            // Original local expiry is independent of center reachability.
-            let _ = inbox.recover().await;
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
     }
@@ -259,35 +324,61 @@ async fn host(path: &Path) -> Result<()> {
     execution
 }
 
-async fn await_fact(
+async fn await_ready(
     center: &mut CenterAuthority,
-    client: &Arc<InternalClient>,
-    ready: bool,
-) -> Result<sandproof_protocol::internal::lifecycle::LifecycleResponse> {
+    client: &InternalClient,
+    intent: &AcceptedLifecycleIntent,
+) -> Result<CreateObservation> {
     let until = tokio::time::Instant::now() + Duration::from_mins(3);
     loop {
-        for dispatch in checked(center.dispatch_batch())? {
-            let mut transport = {
-                let client = Arc::clone(client);
-                move |request| {
-                    let client = Arc::clone(&client);
-                    async move { client.lifecycle(&request).await }
+        // Reception acknowledges only durable recording, never VM readiness.
+        if client.record_lifecycle(intent).await.is_ok()
+            && let Ok(observation) = client.observe_lifecycle_create(intent).await
+        {
+            if !observation.matches_request(intent) {
+                return Err("host observation changed the full original request".into());
+            }
+            match observation.readiness {
+                CurrentCreateReadiness::Observed { .. } => {
+                    checked(center.accept_lifecycle_create_observation(&observation))?;
+                    return Ok(observation);
                 }
-            };
-            if let Ok(response) = dispatch.send(&mut transport).await {
-                checked(center.apply_response(&response))?;
-                if matches!(response.fact, LifecycleFact::Ready { .. }) && ready
-                    || response.fact == LifecycleFact::Cleaned && !ready
-                {
-                    return Ok(response);
+                CurrentCreateReadiness::Refused { .. } => {
+                    return Err("host refused the original create; reservation remains held".into());
                 }
-                if response.fact == LifecycleFact::NotAccepted {
-                    return Err("host refused create".into());
-                }
+                _ => (),
             }
         }
         if tokio::time::Instant::now() >= until {
-            return Err("durable fact deadline; reservation remains held".into());
+            return Err("current Ready deadline; reservation remains held".into());
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+}
+
+async fn await_cleaned(
+    center: &mut CenterAuthority,
+    client: &InternalClient,
+    intent: &AcceptedLifecycleIntent,
+) -> Result<TerminalLifecycleObservation> {
+    let until = tokio::time::Instant::now() + Duration::from_mins(3);
+    loop {
+        if client.record_lifecycle(intent).await.is_ok()
+            && let Ok(result) = client.observe_lifecycle_terminal(intent).await
+        {
+            if !result.matches_request(intent) {
+                return Err("terminal observation changed the full original request".into());
+            }
+            if result.status == TerminalStatus::Cleaned {
+                checked(center.accept_lifecycle_terminal_observation(&result, now()?))?;
+                // Save the actual result before asking the host to confirm it.
+                let acknowledgement = client.confirm_lifecycle_terminal(&result).await?;
+                checked(center.confirm_terminal(&acknowledgement))?;
+                return Ok(result);
+            }
+        }
+        if tokio::time::Instant::now() >= until {
+            return Err("Cleaned deadline; original cleanup responsibility remains".into());
         }
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
@@ -295,23 +386,41 @@ async fn await_fact(
 
 async fn guest_health(
     client: &InternalClient,
-    response: &sandproof_protocol::internal::lifecycle::LifecycleResponse,
+    response: &CreateObservation,
     root: &Path,
 ) -> Result<()> {
     // Same registered mTLS -> original host permit -> durably launched
     // namespace relay -> real guest envd. No native guest secret at center.
-    let LifecycleFact::Ready { max_end_at_ms, .. } = response.fact else {
+    let CurrentCreateReadiness::Observed { facts } = &response.readiness else {
         return Err("missing original Ready lifetime".into());
     };
     let deadline = tokio::time::Instant::now()
         + Duration::from_millis(
-            max_end_at_ms
+            facts
+                .max_end_at_ms
                 .checked_sub(now()?)
                 .ok_or("original maximum lifetime reached")?,
         );
+    let intent = &response.request;
+    let LifecycleOperation::Create {
+        target_incarnation, ..
+    } = &intent.request.operation
+    else {
+        return Err("health requires the original Create".into());
+    };
+    let binding = &intent.request.binding;
+    let identity = LifecycleAccessIdentity {
+        protocol_version: binding.protocol_version,
+        center: intent.center.clone(),
+        node: binding.node.clone(),
+        session: binding.session.clone(),
+        operation: binding.key.clone(),
+        accepted_version: intent.accepted_version,
+        incarnation: *target_incarnation,
+    };
     let health = client
         .stream_data(
-            &response.identity,
+            &identity,
             Request::get("/health").body(Body::empty())?,
             Arc::new(()),
             deadline,
@@ -323,7 +432,7 @@ async fn guest_health(
     write(
         &root.join("guest-health.json"),
         &serde_json::to_vec(&serde_json::json!({
-            "identity": response.identity,
+            "identity": identity,
             "path": "/health",
             "status": status.as_u16(),
         }))?,
@@ -355,18 +464,17 @@ mod tests {
     }
 }
 
-async fn center(path: &Path) -> Result<()> {
-    let cfg: CenterConfig = serde_json::from_slice(&fs::read(path)?)?;
-    let current = now()?;
-    let resources = cfg.binding.resources;
-    let state = checked(CenterState::new(
+fn center_state(cfg: &CenterConfig, current: u64) -> Result<CenterState> {
+    let resources = cfg.parameters.resources;
+    checked(CenterState::new(
         cfg.identity.deployment_id.clone(),
         Bounds {
             max_nodes: 1,
             max_templates_per_node: 1,
             max_sandboxes: 1,
-            operations_per_sandbox: 2,
+            operations_per_sandbox: 8,
             max_options_bytes: 1024,
+            result_retention_ms: cfg.result_retention_ms,
             platform: resources,
         },
         vec![NodeRegistration {
@@ -375,22 +483,36 @@ async fn center(path: &Path) -> Result<()> {
             identity: cfg.identity.clone(),
             limit: resources,
             mode: NodeMode::Accepting,
-            healthy_until_ms: current + 600_000,
+            healthy_until_ms: current
+                .checked_add(600_000)
+                .ok_or("health deadline exhausted")?,
             free: resources,
             templates: vec![AvailableTemplate {
-                revision: cfg.binding.template_revision.clone(),
-                digest: cfg.binding.template_digest,
+                revision: cfg.parameters.template_revision.clone(),
+                digest: cfg.parameters.template_digest,
             }],
-            protocol_version: 2,
+            protocol_version: sandproof_protocol::internal::INTERNAL_PROTOCOL_VERSION,
         }],
         vec![TenantBudget {
             tenant: "1".try_into()?,
             limit: resources,
         }],
-    ))?;
+        cfg.center.clone(),
+        vec![LifecycleWindow {
+            owner: "1".try_into()?,
+            window: 1.try_into()?,
+        }],
+    ))
+}
+
+async fn center(path: &Path) -> Result<()> {
+    let cfg: CenterConfig = serde_json::from_slice(&fs::read(path)?)?;
+    let current = now()?;
+    let resources = cfg.parameters.resources;
+    let state = center_state(&cfg, current)?;
     let config = StoreConfig::new(
         cfg.identity.deployment_id.clone(),
-        state.bounds().required_block_bytes(),
+        state.required_authority_bytes(),
         64 << 20,
         Duration::from_secs(5),
     )?;
@@ -409,12 +531,23 @@ async fn center(path: &Path) -> Result<()> {
         RegisteredEndpoint::new(cfg.host, "host.test".into(), cfg.identity)?,
         limits()?,
     ));
-    let mut binding = cfg.binding;
-    binding.startup_deadline_ms = current + 150_000;
-    let tenant = "1".try_into()?;
-    let create = checked(center.create(&tenant, binding, current))?;
+    let tenant: sandproof_protocol::TenantId = "1".try_into()?;
+    let key = OperationKey {
+        deployment: checked(center.state())?.deployment().clone(),
+        owner: tenant.clone(),
+        window: 1.try_into()?,
+        sequence: 1.try_into()?,
+    };
+    let create = checked(center.accept_lifecycle(
+        &tenant,
+        &LifecycleSubmission::Create {
+            key: key.clone(),
+            parameters: cfg.parameters,
+        },
+        current,
+    ))?;
     let running = async {
-        let response = await_fact(&mut center, &client, true).await?;
+        let response = await_ready(&mut center, &client, &create).await?;
         if checked(center.state())?.reserved(None, None) != Some(resources) {
             return Err("running reservation missing".into());
         }
@@ -434,8 +567,19 @@ async fn center(path: &Path) -> Result<()> {
     }
     .await;
     // Even a failed Ready assertion must request ORIGINAL durable destruction.
-    checked(center.destroy(&tenant, &create.identity.sandbox_id))?;
-    let cleaned = await_fact(&mut center, &client, false).await?;
+    let destroy = checked(center.accept_lifecycle(
+        &tenant,
+        &LifecycleSubmission::Destroy {
+            key: OperationKey {
+                sequence: 2.try_into()?,
+                ..key
+            },
+            session: create.request.binding.session.clone(),
+            expected_version: create.accepted_version,
+        },
+        0, // Destroy is explicitly clock-independent.
+    ))?;
+    let cleaned = await_cleaned(&mut center, &client, &destroy).await?;
     if checked(center.state())?.reserved(None, None) != Some(Resources::ZERO) {
         return Err("cleaned reservation still held".into());
     }

@@ -1,0 +1,29 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckEquality
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.CreateOwnerCheck
+open OwnerMapping
+abbrev existingRun := sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner
+abbrev existingLoop := sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner_loop
+abbrev existingBody := sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner_loop.body
+
+theorem existing_unfold (inbox : Inbox) (owner : sandproof_protocol.TenantId) (localOwner : U64) (index : Usize) :
+    existingLoop inbox owner localOwner index = (do
+      let step ← existingBody inbox owner localOwner index
+      match step with
+      | .done value => .ok value
+      | .cont next => existingLoop inbox owner localOwner next) := by
+  unfold existingLoop sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner_loop
+  rw [loop]
+  apply congrArg (Aeneas.Std.bind (existingBody inbox owner localOwner index))
+  funext step
+  cases step <;> rfl
+
+theorem existing_end (inbox : Inbox) (owner : sandproof_protocol.TenantId) (localOwner : U64) (index : Usize)
+    (outside : inbox.owners.val.length ≤ index.val) :
+    existingBody inbox owner localOwner index = .ok (.done (.Ok false)) := by
+  have stopped : ¬ index < alloc.vec.Vec.len inbox.owners := by scalar_tac
+  simp [existingBody, sandproof_controller_service.controller.lifecycle_inbox.check_existing_create_owner_loop.body, stopped]
+
+end SandboxModel.Stage1Protocol.CreateOwnerCheck
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.existing_unfold
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.existing_end

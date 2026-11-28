@@ -1,0 +1,60 @@
+import SandboxModel.Lifecycle.Protocol.RestoreWork.Cloning
+import SandboxModel.Lifecycle.Protocol.RestoreWork.Spec
+open Aeneas Aeneas.Std SandproofRestoreWorkRust
+namespace SandboxModel.Stage1Protocol.RestoreWork
+open controller.lifecycle_inbox.source_work
+/-- A constructor preserves values; its name supplies no durability premise. -/
+theorem expectation_constructor (work : capture.work.FullCaptureWorkRequest)
+    (digest : Digest) (action : Action) :
+    capture.CommittedCaptureExpectation.after_commit work digest action =
+      .ok ⟨work, digest, action⟩ := by rfl
+
+theorem request_constructor (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+    (source : capture.source.SourceObservationRequirement)
+    (committed : capture.CommittedCaptureExpectation)
+    (operation : sandbox_controller_core.ids.OperationId) (generation : U64) :
+    capture.restore.RestoreWorkRequest.from_claim intent source committed operation generation =
+      .ok ⟨intent, source, committed, operation, generation⟩ := by rfl
+
+/-- No precondition of authorization, physical existence, unique history or commit. -/
+theorem work_refines : FullWorkContract restore.work := by
+  intro record
+  cases hRestore : record.restore with
+  | none =>
+    simp [restore.work, expected, hRestore, core.option.Option.ok_or,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | some claim =>
+    cases hCapture : record.capture with
+    | none =>
+      simp [restore.work, expected, hRestore, hCapture, core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | some captured =>
+      cases hMaterial : claim.material_use with
+      | false =>
+        simp [restore.work, expected, hRestore, hCapture, hMaterial, core.option.Option.ok_or,
+          core.result.Result.Insts.CoreOpsTry.branch,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | true =>
+        cases hCompleted : captured.completed with
+        | none =>
+          simp [restore.work, expected, hRestore, hCapture, hMaterial, hCompleted,
+            core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+            core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | some digest =>
+          cases hAction : captured.action with
+          | none =>
+            simp [restore.work, expected, hRestore, hCapture, hMaterial, hCompleted,
+              hAction, core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+          | some action =>
+            simp [restore.work, expected, assembled, hRestore, hCapture, hMaterial,
+              hCompleted, hAction, capture.CommittedCaptureExpectation.after_commit,
+              capture.restore.RestoreWorkRequest.from_claim, core.option.Option.ok_or,
+              core.result.Result.Insts.CoreOpsTry.branch,
+              core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+end SandboxModel.Stage1Protocol.RestoreWork
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.expectation_constructor
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.request_constructor
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreWork.work_refines

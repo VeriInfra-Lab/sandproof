@@ -51,7 +51,8 @@ pub use controller::{
     InternalRetentionLane, InternalTemplate, InternalWorkState, LifecycleAudit,
     LifecycleAuditOperation, LifecycleCreateObservation, LifecycleInboxConfig, LifecycleReadyBasis,
     LifecycleReadyObservation, LifecycleRetentionLane, LifecycleWorkState, Lifetime,
-    MaintenanceConfig, NativeCreateSnapshot, RetirementCandidate, SourceWork, SourceWorkRecord,
+    MaintenanceConfig, MaterialRetirementQuestion, NativeCreateSnapshot, RetirementCandidate,
+    SourceWork, SourceWorkRecord,
 };
 
 #[cfg(feature = "durable")]
@@ -110,6 +111,9 @@ pub enum JournalError {
     Conflict,
     IdentifierExhausted,
     MaintenanceCapacity,
+    /// The exact Full material charge exceeded its configured limit before
+    /// this admission applied Pause or wrote Full responsibility.
+    CaptureMaterialQuotaExceeded,
     RevisionConflict,
     ReceiptBeforeDispatch,
     ConflictingReceipt,
@@ -153,6 +157,8 @@ impl Display for JournalError {
             Self::MaintenanceCapacity => {
                 formatter.write_str("configured maintenance capacity exhausted")
             }
+            Self::CaptureMaterialQuotaExceeded => formatter
+                .write_str("configured Full capture material quota exceeded before admission"),
             Self::IdentifierExhausted => {
                 formatter.write_str("controller identifier space exhausted")
             }

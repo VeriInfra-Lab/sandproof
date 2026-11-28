@@ -1,0 +1,142 @@
+import SandboxModel.InboxTransaction.CodecTransfer
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+set_option autoImplicit false
+
+namespace SandboxModel.StandardRecordIO
+noncomputable section
+open SandboxModel.StandardRecordCodec
+
+-- A view of the actual two dereferences, one library call, and original owner.
+-- It is not a database frame or a guarantee that an Err leaves SQL active.
+def borrowedView {D X A R : Type}
+    (observe : rusqlite.Connection → X → Result (A × R))
+    (before : Holder D) (input : X) : Result (A × Holder D) := do
+  let raw ← controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref before.tx
+  let connection ← rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref raw
+  let (reply, _) ← observe connection input
+  .ok (reply, before)
+
+theorem observed_borrow_returns_original_owner {D X A R : Type}
+    (observe : rusqlite.Connection → X → Result (A × R))
+    (before : Holder D) (input : X) (raw : rusqlite.transaction.Transaction)
+    (reply : A) (returnedReader : R)
+    (slot : before.tx.transaction = some raw)
+    (returned : observe raw.conn input = .ok (reply, returnedReader)) :
+    borrowedView observe before input = .ok (reply, before) := by
+  simp [borrowedView, controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref,
+    core.option.Option.expect, Result.ofOption,
+    rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref, slot, returned]
+
+theorem actual_query_i64_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : Str) :
+    sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_i64 codec before input =
+      borrowedView (fun connection arg =>
+        sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_i64
+          { connection } arg) before input := by
+  rfl
+
+theorem actual_query_bytes_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : Str) :
+    sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_bytes codec before input =
+      borrowedView (fun connection arg =>
+        sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_bytes
+          { connection } arg) before input := by
+  rfl
+
+theorem actual_query_bool_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : Str) :
+    sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bool codec before input =
+      borrowedView (fun connection arg =>
+        sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bool
+          { connection } arg) before input := by
+  rfl
+
+theorem actual_query_i64_pair_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : Str) :
+    sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_i64_pair codec before input =
+      borrowedView (fun connection arg =>
+        sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_i64_pair
+          { connection } arg) before input := by
+  rfl
+
+theorem actual_query_bytes_pair_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : Str) :
+    sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair codec before input =
+      borrowedView (fun connection arg =>
+        sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
+          { connection } arg) before input := by
+  rfl
+
+theorem actual_load_digest_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : Slice U8) :
+    sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest codec before input =
+      borrowedView (fun connection arg =>
+        sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest
+          { connection } arg) before input := by
+  rfl
+
+theorem actual_save_digest_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (input : Slice U8) :
+    sandproof_controller_service.controller.lifecycle_inbox.recording.StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest codec before input =
+      borrowedView (fun connection arg =>
+        sandproof_controller_service.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest
+          { connection } arg) before input := by
+  rfl
+
+def updateView {D : Type} (before : Holder D) (sql : Str) (bytes digest : Slice U8) :
+    Result (JournalReply Usize × Holder D) := do
+  let (reply, after) ← controller.transaction.WorldTransaction.execute_inbox_update
+    before.tx sql bytes digest
+  .ok (reply, { before with tx := after })
+
+theorem actual_update_call_contract {D : Type} (codec : RecordCodec D)
+    (before : Holder D) (sql : Str) (bytes digest : Slice U8) :
+    StandardRecord.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.update
+      codec before sql bytes digest = updateView before sql bytes digest := by
+  rfl
+
+theorem update_owner_retains_codec_and_namespace {D : Type}
+    (before : Holder D) (after : controller.transaction.WorldTransaction) :
+    ({ before with tx := after } : Holder D).codec = before.codec ∧
+      ({ before with tx := after } : Holder D).«namespace» = before.«namespace» := ⟨rfl, rfl⟩
+
+def mapSql {A : Type} (reply : SandproofSqliteSession.SqlReply A) : JournalReply A :=
+  match reply with
+  | .Ok value => .Ok value
+  | .Err error => .Err (.Sqlite error)
+
+-- Full returned raw transaction on both SQL Ok and SQL Err, rather than
+-- replacing the Err poststate by the pre-call transaction.
+theorem actual_update_returned_transaction
+    (before : controller.transaction.WorldTransaction) (raw after : rusqlite.transaction.Transaction)
+    (sql : Str) (bytes digest : Slice U8) (reply : SandproofSqliteSession.SqlReply Usize)
+    (slot : before.transaction = some raw)
+    (returned : controller.transaction.sqlite_io.execute_blobs raw sql bytes digest =
+      .ok (reply, after)) :
+    controller.transaction.WorldTransaction.execute_inbox_update before sql bytes digest =
+      .ok (mapSql reply, { before with transaction := some after }) := by
+  unfold controller.transaction.WorldTransaction.execute_inbox_update
+  simp only [slot]
+  rw [returned]
+  cases reply <;> simp [mapSql, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalErrorFromSqlite.from]
+
+end
+end SandboxModel.StandardRecordIO
+
+#audit_controller_proof SandboxModel.StandardRecordIO.observed_borrow_returns_original_owner
+#audit_controller_proof SandboxModel.StandardRecordIO.actual_query_i64_call_contract
+#audit_controller_proof SandboxModel.StandardRecordIO.actual_query_bytes_call_contract
+#audit_controller_proof SandboxModel.StandardRecordIO.actual_query_bool_call_contract
+#audit_controller_proof SandboxModel.StandardRecordIO.actual_query_i64_pair_call_contract
+#audit_controller_proof SandboxModel.StandardRecordIO.actual_query_bytes_pair_call_contract
+#audit_controller_proof SandboxModel.StandardRecordIO.actual_load_digest_call_contract
+#audit_controller_proof SandboxModel.StandardRecordIO.actual_save_digest_call_contract
+#audit_controller_proof SandboxModel.StandardRecordIO.actual_update_call_contract
+#audit_controller_proof SandboxModel.StandardRecordIO.update_owner_retains_codec_and_namespace
+#audit_controller_proof SandboxModel.StandardRecordIO.actual_update_returned_transaction

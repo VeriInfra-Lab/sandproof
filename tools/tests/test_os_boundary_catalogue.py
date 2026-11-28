@@ -3,11 +3,12 @@ import copy
 import unittest
 from pathlib import Path
 from tools.check_os_boundary_catalogue import CATALOGUE,read,validate
-ROOT=Path(__file__).resolve().parents[2]
+from tools.tests.proof_input_fixture import reference_root
+ROOT=reference_root()
 
 class OsBoundaryCatalogue(unittest.TestCase):
     def setUp(self):self.data=read(ROOT/CATALOGUE)
-    def test_exact_current_source_and_registered_families(self):
+    def test_exact_frozen_reference_and_registered_families(self):
         result=validate(ROOT,self.data)
         self.assertEqual(result['families'],25)
         self.assertEqual(result['compiled_variants'],60)

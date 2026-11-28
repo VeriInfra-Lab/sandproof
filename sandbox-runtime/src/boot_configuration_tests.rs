@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 
 fn config(networked: bool) -> RuntimeConfig {
     RuntimeConfig {
+        guest_instance_id: "guest-instance".into(),
         console_policy: None,
         host_slot: None,
         jailer: "/fixed/jailer".into(),
@@ -46,7 +47,8 @@ fn wire(networked: bool) -> Value {
 }
 
 fn check(config: &RuntimeConfig, value: &Value) -> Result<(), RuntimeError> {
-    BootPlan::for_runtime(config).check_full_configuration(&serde_json::to_vec(value).unwrap())
+    BootPlan::for_runtime(config)
+        .check_full_configuration(&serde_json::to_vec(value).unwrap(), false)
 }
 
 #[test]
@@ -109,6 +111,24 @@ fn changed_machine_boot_drive_network_and_mmds_fields_are_refused() {
 }
 
 #[test]
+fn restored_profile_only_accepts_tracking_when_its_intent_requested_it() {
+    let config = config(true);
+    let plan = BootPlan::for_runtime(&config);
+    let mut restored = wire(true);
+    restored["machine-config"]["track_dirty_pages"] = json!(true);
+    let restored_bytes = serde_json::to_vec(&restored).unwrap();
+    assert!(plan.check_full_configuration(&restored_bytes, true).is_ok());
+    assert!(
+        plan.check_full_configuration(&restored_bytes, false)
+            .is_err()
+    );
+    assert!(
+        plan.check_full_configuration(&serde_json::to_vec(&wire(true)).unwrap(), true)
+            .is_err()
+    );
+}
+
+#[test]
 fn unsupported_extra_devices_unknown_fields_and_duplicate_keys_are_refused() {
     let config = config(true);
     for field in [
@@ -167,7 +187,7 @@ fn unsupported_extra_devices_unknown_fields_and_duplicate_keys_are_refused() {
         assert_ne!(changed, original);
         assert!(
             BootPlan::for_runtime(&config)
-                .check_full_configuration(changed.as_bytes())
+                .check_full_configuration(changed.as_bytes(), false)
                 .is_err()
         );
     }
@@ -177,10 +197,10 @@ fn unsupported_extra_devices_unknown_fields_and_duplicate_keys_are_refused() {
 fn malformed_truncated_and_missing_required_reply_fields_are_refused() {
     let plan = BootPlan::for_runtime(&config(true));
     for bytes in [b"".as_slice(), b"{", b"null", b"[]"] {
-        assert!(plan.check_full_configuration(bytes).is_err());
+        assert!(plan.check_full_configuration(bytes, false).is_err());
     }
     assert!(
-        plan.check_full_configuration(&vec![b' '; 1_048_577])
+        plan.check_full_configuration(&vec![b' '; 1_048_577], false)
             .is_err()
     );
     for field in [

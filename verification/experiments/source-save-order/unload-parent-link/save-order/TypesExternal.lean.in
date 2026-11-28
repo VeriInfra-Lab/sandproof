@@ -1,0 +1,13 @@
+import SandproofStage1Request.Types
+
+namespace SandproofSourceSaveOrder
+
+abbrev core.io.error.Error := SandproofSqliteRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofSqliteRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofSqliteRust.serde_json.error.Error
+abbrev sandproof_protocol.ContractError := SandproofStage1RequestRust.sandproof_protocol.ContractError
+abbrev sandbox_controller_core.controller.ControllerReject :=
+  SandproofStage1RequestRust.sandbox_controller_core.controller.ControllerReject
+abbrev CrashPoint := SandproofStage1RequestRust.sandproof_controller_service.CrashPoint
+
+end SandproofSourceSaveOrder

@@ -1,0 +1,26 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.AnchorData
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData
+open Scalars CoreData CoreEffects
+
+theorem limits_eq (left right : capture.source.SourceObservationConfig) :
+    capture.source.SourceObservationConfig.Insts.CoreCmpPartialEqSourceObservationConfig.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [capture.source.SourceObservationConfig.Insts.CoreCmpPartialEqSourceObservationConfig.eq,
+    capture.source.SourceObservationConfig.mk.injEq, RequestEquality.ok_and]
+
+theorem requirement_eq (left right : capture.source.SourceObservationRequirement) :
+    capture.source.SourceObservationRequirement.Insts.CoreCmpPartialEqSourceObservationRequirement.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [capture.source.SourceObservationRequirement.Insts.CoreCmpPartialEqSourceObservationRequirement.eq,
+    wire_content_digest_eq, RequestEquality.node_eq, bootstrap_eq, resource_eq, process_eq, limits_eq,
+    capture.source.SourceObservationRequirement.mk.injEq, RequestEquality.ok_and]
+
+
+end SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.limits_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.SourceData.requirement_eq

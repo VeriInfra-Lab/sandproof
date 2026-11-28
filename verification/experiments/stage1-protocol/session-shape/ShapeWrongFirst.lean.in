@@ -1,0 +1,62 @@
+import SandboxModel.Lifecycle.Protocol.ShapePrior
+import SandboxModel.Lifecycle.Protocol.ShapeRefusal
+import SandboxModel.Lifecycle.Protocol.ShapeTerminal
+import SandboxModel.Lifecycle.Protocol.ShapeBoundaryValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.SessionShape.WrongFirst
+noncomputable section
+open scoped Classical
+
+theorem body_step (inbox : Inbox) (session : Session) (index next : Usize)
+    (inside : index.val < inbox.lanes.val.length) (added : next.val = index.val + 1) :
+    first_lane_window_matches_loop.body inbox session index = .ok
+      (if inbox.lanes.val[index.val].slot = session.retention.slot ∧
+          inbox.lanes.val[index.val].current_window = some session.retention.window then .done true
+       else .cont next) := by
+  obtain ⟨lane, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec inbox.lanes index inside)
+  simp [first_lane_window_matches_loop.body, alloc.vec.Vec.len, UScalar.lt_equiv,
+    inside, indexed, same, option_window_eq, index_add_one index next added]
+  split_ifs <;> simp_all
+
+theorem wrong_window_accepts : first_lane_window_matches Values.shadowed Values.normal = .ok true := by
+  have first := body_step Values.shadowed Values.normal 0#usize 1#usize (by decide) (by decide)
+  have second := body_step Values.shadowed Values.normal 1#usize 2#usize (by decide) (by decide)
+  simp [Values.shadowed, Values.inbox, Values.vector, Values.lane, Values.normal,
+    SavedRetirement.Values.normal, SavedRetirement.Values.createIntent, EnvelopeValues.intent] at first second
+  unfold first_lane_window_matches first_lane_window_matches_loop
+  conv_lhs => rw [loop]
+  erw [first]
+  simp only [bind_ok]
+  conv_lhs => rw [loop]
+  erw [second]
+  simp
+
+theorem wrong_accepts :
+    Inbox.validate_session_shape_using Values.savedEncoding Values.small Values.shadowed 0#usize Values.normal = .ok (.Ok ()) := by
+  have receipt : SavedRetirement.validateView Values.savedEncoding Values.normal = .ok (.Ok ()) := rfl
+  simp only [Inbox.validate_session_shape_using, SavedRetirement.validate_saved_spec, receipt,
+    core.result.Result.Insts.CoreOpsTry.branch, bind_tc_ok, wrong_window_accepts,
+    alloc.vec.Vec.is_empty, SandproofFoundationsRust.alloc.vec.Vec.is_empty,
+    prior_spec, option_some_spec, option_none_spec, lift, decide_eq_true_eq,
+    UScalar.lt_equiv, alloc.vec.Vec.len_val, core.convert.num.FromUsizeU16.from_val_eq]
+  simp [Values.shadowed, Values.inbox, Values.normal, Values.vector,
+    SavedRetirement.Values.normal, SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+
+theorem violates_full_contract :
+    ¬FullShapeContract (Inbox.validate_session_shape_using (R := Unit) (E := Unit)) := by
+  intro contract
+  have mismatch := contract Values.savedEncoding Values.small Values.shadowed 0#usize Values.normal
+  rw [wrong_accepts, Values.model_first_lane_rejection] at mismatch
+  simp [corrupt, SavedRetirement.corrupt] at mismatch
+
+end
+end SandboxModel.Stage1Protocol.SessionShape.WrongFirst
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.WrongFirst.body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.WrongFirst.wrong_window_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.WrongFirst.wrong_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.WrongFirst.violates_full_contract

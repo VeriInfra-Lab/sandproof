@@ -1,0 +1,70 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerSuccessorCommon
+import SandboxModel.Lifecycle.Protocol.OwnerMappingLibrary
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.CreateOwnerSuccessor
+open OwnerMapping
+
+theorem max_exists (sandbox : sandbox_controller_core.ids.SandboxId)
+    (records : Slice Record) (highest : U64) (index : Usize) :
+    ∃ result, maxLoop sandbox records highest index = .ok result ∧
+      result.val = maximumWithout sandbox highest.val (records.val.drop index.val) := by
+  by_cases within : index.val < records.val.length
+  · obtain ⟨next, addition, nextVal⟩ := next_counter index (by scalar_tac)
+    have item : Slice.index_usize records index = .ok records.val[index.val] := by
+      simp [Slice.index_usize, within]
+    have inside : index < Slice.len records := by scalar_tac
+    cases selected : records.val[index.val]'within with
+    | mk id row =>
+      by_cases same : id = sandbox
+      · obtain ⟨result, rest, resultVal⟩ := max_exists sandbox records highest next
+        refine ⟨result, ?_, ?_⟩
+        · rw [max_unfold]
+          simp only [maxBody, sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop.body,
+            inside, if_pos, item, bind_tc_ok]
+          rw [selected]
+          simp only [uncurry_apply_pair, sandbox_ne, bind_tc_ok, decide_eq_true_eq, ne_eq, same, not_true_eq_false, if_false]
+          simpa only [addition, bind_tc_ok] using rest
+        · rw [List.drop_eq_getElem_cons within, selected, maximum_without_cons]
+          simpa only [same, if_true, nextVal] using resultVal
+      · obtain ⟨middle, computed, middleVal⟩ := max_result highest row.owner
+        obtain ⟨result, rest, resultVal⟩ := max_exists sandbox records middle next
+        refine ⟨result, ?_, ?_⟩
+        · rw [max_unfold]
+          simp only [maxBody, sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop.body,
+            inside, if_pos, item, bind_tc_ok]
+          rw [selected]
+          simp only [uncurry_apply_pair, sandbox_ne, bind_tc_ok, decide_eq_true_eq, ne_eq, same, not_false_eq_true, if_true]
+          simpa only [computed, addition, bind_tc_ok] using rest
+        · rw [List.drop_eq_getElem_cons within, selected, maximum_without_cons]
+          simpa only [same, if_false, nextVal, middleVal] using resultVal
+  · refine ⟨highest, ?_, ?_⟩
+    · rw [max_unfold]
+      have outside : ¬ index < Slice.len records := by scalar_tac
+      simp [maxBody, sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor_loop.body,
+        outside]
+    · simp [List.drop_eq_nil_of_le (by omega : records.val.length ≤ index.val), maximum_without_nil]
+termination_by records.val.length - index.val
+
+theorem successor_complete : FullSuccessorContract run := by
+  intro inbox world sandbox
+  obtain ⟨highest, computed, highestVal⟩ := max_exists sandbox
+    (alloc.vec.Vec.deref world.sandboxes.entries) inbox.owner_high_water 0#usize
+  have val : highest.val = maximumWithout sandbox inbox.owner_high_water.val world.sandboxes.entries.val := by
+    simpa [alloc.vec.Vec.deref] using highestVal
+  simp only [run, sandproof_controller_service.controller.lifecycle_inbox.create_owner_successor,
+    sandbox_controller_core.model.World.sandbox_records,
+    sandbox_controller_core.store.Store.impl.entries, bind_tc_ok]
+  unfold maxLoop at computed
+  rw [computed]
+  simp only [bind_tc_ok, lift]
+  rw [allocation_checked]
+  unfold expected
+  rw [← val]
+  cases allocation highest.val <;>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+end SandboxModel.Stage1Protocol.CreateOwnerSuccessor
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.max_exists
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerSuccessor.successor_complete

@@ -1,0 +1,156 @@
+import SandboxModel.Lifecycle.Protocol.SavedLibrary
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandbox_controller_core.ids sandbox_controller_core.maintenance.retirement
+namespace SandboxModel.Stage1Protocol.SavedRetirement
+noncomputable section
+open scoped Classical
+
+theorem validate_saved_spec {E : Type} (encoding : RetirementEncoding E) (session : Session) :
+    validate_saved_using encoding session = validateView encoding session := by
+  unfold validate_saved_using validateView
+  cases present : session.native_retirement with
+  | none => rfl
+  | some saved =>
+    rw [last_saved_spec]
+    cases last : session.entries.val.getLast? with
+    | none =>
+      simp [core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        corrupt]
+    | some entry =>
+      simp only [bind_tc_ok, core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTry.branch, local_option_ne, operation_option_ne,
+        destroy_spec, decide_eq_true_eq]
+      simp only [bne_iff_ne, ne_eq, ite_not, ← ite_and, BeforeBinding]
+      by_cases before : BeforeBinding session saved entry
+      · unfold BeforeBinding at before
+        simp only [before]
+        unfold checkBinding
+        apply congrArg (fun continuation => Bind.bind (encoding.encode_intent entry.intent) continuation)
+        funext encoded
+        cases encoded with
+        | Err error =>
+          simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+            JournalError.Insts.CoreConvertFromError.from]
+        | Ok bytes =>
+          simp only [bind_tc_ok]
+          apply congrArg (fun continuation => Bind.bind (encoding.digest (alloc.vec.Vec.deref bytes)) continuation)
+          funext digest
+          simp only [digest_ne, status_ne, bind_tc_ok, decide_eq_true_eq]
+          simp [ReceiptFields,
+            core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+            SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+            TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+            OperationId.Insts.CoreCmpPartialEqOperationId.eq,
+            checkReceipt, corrupt]
+          simp only [← UScalar.eq_equiv, ← ite_and]
+          by_cases fields : saved.request_binding = digest ∧ ReceiptFields saved
+          · unfold ReceiptFields at fields
+            simp only [fields]
+            apply congrArg (fun continuation => Bind.bind (encoding.encode_receipt saved) continuation)
+            funext receipt
+            cases receipt with
+            | Err error =>
+              simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+                JournalError.Insts.CoreConvertFromError.from]
+            | Ok bytes =>
+              simp only [bind_tc_ok]
+              simp only [← not_le, ite_not]
+          · unfold ReceiptFields at fields
+            simp only [fields, ↓reduceIte]
+      · unfold BeforeBinding at before
+        simp only [before, ↓reduceIte, corrupt]
+
+theorem full_contract : FullSavedContract run := by
+  intro encoding session
+  exact validate_saved_spec encoding session
+
+theorem absent_ignores_encoding (encoding : Encoding) (session : Session)
+    (absent : session.native_retirement = none) : run encoding session = .ok (.Ok ()) := by
+  rw [full_contract]
+  simp [validateView, absent]
+
+theorem missing_last_ignores_encoding (encoding : Encoding) (session : Session)
+    (saved : NativeRetirementReceipt) (present : session.native_retirement = some saved)
+    (empty : session.entries.val.getLast? = none) : run encoding session = corrupt := by
+  rw [full_contract]
+  simp [validateView, present, empty]
+
+theorem prefix_rejects_before_encoding (encoding : Encoding) (session : Session)
+    (saved : NativeRetirementReceipt) (entry : Entry)
+    (present : session.native_retirement = some saved)
+    (last : session.entries.val.getLast? = some entry)
+    (wrong : ¬BeforeBinding session saved entry) : run encoding session = corrupt := by
+  rw [full_contract]
+  simp [validateView, present, last, wrong]
+
+theorem intent_json_error_precedes_receipt_fields (encoding : Encoding) (session : Session)
+    (saved : NativeRetirementReceipt) (entry : Entry) (error : serde_json.error.Error)
+    (present : session.native_retirement = some saved)
+    (last : session.entries.val.getLast? = some entry)
+    (before : BeforeBinding session saved entry)
+    (encoded : encoding.encode_intent entry.intent = .ok (.Err error)) :
+    run encoding session = .ok (.Err (.Json error)) := by
+  rw [full_contract]
+  simp [validateView, present, last, before, checkBinding, encoded]
+
+theorem fields_reject_before_receipt_encoding (encoding : Encoding) (session : Session)
+    (saved : NativeRetirementReceipt) (entry : Entry)
+    (bytes : alloc.vec.Vec U8) (digest : sandproof_protocol.lifecycle.digest.ContentDigest)
+    (present : session.native_retirement = some saved)
+    (last : session.entries.val.getLast? = some entry)
+    (before : BeforeBinding session saved entry)
+    (encoded : encoding.encode_intent entry.intent = .ok (.Ok bytes))
+    (digested : encoding.digest (alloc.vec.Vec.deref bytes) = .ok digest)
+    (wrong : ¬(saved.request_binding = digest ∧ ReceiptFields saved)) :
+    run encoding session = corrupt := by
+  rw [full_contract]
+  simp [validateView, present, last, before, checkBinding, encoded, digested, wrong]
+
+theorem receipt_json_error (encoding : Encoding) (session : Session)
+    (saved : NativeRetirementReceipt) (entry : Entry) (error : serde_json.error.Error)
+    (bytes : alloc.vec.Vec U8) (digest : sandproof_protocol.lifecycle.digest.ContentDigest)
+    (present : session.native_retirement = some saved)
+    (last : session.entries.val.getLast? = some entry)
+    (before : BeforeBinding session saved entry)
+    (encoded : encoding.encode_intent entry.intent = .ok (.Ok bytes))
+    (digested : encoding.digest (alloc.vec.Vec.deref bytes) = .ok digest)
+    (fields : saved.request_binding = digest ∧ ReceiptFields saved)
+    (receipt : encoding.encode_receipt saved = .ok (.Err error)) :
+    run encoding session = .ok (.Err (.Json error)) := by
+  rw [full_contract]
+  simp [validateView, present, last, before, checkBinding, encoded, digested,
+    fields, checkReceipt, receipt]
+
+theorem accepts_encoded_iff (encoding : Encoding) (session : Session)
+    (saved : NativeRetirementReceipt) (entry : Entry) (bytes receipt : alloc.vec.Vec U8)
+    (digest : sandproof_protocol.lifecycle.digest.ContentDigest)
+    (present : session.native_retirement = some saved)
+    (last : session.entries.val.getLast? = some entry)
+    (encoded : encoding.encode_intent entry.intent = .ok (.Ok bytes))
+    (digested : encoding.digest (alloc.vec.Vec.deref bytes) = .ok digest)
+    (encodedReceipt : encoding.encode_receipt saved = .ok (.Ok receipt)) :
+    run encoding session = .ok (.Ok ()) ↔
+      BeforeBinding session saved entry ∧ saved.request_binding = digest ∧
+      ReceiptFields saved ∧ receipt.val.length ≤ 8192 := by
+  rw [full_contract]
+  simp [validateView, present, last, checkBinding, encoded, digested,
+    checkReceipt, encodedReceipt, corrupt]
+  split_ifs <;> simp_all
+
+end
+end SandboxModel.Stage1Protocol.SavedRetirement
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.validate_saved_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.absent_ignores_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.missing_last_ignores_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.prefix_rejects_before_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.intent_json_error_precedes_receipt_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.fields_reject_before_receipt_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.receipt_json_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.accepts_encoded_iff

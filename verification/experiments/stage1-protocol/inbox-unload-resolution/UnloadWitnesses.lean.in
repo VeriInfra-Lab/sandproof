@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.UnloadProofs
+import SandboxModel.Lifecycle.Protocol.UnloadValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+namespace SandboxModel.Stage1Protocol.UnloadResolution
+open scoped Classical
+noncomputable section
+
+theorem normal_witnesses :
+    run Values.encode Values.before = .ok (.Ok ()) ∧
+    run Values.encode Values.after = .ok (.Ok ()) ∧
+    run Values.encode Values.beforeNoResult = .ok (.Ok ()) := by
+  simp only [full_contract Values.encode]
+  exact ⟨Values.expected_outcomes.1, Values.expected_outcomes.2.1,
+    Values.expected_outcomes.2.2.1⟩
+
+theorem field_omission_rejections :
+    run Values.encode Values.wrongPhase = .ok corrupt ∧
+    run Values.encode Values.wrongOperation = .ok corrupt ∧
+    run Values.encode Values.wrongMaximum = .ok corrupt := by
+  simp only [full_contract Values.encode]
+  exact ⟨Values.expected_outcomes.2.2.2.1, Values.expected_outcomes.2.2.2.2.1,
+    Values.expected_outcomes.2.2.2.2.2.1⟩
+
+theorem original_weak_fields_and_boundaries :
+    run Values.encode Values.weakSnapshot = .ok (.Ok ()) ∧
+    run Values.encode Values.equalityBoundaries = .ok (.Ok ()) := by
+  simp only [full_contract Values.encode]
+  exact Values.expected_outcomes.2.2.2.2.2.2
+
+end
+end SandboxModel.Stage1Protocol.UnloadResolution
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.normal_witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.field_omission_rejections
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.original_weak_fields_and_boundaries

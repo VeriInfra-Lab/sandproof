@@ -1,0 +1,36 @@
+{
+  "origin-binding": {
+    "source": "controller-service/src/controller/lifecycle_inbox/source_work/full.rs",
+    "sha256": "7f3ffaee2742bb9eee9b091e24b3962627e5d56f518ff81a67b15358942ec14d",
+    "edits": [
+      {
+        "before": "operation: self.request().request.binding.clone(),",
+        "after": "operation: self.anchor.execution_origin.request.binding.clone(),"
+      }
+    ]
+  },
+  "native-incarnation": {
+    "source": "controller-service/src/controller/lifecycle_inbox/source_work/full.rs",
+    "sha256": "fcfa6d264f1a326b193c4f250ef6aaf47d863b5f1ab126835abfa0fc1e98c8c5",
+    "edits": [
+      {
+        "before": "            source_incarnation,\n            capture: capture_id,",
+        "after": "            source_incarnation: _source_incarnation,\n            capture: capture_id,"
+      },
+      {
+        "before": "                source_incarnation,",
+        "after": "                source_incarnation: sandproof_protocol::lifecycle::IncarnationId::try_from(\n                    self.anchor.native.generation,\n                )\n                .map_err(|_| JournalError::Conflict)?,"
+      }
+    ]
+  },
+  "options-binding": {
+    "source": "controller-service/src/controller/lifecycle_inbox/source_work/full.rs",
+    "sha256": "0aaf0e0bb8c09ac75bb0e9e98720efd6936ac2128b04568f9989191f98eea0ee",
+    "edits": [
+      {
+        "before": "source_work_binding: self.requirement.work_binding,",
+        "after": "source_work_binding: self.anchor.options_sha256,"
+      }
+    ]
+  }
+}

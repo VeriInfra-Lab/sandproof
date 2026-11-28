@@ -1,0 +1,24 @@
+import SandproofStage1CreateAttachment.Types
+import SandboxModel.Foundations.IdentifierModel
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateFixedIdentity
+open SandproofStage1CreateAttachmentRust
+
+def rendered (text : String) (sandbox : U64) : String :=
+  "sb-" ++ text ++ "-" ++ toString sandbox.val
+
+def expected (text : String) (sandbox : U64) :
+    core.result.Result String sandproof_controller_service.JournalError :=
+  if SandboxModel.Foundations.opaqueValid (rendered text sandbox)
+  then .Ok (rendered text sandbox)
+  else .Err (.Contract .InvalidIdentifier)
+
+def FullIdentityContract (actual : Str → U64 →
+    Result (core.result.Result String sandproof_controller_service.JournalError)) : Prop :=
+  ∀ (value : Str) (text : String) (sandbox : U64),
+    value.val = SandproofFoundationsRust.IdentifierLibrary.stringBytes text →
+    SandproofFoundationsRust.IdentifierLibrary.StringRepresentable (rendered text sandbox) →
+    actual value sandbox = .ok (expected text sandbox)
+
+end SandboxModel.Stage1Protocol.CreateFixedIdentity

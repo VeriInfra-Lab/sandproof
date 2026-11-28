@@ -1,0 +1,118 @@
+--- a/verification/experiments/stage1-protocol/registered.py
++++ b/verification/experiments/stage1-protocol/registered.py
+@@ -324,17 +324,26 @@
+     *((('stage1-' + name), str(HERE/name/'native.py'), False) for name in INBOX_CASES
+       if name != 'inbox-record-total'),
+     *CREATE_NATIVE_DRIVERS,
++    ('stage1-standard-blob', str(HERE/'standard-blob/native.py'), False),
+ )
+ CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
+ NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
+     'stage1-protocol-'+name for name in CRATE_CASES)
+-AUDIT_TEMPLATE_COUNT = 419
+-AUDIT_DECLARATION_COUNT = 1723
++AUDIT_TEMPLATE_COUNT = 438
++AUDIT_DECLARATION_COUNT = 1800
+ 
+ 
+ def native_labels(profile='full'):
+     return (tuple(label for label, _, _ in CREATE_NATIVE_DRIVERS)
+             if check_profile(profile) == 'create-delivery' else NATIVE_CASES)
++
++
++def _standard_blob(root=ROOT):
++    spec = importlib.util.spec_from_file_location('registered_standard_blob',
++        root/HERE/'standard-blob/registration.py')
++    component = importlib.util.module_from_spec(spec)
++    spec.loader.exec_module(component)
++    return component
+ 
+ 
+ def _shared():
+@@ -630,6 +639,10 @@
+     for label, driver, needs_archive in drivers:
+         output = work/label
+         args = ['--output', output]
++        if label == 'stage1-standard-blob':
++            component_lock = work/'standard-blob-component.lock'
++            component_lock.touch(exist_ok=True)
++            args += ['--lock', component_lock]
+         if needs_archive:
+             args += ['--source-archive', archive, '--target', target]
+ 
+@@ -639,11 +652,15 @@
+             result = _read(output/'result.json')
+             if result.get(success_field) is not True:
+                 raise ValueError('original native driver did not complete: ' + str(driver))
++            if str(driver) == str(HERE/'standard-blob/native.py'):
++                _standard_blob(root).check_native(result, root, output)
+             if str(driver) in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
+                 _check_create_native_result(root, Path(driver).parent.name, output, result)
+ 
+         receipt = shared.native_case(label, root, output, action, scope=scope)
+         original = _original_file(receipt, 'result.json')
++        if driver == str(HERE/'standard-blob/native.py'):
++            _standard_blob(root).check_native(_read(original), root, original.parent)
+         if driver in {path for _, path, _ in CREATE_NATIVE_DRIVERS}:
+             _check_create_native_result(root, Path(driver).parent.name, original.parent, _read(original))
+         receipts[label] = receipt
+@@ -791,10 +808,15 @@
+         for variant in variants:
+             add(name+'-'+variant, HERE/name/'formal.py', ['--require-native', '--variant', variant],
+                 native=labels, cases=(variant,))
++    add('standard-blob', HERE/'standard-blob/formal.py',
++        native=('stage1-standard-blob',), cases=('actual', 'repeat-first', 'second-error-first'))
++    jobs[-1]['four_cpu_component'] = True
+     return _append_create_jobs(jobs, output, root, profile)
+ 
+ 
+ def _actuals(result):
++    if result.get('kind') == 'current-standard-blob-and-original-load-domain-development':
++        return [row.get('actual', {}) for row in result.get('views', {}).values()]
+     if result.get('kind') in CREATE_KINDS.values():
+         return [row.get('actual', {}) for row in result.get('views', result.get('variants', {})).values()]
+     if 'cases' in result:
+@@ -805,6 +827,9 @@
+ def _check_actual(result, job):
+     if result.get('complete') is not True:
+         raise ValueError('original formal driver incomplete: ' + job['name'])
++    if job['name'] == 'standard-blob':
++        _standard_blob().check(result, ROOT)
++        return
+     if 'create_package' in job:
+         if (result.get('kind') != job['expected_kind'] or result.get('prepare_only')
+                 or result.get('selected_variant') is not None):
+@@ -1415,7 +1440,7 @@
+         seed_sha256 = hashlib.sha256(content).hexdigest()
+     args = list(job['args'])
+     pass_fds = ()
+-    if 'create_package' in job:
++    if 'create_package' in job or job.get('four_cpu_component'):
+         fd, lock = inherited_lock()
+         pass_fds = (fd,)
+         args += ['--lock', lock['path'], '--lock-fd', str(fd)]
+@@ -1425,13 +1450,13 @@
+     env = dict(os.environ, SANDPROOF_FORMAL_CACHE=str(directory/'runtime-cache'),
+                CARGO_TARGET_DIR=str(directory/'cargo-target'), PYTHONDONTWRITEBYTECODE='1')
+     transport = dict(pass_fds=pass_fds) if pass_fds else {}
+-    if 'create_package' in job:
++    if 'create_package' in job or job.get('four_cpu_component'):
+         transport.update(cpu_affinity=cpu_affinity, cpu_admission=directory/'cpu-admission.json')
+     argv = _invoke(root, Path(job['driver']), args, env, log=directory/'command.log', **transport)
+     row = dict(name=job['name'], argv=argv, result_path=str(Path(job['output'])/'result.json'),
+                 seconds=time.monotonic()-started, command_log=str(directory/'command.log'),
+                 runtime_seed_sha256=seed_sha256)
+-    if 'create_package' in job:
++    if 'create_package' in job or job.get('four_cpu_component'):
+         admission = directory/'cpu-admission.json'
+         row.update(cpu_admission=_check_cpu_admission(admission, cpu_affinity),
+                    cpu_admission_path=str(admission), cpu_admission_sha256=_sha(admission))
+@@ -1485,7 +1510,7 @@
+             while pending and len(inflight) < jobs and not stopped:
+                 job = pending.pop(0)
+                 slot = free_slots.pop(0)
+-                options = dict(cpu_affinity=slots[slot]) if 'create_package' in job else {}
++                options = dict(cpu_affinity=slots[slot]) if ('create_package' in job or job.get('four_cpu_component')) else {}
+                 future = executor.submit(_launch_job, root, job, output/'execution'/job['name'], paths,
+                                          runtime_seed, **options)
+                 inflight[future] = (job, slot)

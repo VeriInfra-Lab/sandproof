@@ -65,7 +65,7 @@ fn request() -> AcceptedLifecycleIntent {
         accepted_version: 1,
         request: LifecycleRequest {
             binding: OperationBinding {
-                protocol_version: 3,
+                protocol_version: sandproof_protocol::lifecycle::PROTOCOL_VERSION,
                 node: config.node.clone(),
                 session: "session-a".try_into().unwrap(),
                 key: OperationKey {
@@ -89,8 +89,52 @@ fn application(
     physical: Arc<Mutex<local::State>>,
     provision: bool,
 ) -> Arc<Application> {
-    let reserve = local::complete_fixture::CLEANUP_BYTES + 1000;
-    let maintenance = local::complete_fixture::maintenance();
+    let inbox = configuration();
+    let source = sandproof_controller_service::capture::SourceObservationConfig {
+        max_work_bytes: 4096,
+        max_configuration_bytes: 1024,
+        max_executable_bytes: 67_108_864,
+        max_kernel_bytes: 268_435_456,
+        max_material_bytes: 64 * 1024 * 1024 * 1024,
+        max_disk_bytes: 2 * 1024 * 1024,
+    };
+    // This producer admits M=2 sessions, retains the original 128 total
+    // result limit and 64 host positions, and now supports the N=8 graph.
+    // SourceWork is Q=M*(N-2) reserved rows, each including its GC envelope.
+    let source_row = u64::from(source.max_work_bytes)
+        + 4 * u64::from(source.max_configuration_bytes)
+        + 8192
+        + 131_072
+        + 4 * 16_384
+        + 4096
+        + 8192;
+    let mut maintenance = local::complete_fixture::maintenance();
+    maintenance.max_operations_per_sandbox = 8;
+    maintenance.max_checkpoint_bytes = 16 * 1024 * 1024;
+    maintenance.max_references = 2 * 1024 * 1024;
+    let cap = maintenance.capacity.as_mut().unwrap();
+    cap.max_sql_bytes = 64 * 1024 * 1024;
+    cap.max_sql_value_bytes = inbox.required_bytes().max(source_row);
+    // Original SQLite validator's coupled database/WAL/SHM/scratch formula.
+    let page = 4096_u64;
+    let mib = 1024 * 1024;
+    cap.max_database_bytes = (8
+        * (cap.max_sql_bytes
+            + 2 * maintenance.max_checkpoint_bytes
+            + 2 * maintenance.max_tail_bytes)
+        + (8 * (cap.max_sql_rows + 2 * maintenance.max_tail_inputs + 2) + 64) * page)
+        .next_power_of_two();
+    let frame = page + 24;
+    cap.max_wal_bytes =
+        (32 + cap.max_database_bytes / page * frame + 65536 + frame).div_ceil(mib) * mib;
+    let frames = cap.max_wal_bytes.div_ceil(frame);
+    cap.max_shm_bytes = (frames.div_ceil(4062) * 32768).div_ceil(mib) * mib;
+    cap.checkpoint_scratch_bytes = 2 * maintenance.max_checkpoint_bytes;
+    cap.max_online_storage_bytes = cap.max_database_bytes
+        + cap.max_wal_bytes
+        + cap.max_shm_bytes
+        + cap.checkpoint_scratch_bytes;
+    let reserve = cap.max_online_storage_bytes + 1000;
     let mut journal = ControllerJournal::open_complete(
         path,
         NAMESPACE,
@@ -101,17 +145,7 @@ fn application(
     .unwrap();
     if provision {
         journal
-            .initialize_lifecycle_inbox(
-                configuration(),
-                sandproof_controller_service::capture::SourceObservationConfig {
-                    max_work_bytes: 4096,
-                    max_configuration_bytes: 1024,
-                    max_executable_bytes: 67_108_864,
-                    max_kernel_bytes: 268_435_456,
-                    max_disk_bytes: 2 * 1024 * 1024,
-                },
-                &mut NeverCrash,
-            )
+            .initialize_lifecycle_inbox(inbox, source, &mut NeverCrash)
             .unwrap();
     }
     Arc::new(

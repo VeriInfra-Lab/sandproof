@@ -198,6 +198,7 @@ mod tests {
             let path = std::path::PathBuf::from(path);
             let owner = fs::metadata(path.join("private/secret")).unwrap().uid();
             check_search_only_ancestor(&path, owner);
+            eprintln!("SANDPROOF_SEARCH_ONLY_ASSERTIONS_PASSED");
             return;
         }
         let (dir, owner) = fixture();
@@ -219,7 +220,7 @@ mod tests {
             let binary = dir.path().join("permission-test");
             fs::copy(std::env::current_exe().unwrap(), &binary).unwrap();
             fs::set_permissions(&binary, fs::Permissions::from_mode(0o555)).unwrap();
-            let status = std::process::Command::new(binary)
+            let output = std::process::Command::new(binary)
                 .args([
                     "--exact",
                     "protected_files::tests::search_only_ancestors_do_not_require_directory_read_permission",
@@ -228,9 +229,18 @@ mod tests {
                 .env(CHILD_ROOT, &ancestor)
                 .uid(SERVICE_UID)
                 .gid(SERVICE_UID)
-                .status()
+                .output()
                 .unwrap();
-            assert!(status.success(), "unprivileged directory probe failed");
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stderr)
+                    .lines()
+                    .any(|line| line == "SANDPROOF_SEARCH_ONLY_ASSERTIONS_PASSED")
+            );
         } else {
             // A user's own 0711 directory remains readable by that owner. Mode
             // 0111 models the same search-only DAC without requiring chown.

@@ -1,0 +1,202 @@
+import SandboxModel.Lifecycle.Protocol.CreateObservationEquality
+import SandboxModel.Lifecycle.Protocol.CreateObservationModel
+import SandboxModel.Lifecycle.Protocol.CreateConversionBindings
+import SandboxModel.Lifecycle.Protocol.ResumeBindings
+import SandboxModel.Lifecycle.Protocol.RenewalResultBindings
+
+/-! Complete refinement of the actual Create guard on decoded values.
+Uses the separately reviewed conversion representation and Result tag candidates;
+no authentication, journal durability or physical readiness follows. -/
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.internal sandproof_protocol.lifecycle.authority
+open sandproof_protocol.lifecycle.identity sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.observation
+namespace SandboxModel.Stage1Protocol.CreateBinding
+open Validation ReadyFacts
+
+theorem conversion_root_exact (value : I64) :
+    create_signed_deadline value = U64.Insts.CoreConvertTryFromI64TryFromIntError.try_from value := by rfl
+
+theorem renewed_facts_refines (facts : CurrentReadyFacts) (original current : AcceptedLifecycleIntent) :
+    ready_matches_create_renewal facts original current =
+      .ok (by classical exact decide (RenewedFacts facts original current)) := by
+  classical
+  rcases original with ⟨⟨binding, operation⟩, version, center, retention⟩
+  rcases current with ⟨⟨currentBinding, currentOperation⟩, currentVersion, currentCenter, currentRetention⟩
+  cases operation <;> cases currentOperation <;>
+    simp [ready_matches_create_renewal, CurrentReadyFacts.matches_renewed,
+      RenewedFacts, CreateConversion.actual_result, Timing,
+      IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq,
+      PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq,
+      Library.option_u64_eq, lift]
+  rename_i create target incarnation deadline extend
+  by_cases nonnegative : 0 ≤ deadline.val
+  · have comparisons := cast_comparisons deadline facts.end_at_ms nonnegative
+    have bounded : deadline.val < 18446744073709551616 := by scalar_tac
+    have remainder := Int.emod_eq_of_lt nonnegative bounded
+    cases extend <;> simp [nonnegative, comparisons.2, remainder,
+      Replay.ok_and, Bool.and_left_comm]
+  · simp [nonnegative]
+
+theorem renewed_facts_body_refines (facts : CurrentReadyFacts) (original current : AcceptedLifecycleIntent) :
+    CurrentReadyFacts.matches_renewed facts original current =
+      .ok (by classical exact decide (RenewedFacts facts original current)) :=
+  renewed_facts_refines facts original current
+
+theorem continued_facts_refines (facts : CurrentReadyFacts) :
+    sandproof_protocol.lifecycle.observation.continued_facts facts =
+      .ok (by classical exact decide (Timing facts)) := ReadyFacts.timing_refines facts
+
+theorem operation_rebuild (intent : AcceptedLifecycleIntent) (operation : LifecycleOperation)
+    (same : intent.request.operation = operation) :
+    { intent with request := { intent.request with operation := operation } } = intent := by
+  rw [← same]
+
+theorem create_facts_body_refines (facts : CurrentReadyFacts) (intent : AcceptedLifecycleIntent) :
+    CurrentReadyFacts.matches_create facts intent =
+      .ok (by classical exact decide (CreateMatches facts intent)) := ReadyFacts.create_refines facts intent
+
+theorem version_eq_bind (intent : AcceptedLifecycleIntent) (next : Bool → Result Bool) :
+    (do let version ← AcceptedLifecycleIntent.accepted_version_for_request intent
+        let good ← core.option.Option.Insts.CoreCmpPartialEqOption.eq core.cmp.PartialEqU64
+          version (some intent.accepted_version)
+        next good) = next (by classical exact decide (versionOK intent)) := by
+  rw [← bind_assoc_eq, version_comparison]
+  simp
+
+theorem non_refused_matches_refines (observation : CreateObservation) (original : AcceptedLifecycleIntent)
+    (not_refused : ∀ reason, observation.readiness ≠ .Refused reason) :
+    create_matches_request observation original =
+      .ok (by classical exact decide (Matches observation original)) := by
+  classical
+  rcases observation with ⟨request, current, history, readiness⟩
+  cases ho : original.request.operation <;>
+    simp only [create_matches_request, CreateObservation.matches_request, ho]
+  all_goals
+    simp [Matches, Header, ho, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      Replay.accepted_eq, Replay.center_eq, Replay.retention_eq, Replay.node_eq,
+      sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+      sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+      SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+      sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+      alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+      SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+      validate_body_refines, RenewalResultTag.actual_is_err]
+  cases hrc : expectedResult current.request original.request.binding.node <;>
+    simp [hrc, RenewalResultTag.IsError, ← expected_success_iff]
+  rename_i create target value
+  cases value
+  have restoreOriginal := operation_rebuild original _ ho
+  by_cases same : current = original
+  · subst current
+    cases readiness <;> try { exact False.elim (not_refused _ rfl) }
+    all_goals simp [Body, SameReadiness, restoreOriginal,
+      create_facts_body_refines, ok_unless, Replay.ok_and]
+  · cases hc : current.request.operation <;> cases readiness <;>
+      try { exact False.elim (not_refused _ rfl) }
+    all_goals simp only [hc, Body, same, SameReadiness, ContinuedReadiness, RenewReadiness]
+    all_goals have restoreCurrent := operation_rebuild current _ hc
+    all_goals simp [same, restoreOriginal, restoreCurrent, CreateEquality.readiness_eq,
+      version_eq_bind, Replay.expected_eq, Replay.key_eq,
+      ResumeBinding.continued_refines, continued_facts_refines, renewed_facts_body_refines,
+      ok_unless, Replay.ok_and]
+
+theorem refused_matches_refines (request current : AcceptedLifecycleIntent) (history : Bool)
+    (reason : CreateRefusalReason) (original : AcceptedLifecycleIntent) :
+    create_matches_request ⟨request, current, history, .Refused reason⟩ original =
+      .ok (by classical exact decide (Matches ⟨request, current, history, .Refused reason⟩ original)) := by
+  classical
+  cases ho : original.request.operation <;>
+    simp only [create_matches_request, CreateObservation.matches_request, ho]
+  all_goals
+    simp [Matches, Header, ho, core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      Replay.accepted_eq, Replay.center_eq, Replay.retention_eq, Replay.node_eq,
+      sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+      sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+      SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+      sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+      alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+      SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+      validate_body_refines, RenewalResultTag.actual_is_err]
+  cases hrc : expectedResult current.request original.request.binding.node <;>
+    simp [hrc, RenewalResultTag.IsError, ← expected_success_iff]
+  rename_i create target value
+  cases value
+  have restoreOriginal := operation_rebuild original _ ho
+  have restoreRequest : { original.request with operation := .Create create target } = original.request := by
+    rw [← ho]
+  have one : (original.accepted_version = 1#u64) ↔ original.accepted_version.val = 1 := by scalar_tac
+  simp only [restoreOriginal]
+  cases he : original.request.binding.expected <;>
+    simp [Body, Refused, he, AcceptedLifecycleIntent.accepted_version_for_request,
+      Library.option_u64_eq, Replay.expected_eq, versionOK, restoreRequest, one]
+  cases hor : expectedResult original.request original.request.binding.node <;>
+    simp [hor, ← expected_success_iff]
+  by_cases same : current = original
+  · subst current
+    simp [one, ok_unless, Replay.ok_and]
+  · cases hc : current.request.operation <;> cases hec : current.request.binding.expected <;>
+      simp [same, ResumeBinding.Newer, Replay.key_eq,
+        ok_unless, Replay.ok_and, Bool.and_assoc]
+    all_goals rw [Bool.and_comm (y := !decide (current.request.binding.key = original.request.binding.key))]
+    all_goals try simp only [eq_comm (a := 1#u64) (b := current.accepted_version)]
+    -- Cancel the shared Boolean header; compare the final version propositions.
+    all_goals congr 14
+    all_goals exact decide_eq_decide.mpr Iff.rfl
+
+theorem matches_refines (observation : CreateObservation) (original : AcceptedLifecycleIntent) :
+    create_matches_request observation original =
+      .ok (by classical exact decide (Matches observation original)) := by
+  rcases observation with ⟨request, current, history, readiness⟩
+  cases readiness
+  case Refused reason => exact refused_matches_refines request current history reason original
+  all_goals
+    apply non_refused_matches_refines
+    intro reason equality
+    cases equality
+
+theorem matches_complete : FullContract create_matches_request := matches_refines
+
+theorem accepts_iff (observation : CreateObservation) (original : AcceptedLifecycleIntent) :
+    create_matches_request observation original = .ok true ↔ Matches observation original := by
+  classical
+  simp [matches_refines]
+
+theorem rejects_iff (observation : CreateObservation) (original : AcceptedLifecycleIntent) :
+    create_matches_request observation original = .ok false ↔ ¬ Matches observation original := by
+  classical
+  simp [matches_refines]
+
+theorem accepts_preserves_header (observation : CreateObservation) (original : AcceptedLifecycleIntent)
+    (accepted : create_matches_request observation original = .ok true) : Header observation original :=
+  (accepts_iff observation original |>.mp accepted).1
+
+theorem accepts_preserves_full_request (observation : CreateObservation) (original : AcceptedLifecycleIntent)
+    (accepted : create_matches_request observation original = .ok true) : observation.request = original :=
+  (accepts_preserves_header observation original accepted).1
+
+theorem refused_has_no_historical_success (request current original : AcceptedLifecycleIntent)
+    (history : Bool) (reason : CreateRefusalReason)
+    (accepted : create_matches_request ⟨request, current, history, .Refused reason⟩ original = .ok true) :
+    history = false :=
+  (accepts_iff _ _ |>.mp accepted).2.1
+
+end SandboxModel.Stage1Protocol.CreateBinding
+
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.conversion_root_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.renewed_facts_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.renewed_facts_body_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.continued_facts_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.operation_rebuild
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.create_facts_body_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.version_eq_bind
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.non_refused_matches_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.refused_matches_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.matches_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.matches_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.rejects_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.accepts_preserves_header
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.accepts_preserves_full_request
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateBinding.refused_has_no_historical_success

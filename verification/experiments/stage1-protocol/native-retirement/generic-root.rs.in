@@ -1,0 +1,6 @@
+#[cfg_attr(not(test), expect(dead_code, reason = "selected by fixed Charon"))]
+pub(super) fn proof_native_retirement_saved<E: RetirementEncoding>(
+    session: &Session,
+) -> Result<(), JournalError> {
+    validate_saved_using::<E>(session)
+}

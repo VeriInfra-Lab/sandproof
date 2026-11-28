@@ -1,0 +1,103 @@
+{
+  "kind": "all-overlapping-original-enum-extraction-name-metadata",
+  "enum_count": 16,
+  "mappings": [
+    {
+      "source": "controller-core/src/auxiliary.rs",
+      "original_name": "AuxiliaryReject",
+      "extraction_name": "ReadAuxiliaryReject",
+      "rust_name": "sandbox_controller_core::auxiliary::AuxiliaryReject"
+    },
+    {
+      "source": "controller-core/src/capture/continuation.rs",
+      "original_name": "CaptureReject",
+      "extraction_name": "ReadCaptureReject",
+      "rust_name": "sandbox_controller_core::capture::continuation::CaptureReject"
+    },
+    {
+      "source": "controller-core/src/worker.rs",
+      "original_name": "WorkerReject",
+      "extraction_name": "ReadWorkerReject",
+      "rust_name": "sandbox_controller_core::worker::WorkerReject"
+    },
+    {
+      "source": "controller-core/src/scheduler.rs",
+      "original_name": "SchedulerReject",
+      "extraction_name": "ReadSchedulerReject",
+      "rust_name": "sandbox_controller_core::scheduler::SchedulerReject"
+    },
+    {
+      "source": "controller-core/src/request.rs",
+      "original_name": "Reject",
+      "extraction_name": "ReadReject",
+      "rust_name": "sandbox_controller_core::request::Reject"
+    },
+    {
+      "source": "controller-core/src/recovery_monitor.rs",
+      "original_name": "RuntimeReject",
+      "extraction_name": "ReadRuntimeReject",
+      "rust_name": "sandbox_controller_core::recovery_monitor::RuntimeReject"
+    },
+    {
+      "source": "controller-core/src/publication.rs",
+      "original_name": "PublicationReject",
+      "extraction_name": "ReadPublicationReject",
+      "rust_name": "sandbox_controller_core::publication::PublicationReject"
+    },
+    {
+      "source": "controller-core/src/maintenance/windows.rs",
+      "original_name": "WindowReject",
+      "extraction_name": "ReadWindowReject",
+      "rust_name": "sandbox_controller_core::maintenance::windows::WindowReject"
+    },
+    {
+      "source": "controller-core/src/maintenance/slots.rs",
+      "original_name": "SlotReject",
+      "extraction_name": "ReadSlotReject",
+      "rust_name": "sandbox_controller_core::maintenance::slots::SlotReject"
+    },
+    {
+      "source": "controller-core/src/maintenance/retirement.rs",
+      "original_name": "RetirementReject",
+      "extraction_name": "ReadRetirementReject",
+      "rust_name": "sandbox_controller_core::maintenance::retirement::RetirementReject"
+    },
+    {
+      "source": "controller-core/src/maintenance.rs",
+      "original_name": "MaintenanceReject",
+      "extraction_name": "ReadMaintenanceReject",
+      "rust_name": "sandbox_controller_core::maintenance::MaintenanceReject"
+    },
+    {
+      "source": "controller-core/src/effect.rs",
+      "original_name": "EffectReject",
+      "extraction_name": "ReadEffectReject",
+      "rust_name": "sandbox_controller_core::effect::EffectReject"
+    },
+    {
+      "source": "controller-core/src/controller.rs",
+      "original_name": "ControllerReject",
+      "extraction_name": "ReadControllerReject",
+      "rust_name": "sandbox_controller_core::controller::ControllerReject"
+    },
+    {
+      "source": "sandbox-protocol/src/lib.rs",
+      "original_name": "ContractError",
+      "extraction_name": "ReadContractError",
+      "rust_name": "sandproof_protocol::ContractError"
+    },
+    {
+      "source": "controller-service/src/lib.rs",
+      "original_name": "CrashPoint",
+      "extraction_name": "ReadCrashPoint",
+      "rust_name": "sandproof_controller_service::CrashPoint"
+    },
+    {
+      "source": "controller-service/src/lib.rs",
+      "original_name": "JournalError",
+      "extraction_name": "ReadJournalError",
+      "rust_name": "sandproof_controller_service::JournalError"
+    }
+  ],
+  "scope": "only tool metadata in private source copy; exact full original byte inverse; generated bodies never edited"
+}

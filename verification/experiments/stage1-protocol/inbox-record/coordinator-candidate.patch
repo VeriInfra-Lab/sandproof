@@ -1,0 +1,54 @@
+--- a/tools/proof_native_suite.py
++++ b/tools/proof_native_suite.py
+@@ -166,4 +166,7 @@
+         call(['verification/experiments/stage1-protocol/component.py',
+               '--native-only', '--output', p]))
++    target = work / 'stage1-inbox-record'
++    native_case('stage1-inbox-record', ROOT, target, lambda p=target:
++        call(['verification/experiments/stage1-protocol/inbox-record/native.py', '--output', p]))
+     target = work / 'schema-domains'
+     native_case('schema-domains', ROOT, target, lambda p=target:
+@@ -243,5 +246,5 @@
+     sub = parser.add_subparsers(dest='mode', required=True)
+     run = sub.add_parser('run'); run.add_argument('--output', type=Path, required=True)
+-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol'])
++    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record'])
+     cmd = sub.add_parser('command'); cmd.add_argument('command', nargs=argparse.REMAINDER)
+     args = parser.parse_args(argv)
+--- a/scripts/verify-stage1-protocol.sh
++++ b/scripts/verify-stage1-protocol.sh
+@@ -7,4 +7,8 @@
+ EVIDENCE="$(mktemp -d "${TMPDIR:-/tmp}/sandproof-stage1-protocol.XXXXXXXX")"
+ bash scripts/python-entry.sh verification/experiments/stage1-protocol/component.py --output "$EVIDENCE/reproduction"
++bash scripts/python-entry.sh tools/proof_native_suite.py require stage1-inbox-record
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record/formal.py --require-native --variant correct --output "$EVIDENCE/record-correct"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record/formal.py --require-native --variant skip-retention-window --output "$EVIDENCE/record-skip-window"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record/formal.py --require-native --variant wrong-recorded-version --output "$EVIDENCE/record-wrong-version"
+ echo 'Retained Stage1 protocol profiles and all registered actual Rust mutants passed.'
+ echo 'Typed pure guards and complete value binding only; not whole lifecycle, bytes/TLS, async or ledger truth.'
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -50,4 +50,5 @@
+ | V2 | 当前原 Redis CAS、围栏、恢复和后台枚举；历史 storage 局部生成体 | 当前 codec/包络/实际 Lua 参数、提交→派发→确认组合 |
+ | V3 | 原 request/manifest/carriers 三视图及局部定理；恢复观察/续期绑定的三个薄根完成原工具抽取、依赖审计和新生成体检查 | 新业务性质尚未证明；完整字节/Serde、SQLite 收件和异步连接仍待闭合；薄根成功不是全服务可抽取 |
++| V3 收件记录候选 | 保留重放/冲突的完整状态保持；任意 fresh 首错与全字段追加；实际 record 的新会话组合；两个同合同真实 Rust 形式反例，见[候选范围](../verification/experiments/stage1-protocol/inbox-record/README.md) | 固定 a9c 的隔离重构候选；原版/候选机器等价、生产采用、ning/native 和共享验收未完成；已有会话追加、SQL/提交/恢复及完整 V3 待证 |
+ | V4 | 原 CaptureHandoff 值方法局部证明；候选多代 workflow、checkpoint 与历史退休已有真实 Rust 组件回归 | 新历史校验、源绑定、资源责任、退休守卫及完整 World 对应均未证明；原局部证明不覆盖这些改动 |
+ | V5 | 候选原 SQL 唯一恢复认领、材料使用责任、激活前记录、逐代凭据索引、不重置恢复寿命及多轮 SourceWork 有组件检查 | SQL/回调的整体对应；Continue 与 GC 有定向组件结果，实际维护与最终结算组合仍待完整验收；新实现对应证明未完成 |
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -24,4 +24,15 @@
+ 真实 TLS 与原 SQLite 的组合测试仅支持该有限接法的工程采用；
+ 不证明任意 async Rust 精化、panic/abort 收尾或完整生命周期。
++
++### 待采用的 V3 收件记录同步接线
++
++[记录候选](../../verification/experiments/stage1-protocol/inbox-record/README.md)复用已登记 String.eq/clone、
++Bool.ne、Option.eq/as_ref/is_some_and/is_none_or、Result.ok，实际字段字典与自有 Clone 均透明证明。
++V0/主控须核对本调用的固定 Aeneas Slice.iter/Iterator.enumerate/next、Vec.deref/index/len/
++with_capacity/push、U16→Usize 与 U32→Usize 转换、checked/sub 算术及 Result Try/FromResidual。
++精确位置和任意长度短路循环由本包定理提供，未把业务 record、谓词或整个集合当作外部桩。
++with_capacity/push 采用正常返回的逻辑列表值合同，不包括物理容量、OOM/abort 或崩溃提交。
++String.clone 绑定登记的 A6-network-stdlib 同一可计算正常值模型，不增加新外部语义。
++生产重构只交候选；比较/回归支持采用审查，不是原版与重构版的机器检验等价证明。
+ 
+ ## 第一阶段新增依赖合同

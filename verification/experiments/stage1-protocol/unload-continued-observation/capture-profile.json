@@ -1,0 +1,126 @@
+{
+  "scope": "continued-unload receipt scan",
+  "candidate_source_sha256": "e66a6664ee8545070691173ef187020b23592c9a60bc585715d45cc078b9481a",
+  "charon_options": {
+    "start_from": [
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::full::continuation::ready_records"
+    ],
+    "include": [
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::full::continuation::ready_records",
+      "sandproof_controller_service::JournalError",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::codec::Sources",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::SourceWorkRecord",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::SourceAnchor",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::SourceWork",
+      "sandproof_controller_service::capture::continuation::OriginalContinueWorkRequest",
+      "sandproof_protocol::WorkAction",
+      "sandproof_protocol::WorkReceipt",
+      "sandproof_protocol::WorkOutcome",
+      "sandbox_controller_core::capture::continuation::OriginalContinueIdentity",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::full::continuation::continued_row",
+      "sandbox_controller_core::model::EffectId",
+      "sandbox_controller_core::model::LogicalEffectId",
+      "sandbox_controller_core::model::LogicalEffectRecord",
+      "sandproof_controller_service::host_contract::HostEvidence",
+      "sandproof_controller_service::capture::SourceProcessIdentity",
+      "sandproof_controller_service::capture::source::SourceObservationRequirement",
+      "sandproof_controller_service::capture::work::FullCaptureWorkRequest",
+      "sandproof_controller_service::controller::internal_inbox::model::InternalLocalBinding",
+      "sandproof_protocol::ActionIdentity",
+      "sandproof_protocol::ResourceRef",
+      "sandproof_protocol::ResourceKind",
+      "sandproof_controller_service::controller::lifecycle_inbox::source_work::full::continuation::scan_continued_rows"
+    ],
+    "opaque": [
+      "sandproof_controller_service",
+      "sandbox_controller_core",
+      "sandproof_protocol",
+      "rusqlite",
+      "serde_json"
+    ]
+  },
+  "aeneas_options": [
+    "-backend",
+    "lean",
+    "-abort-on-error",
+    "-warnings-as-errors",
+    "-split-files",
+    "-emit-json",
+    "-namespace",
+    "SandproofUnloadContinuedReady",
+    "-subdir",
+    "SandproofUnloadContinuedReady"
+  ],
+  "llbc_sha256": "0b03c44bd628379a131ad587f5ff63eb218b0ef6473d59264370cbed9a3b35cd",
+  "roots": {
+    "ready_records": 11,
+    "scan_continued_rows": 37
+  },
+  "original_lean": {
+    "Funs.lean": "45c535fe691783ed0b6a6d6c3986de2e30600d706856ab63d79d2d8f4ee4dbf5",
+    "FunsExternal_Template.lean": "3d986a6aeb7b9deea57f503b160360a9035411e2ebd848465196aac403bd3df0",
+    "Types.lean": "10a84f178b5191bc622a4cc5b65fa0f1ba0b9d4865045a243e83efa494965fe2",
+    "TypesExternal_Template.lean": "5e73a86d51bcfef03f9192f6bb9faffb8b1b9bb23f31bc5771e5088912369019"
+  },
+  "original_msra_results": {
+    "driver_agreement_olean": "72b0f2397ff70b66d5ac231d5342fba6c90db958d2fa4576f236e51b17bc167e",
+    "caller_olean": "d2b3b93391d3d8dbbcf749cad1d118f04a2b271575ebc66c00cb465df2503609"
+  },
+  "public_projection": {
+    "modules": 21,
+    "executed": 20,
+    "reused": [
+      "OriginalRowsDriver"
+    ],
+    "driver_audits": 5,
+    "caller_audits": 1,
+    "standard_logical_dependencies_per_audit": 3,
+    "result": "PASS"
+  },
+  "final_capture": {
+    "head": "9ce0d22bb69d2dcae9d0033a1beb873051a2a7ae",
+    "tree": "bd875897553c9009ad0500b9f27ef3e46f6f09ab",
+    "source_sha256": {
+      "controller-service/src/controller/lifecycle_inbox/source_work/snapshot.rs": "aa886d2cb586fa1e142bf3f6875f671634bd3b2de136e4bc2a3e89cf2c3bb288",
+      "controller-service/src/controller/lifecycle_inbox/source_work/full/continuation.rs": "e0bec7384eab19570a282b505f56b20ec3900196b43353c6c5fda370958c9585"
+    },
+    "llbc_sha256": "2d4306201cda63178cbb51afdb0248e4bc13dd7c1ffe90389f0e2c3b12cd96f9",
+    "duration_seconds": 37.33476685686037,
+    "raw_lean_comparison": {
+      "Funs.lean": {
+        "proof_capture": "45c535fe691783ed0b6a6d6c3986de2e30600d706856ab63d79d2d8f4ee4dbf5",
+        "final_capture": "9e2ba2b8e6e6cee7af9a88d7fd6c2959b41e35b1278f1543b32fc6fb71b4c4d4",
+        "byte_equal": false,
+        "equal_excluding_source_positions": true
+      },
+      "FunsExternal_Template.lean": {
+        "proof_capture": "3d986a6aeb7b9deea57f503b160360a9035411e2ebd848465196aac403bd3df0",
+        "final_capture": "9b7e8e89f76d015702b28381a865f44cedf36a61ee0e7807eb575e589a275129",
+        "byte_equal": false,
+        "equal_excluding_source_positions": true
+      },
+      "Types.lean": {
+        "proof_capture": "10a84f178b5191bc622a4cc5b65fa0f1ba0b9d4865045a243e83efa494965fe2",
+        "final_capture": "5a31527f9000eeb68e3c2ed857edb310567d1a44cff80449fe96ad5527578ffc",
+        "byte_equal": false,
+        "equal_excluding_source_positions": true
+      },
+      "TypesExternal_Template.lean": {
+        "proof_capture": "5e73a86d51bcfef03f9192f6bb9faffb8b1b9bb23f31bc5771e5088912369019",
+        "final_capture": "5e73a86d51bcfef03f9192f6bb9faffb8b1b9bb23f31bc5771e5088912369019",
+        "byte_equal": true,
+        "equal_excluding_source_positions": true
+      }
+    }
+  },
+  "ning": {
+    "paired_original_and_candidate_fixture": "PASS",
+    "final_candidate_rustfmt_and_strict_clippy": "PASS",
+    "existing_continued_exit_cases_passed": 4,
+    "same_first_error_assertion": {
+      "correct": "PASS",
+      "ignore_first_error": "REJECTED",
+      "assertion": "matches!(read(), Err(JournalError::Json(_)))"
+    }
+  }
+}

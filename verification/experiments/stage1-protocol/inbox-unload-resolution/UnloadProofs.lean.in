@@ -1,0 +1,81 @@
+import SandboxModel.Lifecycle.Protocol.UnloadLibrary
+import SandboxModel.Lifecycle.Protocol.UnloadPhase
+import SandboxModel.Lifecycle.Protocol.Validation
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.UnloadResolution
+open scoped Classical
+noncomputable section
+
+theorem validate_entry_spec {E : Type} (encoding : UnloadEncoding E) (entry : Entry) :
+    validate_entry_using encoding entry = validateView encoding.encode entry := by
+  unfold validate_entry_using validateView
+  cases present : entry.unload_resolution with
+  | none => rfl
+  | some resolution =>
+    rw [operation_spec]
+    simp only [bind_tc_ok]
+    by_cases operation : unload entry = true
+    · simp only [operation, ↓reduceIte]
+      apply congrArg (fun continuation => Bind.bind (encoding.encode resolution) continuation)
+      funext result
+      cases result with
+      | Err error =>
+        simp [core.result.Result.Insts.CoreOpsTry.branch,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+          sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from]
+      | Ok bytes =>
+        cases resolution <;>
+          simp [core.result.Result.Insts.CoreOpsTry.branch, afterEncoding, metadataInvalid,
+            snapshotInvalid, factsInvalid, result_spec, resultOf, phase_ne_running,
+            core.option.Option.is_some, core.option.Option.is_none, alloc.vec.Vec.len,
+            alloc.vec.Vec.is_empty, SandproofFoundationsRust.alloc.vec.Vec.is_empty,
+            ← Validation.ok_ite, ite_or, Bool.or_eq_true, corrupt]
+        rename_i original facts
+        cases facts <;> simp [Option.any, factsInvalid, ← Validation.ok_ite, ite_or]
+    · simp [operation, corrupt]
+
+
+theorem full_contract : FullUnloadContract run := by
+  intro encode entry
+  exact validate_entry_spec ⟨encode⟩ entry
+
+theorem absent_ignores_encoding (encode : Encoding) (entry : Entry)
+    (absent : entry.unload_resolution = none) : run encode entry = .ok (.Ok ()) := by
+  rw [full_contract]
+  simp [validateView, absent]
+
+theorem wrong_operation_ignores_encoding (encode : Encoding) (entry : Entry)
+    (resolution : Resolution) (present : entry.unload_resolution = some resolution)
+    (wrong : unload entry = false) : run encode entry = .ok corrupt := by
+  rw [full_contract]
+  simp [validateView, present, wrong]
+
+theorem json_error_precedes_metadata (encode : Encoding) (entry : Entry)
+    (resolution : Resolution) (error : serde_json.error.Error)
+    (present : entry.unload_resolution = some resolution) (operation : unload entry = true)
+    (encoded : encode resolution = .ok (.Err error)) :
+    run encode entry = .ok (.Err (.Json error)) := by
+  rw [full_contract]
+  simp [validateView, present, operation, encoded]
+
+theorem accepts_encoded_iff (encode : Encoding) (entry : Entry)
+    (resolution : Resolution) (bytes : alloc.vec.Vec U8)
+    (present : entry.unload_resolution = some resolution) (operation : unload entry = true)
+    (encoded : encode resolution = .ok (.Ok bytes)) :
+    run encode entry = .ok (.Ok ()) ↔ bytes.val.length ≤ 4096 ∧
+      metadataInvalid entry resolution = false ∧ (resultOf resolution).any factsInvalid = false := by
+  rw [full_contract]
+  simp [validateView, present, operation, encoded, afterEncoding, corrupt]
+  split_ifs <;> simp_all
+
+end
+end SandboxModel.Stage1Protocol.UnloadResolution
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.validate_entry_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.absent_ignores_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.wrong_operation_ignores_encoding
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.json_error_precedes_metadata
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadResolution.accepts_encoded_iff

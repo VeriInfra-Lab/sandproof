@@ -1,0 +1,10 @@
+import SandproofParentCommit.Types
+
+namespace SandproofUnloadFinish
+
+abbrev rusqlite.Connection := SandproofParentCommitRust.rusqlite.Connection
+abbrev rusqlite.transaction.Transaction := SandproofParentCommitRust.rusqlite.transaction.Transaction
+abbrev JournalError := SandproofParentCommitRust.JournalError
+abbrev controller.transaction.WorldTransaction := SandproofParentCommitRust.controller.transaction.WorldTransaction
+
+end SandproofUnloadFinish

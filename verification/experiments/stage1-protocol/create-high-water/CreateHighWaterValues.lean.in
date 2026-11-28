@@ -1,0 +1,51 @@
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterModel
+import SandboxModel.Lifecycle.Protocol.CreateInstallValues
+import SandboxModel.Lifecycle.Protocol.OwnerMappingValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateHighWater.Values
+noncomputable section
+
+/-- Valid inputs for the standalone checked guard/install contract. This does
+    not assert that a whole Inbox validator or a physical admission succeeded. -/
+def inbox (water : U64) : Inbox := { CreateInstall.Values.base with owner_high_water := water }
+abbrev session := CreateInstall.Values.selected
+abbrev entry := CreateInstall.Values.entry
+def binding (owner : U64) : InternalLocalBinding := ⟨2#u64, owner, 30#u64⟩
+abbrev world := OwnerMapping.Values.worldTriple
+abbrev emptyWorld := OwnerMapping.Values.emptyWorld
+
+theorem session_read (water : U64) : (inbox water).sessions.val[(0#usize).val]? = some session := by
+  have zero : (0#usize).val = 0 := by scalar_tac
+  simpa only [inbox, session, zero] using CreateInstall.Values.base_session
+
+theorem entry_read : session.entries.val[(0#usize).val]? = some entry :=
+  CreateInstall.Values.selected_entry
+
+theorem bounds (water : U64) : (0#usize).val < (inbox water).sessions.val.length ∧
+    (0#usize).val < ((inbox water).sessions.val[(0#usize).val]'(by simpa only [inbox] using CreateInstall.Values.base_bounds.1)).entries.val.length := by
+  have zero : (0#usize).val = 0 := by scalar_tac
+  simpa only [inbox, zero] using CreateInstall.Values.base_bounds
+
+theorem owners_empty (water : U64) : (inbox water).owners.val = [] := rfl
+
+theorem owner_limit (water : U64) : (inbox water).owners.val.length ≤ (inbox water).config.max_sessions.val := by
+  rw [owners_empty]
+  exact Nat.zero_le _
+
+theorem missing_owner (water : U64) : ¬ CreateInstall.HasOwner (inbox water) session.owner := by
+  simpa only [CreateInstall.HasOwner, inbox, session] using CreateInstall.Values.base_missing
+
+theorem intent_valid : Validation.ValidEnvelope entry.intent EnvelopeValues.context :=
+  CreateInstall.Values.selected_intent_valid
+
+end
+end SandboxModel.Stage1Protocol.CreateHighWater.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.Values.session_read
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.Values.entry_read
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.Values.bounds
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.Values.owners_empty
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.Values.owner_limit
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.Values.missing_owner
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.Values.intent_valid

@@ -1,0 +1,24 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -969,3 +969,21 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+ 
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++
++### V3 原 restore work 的普通值接口使用点候选
++
++本候选复用既有 A6 及原错误值载体，入口是原 source_work::restore::work；
++它不把整个 restore handler、SourceWorkRecord 反序列化或事务设为可信。
++
++| 使用点 | 有限接口条件 | 自有或调用方责任 |
++|---|---|---|
++| Option::as_ref、Option::clone | 原有效共享借用保持同一值；None 不调用克隆，Some 用原字典克隆原完整项并传播原结果 | restore/capture/材料标记/completed/action 的首错及完整组装由实际函数证明 |
++| String、Vec、Array 与普通整数克隆 | 原固定普通有限值、正常分配域；保留全部内容、顺序、32字节和整数位，不包含资源析构或物理 OOM/abort | 自有协议、capture、source 与 EffectId/Command 逐字段 clone 由真实生成体连接；ContentDigest 值复制不证明计算过哈希 |
++| 原 JournalError 的外部错误载体 | 沿原 inbox-load 的 rusqlite::error::Error 类型边界及原 BoundedWriter 错误身份载体；本函数没有 SQL/IO 调用 | Conflict/CorruptStore/UnresolvedAction 的标签和传播透明保留；不由错误载体证明事务效果 |
++| after_commit、from_claim | 无新增可信业务条件，保留真实构造函数生成体 | 名称和值相等不提供提交、授权、材料租约或 VM 事实；V3 仍需证明原调用者检查，V5/V6/V7 等提供原事务、资源与认证事实 |
++
++[组件范围](../../verification/experiments/stage1-protocol/restore-work/README.md)列真实根、值规格及正反入口。
++同一完整合同不假定 source record 已经可达、已获授权或已耐久提交；实际调用链的这些条件仍须
++逐提供者连接。native Generation 与 wire IncarnationId 保持不同域，不新增公共请求的必须加一条件。
++本段为公共依赖登记候选，采用和完整验收由主控协调。

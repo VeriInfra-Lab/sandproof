@@ -1,0 +1,142 @@
+import SandproofLoadBlob.TypesExternal
+
+open Aeneas Aeneas.Std
+
+/-!
+Candidate interface only: not yet built, bound to actual Funs or admitted.
+The existing fixed row, statement, error and SQL-value carriers stay single.
+There is no RawTransaction/World definition or SQL interpreter here.
+-/
+namespace SandproofSqliteSession
+
+abbrev SqlError := SandproofLoadBlobRust.rusqlite.error.Error
+abbrev RawValue := SandproofLoadBlobRust.rusqlite.types.value_ref.ValueRef
+abbrev SqlValue := SandproofSqliteStatementsRust.SqlValue
+abbrev Bytes := Slice U8
+abbrev Row := SandproofLoadBlobRust.RowObservation
+abbrev RowStatement := SandproofLoadBlobRust.ReadStatementObservation
+abbrev SingleReadView := SandproofLoadBlobRust.ConnectionReadObservation
+abbrev SqlReply (A : Type) := core.result.Result A SqlError
+
+/-- Exact original SQL and complete, ordered bound values. -/
+structure Query where
+  sql : Str
+  arguments : List SqlValue
+
+/-- Observations of one issued cursor, not one global stream for an SQL string.
+Both SQL errors and end-of-stream remain distinct from a present row. -/
+structure ScanTrace where
+  observe : Nat → Result (SqlReply (Option Row))
+
+/-- Existing single-row observations plus the family of allowed cursor
+observations. A relation permits separate unordered scans to differ. Selecting
+and binding a particular trace to the actual library call is still required. -/
+structure ReadView where
+  single : SingleReadView
+  scans : Query → ScanTrace → Prop
+  /-- One raw bind call. Full five-variant input, library Err and returned
+  statement metadata are observations, not default success or a frame. -/
+  bindFirst : Str → RowStatement → RawValue →
+    Result (SqlReply Unit × RowStatement)
+  /-- Selection for this issued call. No additional SQL action occurs here;
+  the actual next operations live in the selected trace. -/
+  issueScan : Str → RowStatement → List RawValue → ScanTrace
+
+/-- The sole connection carrier planned for both consumers. The raw Rust
+Transaction remains its actual generated type. Normal library Err also returns
+a new view; neither Err nor a retained Rust handle implies an active SQL T. -/
+structure Connection where
+  current : ReadView
+  step : ReadView → Str → Bytes → Bytes → Result (SqlReply Usize × ReadView)
+
+/-- Logical transfer helper, not a proof of the actual external binding. -/
+def executeBlobs (connection : Connection) (sql : Str) (bytes digest : Bytes) :
+    Result (SqlReply Usize × Connection) := do
+  let (reply, after) ← connection.step connection.current sql bytes digest
+  .ok (reply, { connection with current := after })
+
+/-- Metadata of the original issued statement; it is not a second connection.
+The existing row/parameter statement is retained without losing its fields. -/
+structure Statement where
+  sql : Str
+  row : RowStatement
+  /-- Original prepare snapshot, retained through bind and cursor creation. -/
+  source : ReadView
+  /-- Complete ordered raw inputs of the bind attempt. On SQL Err this does
+  not assert that binding succeeded or that the database is unchanged. -/
+  boundArguments : List RawValue
+
+def Statement.query (statement : Statement) : Query := {
+  sql := statement.sql
+  arguments := statement.row.canonical.arguments
+}
+
+/-- A cursor holds one actual query's observations. calls counts model
+observations, not row ids, physical positions or a live-transaction proof. -/
+structure Cursor where
+  query : Query
+  trace : ScanTrace
+  calls : Nat
+
+def cursorNext (cursor : Cursor) : Result (SqlReply (Option Row) × Cursor) := do
+  let reply ← cursor.trace.observe cursor.calls
+  .ok (reply, { cursor with calls := cursor.calls + 1 })
+
+/-- Original callback state is retained, including a callback that returns Err. -/
+structure MappedCursor (F : Type) where
+  cursor : Cursor
+  callback : F
+
+/-- Logical library operation only. Actual callback dictionaries, call binding,
+row validity and successful read frames remain separate obligations. -/
+def mappedNext {F A : Type}
+    (call : F → Row → Result (SqlReply A × F)) (mapped : MappedCursor F) :
+    Result (Option (SqlReply A) × MappedCursor F) := do
+  let (reply, after) ← cursorNext mapped.cursor
+  match reply with
+  | .Err error => .ok (some (.Err error), { mapped with cursor := after })
+  | .Ok none => .ok (none, { mapped with cursor := after })
+  | .Ok (some row) =>
+    let (value, callback) ← call mapped.callback row
+    .ok (some value, { cursor := after, callback := callback })
+
+/-- Exact complete issued statement alongside the original row observation.
+Neither component is overwritten to manufacture normal consistency. -/
+structure IssuedRow where
+  original : Row
+  statement : Statement
+
+structure IssuedMappedCursor (F : Type) where
+  mapped : MappedCursor F
+  statement : Statement
+
+/-- Finite normal metadata obligation, not a theorem about SQLite. -/
+def SameIssuedMetadata (before after : RowStatement) : Prop :=
+  after.object = before.object ∧
+  after.columns = before.columns ∧
+  after.invalidIndex = before.invalidIndex ∧
+  after.canonical.expectedParameters = before.canonical.expectedParameters ∧
+  after.canonical.countError = before.canonical.countError
+
+/-- Precise A4/B4 source binding required only for C's actual single-Str
+query. Full raw values still enter bindFirst/issueScan outside this domain;
+the legacy Query's three-variant arguments are NOT asserted exact there.
+No success, termination, row count, SQL order or Err frame is assumed. -/
+def NormalTextScanBinding (view : ReadView) : Prop :=
+  ∀ (sql text : Str) (count : Nat) (after : RowStatement),
+    view.single.canonical.prepare sql = .ok (.Ok count) →
+    count = 1 →
+    view.bindFirst sql
+      (SandproofLoadBlobRust.issuedReadStatement view.single sql count)
+      (.Text text) = .ok (.Ok (), after) →
+    SameIssuedMetadata
+      (SandproofLoadBlobRust.issuedReadStatement view.single sql count) after ∧
+    after.canonical.arguments = [.text text] ∧
+    view.scans { sql := sql, arguments := [.text text] }
+      (view.issueScan sql after [.Text text]) ∧
+    (∀ (n : Nat) (row : Row),
+      (view.issueScan sql after [.Text text]).observe n = .ok (.Ok (some row)) →
+      SameIssuedMetadata row.statement after ∧
+      row.statement.canonical.arguments = after.canonical.arguments)
+
+end SandproofSqliteSession

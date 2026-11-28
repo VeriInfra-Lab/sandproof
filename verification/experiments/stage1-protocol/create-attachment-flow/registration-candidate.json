@@ -1,0 +1,135 @@
+{
+  "kind": "main-single-writer-create-flow-registration-candidate",
+  "source_baseline": "85a7b98d6e5106a9cf20b27fd34b547f3058dc92",
+  "shared_files_modified": false,
+  "candidate_patches": [
+    "public-registration-candidate.patch",
+    "dependencies-candidate.patch",
+    "coverage-candidate.patch"
+  ],
+  "formal_entry": "verification/experiments/stage1-protocol/create-attachment-flow/formal.py",
+  "native_entry": "verification/experiments/stage1-protocol/create-attachment-flow/native.py",
+  "native_label_candidate": "stage1-create-attachment-flow",
+  "formal_views": {
+    "actual": {
+      "files": 192,
+      "audits": 788
+    },
+    "skip-save": {
+      "files": 173,
+      "audits": 694
+    },
+    "eager-world": {
+      "files": 175,
+      "audits": 698
+    }
+  },
+  "original_complete_execution_scope": "4cf9d0c0 plus exact post-adoption worktree; before later lock/cwd/runtime metadata and documentation changes. Original execution identity retained.",
+  "original_complete_execution_seconds": 4489.976651839912,
+  "later_inherited_lock_preparation": {
+    "prepared": true,
+    "complete_formal": false,
+    "seconds": 242.5226387269795,
+    "all_192_actual_lean_files_and_788_audits_equal_original_correct_view": true
+  },
+  "new_unique_audit_names": [
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues.full_input_inhabited",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.CounterValues.normal_specification",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.EagerWorldCounter.actual_eager_world",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.EagerWorldCounter.actual_save",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.EagerWorldCounter.not_full_contract",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.actual_without_save",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.SkipSaveCounter.not_full_contract",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.actual_inbox_accepted",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.before_shape",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.charged",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.config_representable",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.config_valid",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.deadline_two",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.entry_accepted",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.existing",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.inbox_accepted",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.installed",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.loaded",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.lookup_shape",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.model_normal",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.model_saved",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.public_as_str",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.public_representable",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.represented",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.selected",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.session_accepted",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Values.shape_accepted",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Witnesses.normal",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.Witnesses.zero_rows_lifetime_update_succeeds",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.full_flow_contract",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.installed_config",
+    "SandboxModel.Stage1Protocol.CreateAttachmentFlow.loaded_selected_install_config",
+    "SandboxModel.Stage1Protocol.CreateAttachmentPath.actual_standard_projection",
+    "SandboxModel.Stage1Protocol.CreateAttachmentPath.all_current_bytes_preserved",
+    "SandboxModel.Stage1Protocol.CreateAttachmentPath.complete_value_iff",
+    "SandboxModel.Stage1Protocol.CreateAttachmentPath.current_roundtrip",
+    "SandboxModel.Stage1Protocol.CreateAttachmentPath.invalid_utf8_and_nul_preserved",
+    "SandboxModel.Stage1Protocol.CreateAttachmentPath.kernel_field_roundtrip",
+    "SandboxModel.Stage1Protocol.CreateAttachmentPath.omitted_byte_changes_current_full_value",
+    "SandboxModel.Stage1Protocol.CreateAttachmentPath.rootfs_field_roundtrip",
+    "SandboxModel.Stage1Protocol.CreateAttachmentPath.standard_roundtrip"
+  ],
+  "own_audit_bearing_templates": 10,
+  "own_template_audit_annotations": 60,
+  "new_unique_audit_count": 41,
+  "reused_template_audit_count": 19,
+  "native_variants": {
+    "actual": {
+      "mutation": null,
+      "test_count": 6,
+      "expected_failures": []
+    },
+    "skip-save": {
+      "mutation": {
+        "before": "    codec::save_using::<R, T, N, U, B, E>(&inbox, effects)",
+        "after": "    Ok(())"
+      },
+      "test_count": 6,
+      "expected_failures": [
+        "existing_mapping_saves_entire_inbox_without_world",
+        "missing_mapping_reads_owned_world_once_then_saves_every_field",
+        "zero_lifetime_rows_still_saves_inbox",
+        "save_failure_keeps_prior_lifetime_update_and_prefix"
+      ]
+    },
+    "eager-world": {
+      "mutation": {
+        "before": "    if !check_existing_create_owner(&inbox, owner, a.local.owner)? {\n        check_new_create_owner(&inbox, &effects.world(), a.local)?;\n    }",
+        "after": "    let world = effects.world();\n    if !check_existing_create_owner(&inbox, owner, a.local.owner)? {\n        check_new_create_owner(&inbox, &world, a.local)?;\n    }"
+      },
+      "test_count": 6,
+      "expected_failures": [
+        "existing_mapping_saves_entire_inbox_without_world",
+        "owner_conflict_stops_before_world_and_update",
+        "zero_lifetime_rows_still_saves_inbox",
+        "save_failure_keeps_prior_lifetime_update_and_prefix",
+        "deadline_overflow_stops_after_receiver_before_identity"
+      ]
+    },
+    "restored": {
+      "mutation": null,
+      "test_count": 6,
+      "expected_failures": []
+    }
+  },
+  "operator_requirements": [
+    "Pass the exact already-held outer lock path using SANDPROOF_PROOF_HEAVY_LOCK and inherit its same open file description using SANDPROOF_PROOF_HEAVY_LOCK_FD throughout the actual calling chain. The child verifies device/inode and acquires nonblocking; do not open a second independent lock description and block on the parent.",
+    "The common NATIVE_DRIVERS/formal_plan/result-shape patch is a candidate; main must recompute the full current audit union, public roots/inputs/freezes and preceding pending V3 registrations. Do not add overlapping annotation counts or blindly update old source hashes.",
+    "Shared scripts must actually execute this current parent plus both real mutants and consume the same-input native evidence. A standalone local proof or prepare-only result does not issue a shared seal.",
+    "The native driver requires fresh protocol and service test artifacts, correct/two wrong/restored same six assertions, exact failure sets, production formatting check and strict Clippy. Ordinary and native acceptance are delegated to the independent test environment.",
+    "Existing common definitions are reused. Candidate dependency/coverage changes must be integrated with preceding versions and current source readback; do not rewrite older execution identities."
+  ],
+  "native_checks_run": false,
+  "shared_acceptance": false,
+  "raw_evidence_receipt_confirmed": false,
+  "complete_v3": false,
+  "patch_context_lines": 0,
+  "patch_check_command": "git apply --unidiff-zero --check <candidate.patch>",
+  "patches_apply_checked_without_shared_mutation": true
+}

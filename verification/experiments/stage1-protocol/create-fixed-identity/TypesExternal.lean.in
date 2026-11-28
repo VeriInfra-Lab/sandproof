@@ -1,0 +1,10 @@
+import SandproofBoundedWriter.TypesExternal
+import SandproofFoundations.Types
+import SandproofStage1CreateAttachment.FixedFormatBinding
+
+namespace SandproofStage1CreateAttachmentRust
+abbrev core.io.error.Error := SandproofBoundedWriterRust.core.io.error.Error
+abbrev rusqlite.error.Error := SandproofBoundedWriterRust.rusqlite.error.Error
+abbrev serde_json.error.Error := SandproofBoundedWriterRust.serde_json.error.Error
+abbrev core.str.iter.Bytes := SandproofFoundationsRust.core.str.iter.Bytes
+end SandproofStage1CreateAttachmentRust

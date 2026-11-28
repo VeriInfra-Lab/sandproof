@@ -1,0 +1,43 @@
+import SandboxModel.Lifecycle.Protocol.InboxLineageSupport
+import SandboxModel.Lifecycle.Protocol.InboxLineageValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxLineage.WrongFinal
+open Values
+
+theorem actual_return : storedMismatch.validate_execution_lineage = .ok (.Ok ()) := by
+  let values := alloc.vec.Vec.deref storedMismatch.entries
+  have body0 : Session.validate_execution_lineage_loop.body (cursor values 0) (none) (none) 0#u64 =
+      .ok (.cont (cursor values 1, some 1#u64, some (entry create (some 30#u64)), 0#u64)) := by
+    unfold Session.validate_execution_lineage_loop.body
+    rw [next_some values 0 (by decide)]
+    simp only [bind_tc_ok]
+    have selected : values.val[0] = entry create (some 30#u64) := by rfl
+    rw [selected]
+    simp [entry, create, EnvelopeValues.intent]
+  have body1 : Session.validate_execution_lineage_loop.body (cursor values 1) (some 1#u64) (some (entry create (some 30#u64))) 0#u64 =
+      .ok (.done (.Ok ())) := by
+    unfold Session.validate_execution_lineage_loop.body
+    rw [next_none values 1 (by decide)]
+    simp
+  have completed : Session.validate_execution_lineage_loop (cursor values 0) none none 0#u64 = .ok (.Ok ()) := by
+    let body : LoopState → Result (ControlFlow LoopState Return) := fun value =>
+      Session.validate_execution_lineage_loop.body value.1 value.2.1 value.2.2.1 value.2.2.2
+    change loop body (cursor values 0, none, none, 0#u64) = _
+    rw [loop_continue body (cursor values 0, none, none, 0#u64) (cursor values 1, some 1#u64, some (entry create (some 30#u64)), 0#u64) body0]
+    exact loop_done body (cursor values 1, some 1#u64, some (entry create (some 30#u64)), 0#u64) _ body1
+  simpa only [Session.validate_execution_lineage,
+    SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter,
+    core.slice.Slice.iter, bind_tc_ok, cursor, values, storedMismatch, created, session] using completed
+
+theorem rejects_same_full_contract : ¬ FullLineageContract Session.validate_execution_lineage := by
+  intro contract
+  have required := contract storedMismatch
+  rw [actual_return, expected_outcomes.2.2.2.2.2.2.1] at required
+  cases (Result.ok_injective required)
+
+end SandboxModel.Stage1Protocol.InboxLineage.WrongFinal
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.WrongFinal.actual_return
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLineage.WrongFinal.rejects_same_full_contract

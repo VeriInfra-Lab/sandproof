@@ -1,0 +1,33 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendArithmetic
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+open sandproof_protocol.lifecycle.request sandproof_protocol.internal
+namespace SandboxModel.Stage1Protocol.InboxAppend
+open InboxRecord
+open scoped Classical
+
+theorem prior_unload_callback (source : IncarnationId) (capture : CaptureId) (entry : Entry) :
+    Inbox.record_existing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once
+      (source, capture) entry = .ok (priorUnload source capture entry) := by
+  cases operation : entry.intent.request.operation <;>
+    simp [Inbox.record_existing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once,
+      priorUnload, operation, IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq,
+      CaptureId.Insts.CoreCmpPartialEqCaptureId.eq,
+      PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq]
+  split <;> simp_all
+  split <;> simp_all
+
+theorem prior_unload_option (source : IncarnationId) (capture : CaptureId) (entry : Option Entry) :
+    core.option.Option.is_some_and
+      Inbox.record_existing.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool
+      entry (source, capture) = .ok (entry.any (priorUnload source capture)) := by
+  cases entry <;> simp [core.option.Option.is_some_and,
+    SandproofFoundationsRust.core.option.Option.is_some_and, prior_unload_callback]
+
+
+end SandboxModel.Stage1Protocol.InboxAppend
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.prior_unload_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.prior_unload_option

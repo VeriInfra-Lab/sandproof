@@ -1,0 +1,43 @@
+import SandboxModel.Lifecycle.Protocol.InboxRenewalClassifier
+import SandboxModel.Lifecycle.Protocol.InboxRenewalReduction
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxRenewal
+
+theorem unapplied_sdk_with_binding (binding : BorrowedVecBinding) (session : Session) (version : U64) :
+    renewal_confirmation.has_unapplied_sdk_through session version =
+      .ok (session.entries.val.any (unappliedSdk version)) := by
+  have loop_spec := any_loop_spec (alloc.vec.Vec.deref session.entries)
+    (unappliedSdk version)
+    (renewal_confirmation.has_unapplied_sdk_through_loop.body version)
+    (by
+      intro index bound
+      unfold renewal_confirmation.has_unapplied_sdk_through_loop.body
+      rw [slice_next_none _ _ bound]
+      simp)
+    (by
+      intro index bound
+      unfold renewal_confirmation.has_unapplied_sdk_through_loop.body
+      rw [slice_next_some _ _ bound]
+      simp only [sdk_renewal_spec]
+      simp only [unappliedSdk, core.option.Option.is_none]
+      split <;> simp_all)
+    0 (by omega)
+  obtain ⟨result, returned, same⟩ := WP.spec_imp_exists loop_spec
+  simp only [List.drop_zero] at same
+  rw [same] at returned
+  unfold renewal_confirmation.has_unapplied_sdk_through
+  rw [binding]
+  simpa [renewal_confirmation.has_unapplied_sdk_through_loop, sliceCursor, alloc.vec.Vec.deref] using returned
+
+theorem unapplied_sdk_spec (session : Session) (version : U64) :
+    renewal_confirmation.has_unapplied_sdk_through session version =
+      .ok (session.entries.val.any (unappliedSdk version)) := by
+  exact unapplied_sdk_with_binding borrowed_vec_model session version
+
+end SandboxModel.Stage1Protocol.InboxRenewal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.unapplied_sdk_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.unapplied_sdk_with_binding

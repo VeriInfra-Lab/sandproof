@@ -1,0 +1,160 @@
+import SandproofActualRecord.Funs
+import SandproofActualRecord.BranchScope
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofActualRecordRust.SourceFlowLink
+noncomputable section
+
+open controller.lifecycle_inbox
+open SandboxModel.Stage1Protocol
+open SandproofParentCommitRust.ErrorTransport
+
+abbrev OldRetirement := SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.native_retirement.RetirementEncoding
+abbrev OldTerminal := SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.TerminalEncoding
+abbrev OldRenewal := SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation.RenewalEncoding
+abbrev OldUnload := SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.unload_resolution.UnloadEncoding
+abbrev OldGraphic := SandproofStage1RequestRust.sandproof_controller_service.capture.GraphicBytes
+abbrev Intent := sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent
+abbrev Context := sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext
+
+def oldRetirement {R : Type} (retirement : native_retirement.RetirementEncoding R) :
+    OldRetirement R :=
+  ⟨retirement.encode_intent, retirement.digest, retirement.encode_receipt⟩
+
+def oldTerminal {T : Type} (terminal : model.TerminalEncoding T) : OldTerminal T :=
+  ⟨terminal.encode⟩
+
+def oldRenewal {N : Type} (renewal : renewal_confirmation.RenewalEncoding N) : OldRenewal N :=
+  ⟨renewal.encode⟩
+
+def oldUnload {U : Type} (unload : unload_resolution.UnloadEncoding U) : OldUnload U :=
+  ⟨unload.encode⟩
+
+def oldGraphic {B : Type} (graphic : capture.GraphicBytes B) : OldGraphic B :=
+  ⟨graphic.all_graphic⟩
+
+def convertOutcome :
+    RequestRustResult ScopeTransport.OldOutcome → ParentRustResult recording.RecordOutcome
+  | .Ok outcome => .Ok (ScopeTransport.outcomeFromSource outcome)
+  | .Err error => .Err (fromRequest error)
+
+def transferOutcome {E : Type} (reply : RequestRustResult ScopeTransport.OldOutcome × E) :
+    ParentRustResult recording.RecordOutcome × E :=
+  (convertOutcome reply.1, reply.2)
+
+theorem actual_record_using_checked_flow
+    {R T N U B E : Type}
+    (retirement : native_retirement.RetirementEncoding R)
+    (terminal : model.TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (graphic : capture.GraphicBytes B)
+    (effects : recording.RecordEffects E)
+    (graphicLaw : ComposedConfig.FullGraphicContract (oldGraphic graphic))
+    (represented : InboxLoad.DecodedStringsRepresentable
+      (ScopeTransport.recordEffects effects).codecInboxLoadEffectsInst)
+    (before : E) (intent : Intent) (context : Context) :
+    recording.record_using retirement terminal renewal unload graphic effects before intent context =
+      liftResult transferOutcome (ProtocolRecord.flowView (oldRetirement retirement)
+        (oldTerminal terminal) (oldRenewal renewal).encode (oldUnload unload).encode
+        (ScopeTransport.recordEffects effects) intent context before) := by
+  have flow := ProtocolRecord.full_flow_contract
+    (oldRetirement retirement) (oldTerminal terminal) (oldRenewal renewal) (oldUnload unload)
+    (oldGraphic graphic) (ScopeTransport.recordEffects effects) graphicLaw represented intent context before
+  change liftResult transferOutcome
+    (SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.recording.record_using
+      (oldRetirement retirement) (oldTerminal terminal) (oldRenewal renewal) (oldUnload unload)
+      (oldGraphic graphic) (ScopeTransport.recordEffects effects) before intent context) = _
+  exact congrArg (liftResult transferOutcome) flow
+
+def loadPrefix {R T N U E : Type}
+    (retirement : native_retirement.RetirementEncoding R)
+    (terminal : model.TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (effects : recording.RecordEffects E) (before : E) :=
+  InboxLoad.loadView (ScopeTransport.recordEffects effects).codecInboxLoadEffectsInst
+    (InboxValidation.inboxView (oldRetirement retirement) (oldTerminal terminal)
+      (oldRenewal renewal).encode (oldUnload unload).encode)
+    (fun config => .ok (InboxLoad.budgetValue config)) before
+
+theorem actual_record_using_replay
+    {R T N U B E : Type}
+    (retirement : native_retirement.RetirementEncoding R)
+    (terminal : model.TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (graphic : capture.GraphicBytes B)
+    (effects : recording.RecordEffects E)
+    (graphicLaw : ComposedConfig.FullGraphicContract (oldGraphic graphic))
+    (represented : InboxLoad.DecodedStringsRepresentable
+      (ScopeTransport.recordEffects effects).codecInboxLoadEffectsInst)
+    (before afterLoad : E) (intent : Intent) (context : Context)
+    (inbox : model.Inbox) (session entry : Usize) (replay : model.LifecycleWorkState)
+    (loaded : loadPrefix retirement terminal renewal unload effects before = .ok (.Ok (some inbox), afterLoad))
+    (accepted : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated
+      inbox intent context = .ok (.Ok ()))
+    (found : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.find
+      inbox intent = .ok (.Ok (some (session, entry))))
+    (returned : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.state
+      inbox session entry = .ok replay) :
+    recording.record_using retirement terminal renewal unload graphic effects before intent context =
+      .ok (.Ok (.Replay replay), afterLoad) := by
+  rw [actual_record_using_checked_flow retirement terminal renewal unload graphic effects
+    graphicLaw represented before intent context]
+  have replayed := ProtocolRecord.loaded_replay_from_authenticated_full_find
+    (oldRetirement retirement) (oldTerminal terminal) (oldRenewal renewal).encode
+    (oldUnload unload).encode (ScopeTransport.recordEffects effects) inbox intent context
+    afterLoad session entry replay accepted found returned
+  unfold loadPrefix at loaded
+  simp [ProtocolRecord.flowView, loaded, replayed, transferOutcome, convertOutcome, ScopeTransport.outcomeFromSource]
+
+theorem actual_record_using_create
+    {R T N U B E : Type}
+    (retirement : native_retirement.RetirementEncoding R)
+    (terminal : model.TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (graphic : capture.GraphicBytes B)
+    (effects : recording.RecordEffects E)
+    (graphicLaw : ComposedConfig.FullGraphicContract (oldGraphic graphic))
+    (represented : InboxLoad.DecodedStringsRepresentable
+      (ScopeTransport.recordEffects effects).codecInboxLoadEffectsInst)
+    (before afterLoad afterSave : E) (intent : Intent) (context : Context)
+    (inbox appended : model.Inbox) (session entry : Usize) (value : model.LifecycleWorkState)
+    (binding : SandproofStage1RequestRust.sandproof_protocol.internal.lifecycle.CreateBinding)
+    (incarnation : SandproofStage1RequestRust.sandproof_protocol.lifecycle.identity.IncarnationId)
+    (create : intent.request.operation = .Create binding incarnation)
+    (loaded : loadPrefix retirement terminal renewal unload effects before = .ok (.Ok (some inbox), afterLoad))
+    (accepted : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated
+      inbox intent context = .ok (.Ok ()))
+    (notFound : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.find
+      inbox intent = .ok (.Ok none))
+    (appendedReply : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.record
+      inbox intent = .ok (.Ok (session, entry), appended))
+    (saved : InboxSave.saveView (oldRetirement retirement) (oldTerminal terminal)
+      (oldRenewal renewal).encode (oldUnload unload).encode
+      (ScopeTransport.recordEffects effects).codecInboxSaveEffectsInst appended afterLoad = .ok (.Ok (), afterSave))
+    (returned : SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.model.Inbox.state
+      appended session entry = .ok value) :
+    recording.record_using retirement terminal renewal unload graphic effects before intent context =
+      .ok (.Ok (.Recorded value), afterSave) := by
+  rw [actual_record_using_checked_flow retirement terminal renewal unload graphic effects
+    graphicLaw represented before intent context]
+  have created := ProtocolRecord.loaded_create_uses_original_append_and_save
+    (oldRetirement retirement) (oldTerminal terminal) (oldRenewal renewal).encode
+    (oldUnload unload).encode (ScopeTransport.recordEffects effects) inbox intent context
+    afterLoad binding incarnation create accepted notFound
+  unfold loadPrefix at loaded
+  simp [ProtocolRecord.flowView, loaded, created, appendedReply, ProtocolRecord.saveThenState,
+    saved, returned, transferOutcome, convertOutcome, ScopeTransport.outcomeFromSource]
+
+end
+end SandproofActualRecordRust.SourceFlowLink
+
+#audit_controller_proof SandproofActualRecordRust.SourceFlowLink.actual_record_using_checked_flow
+#audit_controller_proof SandproofActualRecordRust.SourceFlowLink.actual_record_using_replay
+#audit_controller_proof SandproofActualRecordRust.SourceFlowLink.actual_record_using_create

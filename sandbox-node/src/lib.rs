@@ -25,6 +25,8 @@ pub use physical_profile::PhysicalProfileLease;
 #[cfg(target_os = "linux")]
 mod disk_space;
 #[cfg(target_os = "linux")]
+mod json_file;
+#[cfg(target_os = "linux")]
 pub use disk_space::{DiskSpace, disk_space};
 
 #[cfg(any(target_os = "linux", test))]

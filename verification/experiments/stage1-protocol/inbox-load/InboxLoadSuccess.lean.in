@@ -1,0 +1,282 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadComposition
+import SandboxModel.Lifecycle.Protocol.InboxLoadWitnesses
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+
+namespace SandboxModel.Stage1Protocol.InboxLoad
+noncomputable section
+
+-- These are consequences of the existing complete load specification, not a
+-- second load algorithm or a promise about the concrete SQL/codec providers.
+theorem bind_success_value {α β : Type} (run : Result α) (next : α → Result β)
+    (output : β) (returned : Bind.bind run next = .ok output) :
+    ∃ value, run = .ok value ∧ next value = .ok output := by
+  cases run using Result.cases with
+  | ret value => exact ⟨value, rfl, by simpa only [bind_tc_ok] using returned⟩
+  | vis effect continuation => simp only [bind_tc_vis, vis_not_ok] at returned
+  | div => simp only [bind_tc_div, div_not_ok] at returned
+
+theorem attempt_success_value {E α : Type}
+    (run : Result (core.result.Result α JournalError × E))
+    (next : α → E → Outcome E) (inbox : Inbox) (after : E)
+    (returned : attempt run next = .ok (.Ok (some inbox), after)) :
+    ∃ value state, run = .ok (.Ok value, state) ∧
+      next value state = .ok (.Ok (some inbox), after) := by
+  unfold attempt at returned
+  obtain ⟨⟨result, state⟩, observed, continued⟩ := bind_success_value _ _ _ returned
+  cases result with
+  | Err error => simp at continued
+  | Ok value => exact ⟨value, state, observed, continued⟩
+
+theorem finish_success_same_value {E : Type} (io : InboxLoadEffects E)
+    (inbox output : Inbox) (before after : E)
+    (returned : finishView io inbox before = .ok (.Ok (some output), after)) :
+    inbox = output := by
+  unfold finishView at returned
+  obtain ⟨policy, state, _, continued⟩ := attempt_success_value _ _ _ _ returned
+  cases policy with
+  | none => simp [unsupported] at continued
+  | some config =>
+    dsimp only at continued
+    split at continued
+    · simp [corrupt] at continued
+    · have same := (Result.ok_injective continued)
+      simpa using congrArg Prod.fst same
+
+-- Isolated next step only: no concrete encoder/SQL/commit conclusion.
+theorem validated_success_details {E : Type} (io : InboxLoadEffects E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (inbox output : Inbox) (reserve : U64) (before after : E)
+    (returned : validatedView io validate budget inbox reserve before =
+      .ok (.Ok (some output), after)) :
+    inbox = output ∧ budget inbox.config = .ok reserve ∧
+      validate inbox = .ok (.Ok ()) := by
+  unfold validatedView at returned
+  obtain ⟨required, requiredResult, continued⟩ := bind_success_value _ _ _ returned
+  split at continued
+  · simp [corrupt] at continued
+  · rename_i equal
+    have required_eq : required = reserve := by simpa only [not_ne_iff] using equal
+    obtain ⟨checked, checkedResult, finished⟩ := bind_success_value _ _ _ continued
+    cases checked with
+    | Err error => simp at finished
+    | Ok accepted =>
+      cases accepted
+      exact ⟨finish_success_same_value io inbox output before after finished,
+        by simpa only [required_eq] using requiredResult, checkedResult⟩
+
+theorem canonical_success_details {E : Type} (io : InboxLoadEffects E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (inbox output : Inbox) (bytes : alloc.vec.Vec U8) (reserve : U64) (before after : E)
+    (returned : canonicalView io validate budget inbox bytes reserve before =
+      .ok (.Ok (some output), after)) :
+    ∃ afterEncoding, io.encode_inbox before inbox = .ok (.Ok bytes, afterEncoding) ∧
+      inbox = output ∧ budget inbox.config = .ok reserve ∧
+      validate inbox = .ok (.Ok ()) := by
+  unfold canonicalView at returned
+  obtain ⟨encoded, state, encodedResult, continued⟩ := attempt_success_value _ _ _ _ returned
+  rw [InboxLoadLibrary.vec_ne] at continued
+  simp only [bind_tc_ok] at continued
+  by_cases same : encoded = bytes
+  · simp [same] at continued
+    refine ⟨state, ?_, validated_success_details io validate budget inbox output reserve state after continued⟩
+    simpa only [same] using encodedResult
+  · simp [same, corrupt] at continued
+
+theorem digest_success_details {E : Type} (io : InboxLoadEffects E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (inbox output : Inbox) (bytes sha : alloc.vec.Vec U8) (reserve : U64) (before after : E)
+    (returned : digestView io validate budget inbox bytes sha reserve before =
+      .ok (.Ok (some output), after)) :
+    ∃ observed, io.digest before (alloc.vec.Vec.deref bytes) = .ok observed ∧
+      observed.1.val = sha.val ∧
+      ∃ afterEncoding, io.encode_inbox observed.2 inbox = .ok (.Ok bytes, afterEncoding) ∧
+        inbox = output ∧ budget inbox.config = .ok reserve ∧
+        validate inbox = .ok (.Ok ()) := by
+  unfold digestView at returned
+  obtain ⟨⟨digest, state⟩, observedResult, continued⟩ := bind_success_value _ _ _ returned
+  by_cases same : digest.val = sha.val
+  · simp [same] at continued
+    exact ⟨(digest, state), observedResult, same,
+      canonical_success_details io validate budget inbox output bytes reserve state after continued⟩
+  · simp [same, corrupt] at continued
+
+-- A consequence of the existing specification, recording the same body and
+-- effect states. The callbacks themselves remain explicit provider obligations.
+def BodyEvidence {E : Type} (io : InboxLoadEffects E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (reserve : U64) (before : E) (output : Inbox) : Prop :=
+  ∃ bytes sha afterBytes afterDecode observed afterEncoding,
+    io.query_bytes_pair before bodyStatement = .ok (.Ok (bytes, sha), afterBytes) ∧
+    io.decode_inbox afterBytes (alloc.vec.Vec.deref bytes) = .ok (.Ok output, afterDecode) ∧
+    io.digest afterDecode (alloc.vec.Vec.deref bytes) = .ok observed ∧
+    observed.1.val = sha.val ∧
+    io.encode_inbox observed.2 output = .ok (.Ok bytes, afterEncoding) ∧
+    budget output.config = .ok reserve ∧ validate output = .ok (.Ok ())
+
+theorem body_success_details {E : Type} (io : InboxLoadEffects E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (output : Inbox) (reserve : U64) (before after : E)
+    (returned : bodyView io validate budget reserve before = .ok (.Ok (some output), after)) :
+    BodyEvidence io validate budget reserve before output := by
+  unfold bodyView at returned
+  obtain ⟨⟨bytes, sha⟩, afterBytes, readResult, continued⟩ := attempt_success_value _ _ _ _ returned
+  obtain ⟨⟨decoded, afterDecode⟩, decodeResult, decodedContinuation⟩ := bind_success_value _ _ _ continued
+  cases decoded with
+  | Err error => simp [corrupt] at decodedContinuation
+  | Ok inbox =>
+    obtain ⟨observed, digestResult, digestMatches, afterEncoding, encodedResult,
+      same, budgetResult, validated⟩ :=
+      digest_success_details io validate budget inbox output bytes sha reserve afterDecode after decodedContinuation
+    subst output
+    exact ⟨bytes, sha, afterBytes, afterDecode, observed, afterEncoding,
+      readResult, decodeResult, digestResult, digestMatches, encodedResult, budgetResult, validated⟩
+
+theorem limits_success_body {E : Type} (io : InboxLoadEffects E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (capacity : controller.capacity.CapacityConfig) (length reserve : I64)
+    (output : Inbox) (before after : E)
+    (returned : limitsView io validate budget capacity length reserve before =
+      .ok (.Ok (some output), after)) :
+    ∃ unsignedReserve, BodyEvidence io validate budget unsignedReserve before output := by
+  unfold limitsView at returned
+  split at returned
+  · simp [corrupt] at returned
+  · obtain ⟨unsignedLength, _, lengthNext⟩ := bind_success_value _ _ _ returned
+    split at lengthNext
+    · simp [corrupt] at lengthNext
+    · obtain ⟨unsignedReserve, _, reserveNext⟩ := bind_success_value _ _ _ lengthNext
+      split at reserveNext
+      · simp [corrupt] at reserveNext
+      · split at reserveNext
+        · simp [corrupt] at reserveNext
+        · split at reserveNext
+          · simp [corrupt] at reserveNext
+          · exact ⟨unsignedReserve,
+              body_success_details io validate budget output unsignedReserve before after reserveNext⟩
+
+theorem capacity_success_body {E : Type} (io : InboxLoadEffects E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (output : Inbox) (before after : E)
+    (returned : capacityView io validate budget before = .ok (.Ok (some output), after)) :
+    ∃ reserve bodyStart, BodyEvidence io validate budget reserve bodyStart output := by
+  unfold capacityView at returned
+  obtain ⟨capacity, afterCapacity, _, continued⟩ := attempt_success_value _ _ _ _ returned
+  cases capacity with
+  | none => simp [unsupported] at continued
+  | some config =>
+    dsimp only at continued
+    obtain ⟨⟨length, reserve⟩, afterLengths, _, limited⟩ := attempt_success_value _ _ _ _ continued
+    obtain ⟨unsignedReserve, evidence⟩ :=
+      limits_success_body io validate budget config length reserve output afterLengths after limited
+    exact ⟨unsignedReserve, afterLengths, evidence⟩
+
+theorem current_success_body {E : Type} (io : InboxLoadEffects E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (output : Inbox) (before after : E)
+    (returned : currentView io validate budget before = .ok (.Ok (some output), after)) :
+    ∃ reserve bodyStart, BodyEvidence io validate budget reserve bodyStart output := by
+  unfold currentView at returned
+  obtain ⟨internal, state, _, continued⟩ := attempt_success_value _ _ _ _ returned
+  cases internal with
+  | true => simp [corrupt] at continued
+  | false => exact capacity_success_body io validate budget output state after continued
+
+theorem load_success_body {E : Type} (io : InboxLoadEffects E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (output : Inbox) (before after : E)
+    (returned : loadView io validate budget before = .ok (.Ok (some output), after)) :
+    ∃ reserve bodyStart, BodyEvidence io validate budget reserve bodyStart output := by
+  unfold loadView at returned
+  obtain ⟨hasInbox, afterExists, _, existsNext⟩ := attempt_success_value _ _ _ _ returned
+  obtain ⟨version, afterVersion, _, versionNext⟩ := attempt_success_value _ _ _ _ existsNext
+  obtain ⟨source, afterSource, _, sourceNext⟩ := attempt_success_value _ _ _ _ versionNext
+  split at sourceNext
+  · simp [corrupt] at sourceNext
+  · cases hasInbox with
+    | false =>
+      obtain ⟨current, _, finished⟩ := bind_success_value _ _ _ sourceNext
+      cases current <;> simp [corrupt] at finished
+    | true =>
+      obtain ⟨current, _, continued⟩ := bind_success_value _ _ _ sourceNext
+      cases current with
+      | false => simp [corrupt] at continued
+      | true => exact current_success_body io validate budget output afterSource after continued
+
+-- Connect the existing actual Rust refinement to its decoded-body postcondition.
+-- This adds no new provider assumption and proves no durable/physical fact.
+theorem full_load_success_body {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io)
+    (output : Inbox) (before after : E)
+    (returned : load_using saved terminal renewal unload graphic io before =
+      .ok (.Ok (some output), after)) :
+    ∃ reserve bodyStart,
+      BodyEvidence io (InboxValidation.inboxView saved terminal renewal.encode unload.encode)
+        (fun config => .ok (budgetValue config)) reserve bodyStart output := by
+  rw [full_load_refines saved terminal renewal unload graphic graphicLaw io represented before] at returned
+  exact load_success_body io _ _ output before after returned
+
+theorem successful_load_requires_validation {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io)
+    (output : Inbox) (before after : E)
+    (returned : load_using saved terminal renewal unload graphic io before =
+      .ok (.Ok (some output), after)) :
+    InboxValidation.inboxView saved terminal renewal.encode unload.encode output = .ok (.Ok ()) := by
+  obtain ⟨reserve, bodyStart, evidence⟩ :=
+    full_load_success_body saved terminal renewal unload graphic graphicLaw io represented output before after returned
+  rcases evidence with ⟨_, _, _, _, _, _, _, _, _, _, _, _, validated⟩
+  exact validated
+
+-- Instantiate the same necessary postcondition with the existing actual-root
+-- normal witness. These trace callbacks are explicit synthetic providers.
+theorem normal_load_body_evidence (trace : Values.Trace) :
+    ∃ reserve bodyStart,
+      BodyEvidence Values.normalEffects Values.validation Values.budget
+        reserve bodyStart InboxValidation.Values.normal := by
+  exact full_load_success_body Values.saved Values.terminal
+    (N := Unit) ⟨Values.renewal⟩ (U := Unit) ⟨Values.unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract
+    Values.normalEffects Values.normal_represented InboxValidation.Values.normal trace
+    (trace ++ Values.completeTrace InboxValidation.Values.normal) (Values.normal_loaded trace)
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.bind_success_value
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.attempt_success_value
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.finish_success_same_value
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.validated_success_details
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.canonical_success_details
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.digest_success_details
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.body_success_details
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.limits_success_body
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.capacity_success_body
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.current_success_body
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.load_success_body
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.full_load_success_body
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.successful_load_requires_validation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.normal_load_body_evidence

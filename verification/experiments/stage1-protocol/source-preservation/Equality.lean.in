@@ -1,0 +1,91 @@
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Bytes
+open Aeneas Aeneas.Std SandproofSourcePreservationRust
+namespace SandboxModel.Stage1Protocol.SourcePreservation
+open sandbox_controller_core
+noncomputable section
+
+theorem option_eq_of [DecidableEq T] (dictionary : core.cmp.PartialEq T T)
+    (lawful : ∀ a b, dictionary.eq a b = .ok (decide (a = b))) (a b : Option T) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq dictionary a b = .ok (decide (a = b)) := by
+  cases a <;> cases b <;> simp [core.option.Option.Insts.CoreCmpPartialEqOption.eq, lawful]
+
+theorem vm_eq (a b : ids.VmId) :
+    ids.VmId.Insts.CoreCmpPartialEqVmId.eq a b = .ok (decide (a = b)) := by
+  simp [ids.VmId.Insts.CoreCmpPartialEqVmId.eq]
+
+theorem key_eq (a b : model.OperationKey) :
+    model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq a b = .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq,
+    ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq, ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq];
+  split_ifs <;> simp_all
+
+theorem host_binding_eq (a b : maintenance.slots.HostBinding) :
+    maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [maintenance.slots.HostBinding.Insts.CoreCmpPartialEqHostBinding.eq,
+    ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq, ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    vm_eq, ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq]; split_ifs <;> simp_all
+
+theorem host_context_eq (a b : host_contract.HostSlotContext) :
+    host_contract.HostSlotContext.Insts.CoreCmpPartialEqHostSlotContext.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [host_contract.HostSlotContext.Insts.CoreCmpPartialEqHostSlotContext.eq,
+    maintenance.slots.HostSlotId.Insts.CoreCmpPartialEqHostSlotId.eq, host_binding_eq,
+    option_eq_of ids.VmId.Insts.CoreCmpPartialEqVmId vm_eq]; split_ifs <;> simp_all
+
+theorem witness_eq (a b : Witness) :
+    controller.checkpoint.HostReleaseWitness.Insts.CoreCmpPartialEqHostReleaseWitness.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [controller.checkpoint.HostReleaseWitness.Insts.CoreCmpPartialEqHostReleaseWitness.eq,
+    host_context_eq]; split_ifs <;> simp_all
+
+theorem reason_eq (a b : Reason) :
+    controller.lifecycle_inbox.source_work.retirement.MaterialRetirementReason.Insts.CoreCmpPartialEqMaterialRetirementReason.eq a b =
+      .ok (decide (a = b)) := by
+  cases a <;> cases b <;>
+    simp [controller.lifecycle_inbox.source_work.retirement.MaterialRetirementReason.Insts.CoreCmpPartialEqMaterialRetirementReason.eq,
+      controller.lifecycle_inbox.source_work.retirement.MaterialRetirementReason.read_discriminant,
+      digest_eq, key_eq, ids.FsId.Insts.CoreCmpPartialEqFsId.eq, lift] <;> split_ifs <;> simp_all
+
+theorem closure_eq (a b : Closure) :
+    controller.lifecycle_inbox.source_work.retirement.MaterialRetirementClosure.Insts.CoreCmpPartialEqMaterialRetirementClosure.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [controller.lifecycle_inbox.source_work.retirement.MaterialRetirementClosure.Insts.CoreCmpPartialEqMaterialRetirementClosure.eq,
+    digest_eq, option_eq_of sandproof_protocol.lifecycle.digest.ContentDigest.Insts.CoreCmpPartialEqContentDigest digest_eq, reason_eq]; split_ifs <;> simp_all
+
+theorem plan_eq (a b : Plan) :
+    controller.lifecycle_inbox.source_work.retirement.MaterialRetirementPlan.Insts.CoreCmpPartialEqMaterialRetirementPlan.eq a b =
+      .ok (decide (a = b)) := by
+  cases a; cases b
+  simp [controller.lifecycle_inbox.source_work.retirement.MaterialRetirementPlan.Insts.CoreCmpPartialEqMaterialRetirementPlan.eq,
+    vec_bytes_eq, digest_eq, closure_eq]; split_ifs <;> simp_all
+
+theorem option_witness_eq (a b : Option Witness) :
+    core.option.Option.Insts.CoreCmpPartialEqOption.eq
+      controller.checkpoint.HostReleaseWitness.Insts.CoreCmpPartialEqHostReleaseWitness a b =
+      .ok (decide (a = b)) := option_eq_of _ witness_eq a b
+
+theorem option_witness_ne (a b : Option Witness) :
+    core.cmp.PartialEq.ne.trait_default
+      (core.option.Option.Insts.CoreCmpPartialEqOption
+      controller.checkpoint.HostReleaseWitness.Insts.CoreCmpPartialEqHostReleaseWitness) a b =
+      .ok (decide (a ≠ b)) := by
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default, option_witness_eq]
+end
+end SandboxModel.Stage1Protocol.SourcePreservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.option_eq_of
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.vm_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.key_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.host_binding_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.host_context_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.witness_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.reason_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.closure_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.plan_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.option_witness_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.option_witness_ne

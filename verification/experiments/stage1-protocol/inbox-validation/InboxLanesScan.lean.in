@@ -1,0 +1,99 @@
+import SandboxModel.Lifecycle.Protocol.InboxSessionComposition
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxValidation
+noncomputable section
+open scoped Classical
+open SessionShape
+
+theorem lanes_body_end {T : Type} (terminal : TerminalEncoding T) (inbox : Inbox)
+    (context : AuthenticatedCenterContext) (index : Usize)
+    (outside : inbox.lanes.val.length ≤ index.val) :
+    Inbox.lanes_invalid_loop.body terminal inbox context index = .ok (.done false) := by
+  simp [Inbox.lanes_invalid_loop.body, alloc.vec.Vec.len, UScalar.lt_equiv, Nat.not_lt.mpr outside]
+
+theorem lanes_body_step {T : Type} (terminal : TerminalEncoding T) (inbox : Inbox)
+    (context : AuthenticatedCenterContext) (index next : Usize)
+    (inside : index.val < inbox.lanes.val.length) (added : next.val = index.val + 1) :
+    Inbox.lanes_invalid_loop.body terminal inbox context index =
+      (if inbox.lanes.val[index.val].slot.val ≠ index.val + 1 then .ok (.done true)
+       else do
+         let valid ← RetentionLane.validateView terminal.encode inbox.lanes.val[index.val] context
+         .ok (if valid then .cont next else .done true)) := by
+  obtain ⟨lane, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec inbox.lanes index inside)
+  have insideVec : index < alloc.vec.Vec.len inbox.lanes := inside
+  simp only [Inbox.lanes_invalid_loop.body, insideVec, ↓reduceIte,
+    index_add_one index next added, RetentionLane.valid_spec]
+  simp [indexed, same, lift, UScalar.eq_equiv, core.convert.num.FromUsizeU16.from_val_eq,
+    added, ← Validation.ok_ite]
+
+theorem lanes_loop_end {T : Type} (terminal : TerminalEncoding T) (inbox : Inbox)
+    (context : AuthenticatedCenterContext) (index : Usize)
+    (outside : inbox.lanes.val.length ≤ index.val) :
+    Inbox.lanes_invalid_loop terminal inbox context index = .ok false := by
+  unfold Inbox.lanes_invalid_loop
+  rw [loop, lanes_body_end terminal inbox context index outside]
+  simp
+
+theorem lanes_loop_step {T : Type} (terminal : TerminalEncoding T) (inbox : Inbox)
+    (context : AuthenticatedCenterContext) (index next : Usize)
+    (inside : index.val < inbox.lanes.val.length) (added : next.val = index.val + 1) :
+    Inbox.lanes_invalid_loop terminal inbox context index =
+      (if inbox.lanes.val[index.val].slot.val ≠ index.val + 1 then .ok true
+       else do
+         let valid ← RetentionLane.validateView terminal.encode inbox.lanes.val[index.val] context
+         if valid then Inbox.lanes_invalid_loop terminal inbox context next else .ok true) := by
+  unfold Inbox.lanes_invalid_loop
+  conv_lhs => rw [loop]
+  rw [lanes_body_step terminal inbox context index next inside added]
+  by_cases slot : inbox.lanes.val[index.val].slot.val ≠ index.val + 1
+  · simp [slot]
+  · simp only [slot, ↓reduceIte, InboxEntry.bind_then]
+    apply congrArg (fun continuation => Bind.bind
+      (RetentionLane.validateView terminal.encode inbox.lanes.val[index.val] context) continuation)
+    funext valid
+    cases valid <;> simp
+
+theorem lanes_loop_refines {T : Type} (terminal : TerminalEncoding T) (inbox : Inbox)
+    (context : AuthenticatedCenterContext) (index : Usize) :
+    Inbox.lanes_invalid_loop terminal inbox context index =
+      (do let valid ← laneScan terminal.encode context (inbox.lanes.val.drop index.val) index.val
+          .ok (!valid)) := by
+  induction remaining : inbox.lanes.val.length - index.val using Nat.strong_induction_on
+      generalizing index with
+  | h remaining ih =>
+    by_cases inside : index.val < inbox.lanes.val.length
+    · let next := Usize.ofNatCore (index.val + 1) (by scalar_tac)
+      have added : next.val = index.val + 1 := rfl
+      rw [lanes_loop_step terminal inbox context index next inside added]
+      have later := ih (inbox.lanes.val.length - next.val) (by omega) next rfl
+      rw [List.drop_eq_getElem_cons inside]
+      by_cases slot : inbox.lanes.val[index.val].slot.val ≠ index.val + 1
+      · simp [laneScan, slot]
+      · simp only [laneScan, slot, ↓reduceIte, bind_assoc_eq]
+        apply congrArg (fun continuation => Bind.bind
+          (RetentionLane.validateView terminal.encode inbox.lanes.val[index.val] context) continuation)
+        funext valid
+        cases valid <;> simp [later, added]
+    · rw [lanes_loop_end terminal inbox context index (by omega)]
+      simp [List.drop_eq_nil_of_le (by omega : inbox.lanes.val.length ≤ index.val), laneScan]
+
+theorem lanes_invalid_refines {T : Type} (terminal : TerminalEncoding T) (inbox : Inbox)
+    (context : AuthenticatedCenterContext) :
+    Inbox.lanes_invalid terminal inbox context =
+      (do let valid ← laneScan terminal.encode context inbox.lanes.val 0; .ok (!valid)) := by
+  rw [Inbox.lanes_invalid, lanes_loop_refines]
+  simp
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.lanes_body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.lanes_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.lanes_loop_end
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.lanes_loop_step
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.lanes_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.lanes_invalid_refines

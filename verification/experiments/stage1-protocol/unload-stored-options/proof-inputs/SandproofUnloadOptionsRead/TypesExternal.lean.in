@@ -1,0 +1,42 @@
+import Aeneas
+import SandproofFoundations.TypesExternal
+open Aeneas Aeneas.Std
+namespace SandproofUnloadOptionsRead
+
+class Representations where
+  core_io_error_Error : Type
+  rusqlite_error_Error : Type
+  rusqlite_Connection : Type
+  rusqlite_row_Row : Type
+  rusqlite_statement_Statement : Type
+  rusqlite_types_to_sql_ToSqlOutput : Type
+  rusqlite_types_value_ref_ValueRef : Type
+  rusqlite_types_from_sql_FromSqlError : Type
+  sandbox_controller_core_controller_ControllerReject : Type
+  sandbox_controller_core_ids_SandboxId : Type
+  sandproof_protocol_ContractError : Type
+  sandproof_protocol_SandboxId : Type
+  serde_json_error_Error : Type
+  CrashPoint : Type
+  host_contract_CreateOptions : Type
+abbrev core.io.error.Error [r : Representations] := r.core_io_error_Error
+abbrev rusqlite.error.Error [r : Representations] := r.rusqlite_error_Error
+abbrev rusqlite.Connection [r : Representations] := r.rusqlite_Connection
+abbrev rusqlite.row.Row [r : Representations] := r.rusqlite_row_Row
+abbrev rusqlite.statement.Statement [r : Representations] := r.rusqlite_statement_Statement
+abbrev rusqlite.types.to_sql.ToSqlOutput [r : Representations] := r.rusqlite_types_to_sql_ToSqlOutput
+abbrev rusqlite.types.value_ref.ValueRef [r : Representations] := r.rusqlite_types_value_ref_ValueRef
+abbrev rusqlite.types.from_sql.FromSqlError [r : Representations] := r.rusqlite_types_from_sql_FromSqlError
+abbrev sandbox_controller_core.controller.ControllerReject [r : Representations] := r.sandbox_controller_core_controller_ControllerReject
+abbrev sandbox_controller_core.ids.SandboxId [r : Representations] := r.sandbox_controller_core_ids_SandboxId
+abbrev sandproof_protocol.ContractError [r : Representations] := r.sandproof_protocol_ContractError
+abbrev sandproof_protocol.SandboxId [r : Representations] := r.sandproof_protocol_SandboxId
+abbrev serde_json.error.Error [r : Representations] := r.serde_json_error_Error
+abbrev CrashPoint [r : Representations] := r.CrashPoint
+abbrev host_contract.CreateOptions [r : Representations] := r.host_contract_CreateOptions
+abbrev core.fmt.Formatter := SandproofFoundationsRust.core.fmt.Formatter
+abbrev core.fmt.Error := SandproofFoundationsRust.core.fmt.Error
+abbrev core.fmt.Display := SandproofFoundationsRust.core.fmt.Display
+abbrev core.fmt.Debug := SandproofFoundationsRust.core.fmt.Debug
+abbrev core.error.Error := SandproofFoundationsRust.core.error.Error
+end SandproofUnloadOptionsRead

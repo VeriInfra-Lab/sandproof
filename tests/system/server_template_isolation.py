@@ -35,6 +35,7 @@ import httpx
 from e2b import AsyncSandbox, Sandbox
 
 from sdk_c02_acceptance import processes_in_uid_range, sha256_file
+from tools.capture_acceptance import original_chroot
 from sdk_private_root import (
     CONFIG, EXECUTABLE, FAILED_INIT, PACKAGE, clean, failed_initializer,
     install, installed, run,
@@ -78,13 +79,14 @@ def phases(database):
 
 
 def audit_gone(root, firecracker, cgroup_parent, name, identity=None):
-    claim = root / "jails/.claims" / name
+    chroot=original_chroot(root)
+    claim = chroot / '.claims' / name
     # Capture while live, before complete maintenance can retire claim files.
     # The fallback is for callers that deliberately observe an unretired claim.
     record = identity if identity is not None else json.loads((claim / "record.json").read_text())
     assert record["resource_id"] == name
     assert process_start_ticks(record["pid"]) != record["start_time_ticks"]
-    assert not (root / "jails" / firecracker.name / name).exists()
+    assert not (chroot / firecracker.name / name).exists()
     assert not Path("/run/netns", name).exists()
     assert not (cgroup_parent / name).exists()
     inode = (record["network_inode"] if identity is not None else
@@ -104,12 +106,12 @@ def live_shape(root, args, sandbox, expected, opener, url, key, *, native_id, na
     record = assert_shape(root, args.firecracker, args.cgroup_parent,
                           sandbox,expected,opener,url,key,native_id=native_id,native_template=native_template)
     _, name, _ = record_for(root,native_id=native_id)
-    private = root / "jails" / args.firecracker.name / name / "root/rootfs.ext4"
+    private = original_chroot(root) / args.firecracker.name / name / "root/rootfs.ext4"
     source = Path(expected["rootfs"]["path"]).stat()
     disk = private.stat()
     assert (source.st_dev, source.st_ino) != (disk.st_dev, disk.st_ino)
     group = args.cgroup_parent / name
-    bound = json.loads((root / "jails/.claims" / name / "cgroup.json").read_text())
+    bound = json.loads((original_chroot(root) / ".claims" / name / "cgroup.json").read_text())
     assert group.stat().st_ino == bound["inode"]
     assert Path("/proc", str(record["pid"]), "cgroup").read_text().strip() == (
         "0::/" + str(group.relative_to("/sys/fs/cgroup")))
@@ -130,7 +132,7 @@ def live_shape(root, args, sandbox, expected, opener, url, key, *, native_id, na
     assert (machine["vcpu_count"], machine["mem_size_mib"]) == (
         shape["cpu_count"], shape["memory_mib"])
     return {"native_id":native_id,"resource_id": name, "pid": record["pid"], "start_time_ticks": record["start_time_ticks"],
-            "network_inode": json.loads((root / "jails/.claims" / name / "network.json").read_text())["namespace_inode"],
+            "network_inode": json.loads((original_chroot(root) / ".claims" / name / "network.json").read_text())["namespace_inode"],
             "disk": {"device": disk.st_dev, "inode": disk.st_ino, "bytes": disk.st_size},
             "cgroup_inode": bound["inode"], "limits": limits,
             "machine": {"cpus": machine["vcpu_count"], "memory_mib": machine["mem_size_mib"]}}
@@ -165,10 +167,10 @@ async def exercise(args):
     before_network = shared_network()
     root = Path(tempfile.mkdtemp(prefix="ti-", dir=parent))
     namespace = secrets.token_hex(8)
-    assert len(os.fsencode(root / "jails" / args.firecracker.name / f"vm-{namespace}-7/root/api.socket")) < 108
+    assert len(os.fsencode(root / "p/v" / args.firecracker.name / f"vm-{namespace}-7/root/api.socket")) < 108
     print(json.dumps({"event": "run_created", "root": str(root), "namespace": namespace,
                       "source_commit": commit}), flush=True)
-    for name in ("db", "state", "jails", "images"):
+    for name in ("db", "state", "p", "images"):
         (root / name).mkdir(mode=0o700)
     kernel = root / "images/kernel"
     bad_kernel = root / "images/unbootable-kernel"
@@ -195,7 +197,7 @@ async def exercise(args):
     database = root / "db/controller.db"
     settings = {
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
-        "jailer": str(args.jailer), "firecracker": str(args.firecracker), "chroot_base": str(root / "jails"),
+        "jailer": str(args.jailer), "firecracker": str(args.firecracker), "chroot_base": str(root / "p/v"),
         "kernel": str(kernel), "rootfs": str(images[0]), "uid_base": args.uid_base,
         "vcpu_count": 1, "memory_mib": 512,
         "host_resources": {"cgroup_parent": str(args.cgroup_parent), "memory_max_bytes": 768 * MIB},
@@ -208,13 +210,13 @@ async def exercise(args):
         "compute_limits": {"max_vcpus_global": 6, "max_vcpus_per_tenant": 6,
                            "max_memory_bytes_global": 4096 * MIB, "max_memory_bytes_per_tenant": 4096 * MIB}},
     }
-    settings = complete_runtime(settings, slots=PHYSICAL_SLOTS)
+    settings = complete_runtime(settings, slots=PHYSICAL_SLOTS, inbox_sessions=VM_COUNT+settings["max_active_global"])
     artifact_bytes=sum(binding[kind]['size_bytes'] for binding in templates+bad_templates for kind in ('kernel','rootfs'))
     registry=dict(root=str(root/'registry'),max_templates_global=4,max_templates_per_tenant=4,
         max_artifact_bytes_global=artifact_bytes,max_artifact_bytes_per_tenant=artifact_bytes,validation_timeout_secs=60)
     services=RuntimeServices.prepare(args,root=root,native_pools=[settings],registered_catalogs=[settings['templates']],
         key=key,public_address=url.removeprefix('http://'),record=args.service_cgroup_record,
-        job_count=VM_COUNT,registry_config=registry)
+        retained_sessions=(VM_COUNT) + settings['max_active_global'],registry_config=registry)
     settings=services.native_pools[0]
     config=services.processes.bindings['center']['config']
     original_config=config.read_bytes()
@@ -385,9 +387,9 @@ async def exercise(args):
             slots = [json.loads(path.read_text()) for path in (root / "state/slots").glob("*.json")]
             slot = next(value for value in slots if value["sandbox"] == local)
             name = f"vm-{namespace}-{slot['vm']}"
-            assert (root / "jails/.claims" / name / "failed-prepare.json").is_file()
-            failed_identity = json.loads((root / "jails/.claims" / name / "record.json").read_text())
-            failed_identity["network_inode"] = json.loads((root / "jails/.claims" / name / "network.json").read_text())["namespace_inode"]
+            assert (original_chroot(root) / ".claims" / name / "failed-prepare.json").is_file()
+            failed_identity = json.loads((original_chroot(root) / ".claims" / name / "record.json").read_text())
+            failed_identity["network_inode"] = json.loads((original_chroot(root) / ".claims" / name / "network.json").read_text())["namespace_inode"]
             evidence.append({"sandbox_id":original_create['binding']['session'],"native_id":ident,
                              "template_id": bad_templates[index // 2]["template_id"],
                              "host": failed_identity})

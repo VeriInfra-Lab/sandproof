@@ -1,0 +1,83 @@
+import SandboxModel.Lifecycle.Protocol.InboxRenewalModel
+import SandboxModel.Lifecycle.Protocol.RenewalValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.renewal
+namespace SandboxModel.Stage1Protocol.InboxRenewal.Values
+open scoped Classical
+noncomputable section
+
+/- Decoded-value witnesses for this validator, not reachable-store histories.
+The native common fixtures also include the original Create row. -/
+def confirmation (version previous : U64) : RenewalConfirmation := {
+  RenewalValues.exactResult with request := {
+    RenewalValues.intent with
+    accepted_version := version,
+    request := { RenewalValues.intent.request with binding := {
+      RenewalValues.intent.request.binding with
+      expected := .Version previous,
+      key := { RenewalValues.intent.request.binding.key with sequence := version } } } } }
+
+def entry (intent : AcceptedLifecycleIntent) (applied : Option I64) : Entry :=
+  ⟨intent, none, applied, some 100#i64, none⟩
+
+def base : Session := {
+  id := RenewalValues.intent.request.binding.session,
+  retention := RenewalValues.intent.retention, owner := RenewalValues.intent.request.binding.key.owner,
+  current_version := 2#u64, terminal := false, refusal := none, incarnation := some 1#u64,
+  «local» := some ⟨10#u64, 20#u64, 30#u64⟩,
+  entries := alloc.vec.Vec.from [entry RenewalValues.intent (some 200#i64)] (by scalar_tac),
+  confirmed_terminal := none, confirmed_renewal := some RenewalValues.exactResult,
+  compacted_sdk_through := none, native_retirement := none }
+
+def keyOnly : Session := { base with
+  entries := alloc.vec.Vec.from
+    [entry RenewalValues.changedRetention (some 200#i64)] (by scalar_tac) }
+
+def retained : Session := { base with
+  current_version := 4#u64, confirmed_renewal := some (confirmation 4#u64 3#u64),
+  compacted_sdk_through := some 2#u64,
+  entries := alloc.vec.Vec.from [entry RenewalValues.intent (some 200#i64),
+    entry (confirmation 4#u64 3#u64).request (some 200#i64)] (by scalar_tac) }
+
+def unapplied : Session := { base with
+  current_version := 3#u64, confirmed_renewal := some (confirmation 3#u64 2#u64),
+  entries := alloc.vec.Vec.from [entry RenewalValues.intent none,
+    entry (confirmation 3#u64 2#u64).request (some 200#i64)] (by scalar_tac) }
+
+def duplicateFirst : Session := { base with
+  entries := alloc.vec.Vec.from
+    [{ entry RenewalValues.intent (some 200#i64) with previous_effective_end_at_ms := none },
+    entry RenewalValues.intent (some 200#i64)] (by scalar_tac) }
+
+def bytes : alloc.vec.Vec U8 := alloc.vec.Vec.from [] (by simp)
+def encode : Encoding := fun _ => .ok (.Ok bytes)
+
+theorem confirmation_shapes : Renewal.Shape (confirmation 3#u64 2#u64) ∧
+    Renewal.Shape (confirmation 4#u64 3#u64) := by
+  have add2 : U64.checked_add 2#u64 1#u64 = some 3#u64 := by decide
+  have add3 : U64.checked_add 3#u64 1#u64 = some 4#u64 := by decide
+  simp [Renewal.Shape, Renewal.Deadline, confirmation, RenewalValues.exactResult, RenewalValues.intent,
+    EnvelopeValues.intent, EnvelopeValues.center, EnvelopeValues.node,
+    Validation.retentionOK, Validation.versionOK, Validation.ValidRequest,
+    Validation.headersOK, Validation.expectationOK, Validation.operationOK, add2, add3]
+
+theorem expected_outcomes :
+    validateView encode base = .ok (.Ok ()) ∧
+    validateView encode keyOnly = .ok corrupt ∧
+    validateView encode retained = .ok corrupt ∧
+    validateView encode unapplied = .ok corrupt ∧
+    validateView encode duplicateFirst = .ok corrupt := by
+  simp only [validateView, base, keyOnly, retained, unapplied, duplicateFirst,
+    RenewalValues.legal_exact, confirmation_shapes.1, confirmation_shapes.2,
+    encode, ↓reduceIte, bind_tc_ok]
+  simp [bytes, afterEncoding, checkpointInvalid, checkpointMatches, entryInvalid,
+    frontierInvalid, containsVersion, unappliedSdk, sdkRenewal, entry,
+    confirmation, RenewalValues.exactResult, RenewalValues.intent, RenewalValues.changedRetention,
+    EnvelopeValues.intent]
+
+end
+end SandboxModel.Stage1Protocol.InboxRenewal.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.Values.confirmation_shapes
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.Values.expected_outcomes

@@ -1,0 +1,56 @@
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentity
+import SandboxModel.Lifecycle.Protocol.CreateFixedIdentityValues
+import SandboxModel.Lifecycle.Protocol.StandardIdentityDelegateFixture
+
+open Aeneas Aeneas.Std SandproofStage1CreateAttachmentRust
+namespace SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter
+open CreateFixedIdentity
+
+theorem helper_normal_unchanged :
+    sandproof_controller_service.controller.identity.sandbox_id Values.normal 2#u64 =
+      .ok (.Ok "sb-normal-2") := by
+  simpa only [Values.normal_expected] using identity_complete Values.normal "normal" 2#u64
+    Values.normal_represented Values.normal_output_representable
+
+theorem actual_number_truncated (effects : Effects) :
+    call effects Values.normal 2#u64 = .ok (.Ok "sb-normal-0", effects) := by
+  have helper := identity_complete Values.normal "normal" 0#u64 rfl
+    (by change 11 ≤ Usize.max; scalar_tac)
+  have divided : UScalar.div 2#u64 10#u64 = .ok 0#u64 := by rfl
+  unfold call sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.sandbox_id
+  dsimp only [HDiv.hDiv]
+  erw [divided]
+  simp only [bind_tc_ok]
+  rw [helper]
+  simp only [bind_tc_ok]
+  rfl
+
+theorem still_accepts_empty_zero (effects : Effects) :
+    call effects Values.empty 0#u64 = .ok (.Ok "sb--0", effects) := by
+  have helper := identity_complete Values.empty "" 0#u64 rfl
+    (by change 5 ≤ Usize.max; scalar_tac)
+  have divided : UScalar.div 0#u64 10#u64 = .ok 0#u64 := by rfl
+  unfold call sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateAttachmentEffects.sandbox_id
+  dsimp only [HDiv.hDiv]
+  erw [divided]
+  simp only [bind_tc_ok]
+  rw [helper]
+  simp only [bind_tc_ok]
+  rfl
+
+theorem same_full_contract_rejected :
+    ¬ FullStandardIdentityContract call := by
+  intro law
+  have promised := law (Fixture.normalEffects Fixture.selectedWorld Fixture.observingConnection) Values.normal "normal" 2#u64
+    Values.normal_represented Values.normal_output_representable
+  rw [actual_number_truncated, Values.normal_expected] at promised
+  have equality := Result.ok_injective promised
+  have reply := congrArg Prod.fst equality
+  injection reply with text
+  exact (by decide : ("sb-normal-0" : String) ≠ "sb-normal-2") text
+
+end SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.helper_normal_unchanged
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.actual_number_truncated
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.still_accepts_empty_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.same_full_contract_rejected

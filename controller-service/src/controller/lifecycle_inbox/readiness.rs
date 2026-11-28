@@ -50,11 +50,11 @@ impl NativeCreateSnapshot {
     /// Pure original-operation check used by the query. This alone is not
     /// Ready: the canonical request, lifetime and fresh host facts are separate.
     #[must_use]
-    pub fn has_completed_original_create(&self, local: InternalLocalBinding) -> bool {
+    pub fn has_completed_original_execution(&self, local: InternalLocalBinding) -> bool {
         if self.owner != local.owner
             || self.phase != core::Phase::Running
             || self.terminal
-            || self.generation != 1
+            || self.generation == 0
             || self.current_vm.is_none()
             || !self.uncertain_actions.is_empty()
         {
@@ -62,7 +62,8 @@ impl NativeCreateSnapshot {
         }
         matches!(self.current_operation, Some(operation)
             if operation.id == local.operation && operation.epoch == self.epoch
-                && operation.kind == core::OperationKind::Create
+                && matches!(operation.kind, core::OperationKind::Create | core::OperationKind::Resume)
+                && ((operation.kind == core::OperationKind::Create) == (self.generation == 1))
                 && operation.status == core::OperationStatus::Succeeded)
     }
 }

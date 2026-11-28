@@ -1,0 +1,97 @@
+import SandboxModel.Lifecycle.Protocol.InboxProtocolDestroyFlowValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.recording
+namespace SandboxModel.Stage1Protocol.ProtocolRecord.WrongOperation
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+open DestroyValues DestroyRecordValues DestroyFlowValues
+open InboxLoad.Values (saved terminal renewal unload)
+
+theorem actual_attached (trace : InboxLoad.Values.Trace) :
+    attach_destroy effects trace pending destroyIntent 0#usize 1#usize =
+      .ok (.Ok (), trace, after 30#u64) := by
+  obtain ⟨session, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec pending.sessions 0#usize (by decide))
+  have selectedSession : session = pendingSession := by
+    simpa [pending, container, vector] using same
+  obtain ⟨⟨sessionMut, backSession⟩, mutIndexed, sessionSame, sessionBack⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_mut_usize_spec pending.sessions 0#usize (by decide))
+  have selectedMutSession : sessionMut = pendingSession := by
+    simpa [pending, container, vector] using sessionSame
+  obtain ⟨⟨entryMut, backEntry⟩, entryMutIndexed, entryMutSame, entryBack⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_mut_usize_spec pendingSession.entries 1#usize (by decide))
+  have selectedEntry : entryMut = InboxRecord.pendingEntry destroyIntent := by
+    simpa [pendingSession, pendingEntries, vector] using entryMutSame
+  have operation : destroyIntent.request.operation = .Destroy := rfl
+  simp only [attach_destroy, operation, bind_tc_ok, ↓reduceIte,
+    alloc.vec.Vec.index_slice_index, alloc.vec.Vec.index_mut_slice_index]
+  rw [indexed]
+  simp only [bind_tc_ok, selectedSession]
+  have localBinding : pendingSession.local = some binding := rfl
+  simp only [localBinding, effects, Values.normalIO, bind_tc_ok, uncurry_apply_pair,
+    core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or]
+  rw [mutIndexed]
+  simp only [bind_tc_ok, uncurry_apply_pair, selectedMutSession]
+  rw [entryMutIndexed]
+  simp only [bind_tc_ok, uncurry_apply_pair, selectedEntry, sessionBack, entryBack]
+  simp [pending, container, pendingSession, pendingEntries, binding, SavedRetirement.Values.binding,
+    after, afterSession, destroyed, vector]
+  apply alloc.vec.Vec.ext
+  simp [beforeSession]
+  apply alloc.vec.Vec.ext
+  simp
+
+-- Whatever save does, the wrong attached inbox cannot return the specified
+-- current operation. Save errors/failure/divergence are not assumed away.
+theorem actual_not_current (trace : InboxLoad.Values.Trace) :
+    record_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic effects trace destroyIntent EnvelopeValues.context ≠
+      .ok (.Ok (.Recorded (resultState 32#u64)),
+        (trace ++ InboxLoad.Values.completeTrace before) ++
+          [.encodedInbox (after 32#u64), .digested InboxLoad.Values.bytes.val]) := by
+  have loaded : load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic effects.codecInboxLoadEffectsInst trace =
+        .ok (.Ok (some before), trace ++ InboxLoad.Values.completeTrace before) := before_loaded trace
+  have guarded (state : InboxLoad.Values.Trace) :
+      guard_destroy effects state before destroyIntent = .ok (.Ok (), state) := by
+    rw [guard_refines]
+    exact guard_model state
+  intro returned
+  unfold record_using at returned
+  rw [loaded] at returned
+  simp only [bind_tc_ok, uncurry_apply_pair, core.result.Result.Insts.CoreOpsTry.branch,
+    core.option.Option.ok_or, DestroyRecordValues.authenticated, not_found] at returned
+  rw [guarded] at returned
+  simp only [bind_tc_ok, uncurry_apply_pair] at returned
+  rw [recorded] at returned
+  simp only [bind_tc_ok, uncurry_apply_pair] at returned
+  rw [actual_attached] at returned
+  simp only [bind_tc_ok, uncurry_apply_pair] at returned
+  obtain ⟨⟨savedResult, afterSave⟩, _, continued⟩ := InboxLoad.bind_success_value _ _ _ returned
+  simp only [uncurry_apply_pair] at continued
+  cases savedResult with
+  | Err error =>
+    simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual] at continued
+  | Ok accepted =>
+    cases accepted
+    simp only [bind_tc_ok, query,
+      Result.ok.injEq, Prod.mk.injEq, core.result.Result.Ok.injEq] at continued
+    exact state_different (RecordOutcome.Recorded.inj continued.1).symm
+
+theorem violates_full_contract : ¬ FullFlowContract record_using := by
+  intro contract
+  have predicted := contract saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic effects ComposedConfig.standard_graphic_contract
+    (Fixture.represented before before_represented) destroyIntent EnvelopeValues.context []
+  exact actual_not_current [] (predicted.trans (flow_model []))
+
+end
+end SandboxModel.Stage1Protocol.ProtocolRecord.WrongOperation
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.WrongOperation.actual_attached
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.WrongOperation.actual_not_current
+#audit_controller_proof SandboxModel.Stage1Protocol.ProtocolRecord.WrongOperation.violates_full_contract

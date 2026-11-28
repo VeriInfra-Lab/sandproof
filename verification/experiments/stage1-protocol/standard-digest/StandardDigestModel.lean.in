@@ -1,0 +1,12 @@
+import SandproofStandardDigest.Funs
+import SandboxModel.ProofAuditCommand
+namespace SandboxModel.Stage1Protocol.StandardDigest
+open Aeneas Aeneas.Std SandproofStandardDigestRust
+abbrev Context := controller.checkpoint.config.StandardConfigRead
+def actual (self : Context) (bytes : Slice U8) :=
+  controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.digest self bytes
+def expected (self : Context) (bytes : Slice U8) :=
+  Result.ok (DigestByteBridge.referenceOutput bytes, self)
+def FullDigestContract (run : Context → Slice U8 → Result (Array U8 32#usize × Context)) : Prop :=
+  ∀ self bytes, bytes.val.length < 2^61 → run self bytes = expected self bytes
+end SandboxModel.Stage1Protocol.StandardDigest

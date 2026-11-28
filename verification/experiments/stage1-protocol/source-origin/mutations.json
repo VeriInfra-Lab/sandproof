@@ -1,0 +1,33 @@
+{
+  "skip-session": {
+    "edits": [
+      {
+        "before": "let (origin_session, origin_entry) = inbox",
+        "after": "let (_origin_session, origin_entry) = inbox"
+      },
+      {
+        "before": "    if origin_session != session\n        || inbox.sessions[session].entries[origin_entry].local_operation\n            != Some(anchor.local.operation)\n",
+        "after": "    if inbox.sessions[session].entries[origin_entry].local_operation != Some(anchor.local.operation)\n"
+      }
+    ],
+    "sha256": "cfba3f941a71dbf284a4a6c95b251fefbeaeb7939433b6a5bfdd724579ff86fb"
+  },
+  "skip-generation": {
+    "edits": [
+      {
+        "before": "        || origin_plan.generation != anchor.native.generation\n",
+        "after": ""
+      }
+    ],
+    "sha256": "6a1e7429ddb4cd03c2d523331183771efe4a6bf4c716e7c6ed28bcc2c89158f3"
+  },
+  "skip-vm": {
+    "edits": [
+      {
+        "before": "        || origin_plan.vm != anchor.native.current_vm\n",
+        "after": ""
+      }
+    ],
+    "sha256": "a09eaf1450de2926354a0919a56d4d67100bb41edcff4e1ac850b0e406d98d93"
+  }
+}

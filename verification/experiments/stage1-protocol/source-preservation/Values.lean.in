@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Spec
+open Aeneas Aeneas.Std SandproofSourcePreservationRust
+namespace SandboxModel.Stage1Protocol.SourcePreservation.Values
+
+def witness : Witness := ⟨⟨1#u64, none, ⟨2#u64, 3#u64, 4#u64, 5#u64, 6#u64⟩⟩, 7#u64⟩
+def digest : Digest := Array.from (List.replicate 32 (0#u8)) (by decide)
+def otherDigest : Digest := Array.from (List.replicate 32 (1#u8)) (by decide)
+def bytes : alloc.vec.Vec U8 := alloc.vec.Vec.from [1#u8, 2#u8] (by scalar_tac)
+def otherBytes : alloc.vec.Vec U8 := alloc.vec.Vec.from [1#u8, 3#u8] (by scalar_tac)
+def reason : Reason := .Terminal ⟨3#u64, 8#u64⟩ 9#u64 10#u64
+def closure : Closure := ⟨digest, some otherDigest, reason⟩
+def plan : Plan := ⟨bytes, digest, otherDigest, closure⟩
+def settlement : Settlement := ⟨digest, otherDigest, 2#u64⟩
+
+def base (seed : Record) : Record :=
+  { seed with material_release := ⟨some witness, some witness⟩, retirement := some (.Retiring plan) }
+def empty (seed : Record) : Record :=
+  { seed with material_release := ⟨none, none⟩, retirement := none }
+def settled (seed : Record) : Record :=
+  { base seed with retirement := some (.Settled plan settlement) }
+def dropProducer (seed : Record) : Record :=
+  { base seed with material_release := ⟨none, some witness⟩ }
+def dropConsumer (seed : Record) : Record :=
+  { base seed with material_release := ⟨some witness, none⟩ }
+def changedPlan (seed : Record) : Record :=
+  { base seed with retirement := some (.Retiring { plan with bytes := otherBytes }) }
+
+theorem different_bytes : otherBytes ≠ bytes := by decide
+
+theorem different_plans : { plan with bytes := otherBytes } ≠ plan := by
+  intro same
+  have projected := congrArg controller.lifecycle_inbox.source_work.retirement.MaterialRetirementPlan.bytes same
+  exact different_bytes projected
+end SandboxModel.Stage1Protocol.SourcePreservation.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.Values.different_bytes
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.Values.different_plans

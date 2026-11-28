@@ -1,0 +1,60 @@
+import SandboxModel.Lifecycle.Protocol.StandardCreateModel
+import SandboxModel.Access.Cloning
+
+open Aeneas Aeneas.Std SandproofStandardCreateRust
+namespace SandboxModel.Stage1Protocol.StandardCreate
+
+theorem transaction_world_complete (tx : WorldTx) (world : World)
+    (present : CandidateAt tx world) : txWorld tx = .ok world := by
+  rcases present with ⟨normal, present⟩
+  simp [txWorld, sandproof_controller_service.controller.transaction.WorldTransaction.world,
+    core.cell.RefCell.borrow, normal, core.cell.Ref.Insts.CoreOpsDerefDeref.deref,
+    core.option.Option.as_ref, present, core.option.Option.expect]
+
+theorem live_transaction_deref (tx : WorldTx) (db : DbTx)
+    (live : tx.transaction = some db) : txDeref tx = .ok db := by
+  simp [txDeref,
+    sandproof_controller_service.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    core.option.Option.as_ref, live, core.option.Option.expect]
+
+theorem database_connection_deref (db : DbTx) : connectionDeref db = .ok db.conn := by
+  rfl
+
+theorem unavailable_candidate_panics (tx : WorldTx)
+    (normal : NormalWorldBorrow tx.candidate.beforeBorrowCount)
+    (absent : tx.candidate.value = none) : txWorld tx = .fail .panic := by
+  simp [txWorld, sandproof_controller_service.controller.transaction.WorldTransaction.world,
+    core.cell.RefCell.borrow, normal, core.cell.Ref.Insts.CoreOpsDerefDeref.deref,
+    core.option.Option.as_ref, absent, core.option.Option.expect]
+
+theorem conflicting_or_overflowed_borrow_panics (tx : WorldTx)
+    (invalid : ¬ NormalWorldBorrow tx.candidate.beforeBorrowCount) :
+    txWorld tx = .fail .panic := by
+  simp [txWorld, sandproof_controller_service.controller.transaction.WorldTransaction.world,
+    core.cell.RefCell.borrow, invalid]
+
+theorem unavailable_transaction_panics (tx : WorldTx) (absent : tx.transaction = none) :
+    txDeref tx = .fail .panic := by
+  simp [txDeref,
+    sandproof_controller_service.controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref,
+    core.option.Option.as_ref, absent, core.option.Option.expect]
+
+theorem transaction_world_expected (tx : WorldTx) : txWorld tx = expectedTxWorld tx := by
+  by_cases normal : NormalWorldBorrow tx.candidate.beforeBorrowCount
+  · cases present : tx.candidate.value with
+    | none =>
+      simpa [expectedTxWorld, normal, present] using unavailable_candidate_panics tx normal present
+    | some world =>
+      simpa [expectedTxWorld, normal, present] using
+        transaction_world_complete tx world ⟨normal, present⟩
+  · simpa [expectedTxWorld, normal] using conflicting_or_overflowed_borrow_panics tx normal
+
+end SandboxModel.Stage1Protocol.StandardCreate
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.transaction_world_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.live_transaction_deref
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.database_connection_deref
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.unavailable_candidate_panics
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.conflicting_or_overflowed_borrow_panics
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.unavailable_transaction_panics
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardCreate.transaction_world_expected

@@ -41,6 +41,7 @@ fn source() -> SourceObservationRequirement {
             max_executable_bytes: 1024,
             max_kernel_bytes: 2048,
             max_disk_bytes: 8192,
+            max_material_bytes: 1_073_741_824,
         },
     }
 }

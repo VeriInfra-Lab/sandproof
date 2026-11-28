@@ -1,0 +1,12 @@
+{
+  "key-only": {
+    "source": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+    "before": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct SourceWork {\n    anchor: SourceAnchor,\n    requirement: SourceObservationRequirement,\n}\n",
+    "after": "#[derive(Clone, Debug, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct SourceWork {\n    anchor: SourceAnchor,\n    requirement: SourceObservationRequirement,\n}\nimpl PartialEq for SourceWork {\n    fn eq(&self, other: &Self) -> bool {\n        self.requirement.work_binding == other.requirement.work_binding\n    }\n}\n"
+  },
+  "anchor-only": {
+    "source": "controller-service/src/controller/lifecycle_inbox/source_work.rs",
+    "before": "#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct SourceWork {\n    anchor: SourceAnchor,\n    requirement: SourceObservationRequirement,\n}\n",
+    "after": "#[derive(Clone, Debug, Eq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct SourceWork {\n    anchor: SourceAnchor,\n    requirement: SourceObservationRequirement,\n}\nimpl PartialEq for SourceWork {\n    fn eq(&self, other: &Self) -> bool {\n        self.anchor == other.anchor\n    }\n}\n"
+  }
+}

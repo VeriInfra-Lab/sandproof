@@ -1,0 +1,21 @@
+[package]
+name = "sandproof-envelope-writer-check"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[features]
+candidate = []
+
+[dependencies]
+sandproof-internal = { path = "../../../../sandbox-internal" }
+sandproof-protocol = { path = "../../../../sandbox-protocol" }
+
+serde_json = "=1.0.142"
+serde = "=1.0.228"
+sandproof-controller-service = { path = "../../../../controller-service", default-features = false }
+
+[lib]
+path = "roots.rs.in"

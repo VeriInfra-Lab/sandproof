@@ -1,0 +1,7 @@
+import Aeneas
+open Aeneas Aeneas.Std
+namespace SandproofFoundationsRust
+@[simp, rust_fun "alloc::string::{core::cmp::PartialEq<alloc::string::String, alloc::string::String>}::eq"]
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool := .ok (decide (left = right))
+end SandproofFoundationsRust

@@ -1,0 +1,80 @@
+import SandproofParentRead.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofParentReadRust
+namespace SandboxModel.InboxTransaction.CurrentWorldRead
+
+abbrev World := sandbox_controller_core.model.World
+abbrev Owner := controller.transaction.WorldTransaction
+abbrev CurrentOwner := SandproofStage1RequestRust.sandproof_controller_service.controller.transaction.WorldTransaction
+abbrev readWorld := controller.transaction.WorldTransaction.world
+abbrev Raw := rusqlite.transaction.Transaction
+abbrev CurrentRaw := SandproofStage1RequestRust.rusqlite.transaction.Transaction
+
+def rawView (before : CurrentRaw) : Raw := {
+  conn := before.conn
+  drop_behavior := before.drop_behavior
+}
+
+-- Ordinary value/counter transport, not physical aliasing or borrow release.
+def ownerView (before : CurrentOwner) : Owner := {
+  transaction := before.transaction.map rawView
+  committed := {
+    value := before.committed.value
+    data_version := before.committed.data_version
+  }
+  candidate := before.candidate
+  input_start := before.input_start
+}
+
+def CandidateAt (owner : Owner) (world : World) : Prop :=
+  NormalWorldBorrow owner.candidate.beforeBorrowCount ∧ owner.candidate.value = some world
+
+theorem actual_anchor_calls_original_world (owner : Owner) :
+    controller.transaction.proof_parent_world_read owner = readWorld owner := by
+  rfl
+
+-- Reuses the old proof shape against the unedited new raw function. This is
+-- a model/body result under the separately documented A6/B4 mechanical links.
+theorem world_from_same_candidate (owner : Owner) (world : World)
+    (present : CandidateAt owner world) : readWorld owner = .ok world := by
+  rcases present with ⟨normal, present⟩
+  simp [readWorld, controller.transaction.WorldTransaction.world,
+    core.cell.RefCell.borrow, normal, core.cell.Ref.Insts.CoreOpsDerefDeref.deref,
+    core.option.Option.as_ref, present, core.option.Option.expect,
+    sandbox_controller_core.model.World.Insts.CoreCloneClone.clone]
+
+theorem unavailable_candidate_panics (owner : Owner)
+    (normal : NormalWorldBorrow owner.candidate.beforeBorrowCount)
+    (absent : owner.candidate.value = none) : readWorld owner = .fail .panic := by
+  simp [readWorld, controller.transaction.WorldTransaction.world,
+    core.cell.RefCell.borrow, normal, core.cell.Ref.Insts.CoreOpsDerefDeref.deref,
+    core.option.Option.as_ref, absent, core.option.Option.expect]
+
+theorem conflicting_or_overflowed_borrow_panics (owner : Owner)
+    (invalid : ¬ NormalWorldBorrow owner.candidate.beforeBorrowCount) :
+    readWorld owner = .fail .panic := by
+  simp [readWorld, controller.transaction.WorldTransaction.world,
+    core.cell.RefCell.borrow, invalid]
+
+theorem current_candidate_version_and_start (before : CurrentOwner) :
+    (ownerView before).candidate = before.candidate ∧
+    (ownerView before).committed.value = before.committed.value ∧
+    (ownerView before).committed.data_version = before.committed.data_version ∧
+    (ownerView before).input_start = before.input_start := ⟨rfl, rfl, rfl, rfl⟩
+
+theorem current_complete_raw_source (before : CurrentOwner) (raw : CurrentRaw)
+    (live : before.transaction = some raw) :
+    (ownerView before).transaction = some (rawView raw) ∧
+      (rawView raw).conn = raw.conn ∧
+      (rawView raw).drop_behavior = raw.drop_behavior := by
+  exact ⟨by simp [ownerView, live], rfl, rfl⟩
+
+end SandboxModel.InboxTransaction.CurrentWorldRead
+
+#audit_controller_proof SandboxModel.InboxTransaction.CurrentWorldRead.world_from_same_candidate
+#audit_controller_proof SandboxModel.InboxTransaction.CurrentWorldRead.unavailable_candidate_panics
+#audit_controller_proof SandboxModel.InboxTransaction.CurrentWorldRead.conflicting_or_overflowed_borrow_panics
+#audit_controller_proof SandboxModel.InboxTransaction.CurrentWorldRead.current_candidate_version_and_start
+#audit_controller_proof SandboxModel.InboxTransaction.CurrentWorldRead.actual_anchor_calls_original_world
+#audit_controller_proof SandboxModel.InboxTransaction.CurrentWorldRead.current_complete_raw_source

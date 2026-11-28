@@ -61,6 +61,8 @@ class FunctionEntryTests(unittest.TestCase):
         for name in sorted(selected) + ['sandproof-unselected-profile-probe']:
             with self.subTest(package=name), tempfile.TemporaryDirectory() as temporary:
                 stage = Path(temporary)
+                # The fixture is outside the repository's toolchain search path.
+                (stage / 'rust-toolchain.toml').write_bytes((root / 'rust-toolchain.toml').read_bytes())
                 (stage / 'src').mkdir()
                 (stage / 'Cargo.toml').write_text(
                     '[package]\nname="' + name + '"\nversion="0.0.0"\n'
@@ -138,7 +140,7 @@ fn integer_overflow_panics() {
         self.assertLess(commands.index(build), commands.index(tests))
         for check in ('bash scripts/python-entry.sh tools/check_docs.py', cargo + 'fmt --all -- --check',
                       cargo + 'clippy --workspace --all-targets --locked -- -D warnings',
-                      cargo + 'test --workspace --all-targets --locked',
+                      cargo + 'test --workspace --all-targets --locked --no-fail-fast',
                       cargo + 'test --workspace --doc --locked'):
             self.assertIn(check, commands)
         preflight = 'bash scripts/python-entry.sh tools/check_function_tests.py --mode "$check_mode" --preflight-only'

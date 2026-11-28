@@ -16,6 +16,10 @@ from tools import proof_batch
 from tools import proof_native_suite
 
 
+def fixture_runtime():
+    return dict(unit_test_fixture=True, test_configuration=receipts.native_test_configuration(os.environ))
+
+
 class ReceiptTests(unittest.TestCase):
     def setUp(self):
         temp=tempfile.TemporaryDirectory(); self.addCleanup(temp.cleanup)
@@ -26,11 +30,12 @@ class ReceiptTests(unittest.TestCase):
         subprocess.run(['git','init','--quiet',str(self.source)],check=True)
         subprocess.run(['git','add','.'],cwd=self.source,check=True)
         self.cache=self.base/'evidence';self.cache.mkdir()
-        receipts.write_json(self.cache/'runtime.json',{'unit_test_fixture':True})
         self.env=mock.patch.dict(os.environ,{'SANDPROOF_NATIVE_EVIDENCE':str(self.cache),
             'SANDPROOF_ACCEPTANCE_ROLE':'native',
             **{name:'' for name in receipts.SOURCE_ARCHIVES}})
         self.env.start();self.addCleanup(self.env.stop)
+        self.runtime = fixture_runtime()
+        receipts.write_json(self.cache/'runtime.json', self.runtime)
         self.command=[sys.executable,'-c','print("actual native fixture ran")']
         self.log=self.base/'command.log'
 
@@ -39,8 +44,9 @@ class ReceiptTests(unittest.TestCase):
         receipts.native_run('fixture',command,self.source,self.log,expected=expected)
         key=receipts.native_key('fixture',command,self.source)
         entry=self.cache/'commands'/receipts.digest(key)
-        receipts.write_json(self.cache/'complete.json',dict(schema=receipts.NATIVE_SCHEMA,complete=True,exit_code=0,
-            rules=receipts.rules(),runtime={'unit_test_fixture':True},
+        receipts.write_json(self.cache/'complete.json',dict(schema=receipts.NATIVE_SCHEMA,
+            scope='all',scope_complete=True,full_native_suite_complete=True,complete=True,exit_code=0,
+            rules=receipts.rules(),runtime=self.runtime,
             contracts=receipts.contract_inputs(receipts.ROOT),source_archives=receipts.source_archive_inputs(),
             commands={entry.name:receipts.sha(entry/'receipt.json')}))
         return command,key,entry
@@ -118,6 +124,55 @@ class ReceiptTests(unittest.TestCase):
         self.assertTrue(receipts.validate_native(self.cache)['complete'])
         (entry/'command.log').unlink()
         with self.assertRaises(ValueError):receipts.validate_native(self.cache)
+
+    @unittest.skipUnless(hasattr(os, 'memfd_create'), 'Linux sealed subprocess descriptor required')
+    def test_registered_child_inherits_admission_but_direct_entry_still_checks_entire_packet(self):
+        _, _, other = self.publish()
+        output = self.base/'own'
+        output.mkdir()
+        (output/'page.log').write_text('original per-component page\n')
+        own = receipts.native_case('own', self.source, output, lambda: None)
+        own_entry = self.cache/'commands'/receipts.digest(own['key'])
+        marker = self.cache/'complete.json'
+        seal = json.loads(marker.read_bytes())
+        seal['commands'][own_entry.name] = receipts.sha(own_entry/'receipt.json')
+        receipts.write_json(marker, seal)
+        os.environ['SANDPROOF_ACCEPTANCE_ROLE'] = 'formal'
+        driver = self.base/'child.py'
+        driver.write_text('import os, sys\nfrom pathlib import Path\n'
+            'from tools.acceptance_receipts import native_case, validate_native\n'
+            'validate_native(Path(os.environ["SANDPROOF_NATIVE_EVIDENCE"]))\n'
+            'assert native_case("own", Path(sys.argv[1]), None)["key"]["label"] == "own"\n')
+        registered = receipts.stage1_registration()
+        bootstrap = registered.NATIVE_ADMISSION_BOOTSTRAP
+        with receipts.registered_native_admission(self.cache, scope='all'):
+            (other/'command.log').unlink()
+            with receipts.registered_native_child_descriptor() as fd:
+                command = [sys.executable, '-c', bootstrap, str(fd), str(driver), str(self.source)]
+                registered._invoke(receipts.ROOT, driver, [self.source],
+                                   native_admission_fd=fd, log=self.base/'child.log')
+                receipt_file = own_entry/'receipt.json'
+                receipt_original = receipt_file.read_bytes()
+                receipt_file.write_bytes(receipt_original+b'\n')
+                swapped = subprocess.run(command, cwd=receipts.ROOT, text=True,
+                                         capture_output=True, pass_fds=(fd,))
+                self.assertNotEqual(swapped.returncode, 0)
+                self.assertIn('changed native component: own', swapped.stderr)
+                receipt_file.write_bytes(receipt_original)
+                (own_entry/'evidence/page.log').write_text('replacement page\n')
+                rejected = subprocess.run(command, cwd=receipts.ROOT, text=True, capture_output=True, pass_fds=(fd,))
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn('changed native component: own', rejected.stderr)
+            with open(marker, 'rb') as ordinary:
+                rejected = subprocess.run([sys.executable, '-c', bootstrap, str(ordinary.fileno()),
+                    str(driver), str(self.source)], cwd=receipts.ROOT, text=True,
+                    capture_output=True, pass_fds=(ordinary.fileno(),))
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn('requires its private sealed native admission', rejected.stderr)
+            with self.assertRaises(ValueError):
+                receipts.finish_registered_native_admission(self.cache, scope='all')
+        with self.assertRaises(ValueError):
+            receipts.validate_native(self.cache)
 
     def test_failure_or_interruption_never_publishes_success(self):
         command=[sys.executable,'-c','raise SystemExit(17)']
@@ -236,9 +291,79 @@ class ReceiptTests(unittest.TestCase):
         subprocess.run(['git','add','.'],cwd=self.source,check=True)
         self.assertEqual(key,receipts.native_key('fixture',self.command,self.source,root=self.source))
 
+    def record_test_configuration(self):
+        runtime = {'test_configuration': receipts.native_test_configuration(os.environ)}
+        receipts.write_json(self.cache/'runtime.json', runtime)
+        return runtime
+
+    def test_functional_receipt_is_bound_to_test_configuration(self):
+        output = self.base/'functional'
+        output.mkdir()
+        action = mock.Mock(side_effect=lambda: (output/'test.log').write_text('fresh check'))
+        with mock.patch.dict(os.environ, {'SANDPROOF_CHECK_RUST_THREADS': '2',
+                              'RUST_TEST_THREADS': '3', 'SANDPROOF_REDIS_TEST_TMPDIR': '/tmp',
+                              'SANDPROOF_STAGE1_NATIVE_ENV': 'managed',
+                              'SANDPROOF_REDIS_SYSTEM_TMP_ACTIVE': '0', 'GITHUB_ACTIONS': 'false'}):
+            self.record_test_configuration()
+            first = receipts.native_case('functional', self.source, output, action)
+            self.assertEqual(receipts.native_case('functional', self.source, output, action), first)
+            action.assert_called_once()
+            for setting, value in [('SANDPROOF_CHECK_RUST_THREADS', '32'), ('RUST_TEST_THREADS', '4'),
+                                   ('SANDPROOF_REDIS_TEST_TMPDIR', '/var/tmp'), ('GITHUB_ACTIONS', 'true')]:
+                with self.subTest(setting=setting), mock.patch.dict(os.environ, {setting: value}):
+                    with self.assertRaisesRegex(ValueError, 'test configuration changed'):
+                        receipts.native_case('functional', self.source, output, action)
+                    self.record_test_configuration()
+                    changed = receipts.native_case('functional', self.source, output, action)
+                    self.assertNotEqual(first['key'], changed['key'])
+                self.record_test_configuration()
+            self.assertEqual(action.call_count, 5)
+
+    def test_invalid_worker_setting_does_not_reuse_functional_success(self):
+        output = self.base/'functional'
+        output.mkdir()
+        with mock.patch.dict(os.environ, {'SANDPROOF_CHECK_RUST_THREADS': '2',
+                                          'SANDPROOF_STAGE1_NATIVE_ENV': ''}):
+            self.record_test_configuration()
+            receipts.native_case('functional', self.source, output,
+                                 lambda: (output/'test.log').write_text('valid check'))
+        with mock.patch.dict(os.environ, {'SANDPROOF_CHECK_RUST_THREADS': '0',
+                                          'SANDPROOF_STAGE1_NATIVE_ENV': ''}):
+            self.record_test_configuration()
+            # The actual checker rejects the setting before it can start Cargo.
+            def invalid():
+                subprocess.run(['bash', 'scripts/check-function.sh'], cwd=receipts.ROOT,
+                               check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            with self.assertRaises(subprocess.CalledProcessError) as error:
+                receipts.native_case('functional', self.source, output, invalid)
+            self.assertEqual(error.exception.returncode, 2)
+            self.assertIn(b'SANDPROOF_CHECK_RUST_THREADS must be a positive integer', error.exception.stderr)
+
+    def test_formal_functional_receipt_uses_recorded_native_configuration(self):
+        output = self.base/'functional'
+        output.mkdir()
+        with mock.patch.dict(os.environ, {'SANDPROOF_CHECK_RUST_THREADS': '2',
+                                          'SANDPROOF_REDIS_TEST_TMPDIR': '/native-only'}):
+            runtime = self.record_test_configuration()
+            receipt = receipts.native_case('functional', self.source, output,
+                                           lambda: (output/'test.log').write_text('valid check'))
+        entry = self.cache/'commands'/receipts.digest(receipt['key'])
+        receipts.write_json(self.cache/'complete.json', dict(schema=receipts.NATIVE_SCHEMA,
+            scope='all', scope_complete=True, full_native_suite_complete=True, complete=True, exit_code=0,
+            rules=receipts.rules(), runtime=runtime, contracts=receipts.contract_inputs(receipts.ROOT),
+            source_archives=receipts.source_archive_inputs(), commands={entry.name: receipts.sha(entry/'receipt.json')}))
+        with mock.patch.dict(os.environ, {'SANDPROOF_ACCEPTANCE_ROLE': 'formal',
+                                          'SANDPROOF_CHECK_RUST_THREADS': '64',
+                                          'SANDPROOF_REDIS_TEST_TMPDIR': '/formal-only'}):
+            self.assertEqual(receipts.native_case('functional', self.source, None), receipt)
+            receipts.write_json(self.cache/'runtime.json', {})
+            with self.assertRaisesRegex(ValueError, 'test configuration is missing'):
+                receipts.native_case('functional', self.source, None)
+
     def test_functional_acceptance_cannot_reuse_stale_documents(self):
         doc=self.source/'README.md';doc.write_text('[valid](Cargo.toml)\n')
         subprocess.run(['git','add','README.md'],cwd=self.source,check=True)
+        self.record_test_configuration()
         before=receipts.native_key('functional',['component-case'],self.source)
         native_before=receipts.native_key('fixture',self.command,self.source)
         doc.write_text('[broken](missing.md)\n')
@@ -317,7 +442,7 @@ class ClosureTests(unittest.TestCase):
     def test_formal_task_list_preserves_all_original_modules(self):
         self.assertEqual(set(proof_batch.MODULES),{'json-request','tls-pin','json-identifiers','json-counter',
             'task-contract','revocation-contract','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','tunnel','data-drain','sqlite','foundations','network',
-            'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol'})
+            'first-chain-linux','first-chain','storage','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','capture-caller','pause-publication','pause-stop','pause-dispatch','pause-receipt','stage1-protocol'})
         self.assertEqual(len(proof_batch.MODULES),len(set(proof_batch.MODULES)))
         root=Path(__file__).resolve().parents[2]
         retained=(root/'scripts/verify-retained-proofs.sh').read_text()
@@ -340,7 +465,7 @@ class ClosureTests(unittest.TestCase):
         for case in sorted(required):
             with self.subTest(case=case), mock.patch.object(proof_native_suite, 'native_case') as admit:
                 proof_native_suite.main(['require', case])
-                admit.assert_called_once_with(case, proof_native_suite.ROOT, None)
+                admit.assert_called_once_with(case, proof_native_suite.ROOT, None, scope='all')
 
     def test_sqlite_view_retains_the_complete_parent_without_duplicate_libraries(self):
         from tools.check_sqlite_extraction import audit_surface
@@ -378,13 +503,63 @@ class ClosureTests(unittest.TestCase):
                 'verification/ProofAudit.lean':'Root.accepts',
                 'SandboxModel/Actual/Audit.lean':'Actual.safe',
                 'verification/aeneas/Actual/Audit.lean':'Generated.refines',
+                'verification/experiments/stage1-protocol/ScopedWrong.lean.in':'ScopedWrong.rejected',
                 **{name:'Wrong.rejected'+str(index) for index,name in enumerate(proof_batch.EXTRA_AUDIT_FILES)}}
             for name, declaration in fixtures.items():
                 path=root/name;path.parent.mkdir(parents=True,exist_ok=True)
                 path.write_text('#audit_controller_proof '+declaration+'\n')
+            (root/'verification/experiments/stage1-protocol/registered.py').write_text(
+                'def audit_template_paths(root):\n'
+                '    return ("verification/experiments/stage1-protocol/ScopedWrong.lean.in",)\n')
             self.assertEqual(proof_batch.expected_audits(root),set(fixtures.values()))
             (root/proof_batch.EXTRA_AUDIT_FILES[0]).unlink()
             with self.assertRaises(OSError):proof_batch.expected_audits(root)
+
+
+class ScopedRetainedReceiptTests(unittest.TestCase):
+    """Operator-local admission fixtures, never real proof success records."""
+
+    def test_scoped_files_need_current_seal_and_unchanged_original_evidence(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            root = base/'source'; root.mkdir()
+            cache = base/'cache'
+            key = {'test_fixture': 'current-inputs'}
+            entry = cache/'modules/stage1-protocol'/receipts.digest(key)
+            entry.mkdir(parents=True)
+            (entry/'command.log').write_text('fixture command completed\n')
+            result = base/'original/registered/registered-result.json'
+            result.parent.mkdir(parents=True)
+            receipts.write_json(result, {'complete': True})
+            original = base/'original/actual-service.log'
+            original.write_text('fixture raw diagnostic bytes\n')
+            receipt = dict(complete=True, exit_code=0, key=key,
+                files={'command.log': receipts.sha(entry/'command.log')},
+                evidence={str(result): receipts.sha(result), str(original): receipts.sha(original)})
+            receipts.write_json(entry/'receipt.json', receipt)
+            helper = root/'verification/experiments/stage1-protocol/registered.py'
+            helper.parent.mkdir(parents=True)
+            helper.write_text('def validate_retained_coverage(root, record):\n'
+                              '    return {"SandboxModel/Scoped.lean": {"fixture": True}}\n')
+            with mock.patch.dict(os.environ, SANDPROOF_FORMAL_CACHE=str(cache)), \
+                    mock.patch.object(proof_batch, 'module_key', return_value=key):
+                covered, binding = proof_batch.stage1_retained_coverage(root)
+                self.assertEqual(set(covered), {'SandboxModel/Scoped.lean'})
+                self.assertEqual(binding['registered_result_sha256'], receipts.sha(result))
+                self.assertEqual(binding['module_receipt_sha256'], receipts.sha(entry/'receipt.json'))
+                saved = original.read_bytes()
+                for value in (b'changed raw diagnostics', None):
+                    if value is None:
+                        original.unlink()
+                    else:
+                        original.write_bytes(value)
+                    with self.assertRaisesRegex(ValueError, 'original formal evidence changed'):
+                        proof_batch.stage1_retained_coverage(root)
+                    original.write_bytes(saved)
+                receipt['key'] = {'test_fixture': 'older-inputs'}
+                receipts.write_json(entry/'receipt.json', receipt)
+                with self.assertRaisesRegex(ValueError, 'current complete stage1 module receipt'):
+                    proof_batch.stage1_retained_coverage(root)
 
 
 class ExecutionMappingTests(unittest.TestCase):

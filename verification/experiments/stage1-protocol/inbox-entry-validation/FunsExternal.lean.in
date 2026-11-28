@@ -1,0 +1,41 @@
+import SandboxModel.Lifecycle.Protocol.RenewalResultTag
+import SandproofFoundations.FunsExternal
+import SandproofStage1Request.Types
+
+open Aeneas Aeneas.Std
+namespace SandproofStage1RequestRust
+
+def Bool.Insts.CoreCmpPartialEqBool.ne (left right : Bool) : Result Bool :=
+  .ok (left != right)
+
+def core.option.Option.is_some_and {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) (value : Option T) (state : F) : Result Bool :=
+  SandproofFoundationsRust.core.option.Option.is_some_and callback value state
+
+def core.option.Option.is_none_or {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) (value : Option T) (state : F) : Result Bool :=
+  SandproofFoundationsRust.core.option.Option.is_none_or callback value state
+
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  SandproofFoundationsRust.core.option.Option.as_ref value
+
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (dictionary : core.cmp.PartialEq T T) (left right : Option T) : Result Bool :=
+  match left, right with
+  | none, none => .ok true
+  | some left, some right => dictionary.eq left right
+  | _, _ => .ok false
+
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq left right
+
+def alloc.vec.Vec.is_empty {T : Type} (allocator : Type) (values : alloc.vec.Vec T) :
+    Result Bool := SandproofFoundationsRust.alloc.vec.Vec.is_empty allocator values
+
+def SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter
+    {T : Type} (_allocator : Type) (value : alloc.vec.Vec T) :
+    Result (core.slice.iter.Iter T) :=
+  core.slice.Slice.iter (alloc.vec.Vec.deref value)
+
+end SandproofStage1RequestRust

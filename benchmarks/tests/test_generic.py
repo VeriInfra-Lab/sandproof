@@ -257,7 +257,7 @@ class GenericInputTests(unittest.TestCase):
             sandbox = SimpleNamespace(sandbox_id='sb-exact', get_info=AsyncMock(return_value=SimpleNamespace(
                 template_id=env.template['templateId'], cpu_count=2, memory_mb=4096)))
             with patch('benchmarks.generic_environment.AsyncSandbox.create', AsyncMock(return_value=sandbox)) as create, \
-                 patch('benchmarks.generic_environment.time', SimpleNamespace(monotonic=Mock(side_effect=[1000, 1120]))):
+                 patch('benchmarks.generic_environment.time', SimpleNamespace(monotonic=Mock(side_effect=[1000, 1120, 1121, 1122, 1123]))):
                 asyncio.run(env.start())
             self.assertEqual(env._workdir, '/final')
             self.assertEqual(env.default_user, 'app')
@@ -266,6 +266,7 @@ class GenericInputTests(unittest.TestCase):
             self.assertEqual(create.call_args.kwargs['request_timeout'], 480)
             self.assertNotIn('cpu_count', create.call_args.kwargs)
             self.assertEqual(env.sandbox_id, 'sb-exact')
+            self.assertEqual(env.startup_timing, {'create_ms': 1000, 'first_command_ms': 2000})
             intent = json.loads((Path(tmp) / 'runtime-intent.json').read_text())
             self.assertEqual(intent['metadata'], create.call_args.kwargs['metadata'])
             self.assertEqual(intent['template'], env.template)

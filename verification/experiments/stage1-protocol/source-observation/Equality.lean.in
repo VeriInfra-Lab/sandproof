@@ -1,0 +1,70 @@
+import SandboxModel.Lifecycle.Protocol.SourceObservation.Spec
+open Aeneas Aeneas.Std SandproofSourceObservationRust
+namespace SandboxModel.Stage1Protocol.SourceObservation.Equality
+
+theorem bytes_eq (xs ys : List U8) (h : xs.length = ys.length) :
+    List.allM (fun (p : U8 × U8) => (.ok (decide (p.1 = p.2)) : Result Bool))
+      (List.zip xs ys) = .ok (decide (xs = ys)) := by
+  induction xs generalizing ys with
+  | nil => cases ys <;> simp_all [pure]
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp at h
+    | cons y ys =>
+      have hlen : xs.length = ys.length := by simpa using h
+      by_cases heq : x = y <;> simp [pure, ih ys hlen, heq]
+
+theorem array_eq (a b : Array U8 32#usize) :
+    core.array.equality.PartialEqArray.eq core.cmp.PartialEqU8 a b =
+      .ok (decide (a = b)) := by
+  have heq : ∀ x y : U8, (x.val = y.val) ↔ x = y := by intro x y; scalar_tac
+  simp [core.array.equality.PartialEqArray.eq, heq, bytes_eq a.val b.val (by simp),
+    ← Array.eq_iff]
+
+theorem wire_resource_id_eq (left right : sandproof_protocol.ResourceId) :
+    sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  all_goals simp [sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq]
+
+theorem wire_resource_kind_eq (left right : sandproof_protocol.ResourceKind) :
+    sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left <;> cases right
+  all_goals simp [sandproof_protocol.ResourceKind.Insts.CoreCmpPartialEqResourceKind.eq,
+    sandproof_protocol.ResourceKind.read_discriminant]
+
+theorem ok_and (p : Prop) [Decidable p] (q : Bool) :
+    (if p then (Result.ok q : Result Bool) else .ok false) = .ok (decide p && q) := by
+  by_cases hp : p <;> simp [hp]
+
+theorem ok_not_and (p : Prop) [Decidable p] (q : Bool) :
+    (if p then (Result.ok false : Result Bool) else .ok q) = .ok (!decide p && q) := by
+  by_cases hp : p <;> simp [hp]
+
+theorem resource_eq (left right : sandproof_protocol.ResourceRef) :
+    sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq left right =
+      .ok (by classical exact decide (left = right)) := by
+  classical
+  cases left; cases right
+  simp [sandproof_protocol.ResourceRef.Insts.CoreCmpPartialEqResourceRef.eq,
+    wire_resource_kind_eq, wire_resource_id_eq, ok_and,
+    sandproof_protocol.ResourceRef.mk.injEq]
+
+theorem length_cast (value : alloc.vec.Vec U8) :
+    (UScalar.cast .U64 (alloc.vec.Vec.len value)).val = value.length := by
+  rw [UScalar.cast_val_mod_pow_greater_numBits_eq]
+  · simp
+  · cases System.Platform.numBits_eq <;> simp_all
+
+end SandboxModel.Stage1Protocol.SourceObservation.Equality
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.Equality.bytes_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.Equality.array_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.Equality.wire_resource_id_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.Equality.wire_resource_kind_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.Equality.ok_and
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.Equality.resource_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.Equality.length_cast
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceObservation.Equality.ok_not_and

@@ -37,6 +37,7 @@ fn config() -> NodeConfig {
         vcpu_count: 1,
         memory_mib: 128,
         host_resources: None,
+        enable_memory_diff: false,
         file_policy_digest: PolicyDigest(1),
     }
 }
@@ -47,7 +48,7 @@ fn exact_closed_layout_caps_include_free_cells_stages_and_idle_routes() {
     let (identity, lease) = validate_configuration(&config).unwrap();
     let bounds = HostMetadataEnvelope::derive(&config, 1).unwrap();
     // Guard the audited layout. Additions must update the derived expectation.
-    assert_eq!(CLAIM_RECORD_NAMES.len(), 11);
+    assert_eq!(CLAIM_RECORD_NAMES.len(), 14);
     assert_eq!(
         host_slots::retirement_paths(&config, host_slots::maximum_binding()).len(),
         5
@@ -58,16 +59,16 @@ fn exact_closed_layout_caps_include_free_cells_stages_and_idle_routes() {
         bounds.payload_bytes,
         10 * (2 * node_staging::MAX_PAYLOAD as u64 + identity)
             + lease
-            + 22 * MAX_CLAIM_RECORD_BYTES
+            + 28 * MAX_CLAIM_RECORD_BYTES
             + 20 * MAX_HELPER_MARKER_BYTES
     );
-    assert_eq!(bounds.file_count, 73);
+    assert_eq!(bounds.file_count, 79);
     assert_eq!(bounds.directory_count, 19);
-    assert_eq!(bounds.inode_count, 92);
+    assert_eq!(bounds.inode_count, 98);
     let all_live = HostMetadataEnvelope::derive(&config, u64::MAX).unwrap();
-    assert_eq!(all_live.file_count, 110);
+    assert_eq!(all_live.file_count, 122);
     assert_eq!(all_live.directory_count, 25);
-    assert_eq!(all_live.inode_count, 135);
+    assert_eq!(all_live.inode_count, 147);
 }
 
 #[test]
@@ -240,6 +241,7 @@ fn admitted_options_bound_secret_startup_and_request_payloads() {
         CreateOptions::MAX_ENCODED_BYTES
     );
     let secret = super::super::GuestSecret {
+        generation: u64::MAX,
         token: "x".repeat(128),
         sha512: "f".repeat(128),
         env_vars: options.env_vars.clone(),

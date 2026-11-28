@@ -1,0 +1,149 @@
+{
+  "kind": "candidate-only-standard-delegate-public-registration",
+  "package": "create-standard-sql",
+  "requires_prior_packages": [
+    "create-attachment-flow",
+    "create-fixed-identity",
+    "create-lifetime-sql",
+    "create-standard-adapter",
+    "create-standard-identity"
+  ],
+  "zero_context_patch": true,
+  "shared_input_hashes": {
+    "verification/experiments/stage1-protocol/registered.py": {
+      "root": "fdc9f8cb55f515e046b0d3bc31a52d45b6e806bd60f9b32d58a46b741f34274d",
+      "after_prior": "3ac4019e9ec74d998fe7359c835917c2f50bdab83309839d0003822b394c9faa",
+      "after_this": "9a08dfcb5fcbdbb984acb104305559d194bf557b3369ad81c7ae116fa25c32f7"
+    },
+    "docs/formal/dependencies.md": {
+      "root": "157315632fa0343fd88aa9738a767df5d43a8732a1a56f59b321cda29bc440b4",
+      "after_prior": "47dc21bd25e8a4e88fac8705ce476ac93274720b691b57acf2f195277ed1a0b1",
+      "after_this": "c42613d4a9e8df02f070f421a55e61fc042436d7d9bc787615c42afdcdf1f139"
+    },
+    "docs/proof-coverage.md": {
+      "root": "f8da14f2bf47cddd414734500ae3d1eea89843f30994adb858f293118f739698",
+      "after_prior": "42041a3c28522bf1998c32066b40f37bd5420f475419d5a9e3a8580c5965744b",
+      "after_this": "456de6b1e4e1dbbde3f29136e5d634078f0fc1c2164289a339fc02bd82403514"
+    }
+  },
+  "native_label": "stage1-create-standard-sql",
+  "formal_cases": [
+    "actual",
+    "zero-deadline",
+    "empty-sandbox"
+  ],
+  "native_views": [
+    "actual",
+    "zero-deadline",
+    "empty-sandbox",
+    "restored"
+  ],
+  "native_assertions_per_view": 6,
+  "all_unique_audit_names": [
+    "SandboxModel.Stage1Protocol.LifetimeSql.complete_inputs_equal_iff",
+    "SandboxModel.Stage1Protocol.LifetimeSql.execute_complete",
+    "SandboxModel.Stage1Protocol.LifetimeSql.full_sql_values_contract",
+    "SandboxModel.Stage1Protocol.LifetimeSqlFixture.normal_expected",
+    "SandboxModel.Stage1Protocol.LifetimeSqlFixture.prepare_error_expected",
+    "SandboxModel.Stage1Protocol.LifetimeSqlFixture.run_error_expected",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.array_complete_inputs",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.borrowed_normalizes",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_effective",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_owned",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_value_ref",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_borrowed",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_effective",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.owned_integer_normalizes",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.shared_text_forwards",
+    "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.negative_integer_and_full_text",
+    "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.normal_full_values",
+    "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.prepare_error_short_circuits",
+    "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.run_error_is_preserved",
+    "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.zero_success_is_preserved",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.actual_deadline_is_lost",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.original_normal_specification",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.still_preserves_zero_deadline",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.actual_sandbox_is_lost",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.empty_sandbox_differs",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.original_normal_specification",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.still_preserves_empty_sandbox",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.arbitrary_success_count",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.normal_complete_context",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.prepare_error_keeps_complete_context",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.run_error_keeps_complete_context",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.zero_success_keeps_complete_context",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.actual_full_arguments_and_context",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.full_standard_sql_contract",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.standard_sql_complete"
+  ],
+  "reused_helper_audit_names": [
+    "SandboxModel.Stage1Protocol.LifetimeSql.complete_inputs_equal_iff",
+    "SandboxModel.Stage1Protocol.LifetimeSql.execute_complete",
+    "SandboxModel.Stage1Protocol.LifetimeSql.full_sql_values_contract",
+    "SandboxModel.Stage1Protocol.LifetimeSqlFixture.normal_expected",
+    "SandboxModel.Stage1Protocol.LifetimeSqlFixture.prepare_error_expected",
+    "SandboxModel.Stage1Protocol.LifetimeSqlFixture.run_error_expected",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.array_complete_inputs",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.borrowed_normalizes",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_effective",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_owned",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_integer_value_ref",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_borrowed",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.original_text_effective",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.owned_integer_normalizes",
+    "SandboxModel.Stage1Protocol.LifetimeSqlLibrary.shared_text_forwards",
+    "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.negative_integer_and_full_text",
+    "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.normal_full_values",
+    "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.prepare_error_short_circuits",
+    "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.run_error_is_preserved",
+    "SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.zero_success_is_preserved"
+  ],
+  "new_unique_audit_names": [
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.actual_deadline_is_lost",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.original_normal_specification",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.still_preserves_zero_deadline",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.actual_sandbox_is_lost",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.empty_sandbox_differs",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.original_normal_specification",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.SandboxWireCounter.still_preserves_empty_sandbox",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.arbitrary_success_count",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.normal_complete_context",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.prepare_error_keeps_complete_context",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.run_error_keeps_complete_context",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.Witnesses.zero_success_keeps_complete_context",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.actual_full_arguments_and_context",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.full_standard_sql_contract",
+    "SandboxModel.Stage1Protocol.StandardSqlDelegate.standard_sql_complete"
+  ],
+  "expected_views": {
+    "actual": {
+      "files": 23,
+      "audits": 28
+    },
+    "zero-deadline": {
+      "files": 22,
+      "audits": 24
+    },
+    "empty-sandbox": {
+      "files": 22,
+      "audits": 25
+    }
+  },
+  "patches": {
+    "registration-candidate.patch": "02fa2b6641205feebd7d2c491ae5dd3a09a617fc2dc96aad5f8b97c8e353f370",
+    "dependencies-candidate.patch": "691678e28f6584cb31bcf31411ef36d24547ee622d08e67881219d53442e7678",
+    "coverage-candidate.patch": "af0d4d50076e7fd66ba08ef0cdb07617252c42bbe0eb44486afc0a9d972392a7"
+  },
+  "patch_application_only_checked": true,
+  "ordinary_or_native_tests_run": false,
+  "global_counts_must_be_recomputed": true,
+  "shared_files_modified": false,
+  "public_formal_entry_complete": false,
+  "native_checks_run": false,
+  "shared_acceptance": false,
+  "full_v3": false
+}

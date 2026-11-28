@@ -2,7 +2,7 @@
 
 [文档目录](README.md) · [项目蓝图](project-blueprint.md) · [模块合同](module-contracts.md) · [验收清单](testing-plan.md)
 
-当前设计面向单固定宿主上的有状态卸载与恢复。integration `56b14d64` 已有中心/宿主、Redis/SQLite、执行/清理和网关代码；真实 snapshot 协议及下述新增状态仍待实现。结构不是已部署或已证明声明，准确证据见[覆盖记录](proof-coverage.md)。
+当前设计面向单固定宿主上的有状态卸载与恢复。下图说明唯一产品链路与状态所有权；实现、指定版本实机结果和形式证明进度分别见[覆盖记录的当前摘要](proof-coverage.md#current-status)，不在本页重复维护状态表。
 
 ## 1. 保留唯一产品链路
 
@@ -17,7 +17,7 @@ sandproof-host ↔ 原 SQLite（本地状态、原操作、执行尝试、引用
                     │
           sandbox-node / sandbox-runtime
              │                  │
-      jailer / Firecracker    受保护本地 snapshot store〔待实现〕
+      jailer / Firecracker    受保护本地 snapshot store
       当前运行位置/私有盘     全量 RAM、设备状态、匹配磁盘、manifest
              │                  │
        固定来宾 / envd      独立于可复用运行位置，跨管理服务重启
@@ -32,7 +32,7 @@ sandproof-host ↔ 原 SQLite（本地状态、原操作、执行尝试、引用
 | sandbox-api / sandbox-center-service | 解析、鉴权；新增带操作键的生命周期及授权结果查询 | V7；网关 V8 |
 | sandbox-center-core | 意图、身份、准入、终止；新增 unload/resume 的全局预留转换 | V1 |
 | sandbox-center-store | 原字节/CAS、耐久确认、outbox、恢复和有限历史 | V2 |
-| sandbox-protocol / sandbox-host-service | 高级操作及原持久收件；新增协议版本和完整绑定 | V3 |
+| sandbox-protocol / sandbox-host-service | 高级操作、完整绑定及原 SQLite 持久收件 | V3 |
 | controller-core | 本地阶段与纯决定；重审旧 pause/resume 和通用补偿 | V4 |
 | controller-service | 原 SQLite、工作/回执、重启；新增 capture/claim/pin/retire 登记 | V5 |
 | sandbox-node / sandbox-runtime | 原身份、围栏、启动停止；新增全量捕获、先暂停加载、激活、文件持有与精确删除 | V6 |
@@ -71,15 +71,27 @@ Redis、SQLite、文件提交和 VMM 动作不是一个事务。先登记计划/
 
 ## 6. 扩展与实现差距
 
-当前内部 `Intent` 仅 Create/Renew/Destroy；真实 `PrepareVm` 对 `source.is_some()` 明确拒绝；纯核心虽然有 Pause/Resume，但补偿和 manifest 计数器不满足本阶段完整快照合同。V3/V4/V5/V6 需要工程实现与新的表示关系，不能只接通枚举或迁移旧定理。
+Create/Renew/Unload/Resume/Destroy 共用当前协议和原持久账本。恢复由原 SQL/SourceWork 认领，Node 的 `linux/restore.rs` 消费私有恢复及激活许可，Runtime 先 LoadPaused 再激活；冷启动 `PrepareVm` 对 snapshot source 的拒绝不表示正式恢复被禁用。失败卸载继续沿原 Pause/Full 工作处理，不新建替代会话。详细状态、授权与材料引用规则只在[生命周期合同](module-contracts.md#第一阶段生命周期合同)维护。
 
 会话身份、运行代、capture、operation、物理位置分别编码；manifest 的内容摘要独立于旧逻辑计数器。协议版本和完整源/目标绑定为将来多宿主、增量链或 fork 留接口，但这些扩展不进入本次实现和证明。
 
-以下保留既有部署办法，描述当前实现基线；新增 snapshot 目录、预算、schema 和 profile 尚未实现，不能照现有样例就声称已部署本阶段功能。阶段启用前由 V9 核对固定 CPU/内核/设备/文件系统与新协议。
+snapshot 布局、捕获预算与当前存储格式已有实现；部署者仍须用原 provision 入口提供受保护布局、项目配额和实测预算。旧 E2E 配置不能自动满足这些条件。由 V9 核对固定 CPU/内核/设备/文件系统及整套验收，不能仅补一个配置文件就视为部署成功。
 
 ## 7. 部署、CI 和验证
 
 中心与 Redis 使用独立非 root 账号/目录，宿主与私有辅助工具按实际权限运行，jailer 将 VM 降到精确非特权身份。证书、配置、可执行文件和目录身份由可信部署固定。可信时钟、Linux/KVM、文件/网络原语、存储引擎和管理员是明确外部前提，不是本批 Lean 结论。
+
+### 单机存储制备
+
+[单机存储工具](../tools/single_host_storage.py)使用完整的单运行池物理配置，先用 `plan` 列出外层空闲、镜像所需空间和卷内启动预算。管理员指定一个 root 拥有的 0711 目录。其祖先须为受保护、可穿越的目录。`install` 接入已有合格 XFS，或在 root 独占的 `control` 下预分配并首次格式化 `volume.xfs`，将受管数据放在 `data` 下。已有 XFS 的项目配额须事先批准并满足精确读回。新文件卷在制备时设置配额，并用同一读回规则核对。原控制或数据目录已存在时，首次安装拒绝并保留现场。
+
+自动选择文件卷大小时，在完整启动预算外增加 2 GiB，给 XFS 格式化和角色启动前的文件留出空间。宿主预留单独核算。安装和启动仍分别按实际可用字节与 inode 检查，卷的标称大小只用于安装计划。
+
+`control` 保持 0700，镜像和收据是 root 的 0600 文件。准备成功后 `data` 为 0711，中心和 Redis 可穿越到各自的 0700 目录。评测使用 `data` 下分开的 root 私有运行父目录和 0711 服务父目录。
+
+`remount` 根据 `control/storage.json` 重挂文件卷，`check` 核对已挂卷和项目配额。两者都检查原文件系统 UUID、数据目录身份和原镜像对应关系。重启先核对存储再启动服务。存储制备不初始化产品账本或启动虚拟机。
+
+普通创建把经过核验的宿主模板盘克隆到同一 XFS 挂载上的原 jail，两个文件拥有独立 inode。原模板由 root 拥有，组和其他账号无写权限。来宾只写自己的盘。若使用文件卷，宿主模板缓存和 jail 必须一同位于卷内。跨挂载或克隆失败会拒绝启动，原工作继续负责清理。启动预算仍按可写盘的完整逻辑长度计算。
 
 ### 单机三角色部署样例
 
@@ -93,7 +105,9 @@ Redis、SQLite、文件提交和 VMM 动作不是一个事务。先登记计划/
 2. `/var/lib/sandproof-services` 由 root 管理为 0711，其 `center`、`redis` 子树分别为对应账号的 0700；`/var/lib/sandproof-host` 及其全部子树为 root/0700。路径必须原生、不可互相别名且同受管文件系统，不能靠放宽宿主目录让中心读 VM 状态。按样例先制备中心 `control/bin`、`control/tls`、`assets`、`writer`、`registry/inbox`、`registry/artifacts`；Redis `control/bin`、`data`；宿主 `control/bin`、`control/tls`、`control/bootstrap`、空 `db`、`state`、`jails`、`template-cache/inbox`、`template-cache/artifacts`。
 3. 二进制来自同一固定源码与锁，制备后核 SHA-256 和两个 `contract-versions`；角色二进制为对应账号/0500，配置、密钥和 TLS 材料为对应账号/0600。宿主 bootstrap 镜像为 root 私有预置输入；中心 `assets` 保存单独、中心可读的相同不可变产物，宿主从空缓存通过真正 mTLS 下载后才登记可用，不把 bootstrap 目录当缓存事实。
 4. 私有 CA 和两端叶证书由部署者制备，叶子分别包含 `center.test`、`host.test` 及客户端/服务端双用途；私钥不跨角色复制，只复制固定 CA/对端叶的公有 DER 并核摘要。安全生成 API 凭据、独立 Redis 凭据与至少 32 字节的中心令牌密钥；只写各角色私有配置。Redis 的 `control/users.acl` 必须显式制备：关闭 default 用户，给独占引擎的 `sandproof-center` 用户设置独立随机凭据及原存储所需权限（包括持久化配置检查）。缺 ACL 文件不能换成公开样例密码或无鉴权引擎。
-5. 首次制备原 `physical-profile` 与缓存 `.cache.lock`，均为 root/0600、空的普通单链接文件；缓存和原 DB/状态/监狱目录必须是本次空身份。不要覆盖现有协调文件、账本、缓存或失败现场。物理配置显式计费实例/清理、宿主缓存、中心模板与登记、Redis/AOF、二进制和控制材料；原 Rust 激活检查全峰值的两倍余量。Redis `maxmemory` 不限制 AOF 总大小，重写与观察也不能被称为长期硬磁盘上限；`service_data.peak_bytes` 是物理预留，不是对 Redis 的写入限额。部署者须为独立 Redis 受管根落实已批准的磁盘限额及 AOF/重写/备份峰值、恢复检查，不能截断 AOF 或削减原预算造通过，也不重挂载整个宿主文件系统。
+5. 首次制备原 `physical-profile` 与缓存 `.cache.lock`，均为 root/0600、空的普通单链接文件；缓存和原 DB/状态/监狱目录必须是本次空身份。不要覆盖现有协调文件、账本、缓存或失败现场。物理配置显式计费实例/清理、宿主缓存、中心模板与登记、Redis/AOF、二进制和控制材料；Rust 激活检查完整固定增长上界加最大单次操作余量；inode 仍用两倍上界。Redis `maxmemory` 不限制 AOF 总大小，重写与观察也不能被称为长期硬磁盘上限；`service_data.peak_bytes` 是物理预留，不是对 Redis 的写入限额。部署者须为独立 Redis 受管根落实已批准的磁盘限额及 AOF/重写/备份峰值、恢复检查，不能截断 AOF 或削减原预算造通过，也不重挂载整个宿主文件系统。
+   Redis 的 AOF 同步与快照写入不宜集中到同一个快照文件卷。中心原接口通过地址连接 Redis，支持把它部署到独立存储；这不改变 `appendfsync always`、耐久重确认或故障拒绝。若 Redis 位于另一文件系统，其数据、重写和备份容量须在那一处独立落实，不能声称由宿主单卷 profile 覆盖。仅把目录移到同一物理盘的另一文件系统可能减少文件系统同步干扰，但不提供硬件 I/O 隔离；延迟和健康窗口仍须实测。现有单机验收入口的默认布局保持原同卷计费，卷外对照须另记实际部署和独立空间观察。
+
 6. 原 VM cgroup 父目录 `/sys/fs/cgroup/sandproof-vms` 由可信 root 显式制备，必须在 `sandproof-host.service` 单元 cgroup **之外**，保持原 `host_resources` 与位置内存检查。服务控制内存/CPU及宿主总体余量使用同一批准服务预算和实际 cgroup 核验；这些单元不猜测 `MemoryMax` 或另外设磁盘默认值，上线前须明确配置相符的资源 drop-in。样例显式丢弃三服务 stdout/stderr 及 Redis 文件日志，放弃控制台诊断，不是已部署的监控；需要保留日志时须另审核有限收集/轮转及原物理预算，不把日志默认交给无限 journald。
 
 把审核后的配置和单位文件装入样例所示固定路径，先以部署主机的 `systemd-analyze verify` 检查单位。宿主样例中的 `inbox.host_epoch: null` 只供首次制备使用，不能直接启动服务：先显式执行 `provision-bootstrap --config /var/lib/sandproof-host/control/host.json`。它在 `protected_bootstrap_path` 创建新的 root 只读登记材料，输出实际登记引用；不覆盖已有文件，不初始化数据库，也不启动 VM。部署者把输出的完整引用写入同一受保护配置的 `inbox.host_epoch` 后，再执行以下**首次**顺序。初始化核对该文件和现场，再将原引用持久绑定；后续启动、审计都拒绝缺失、改变或不匹配的登记，不用当前现场替换旧引用。这份宿主初始化登记不证明某个运行 VM 可以捕获或恢复。
@@ -123,4 +137,4 @@ sudo systemctl start sandproof-host.service sandproof-center.service
 
 普通 CI 检查解析、组件与工具，不启动产品 VM。两级晋升采用同一个监督器、同一候选双产物/版本清单和固定两题原解答/评分，SDK 只指向中心。成功、失败、取消均核对原全局→本地映射与真实残留，不能用旧单服务报告满足新链路。DK 与两题范围见[验收清单](testing-plan.md)，部署与离线缓存见[CI 运行环境](ci.md)。
 
-原纯本地核心证明只适用指定版本。新增中心、Redis、内部映射、两端网关和组装只有工程检查；后续分别证明决定、存储/派发、接收/执行及组合。并行宿主工作仍归 [P2 #284](https://github.com/ningZhang-cs/sandproof/issues/284)，本次不改变原串行算法。
+证明和工程验收按实际输入版本分别复用；覆盖范围及未完成连接见[覆盖记录](proof-coverage.md#current-status)。并发义务、锁范围和有限工作槽以模块合同及实际实现为准；相关设计背景见 [#284](https://github.com/VeriInfra-Lab/sandproof/issues/284)，不从历史实现推导当前吞吐保证。

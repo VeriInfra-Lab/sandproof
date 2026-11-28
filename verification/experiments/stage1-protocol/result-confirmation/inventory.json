@@ -1,0 +1,181 @@
+{
+  "schema": 1,
+  "base_commit": "39577ca1e61f4daa4ba4bbda7db94bf087bdaef0",
+  "base_sources": {
+    "sandbox-protocol/src/identifiers.rs": "c799f564cb21208a6572d5c98672ba8a200da6eb88d53657d84a78ceeb61be83",
+    "sandbox-protocol/src/internal/lifecycle.rs": "100686c8dd3c22c6a39cd0f0aedf445a61de4fc06dc7dabc913d01273bb617bb",
+    "sandbox-protocol/src/internal/window.rs": "ffabf825e91636fb5c549fa874a7ec2c3e10298c34ef5026fca8ffdae58c79eb",
+    "sandbox-protocol/src/internal.rs": "14ddf9e371273d3e2863d95646207185a2071812117012d006500e7e8e3a9c24",
+    "sandbox-protocol/src/lib.rs": "6269824421aeceed7825f023ddf7b31e97f77e052b7c85d3c243ee48d4a41e5f",
+    "sandbox-protocol/src/lifecycle/access.rs": "e21818fb5d6ef97a079e9c1c155a450386d2d4dc70df9eb6dbcff79268afa7f2",
+    "sandbox-protocol/src/lifecycle/authority.rs": "c425d0df9af4c243c6eff2cfe0d827997b0495d8894664f479f002c5ff8311f8",
+    "sandbox-protocol/src/lifecycle/confirmation.rs": "fac1112f2ac9893bf463c742e82a9bc224717d0f50c0718a65f69a09b6b2d825",
+    "sandbox-protocol/src/lifecycle/digest.rs": "4dfdf69c27c1e6ed1dce61833fcd48575a48f3d08f3156f009f7bb614beae2da",
+    "sandbox-protocol/src/lifecycle/identity.rs": "fdcfa68799dac6a5c132872ad1637d38c61d4e2b7db0327daf8cc70f578702e0",
+    "sandbox-protocol/src/lifecycle/manifest.rs": "d7f826cef35e639a725e842a464d518bbc49fce633a54aba2cf0551db22630e3",
+    "sandbox-protocol/src/lifecycle/observation.rs": "c7052f0b39df6f4ce698b8378c4c30bb6c64835b49884c1b23576da2b1006ee4",
+    "sandbox-protocol/src/lifecycle/observation_tests.rs": "195f961448be02f14e1f8c2fbc6e0ac0cef67906f334a409364bd25df6a28f9b",
+    "sandbox-protocol/src/lifecycle/public.rs": "d4e0fe401a75b84010e8cfa8f4d51432c76c568d79b530f65a01dca5d6fcbed8",
+    "sandbox-protocol/src/lifecycle/renewal.rs": "90f69e252c3ff6697724c3a3695dc78ffb9548dad342c394c67f0f0ca286876e",
+    "sandbox-protocol/src/lifecycle/request.rs": "c9999c95acafad732ef369a26ecc0effa2307ef10b47b315e59cfbb7d90d2a07",
+    "sandbox-protocol/src/lifecycle/resume.rs": "cd2ef94cdc47f9785383f0944177265e1442dfd3f9f89f162dfb82de723968ad",
+    "sandbox-protocol/src/lifecycle/resume_tests.rs": "b6328ec886e6740a8c4caabc07f613ab09cff0473e3883cb9c47aab601a58df7",
+    "sandbox-protocol/src/lifecycle/terminal.rs": "5daf92c2ea486d187b91f8c2e38e863353ff55bc373b819a3ede9af3792f7396",
+    "sandbox-protocol/src/lifecycle/unload.rs": "93ce46a48772ce567e7f346a47effb262e99cf9e07e068e2170382e08c27dac7",
+    "sandbox-protocol/src/lifecycle.rs": "36e60e5dcd5bbf2c597babca830fc15ae982156c8c1e9dec9e9260e1b8a84074",
+    "sandbox-protocol/src/numeric.rs": "8145de8d0d6b6923314fdaa536de3e441330c5b7cd949fd2e7211a5b6d0c1e94",
+    "verification/experiments/stage1-protocol/source_inventory.py": "4053d47fb0431c89e8f09a2c286f36910af516a5ffac441e6c08f91a378ecffb",
+    "verification/experiments/stage1-protocol/retained-protocol.json": "e433648ba08e17cd0df99e45dd4fb209fb998b8a09e701e54c434eb0bb4114f9"
+  },
+  "mutations": {
+    "terminal-key-only": {
+      "source": "sandbox-protocol/src/lifecycle/terminal.rs",
+      "old": "self.request == *request",
+      "new": "self.request.request.binding.key == request.request.binding.key",
+      "template": "NegativeTerminalKey"
+    },
+    "confirmation-key-only": {
+      "source": "sandbox-protocol/src/lifecycle/confirmation.rs",
+      "old": "self.result == *result",
+      "new": "self.result.request.request.binding.key == result.request.request.binding.key",
+      "template": "NegativeConfirmationKey"
+    },
+    "close-pending": {
+      "source": "sandbox-protocol/src/lifecycle/confirmation.rs",
+      "old": "self.terminal.status == TerminalStatus::Cleaned\n            && self.terminal.matches_request(&self.terminal.request)",
+      "new": "self.terminal.matches_request(&self.terminal.request)",
+      "template": "NegativeClosePending"
+    },
+    "close-newer-frontier": {
+      "source": "sandbox-protocol/src/lifecycle/confirmation.rs",
+      "old": "self.retired_through == request.terminal.request.retention.window",
+      "new": "self.retired_through.get() >= request.terminal.request.retention.window.get()",
+      "template": "NegativeCloseFrontier"
+    }
+  },
+  "audits": {
+    "ResultModel": [],
+    "ResultValues": [
+      "SandboxModel.Stage1Protocol.ConfirmationValues.intent_shape",
+      "SandboxModel.Stage1Protocol.ConfirmationValues.legal_intent",
+      "SandboxModel.Stage1Protocol.ConfirmationValues.changed_legal",
+      "SandboxModel.Stage1Protocol.ConfirmationValues.changed_complete_result"
+    ],
+    "ResultConfirmation": [
+      "SandboxModel.Stage1Protocol.Confirmation.terminal_refines",
+      "SandboxModel.Stage1Protocol.Confirmation.confirmed_refines",
+      "SandboxModel.Stage1Protocol.Confirmation.close_refines",
+      "SandboxModel.Stage1Protocol.Confirmation.closed_refines",
+      "SandboxModel.Stage1Protocol.Confirmation.terminal_complete",
+      "SandboxModel.Stage1Protocol.Confirmation.confirmed_complete",
+      "SandboxModel.Stage1Protocol.Confirmation.close_complete",
+      "SandboxModel.Stage1Protocol.Confirmation.closed_complete",
+      "SandboxModel.Stage1Protocol.Confirmation.terminal_accepts_iff",
+      "SandboxModel.Stage1Protocol.Confirmation.confirmed_accepts_iff",
+      "SandboxModel.Stage1Protocol.Confirmation.close_accepts_iff",
+      "SandboxModel.Stage1Protocol.Confirmation.closed_accepts_iff",
+      "SandboxModel.Stage1Protocol.Confirmation.confirmation_preserves_complete_result",
+      "SandboxModel.Stage1Protocol.Confirmation.close_requires_exact_retention_window"
+    ],
+    "ResultExamples": [
+      "SandboxModel.Stage1Protocol.ConfirmationValues.normal_terminal",
+      "SandboxModel.Stage1Protocol.ConfirmationValues.normal_confirmation",
+      "SandboxModel.Stage1Protocol.ConfirmationValues.normal_close",
+      "SandboxModel.Stage1Protocol.ConfirmationValues.normal_closed",
+      "SandboxModel.Stage1Protocol.ConfirmationValues.pending_not_confirmed",
+      "SandboxModel.Stage1Protocol.ConfirmationValues.changed_retention_rejected",
+      "SandboxModel.Stage1Protocol.ConfirmationValues.newer_frontier_rejected",
+      "SandboxModel.Stage1Protocol.ConfirmationValues.matching_does_not_validate_protocol"
+    ],
+    "NegativeTerminalKey": [
+      "SandboxModel.Stage1Protocol.NegativeTerminalKey.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeTerminalKey.violates_same_full_contract"
+    ],
+    "NegativeConfirmationKey": [
+      "SandboxModel.Stage1Protocol.NegativeConfirmationKey.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeConfirmationKey.violates_same_full_contract"
+    ],
+    "NegativeClosePending": [
+      "SandboxModel.Stage1Protocol.NegativeClosePending.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeClosePending.violates_same_full_contract"
+    ],
+    "NegativeCloseFrontier": [
+      "SandboxModel.Stage1Protocol.NegativeCloseFrontier.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeCloseFrontier.violates_same_full_contract"
+    ],
+    "ResultEquality": [
+      "SandboxModel.Stage1Protocol.Confirmation.status_eq",
+      "SandboxModel.Stage1Protocol.Confirmation.observation_eq"
+    ]
+  },
+  "current_format_recapture": {
+    "candidate": "13cdef0530f00483fff329b14e0312cd3c94d0e3",
+    "historical_input_sha256": "f6cf519aefeeeca945f7c629654a22fe1eec040625522d746eea197ce0fd284a",
+    "reviewed_source_change": "HOST_STORE_FORMAT_VERSION changed from 23 to 24. The constant does not occur in these raw LLBC slices.",
+    "source_review_sha256": "eadf9f0a399b6d126f2e6730f282467099cc5df594908a2a2cea809d4189586c",
+    "actual_capture_index_sha256": "5fe5efe666fea67f170d9d2567f2c3e913fb716be1aafb590d73c668521d3398",
+    "views": {
+      "correct": {
+        "exit": 0,
+        "driver_log_sha256": "d0784b7e01dc1f82449693542f447789d8d46667687d1602e8f3001e26ef5a95",
+        "llbc": "3ef1d56b1ffd28bbacfe0bdf03e6f4ba48bfac4c34f216777b19851f7f9a7826",
+        "generated": {
+          "SandproofStage1Request/Funs.lean": "6886e9685906c38c957c78804004e4e3f2f94484cbaa5982baf6c060b0c159d1",
+          "SandproofStage1Request/FunsExternal_Template.lean": "223c89f1d90c1bf699d88ecc5f90095628da9cc59d67510af5a3ff34e2631c95",
+          "SandproofStage1Request/Types.lean": "170e01b95683ea4587e8625aa4ec5fd2c110eb1ffeb7e742c0e82898b295ca36",
+          "translation.json": "897f54724acf72540c84fb450440da177ab8a3de83bfbde89136d37bd9f0606d"
+        },
+        "receipt_sha256": "102328674909c1e95d6ed41dc6821dce41ab921a4df3a2b115f32bde49395a35"
+      },
+      "terminal-key-only": {
+        "exit": 0,
+        "driver_log_sha256": "6bd78e4d6ca17998b21e7953fc6c9b4f6f4a34ca53d9f1d35a8617bbc029b109",
+        "llbc": "d6f6525a2e80fe8c21e1d007456149605a3d68f41388558320af8028e68ab7cd",
+        "generated": {
+          "SandproofStage1Request/Funs.lean": "a24ac634f2d6d71f5e051fb27e7bb53bb78653bfc95283eed5b84494ed030144",
+          "SandproofStage1Request/FunsExternal_Template.lean": "223c89f1d90c1bf699d88ecc5f90095628da9cc59d67510af5a3ff34e2631c95",
+          "SandproofStage1Request/Types.lean": "5ff9bf301937481fbf2e4a35e24c34c118c22698edaba81b359309e6d0af90b2",
+          "translation.json": "2b53246c771f810d8384c761ddb924da4b57677f3c81ec603d76d2fd6afbd3b8"
+        },
+        "receipt_sha256": "47112c596509ac9d8fbc2c6e30c758d0aa0aeb148ef780fb1b897eb9c4fd3043"
+      },
+      "confirmation-key-only": {
+        "exit": 0,
+        "driver_log_sha256": "54459632877bbc7b5633486471690c8558a3accc5c546d1c62f4cd4c19002484",
+        "llbc": "911d6d1bc1d379de01ec76bdb92631d34b4dbfb0509b6f6cb880fdcc0637cccb",
+        "generated": {
+          "SandproofStage1Request/Funs.lean": "4b264ddebaeddc51e9eaa5e4dd95d1d21976ddc4e737d545094355f1e573c50b",
+          "SandproofStage1Request/FunsExternal_Template.lean": "223c89f1d90c1bf699d88ecc5f90095628da9cc59d67510af5a3ff34e2631c95",
+          "SandproofStage1Request/Types.lean": "5ff9bf301937481fbf2e4a35e24c34c118c22698edaba81b359309e6d0af90b2",
+          "translation.json": "d9b768b06e6ce547bbb89de3f163760e33fa768e8efefaed955856485b201639"
+        },
+        "receipt_sha256": "9b12c9fbde9bb4213eec61e4246eb910071beee6fad87c75f13f7fcb51230d84"
+      },
+      "close-pending": {
+        "exit": 0,
+        "driver_log_sha256": "1a738701e3d8354acd6a57426ac2df94b2e9ce53681a5c02db9bbbacff07003d",
+        "llbc": "1d46723afba55c05dbba51ffbf1fb56b68158669cd3cfaf5d6f11be450cb9912",
+        "generated": {
+          "SandproofStage1Request/Funs.lean": "83ba4932c61c81023315c1f44cc5e1687c20066b3a5ded07848ea17bbaef4152",
+          "SandproofStage1Request/FunsExternal_Template.lean": "223c89f1d90c1bf699d88ecc5f90095628da9cc59d67510af5a3ff34e2631c95",
+          "SandproofStage1Request/Types.lean": "eb698c1e68ad551283f8212514923b5a1d297dc60f062050757a24210948e654",
+          "translation.json": "83b6c5a218f23b61f6b948ff97ae7d36c505b81fd63bfcdf77b89f152cb61555"
+        },
+        "receipt_sha256": "a0f91a627ffa4e655a5c44124cc5ef2bf287d81373c4e71f627d01512e82a019"
+      },
+      "close-newer-frontier": {
+        "exit": 0,
+        "driver_log_sha256": "6bfcdeb40ed7c198e1111af3fae6feef13bb16f4ec46f4245f513e728c74aab6",
+        "llbc": "46dcef3ee4a9285c1950d5fa073c3003e26218bd3a13645bca057f083cd308d3",
+        "generated": {
+          "SandproofStage1Request/Funs.lean": "75140f14937830709e45a6be4d62962700fc077ab79880a45cd675ef3b276df4",
+          "SandproofStage1Request/FunsExternal_Template.lean": "223c89f1d90c1bf699d88ecc5f90095628da9cc59d67510af5a3ff34e2631c95",
+          "SandproofStage1Request/Types.lean": "170e01b95683ea4587e8625aa4ec5fd2c110eb1ffeb7e742c0e82898b295ca36",
+          "translation.json": "1cb7bd6ed50aceeefbe8f66832707f06cee517443a4776f8989e6e66c0ae5e74"
+        },
+        "receipt_sha256": "293fd1c615e5a232e22e6ead846a54098ae57ee648a4f9fbd2c51f040008f940"
+      }
+    },
+    "acceptance_pending": true
+  }
+}

@@ -1,0 +1,93 @@
+import SandboxModel.Lifecycle.Protocol.ShapeIteration
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.SessionShape
+noncomputable section
+open scoped Classical
+
+def RefusalEntryOK (entry : Entry) : Prop :=
+  entry.local_operation = none ∧ entry.applied_deadline = none ∧
+  entry.previous_effective_end_at_ms = none ∧
+  (IsCreate entry.intent.request.operation ∨ entry.intent.request.operation = .Destroy)
+
+theorem option_some_spec (value : Option α) :
+    core.option.Option.is_some value = decide (value ≠ none) := by
+  cases value <;> simp [core.option.Option.is_some]
+
+theorem refusal_body_end (session : Session) (index : Usize)
+    (outside : session.entries.val.length ≤ index.val) :
+    refusal_entries_invalid_loop.body session index = .ok (.done false) := by
+  simp [refusal_entries_invalid_loop.body, alloc.vec.Vec.len, UScalar.lt_equiv,
+    Nat.not_lt.mpr outside]
+
+theorem refusal_body_step (session : Session) (index next : Usize)
+    (inside : index.val < session.entries.val.length) (added : next.val = index.val + 1) :
+    refusal_entries_invalid_loop.body session index = .ok
+      (if ¬RefusalEntryOK session.entries.val[index.val] then .done true else .cont next) := by
+  obtain ⟨entry, indexed, same⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_usize_spec session.entries index inside)
+  have insideVec : index < alloc.vec.Vec.len session.entries := inside
+  simp only [refusal_entries_invalid_loop.body, insideVec, ↓reduceIte,
+    alloc.vec.Vec.index_slice_index, indexed, same, bind_tc_ok, option_some_spec,
+    decide_eq_true_eq, index_add_one index next added]
+  unfold RefusalEntryOK
+  cases operation : session.entries.val[index.val].intent.request.operation <;>
+    simp [IsCreate]
+  all_goals split_ifs <;> simp_all
+
+theorem refusal_loop_refines (session : Session) (index : Usize) :
+    refusal_entries_invalid_loop session index =
+      .ok ((session.entries.val.drop index.val).any (fun entry => decide (¬RefusalEntryOK entry))) := by
+  unfold refusal_entries_invalid_loop
+  have proof := indexed_any_loop session.entries.slice
+    (fun entry => decide (¬RefusalEntryOK entry)) (refusal_entries_invalid_loop.body session)
+    (by intro i outside; exact refusal_body_end session i outside)
+    (by
+      intro i next inside added
+      have actual := refusal_body_step session i next inside added
+      simp only [alloc.vec.Vec.val] at actual
+      by_cases good : RefusalEntryOK session.entries.slice.val[i.val] <;>
+        simpa [good] using actual) index
+  exact proof
+
+theorem refusal_entries_spec (session : Session) :
+    refusal_entries_invalid session =
+      .ok (decide (¬∀ entry ∈ session.entries.val, RefusalEntryOK entry)) := by
+  rw [refusal_entries_invalid, refusal_loop_refines]
+  change Result.ok (session.entries.val.any (fun entry => decide (¬RefusalEntryOK entry))) = _
+  apply congrArg Result.ok
+  apply Bool.eq_iff_iff.mpr
+  simp
+
+theorem first_refusal_pred {R E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (entry : Entry) :
+    Inbox.validate_session_shape_using.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once
+      saved terminal () entry =
+      .ok (decide (¬(entry.intent.accepted_version = 1#u64 ∧ IsCreate entry.intent.request.operation))) := by
+  cases operation : entry.intent.request.operation <;>
+    simp [Inbox.validate_session_shape_using.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool.call_once,
+      operation, IsCreate, bne_iff_ne]
+  all_goals split_ifs <;> simp_all
+
+theorem first_refusal_option {R E : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding E)
+    (entries : Option Entry) :
+    core.option.Option.is_none_or
+      (Inbox.validate_session_shape_using.closure.Insts.CoreOpsFunctionFnOnceTupleSharedEntryBool saved terminal)
+      entries () = .ok (decide (¬∃ first, entries = some first ∧
+        first.intent.accepted_version = 1#u64 ∧ IsCreate first.intent.request.operation)) := by
+  cases entries <;> simp [core.option.Option.is_none_or,
+    SandproofFoundationsRust.core.option.Option.is_none_or, first_refusal_pred]
+
+end
+end SandboxModel.Stage1Protocol.SessionShape
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.option_some_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.refusal_body_end
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.refusal_body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.refusal_loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.refusal_entries_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.first_refusal_pred
+#audit_controller_proof SandboxModel.Stage1Protocol.SessionShape.first_refusal_option

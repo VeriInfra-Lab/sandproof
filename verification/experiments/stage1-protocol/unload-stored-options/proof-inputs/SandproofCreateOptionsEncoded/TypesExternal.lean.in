@@ -1,0 +1,21 @@
+import Aeneas
+
+namespace SandproofCreateOptionsEncoded
+
+-- The concrete String/String instance supplies the ordered original entries.
+-- This representation does not construct, mutate, or compare arbitrary maps.
+abbrev alloc.collections.btree.map.BTreeMap (K V _A : Type) := List (K × V)
+abbrev alloc.collections.btree.map.Iter (K V : Type) := List (K × V)
+
+class Representations where
+  serdeError : Type
+  template : Type
+  networking : Type
+  journalError : Type
+
+abbrev serde_json.error.Error [r : Representations] := r.serdeError
+abbrev templates.TemplateBinding [r : Representations] := r.template
+abbrev host_contract.CreateNetworking [r : Representations] := r.networking
+abbrev JournalError [r : Representations] := r.journalError
+
+end SandproofCreateOptionsEncoded

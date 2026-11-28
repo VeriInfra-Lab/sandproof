@@ -1,0 +1,15 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -982,0 +983,12 @@
++
++
++### A4/B4 V3 Create 标准实例的寿命 SQL 调用（候选）
++
++`create-standard-sql/inventory.json` 固定实际 Std 单方法效果接口、薄调用根、原
++`lifetime_sql::execute`、两项原 ToSql 根及完整对象载体。FullStandardSqlContract
++对任意 Connection、statement、i64 deadline 和 sandbox 字符串保持原完整参数、
++外层 Result/ITree 行为、prepare/run 首错与全部成功行数（包括零）。
++原两槽绑定、文本字节、整数与 rusqlite 错误均复用唯一 lower SQL 模型/有限合同。
++返回上下文表示本次调用的完整引用和值观察，不断言数据库堆不变或跨调用历史。
++A4 仍须提供实际同一物理连接、参数/执行/事务的连贯历史；V5 仍须建立活对象、
++writer lease 与提交/未知提交/恢复事实。不得把整个收件事务设为可信。

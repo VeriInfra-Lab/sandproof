@@ -1,0 +1,21 @@
+//! Direct byte calls; all schema/leaf behavior stays in the production types.
+use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, RecordedLifecycleIntent};
+
+pub fn accepted_decode(bytes: &[u8]) -> Result<AcceptedLifecycleIntent, serde_json::Error> {
+    serde_json::from_slice::<AcceptedLifecycleIntent>(bytes)
+}
+
+pub fn accepted_encode(value: &AcceptedLifecycleIntent) -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec(value)
+}
+
+pub fn recorded_decode(bytes: &[u8]) -> Result<RecordedLifecycleIntent, serde_json::Error> {
+    serde_json::from_slice::<RecordedLifecycleIntent>(bytes)
+}
+
+pub fn recorded_encode(value: &RecordedLifecycleIntent) -> Result<Vec<u8>, serde_json::Error> {
+    serde_json::to_vec(value)
+}
+
+#[cfg(test)]
+mod tests;

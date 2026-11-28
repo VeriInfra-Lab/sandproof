@@ -47,12 +47,13 @@ def component_files(project, names, profile, extra=()):
     seeds += [str(p.relative_to(project)) for p in sorted((project / LIBRARY / profile).rglob('*.lean'))
               if '_Template' not in p.name]
     seeds += list(extra)
-    return sorted(resolver.closure(project, seeds))
+    return sorted(resolver.closure(project, seeds, active_view='lakefile.toml'))
 
 
 def check_inventory(project, frozen):
-    actual = {p.stem for p in (project / PROOFS).glob('*.lean')}
-    if actual != set(POSITIVE) or frozen['positive_files'] != POSITIVE_BY_PROFILE:
+    inventory = load_module('unified_protocol_source_inventory', project / HERE / 'source_inventory.py')
+    inventory.retained(project, POSITIVE)
+    if frozen['positive_files'] != POSITIVE_BY_PROFILE:
         raise ValueError('unregistered or missing retained protocol proof file')
 
 
@@ -79,7 +80,7 @@ def generated_files(profile):
     return [str(p.relative_to(ROOT)) for p in sorted((ROOT / LIBRARY / profile).rglob('*.lean'))]
 
 
-def actual_files(project, files, output, env, run):
+def actual_files(project, files, output, env, run, *, repeat_across_pages=False):
     """Use the existing strict batch client, with an explicit component inventory."""
     before = {n: sha(project / n) for n in files}
     for index, name in enumerate(files):
@@ -96,10 +97,14 @@ def actual_files(project, files, output, env, run):
         raise ValueError('expected one original batch-service evidence directory')
     physical = output / 'physical-files'
     shutil.move(str(created.pop()), physical)
-    expected = [n for name in files for n in re.findall(
-        r'^#audit_controller_proof (\S+)$', (project / name).read_text(), re.M)]
+    audits = [re.findall(r'^#audit_controller_proof (\S+)$', (project / name).read_text(), re.M)
+              for name in files]
+    if any(len(set(page)) != len(page) for page in audits):
+        raise ValueError('duplicate dependency audit on one physical page')
+    expected = [name for page in audits for name in page]
     observed = re.findall(r'^Checked (\S+): \d+ standard logical dependencies$', stdout.getvalue(), re.M)
-    if len(set(expected)) != len(expected) or sorted(expected) != sorted(observed):
+    if (not repeat_across_pages and len(set(expected)) != len(expected)
+            or sorted(expected) != sorted(observed)):
         raise ValueError('missing, duplicate or extra component audit messages')
     if before != {n: sha(project / n) for n in files}:
         raise ValueError('physical files changed during checking')
@@ -321,9 +326,10 @@ def replay(output, archive, native, native_archive, selected):
                 with tarfile.open(archive) as tar:
                     tar.extractall(project, filter='data')
                 check_inputs(project)
-                (project / '.tools').symlink_to(ROOT / '.tools', target_is_directory=True)
+                runtime = load_module('protocol_stable_tools', ROOT / HERE / 'formal_runtime.py')
+                (project / '.tools').symlink_to(runtime.tool_root(ROOT), target_is_directory=True)
                 (project / '.lake').mkdir()
-                (project / '.lake/packages').symlink_to(ROOT / '.lake/packages', target_is_directory=True)
+                (project / '.lake/packages').symlink_to(runtime.package_root(ROOT), target_is_directory=True)
                 source = project / mutation['source']
                 text = source.read_text()
                 if text.count(mutation['old']) != 1 or sha(source) != native_rows[name]['original_source_sha256']:

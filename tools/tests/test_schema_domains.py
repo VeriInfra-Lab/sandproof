@@ -7,7 +7,8 @@ import unittest
 from tools.check_schema_domains import (GENERATED, GUARD_LLBC, check_guards,
                                        check_sources, load_environment, check_catalogue)
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.tests.proof_input_fixture import reference_root
+ROOT = reference_root()
 
 
 class SchemaDomainsTests(unittest.TestCase):

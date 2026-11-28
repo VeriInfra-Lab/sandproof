@@ -25,6 +25,10 @@ CASES = [
      "if self.eligibility == RestoreEligibility::Capturing {\n            self.eligibility = RestoreEligibility::Recoverable;\n        }",
      "self.eligibility = RestoreEligibility::Recoverable;",
      "commit_dispatch_is_unknown_and_late_success_tracks_material_without_reviving_capture"),
+    ("ignore-capture-target", "controller-core/src/worker/late_capture.rs",
+     "if generation != plan.generation\n        || plan.target_snapshot != Some(RestoreSource { snapshot, manifest })\n    {",
+     "if generation != plan.generation {",
+     "late_commit_rejects_a_different_original_target_without_changing_world"),
 ]
 
 

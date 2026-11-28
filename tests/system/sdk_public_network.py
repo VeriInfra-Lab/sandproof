@@ -20,6 +20,7 @@ import ipaddress
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import select
 import secrets
 import shutil
@@ -218,7 +219,7 @@ def clean_vm(root: Path, firecracker: Path, namespace: str,
     vm = f"vm-{namespace}-{number}"
     iface = f"sp{namespace[:6]}{number:06x}"
     assert process_start_ticks(identity[0]) != identity[1], f"VM process survived: {vm}"
-    assert not (root / "jails" / firecracker.resolve(strict=True).name / vm).exists(), vm
+    assert not (original_chroot(root) / firecracker.resolve(strict=True).name / vm).exists(), vm
     for path in [f"/run/netns/{vm}"]:
         assert not Path(path).exists(), f"network namespace survived: {path}"
     assert not exists("/usr/bin/ip", "link", "show", "dev", iface), iface
@@ -229,7 +230,7 @@ def clean_vm(root: Path, firecracker: Path, namespace: str,
 
 def vm_identity(root: Path, namespace: str, number: int) -> tuple[int, int]:
     vm = f"vm-{namespace}-{number}"
-    record = json.loads((root / "jails/.claims" / vm / "record.json").read_text())
+    record = json.loads((original_chroot(root) / ".claims" / vm / "record.json").read_text())
     assert record["resource_id"] == vm
     return record["pid"], record["start_time_ticks"]
 
@@ -253,7 +254,7 @@ def exercise(args: argparse.Namespace) -> None:
     root = Path(tempfile.mkdtemp(prefix="sp-ipv4-", dir=parent))
     namespace = secrets.token_hex(8)
     api_key = secrets.token_hex(32)
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     kernel = root / "vmlinux"
     rootfs = root / "rootfs.ext4"
@@ -273,7 +274,7 @@ def exercise(args: argparse.Namespace) -> None:
         "node_state_dir": str(root / "state"),
         "jailer": str(Path(args.jailer).resolve(strict=True)),
         "firecracker": str(Path(args.firecracker).resolve(strict=True)),
-        "chroot_base": str(root / "jails"),
+        "chroot_base": str(root / "p/v"),
         "kernel": str(kernel),
         "rootfs": str(rootfs),
         "uid_base": args.uid_base,
@@ -293,7 +294,7 @@ def exercise(args: argparse.Namespace) -> None:
         "public_ipv4_enabled": True,
         "templates": catalog,
     }
-    settings = complete_runtime(settings, slots=2)
+    settings = complete_runtime(settings, slots=2, inbox_sessions=4+settings["max_active_global"])
     api_url = f"http://127.0.0.1:{port}"
     options = dict(api_url=api_url, sandbox_url=api_url, api_key=api_key,
                    domain="example.invalid", retries=0, request_timeout=45)
@@ -302,7 +303,7 @@ def exercise(args: argparse.Namespace) -> None:
         'max_artifact_bytes_per_tenant': disk_bytes + kernel.stat().st_size, 'validation_timeout_secs': 60}
     services = RuntimeServices.prepare(args, root=root, native_pools=[settings],
         registered_catalogs=[catalog], key=api_key, public_address=f'127.0.0.1:{port}',
-        record=args.service_cgroup_record, job_count=4, private_builds=None, registry_config=registry)
+        record=args.service_cgroup_record, retained_sessions=4 + settings['max_active_global'], private_builds=None, registry_config=registry)
     completed = False
     sandboxes = []
     try:

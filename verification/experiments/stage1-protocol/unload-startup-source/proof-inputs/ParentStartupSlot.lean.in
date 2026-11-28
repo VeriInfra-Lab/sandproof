@@ -1,0 +1,91 @@
+import ReceiptDigestLink
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+open SandboxModel.Stage1Protocol.DigestByteBridge (referenceOutput)
+variable [Representations] [ParentCalls]
+
+abbrev StartupAction := sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId
+abbrev RawStartupReceipt := alloc.vec.Vec U8
+
+omit [ParentCalls] in
+/-- Only the action representation changes across generated views. The receipt
+vector itself is already a common Aeneas byte vector. -/
+theorem second_after_action_transport {ProviderAction : Type}
+    (providerRows : List (ProviderAction × RawStartupReceipt))
+    (fromProvider : ProviderAction → StartupAction)
+    (action : ProviderAction) (raw : RawStartupReceipt)
+    (second : providerRows[1]? = some (action, raw)) :
+    (providerRows.map fun row => (fromProvider row.1, row.2))[1]? =
+      some (fromProvider action, raw) := by
+  simp [List.getElem?_map, second]
+
+omit [ParentCalls] in
+/-- Both projections come from a single list of complete action/raw-receipt
+pairs, in the order returned by the real startup collector. -/
+theorem ordered_startup_output_has_second
+    (actions : Actions) (receipts : Receipts)
+    (rows : List (StartupAction × RawStartupReceipt))
+    (action : StartupAction) (raw : RawStartupReceipt)
+    (actionsOrdered : actions.val = rows.map Prod.fst)
+    (receiptsOrdered : receipts.val = rows.map Prod.snd)
+    (second : rows[1]? = some (action, raw)) :
+    actions.val[1]? = some action ∧ receipts.val[1]? = some raw := by
+  constructor
+  · simp [actionsOrdered, List.getElem?_map, second]
+  · simp [receiptsOrdered, List.getElem?_map, second]
+
+/-- The returned resource comes from the complete observed second action. The
+original receipt at the same index is kept as a separate witness. -/
+theorem actual_first_full_work_from_startup_slot
+    {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : rusqlite.transaction.Transaction}
+    {namespaceId : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx namespaceId intent now input)
+    (rows : List (StartupAction × RawStartupReceipt))
+    (action : StartupAction) (raw : RawStartupReceipt)
+    (actionsOrdered : reads.originalActions.val = rows.map Prod.fst)
+    (receiptsOrdered : reads.originalReceipts.val = rows.map Prod.snd)
+    (second : rows[1]? = some (action, raw))
+    (prepareResource : sandproof_protocol.ResourceRef)
+    (matchesPrepare : action.identity.resource = prepareResource)
+    (digestRepresentation : Sha256Array = Binding)
+    (receiptDigestsLinked : LinkedReceiptDigests digestRepresentation reads.originalReceipts)
+    (normalReceiptBytes : ∀ bytes ∈ reads.originalReceipts.val,
+      (alloc.vec.Vec.deref bytes).val.length < 2^61)
+    (encodedAnchor : alloc.vec.Vec U8) (binding : Binding)
+    (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))
+    (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)
+    (cloneResource : ParentCalls.cloneResource action.identity.resource = .ok action.identity.resource)
+    (cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits) :
+    ∃ work : Work,
+      controller.lifecycle_inbox.source_work.snapshot.current
+        host serde tx namespaceId intent now input = .ok (.Ok work) ∧
+      work.requirement.resource = prepareResource ∧
+      work.anchor.original_actions.val[1]? = some action.identity ∧
+      work.anchor.original_receipts.val[1]? =
+        some (cast digestRepresentation (referenceOutput (alloc.vec.Vec.deref raw))) ∧
+      reads.originalReceipts.val[1]? = some raw := by
+  obtain ⟨actionAt, rawAt⟩ :=
+    ordered_startup_output_has_second reads.originalActions reads.originalReceipts
+      rows action raw actionsOrdered receiptsOrdered second
+  have slot : reads.actionIdentities.val[1]? = some action.identity := by
+    simp [reads.actionsFull, List.getElem?_map, actionAt]
+  have hashes := actual_receipt_digests_are_complete digestRepresentation reads.originalReceipts
+    reads.receiptDigests receiptDigestsLinked normalReceiptBytes reads.collectReceipts
+  have receiptAt : reads.receiptDigests.val[1]? =
+      some (cast digestRepresentation (referenceOutput (alloc.vec.Vec.deref raw))) := by
+    simp [hashes, List.getElem?_map, rawAt]
+  refine ⟨workFor reads.expected input.limits binding action.identity,
+    actual_first_full_work reads encodedAnchor binding action.identity encode digest slot
+      cloneResource cloneLimits, ?_, ?_, ?_, rawAt⟩
+  · simpa [workFor] using matchesPrepare
+  · simpa [workFor, FirstRead.expected, anchorFor] using slot
+  · simpa [workFor, FirstRead.expected, anchorFor] using receiptAt
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.second_after_action_transport
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.ordered_startup_output_has_second
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.actual_first_full_work_from_startup_slot

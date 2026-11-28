@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.BlobColumnsValues
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+open SandboxModel.Stage1Protocol.BlobColumns
+namespace SandboxModel.Stage1Protocol.NegativeBlobRepeat
+noncomputable section
+open Values
+abbrev actual := controller.lifecycle_inbox.codec.read_blob_pair
+
+theorem common_normal : actual normal 0#usize 1#usize = .ok (.Ok (leftBytes, leftBytes)) := by
+  unfold actual controller.lifecycle_inbox.codec.read_blob_pair
+  rw [fixed_get_model_refines]
+  have read : column normal 0#usize = .Ok leftBytes := by rfl
+  rw [read]
+  simp [core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem actual_repeats_first : actual distinct 0#usize 1#usize = .ok (.Ok (leftBytes, leftBytes)) := by
+  unfold actual controller.lifecycle_inbox.codec.read_blob_pair
+  rw [fixed_get_model_refines]
+  have read : column distinct 0#usize = .Ok leftBytes := by rfl
+  rw [read]
+  simp [core.result.Result.Insts.CoreOpsTry.branch]
+
+theorem not_full_contract : ¬FullColumnsContract actual := by
+  intro contract
+  have impossible := contract distinct 0#usize 1#usize
+  rw [actual_repeats_first, distinct_expected] at impossible
+  simp only [Result.ok.injEq, core.result.Result.Ok.injEq, Prod.mk.injEq] at impossible
+  exact bytes_differ impossible.2
+
+end
+end SandboxModel.Stage1Protocol.NegativeBlobRepeat
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeBlobRepeat.common_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeBlobRepeat.actual_repeats_first
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeBlobRepeat.not_full_contract

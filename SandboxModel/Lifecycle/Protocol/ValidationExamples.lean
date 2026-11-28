@@ -32,6 +32,28 @@ theorem resume_accepted : request_validate (resume 1#u64 2#u64) node = .ok (.Ok 
   apply (validate_accepts_iff (resume 1#u64 2#u64) node).mpr
   simp [ValidRequest, headersOK, expectationOK, operationOK, resume, binding, node]
 
+theorem resume_gap_accepted : request_validate (resume 1#u64 9#u64) node = .ok (.Ok ()) := by
+  apply (validate_accepts_iff _ _).mpr
+  simp [ValidRequest, headersOK, expectationOK, operationOK, resume, binding, node]
+
+theorem previous_protocol_rejected_before_node (request : LifecycleRequest) (expected : NodeIdentity) :
+    request_validate { request with binding := { request.binding with protocol_version := 3#u16 } }
+      expected = .ok (.Err .UnsupportedVersion) := by
+  apply (validate_error_iff _ _ _).mpr
+  simp [FirstError]
+
+theorem changed_node_generation_rejected :
+    request_validate (unload 1#u64) { node with node_generation := 2#u64 } =
+      .ok (.Err .ForeignNode) := by
+  apply (validate_error_iff _ _ _).mpr
+  simp [FirstError, unload, binding, node]
+
+theorem expectation_precedes_same_incarnation :
+    request_validate ⟨{ binding with expected := .Absent },
+      .Resume 1#u64 1#u64 1#u64 digest⟩ node = .ok (.Err .InvalidExpectation) := by
+  apply (validate_error_iff _ _ _).mpr
+  simp [FirstError, headersOK, expectationOK, binding, node]
+
 theorem destroy_accepted : request_validate destroyRequest node = .ok (.Ok ()) := by
   apply (validate_accepts_iff destroyRequest node).mpr
   simp [ValidRequest, headersOK, expectationOK, operationOK, destroyRequest, binding, node]
@@ -49,3 +71,8 @@ end SandboxModel.Stage1Protocol.Validation
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.Examples.destroy_accepted
 
 #audit_controller_proof SandboxModel.Stage1Protocol.Validation.Examples.renew_accepted
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Validation.Examples.resume_gap_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.Validation.Examples.previous_protocol_rejected_before_node
+#audit_controller_proof SandboxModel.Stage1Protocol.Validation.Examples.changed_node_generation_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.Validation.Examples.expectation_precedes_same_incarnation

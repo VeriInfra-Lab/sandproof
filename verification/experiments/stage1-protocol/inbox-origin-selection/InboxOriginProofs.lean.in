@@ -1,0 +1,101 @@
+import SandboxModel.Lifecycle.Protocol.InboxOriginSupport
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.OriginSelection
+noncomputable section
+
+theorem body_zero (values : alloc.vec.Vec Entry) :
+    Session.current_execution_origin_loop.body values 0#usize = .ok (.done none) := by
+  simp [Session.current_execution_origin_loop.body]
+
+theorem body_step (values : alloc.vec.Vec Entry) (index previous : Usize)
+    (positive : 0 < index.val) (bound : index.val ≤ values.val.length)
+    (decreased : previous.val+1 = index.val) :
+    Session.current_execution_origin_loop.body values index = .ok
+      (if origin values.val[previous.val] then .done (some values.val[previous.val])
+       else .cont previous) := by
+  have inside : previous.val < values.val.length := by omega
+  have get : alloc.vec.Vec.index_usize values previous = .ok values.val[previous.val] := by
+    obtain ⟨entry, equality, post⟩ := (WP.spec_equiv_exists _ _).mp
+      (alloc.vec.Vec.index_usize_spec values previous inside)
+    simpa [post] using equality
+  unfold Session.current_execution_origin_loop.body
+  have guard : index > 0#usize := by scalar_tac
+  simp only [guard, ↓reduceIte, subtract_one index previous positive decreased,
+    bind_tc_ok, alloc.vec.Vec.index_slice_index, get]
+  generalize values.val[previous.val] = entry
+  rcases entry with ⟨intent, localOperation, deadline, prior, resolution⟩
+  rcases intent with ⟨request, version, center, retention⟩
+  rcases request with ⟨binding, operation⟩
+  cases operation <;> simp [origin]
+
+theorem loop_zero (values : alloc.vec.Vec Entry) :
+    Session.current_execution_origin_loop values 0#usize = .ok none := by
+  unfold Session.current_execution_origin_loop
+  rw [loop, body_zero]
+  simp only [bind_ok]
+
+theorem loop_step (values : alloc.vec.Vec Entry) (index previous : Usize)
+    (positive : 0 < index.val) (bound : index.val ≤ values.val.length)
+    (decreased : previous.val+1 = index.val) :
+    Session.current_execution_origin_loop values index =
+      if origin values.val[previous.val] then .ok (some values.val[previous.val])
+      else Session.current_execution_origin_loop values previous := by
+  unfold Session.current_execution_origin_loop
+  conv_lhs => rw [loop]
+  rw [body_step values index previous positive bound decreased]
+  split <;> simp only [bind_ok]
+
+theorem loop_refines (values : alloc.vec.Vec Entry) (index : Usize)
+    (bound : index.val ≤ values.val.length) :
+    Session.current_execution_origin_loop values index =
+      .ok (selection (values.val.take index.val)) := by
+  induction count : index.val using Nat.strong_induction_on generalizing index with
+  | h count ih =>
+    rw [← count]
+    by_cases zero : index.val = 0
+    · have eqzero : index = 0#usize := by scalar_tac
+      subst index
+      rw [loop_zero]
+      simp [selection]
+    · have positive : 0 < index.val := by omega
+      let previous := Usize.ofNatCore (index.val-1) (by scalar_tac)
+      have previousVal : previous.val = index.val-1 := rfl
+      have decreased : previous.val+1 = index.val := by omega
+      have inside : previous.val < values.val.length := by omega
+      rw [loop_step values index previous positive bound decreased]
+      have later := ih previous.val (by omega) previous (by omega) rfl
+      rw [later, ← decreased, selection_step values.val previous.val inside]
+      split <;> rfl
+
+theorem candidate_full_contract : FullOriginContract Session.current_execution_origin := by
+  intro session
+  unfold Session.current_execution_origin
+  rw [loop_refines session.entries (alloc.vec.Vec.len session.entries) (by simp)]
+  simp
+
+theorem candidate_some_iff (session : Session) (entry : Entry) :
+    Session.current_execution_origin session = .ok (some entry) ↔
+      LastOrigin session.entries.val entry := by
+  rw [candidate_full_contract session]
+  simp only [Result.ok.injEq, selection_some_iff]
+
+theorem candidate_none_iff (session : Session) :
+    Session.current_execution_origin session = .ok none ↔
+      ∀ entry ∈ session.entries.val, origin entry = false := by
+  rw [candidate_full_contract session]
+  simp only [Result.ok.injEq, no_origin_iff]
+
+end
+end SandboxModel.Stage1Protocol.OriginSelection
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.body_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.body_step
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.loop_zero
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.loop_step
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.loop_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.candidate_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.candidate_some_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.OriginSelection.candidate_none_iff

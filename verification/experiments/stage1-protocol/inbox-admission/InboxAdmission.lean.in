@@ -1,0 +1,138 @@
+import SandboxModel.Lifecycle.Protocol.InboxAdmissionSupport
+import SandboxModel.Lifecycle.Protocol.InboxAdmissionValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxAdmission
+
+theorem context_refines (inbox : Inbox) (context : AuthenticatedCenterContext) :
+    inbox.verify_context context = .ok (expectedContext inbox context) := by
+  classical
+  by_cases center : inbox.config.center = context.center <;>
+    by_cases node : inbox.config.node = context.expected_node <;>
+    simp [Inbox.verify_context, expectedContext, ContextMatches, center, node,
+      AuthenticatedCenterContext.impl.center, AuthenticatedCenterContext.impl.expected_node,
+      core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+      Replay.center_eq, Replay.node_eq]
+
+theorem authenticated_refines (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) :
+    authenticated inbox intent context = .ok (expectedAuthentication inbox intent context) := by
+  classical
+  unfold authenticated
+  rw [context_refines]
+  by_cases context_ok : ContextMatches inbox context
+  · cases result : Validation.expectedAccepted intent context <;>
+      simp [expectedContext, expectedAuthentication, context_ok, collapse,
+        core.result.Result.Insts.CoreOpsTry.branch,
+        accepted_body, result, core.result.Result.map_err,
+        authenticated.closure.Insts.CoreOpsFunctionFnOnceTupleAcceptedIntentErrorJournalError.call_once]
+  · simp [expectedContext, expectedAuthentication, context_ok,
+      core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem authenticated_contract : FullAuthenticationContract authenticated := authenticated_refines
+
+theorem accepts_iff (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) :
+    authenticated inbox intent context = .ok (.Ok ()) ↔
+      ContextMatches inbox context ∧ Validation.ValidEnvelope intent context := by
+  classical
+  rw [authenticated_refines]
+  by_cases context_ok : ContextMatches inbox context <;>
+    simp [expectedAuthentication, context_ok, collapse_ok_iff, Validation.expectedAccepted_success_iff]
+
+theorem context_rejection_before_envelope (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (foreign : ¬ ContextMatches inbox context) :
+    authenticated inbox intent context = .ok (.Err .Conflict) := by
+  unfold authenticated
+  rw [context_refines]
+  simp [expectedContext, foreign, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+theorem envelope_error_is_conflict (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (error : AcceptedIntentError)
+    (first : Validation.FirstAcceptedError intent context error) :
+    authenticated inbox intent context = .ok (.Err .Conflict) := by
+  classical
+  rw [authenticated_refines]
+  have rejected := (Validation.expectedAccepted_error_iff intent context error).mpr first
+  simp [expectedAuthentication, rejected, collapse]
+
+theorem normal_accepted :
+    authenticated (InboxLookup.Witness.inbox 1#u64) (EnvelopeValues.intent 1#u64)
+      EnvelopeValues.context = .ok (.Ok ()) := by
+  apply (accepts_iff _ _ _).mpr
+  exact ⟨⟨rfl,rfl⟩,EnvelopeValues.both_inputs_have_valid_shape.1⟩
+
+theorem refuses_iff (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) :
+    authenticated inbox intent context = .ok (.Err .Conflict) ↔
+      ¬ ContextMatches inbox context ∨ ¬ Validation.ValidEnvelope intent context := by
+  classical
+  rw [authenticated_refines]
+  by_cases context_ok : ContextMatches inbox context
+  · cases result : Validation.expectedAccepted intent context with
+    | Ok value =>
+      cases value
+      have valid := (Validation.expectedAccepted_success_iff intent context).mp result
+      simp [expectedAuthentication, context_ok, result, collapse, valid]
+    | Err error =>
+      have invalid : ¬ Validation.ValidEnvelope intent context := by
+        intro valid
+        have accepted := (Validation.expectedAccepted_success_iff intent context).mpr valid
+        rw [result] at accepted
+        cases accepted
+      simp [expectedAuthentication, context_ok, result, collapse, invalid]
+  · simp [expectedAuthentication, context_ok]
+
+theorem foreign_config_center_rejected (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (foreign : inbox.config.center ≠ context.center) :
+    authenticated inbox intent context = .ok (.Err .Conflict) := by
+  apply context_rejection_before_envelope
+  exact fun matching => foreign matching.1
+
+theorem foreign_config_node_rejected (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext) (foreign : inbox.config.node ≠ context.expected_node) :
+    authenticated inbox intent context = .ok (.Err .Conflict) := by
+  apply context_rejection_before_envelope
+  exact fun matching => foreign matching.2
+
+theorem accepted_binds_original_configuration (inbox : Inbox) (intent : AcceptedLifecycleIntent)
+    (context : AuthenticatedCenterContext)
+    (accepted : authenticated inbox intent context = .ok (.Ok ())) :
+    intent.center = inbox.config.center ∧ intent.request.binding.node = inbox.config.node := by
+  obtain ⟨matching, valid⟩ := (accepts_iff inbox intent context).mp accepted
+  have envelope := (Validation.envelope_accepts_iff intent context).mpr valid
+  exact ⟨(Validation.envelope_keeps_context_center intent context envelope).trans matching.1.symm,
+    (Validation.envelope_keeps_context_node intent context envelope).trans matching.2.symm⟩
+
+theorem distinct_retention_window_accepted :
+    authenticated (InboxLookup.Witness.inbox 1#u64)
+      { EnvelopeValues.intent 1#u64 with retention := ⟨1#u16,9#u64⟩ }
+      EnvelopeValues.context = .ok (.Ok ()) := by
+  apply (accepts_iff _ _ _).mpr
+  exact ⟨⟨rfl,rfl⟩,(Validation.envelope_accepts_iff _ _).mp Validation.distinct_retention_window_accepted⟩
+
+theorem foreign_generation_rejected :
+    authenticated (InboxLookup.Witness.inbox 1#u64) foreignIntent foreignContext = .ok (.Err .Conflict) := by
+  apply foreign_config_node_rejected
+  simp [InboxLookup.Witness.inbox, foreignContext, EnvelopeValues.context, EnvelopeValues.node]
+
+end SandboxModel.Stage1Protocol.InboxAdmission
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.context_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.authenticated_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.authenticated_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.context_rejection_before_envelope
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.envelope_error_is_conflict
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.normal_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.refuses_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.foreign_config_center_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.foreign_config_node_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.accepted_binds_original_configuration
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.distinct_retention_window_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAdmission.foreign_generation_rejected

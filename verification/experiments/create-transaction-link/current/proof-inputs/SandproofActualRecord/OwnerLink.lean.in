@@ -1,0 +1,29 @@
+import SandproofActualRecord.ScopeTransport
+import SandproofParentCommit.Funs
+
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofActualRecordRust
+
+noncomputable section
+
+def controller.internal_inbox.admission.terminate_local
+    (view : controller.transaction.WorldTransaction) (namespaceName : Str)
+    (binding : controller.internal_inbox.model.InternalLocalBinding) :
+    Result (core.result.Result Unit JournalError) :=
+  view.terminate view.parent namespaceName (ScopeTransport.toSourceLocal binding)
+
+def controller.transaction.WorldTransaction.world
+    (view : controller.transaction.WorldTransaction) :
+    Result sandbox_controller_core.model.World :=
+  SandproofParentCommitRust.controller.transaction.WorldTransaction.world view.parent
+
+def controller.transaction.WorldTransaction.commit
+    (view : controller.transaction.WorldTransaction) :
+    Result (core.result.Result Unit JournalError) :=
+  SandproofParentCommitRust.controller.transaction.WorldTransaction.commit view.parent
+
+end
+
+end SandproofActualRecordRust

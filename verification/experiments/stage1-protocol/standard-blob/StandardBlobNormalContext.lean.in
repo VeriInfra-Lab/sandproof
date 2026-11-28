@@ -1,0 +1,77 @@
+import SandboxModel.Lifecycle.Protocol.StandardBlobDomain
+import SandboxModel.Lifecycle.Protocol.StandardBlobValues
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.StandardBlobNormalContext
+noncomputable section
+open StandardBlobDomain
+
+/-- A representation of the normal finite library input domain. It restricts
+only the rows returned for this exact issued statement. It is not an Inbox,
+authorization, transaction, business-quota or persisted-row invariant. -/
+abbrev NormalContext := { self : StandardBlob.Context // ReturnedRowsBound self.connection }
+
+/-- Calls the actual generated standard read. Its entire returned original
+Context value is connected below; other IO fields are not implemented here. -/
+def read (state : NormalContext) (statement : Str) :
+    Result (StandardBlob.Outcome × NormalContext) := do
+  let (reply, _) ← StandardBlob.actual state.val statement
+  .ok (reply, state)
+
+def forget (run : Result (StandardBlob.Outcome × NormalContext)) :
+    Result (StandardBlob.Outcome × StandardBlob.Context) := do
+  let (reply, after) ← run
+  .ok (reply, after.val)
+
+theorem forget_actual_read (state : NormalContext) (statement : Str) :
+    forget (read state statement) = StandardBlob.actual state.val statement := by
+  rw [StandardBlob.standard_refines]
+  unfold forget read
+  rw [StandardBlob.standard_refines]
+  unfold StandardBlob.expected
+  simp only [bind_assoc]
+  congr 1
+  funext reply
+  cases reply <;> simp only [bind_tc_ok, uncurry_apply_pair]
+
+theorem successful_read_bound (state after : NormalContext) (statement : Str)
+    (left right : BlobColumns.Bytes)
+    (returned : read state statement = .ok (.Ok (left, right), after)) :
+    left.val.length ≤ 2147483647 := by
+  unfold read at returned
+  obtain ⟨⟨reply, originalAfter⟩, actualReturned, finished⟩ :=
+    bind_success_value _ _ _ returned
+  have replies : reply = .Ok (left, right) :=
+    congrArg Prod.fst (Result.ok_injective finished)
+  have actualSuccess : StandardBlob.actual state.val statement =
+      .ok (.Ok (left, right), originalAfter) := by
+    exact actualReturned.trans (congrArg Result.ok (congrArg (fun value => (value, originalAfter)) replies))
+  exact (standard_success_cint_bounds state.val statement left right originalAfter state.property actualSuccess).2.1
+
+theorem observing_normal_rows (row : rusqlite.row.Row) (bounded : BlobColumns.RowBlobBound row) :
+    ReturnedRowsBound (StandardBlob.Values.observing row).connection := by
+  intro statement returnedRow returned
+  have same : row = returnedRow := core.result.Result.Ok.inj (Result.ok_injective returned)
+  exact same ▸ bounded
+
+def normal : NormalContext :=
+  ⟨StandardBlob.Values.normal, observing_normal_rows BlobColumns.Values.normal BlobColumns.Values.normal_bound⟩
+
+theorem normal_read :
+    read normal StandardBlob.Values.sql =
+      .ok (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.leftBytes), normal) := by
+  unfold read
+  rw [StandardBlob.standard_refines]
+  change (do
+    let (reply, _) ← StandardBlob.expected StandardBlob.Values.normal StandardBlob.Values.sql
+    .ok (reply, normal)) = _
+  rw [StandardBlob.Values.expected_normal]
+  simp only [bind_tc_ok]
+
+end
+end SandboxModel.Stage1Protocol.StandardBlobNormalContext
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobNormalContext.forget_actual_read
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobNormalContext.successful_read_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobNormalContext.observing_normal_rows
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlobNormalContext.normal_read

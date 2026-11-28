@@ -80,7 +80,7 @@ pub(super) fn verify_target<H: ControllerHost>(
         .emit();
         return Err(ApplicationError::Busy);
     }
-    let token = inner.host.token_for(sandbox)?;
+    let token = inner.host.token_for(sandbox, generation)?;
     if !same_secret(&digest(&token)?, &registered_digest) {
         FaultRecord::host(
             FaultStage::CheckCredential,

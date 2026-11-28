@@ -1,0 +1,42 @@
+import SandboxModel.Lifecycle.Protocol.ExitObservations.Spec
+import SandboxModel.Lifecycle.Protocol.ExitObservations.Equality
+import SandboxModel.Lifecycle.Protocol.ExitObservations.Inhabited
+open Aeneas Aeneas.Std SandproofExitObservationsRust
+namespace SandboxModel.Stage1Protocol.ExitObservations.NegativeTicks
+open controller.lifecycle_inbox.source_work.restore
+
+def missingTicks (c : Direct) : DirectObservation :=
+  ⟨c.action,c.work_binding,⟨1#u32,0#u64,c.work.source.host_bootstrap.boot_id⟩⟩
+
+theorem actual_missing_ticks_accepted (c : Direct) :
+    exit.RestoreExitCandidate.matches c (missingTicks c) = .ok true := by
+  classical
+  simp [exit.RestoreExitCandidate.matches,missingTicks,action_eq,digest_eq,
+    capture.restore.RestoreWorkRequest.impl.source,string_eq]
+
+theorem original_missing_ticks_refused (c : Direct) : ¬ DirectMatches c (missingTicks c) := by
+  simp [DirectMatches,missingTicks]
+
+theorem wrong_direct_rejected : ¬ FullExitMatchContract exit.RestoreExitCandidate.matches
+    continued_exit.BeforeAdmissionExitCandidate.matches continued_exit.ContinuedExitCandidate.matches := by
+  intro all
+  let candidate : Direct := default
+  have yes := actual_missing_ticks_accepted candidate
+  have no : exit.RestoreExitCandidate.matches candidate (missingTicks candidate) = .ok false := by
+    simpa [original_missing_ticks_refused candidate] using all.1 candidate (missingTicks candidate)
+  have impossible := yes.symm.trans no
+  simp at impossible
+
+theorem normal_remains (c : Direct) :
+    exit.RestoreExitCandidate.matches c
+      ⟨c.action,c.work_binding,⟨1#u32,1#u64,c.work.source.host_bootstrap.boot_id⟩⟩ = .ok true := by
+  classical
+  simp [exit.RestoreExitCandidate.matches,action_eq,digest_eq,string_eq,
+    capture.restore.RestoreWorkRequest.impl.source]
+
+end SandboxModel.Stage1Protocol.ExitObservations.NegativeTicks
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.NegativeTicks.actual_missing_ticks_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.NegativeTicks.original_missing_ticks_refused
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.NegativeTicks.wrong_direct_rejected
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ExitObservations.NegativeTicks.normal_remains

@@ -39,6 +39,11 @@ import SandboxModel.Boundaries.BoundedWriter.Model
 import SandboxModel.Foundations.BtreeSetBinding.Examples
 import SandboxModel.Boundaries.ProtectedDirectory.Model
 import SandboxModel.Boundaries.TokioMutex
+import SandboxModel.Lifecycle.CaptureHandoff.Conditions
+import SandboxModel.Lifecycle.PausePublication.Conditions
+import SandboxModel.Lifecycle.PauseStop.Conditions
+import SandboxModel.Lifecycle.PauseDispatch.Conditions
+import SandboxModel.Lifecycle.PauseReceipt.Conditions
 
 /-! Retained mathematical models and source-bound public foundations.
 The historical whole-controller Rust refinement is retired; importing this

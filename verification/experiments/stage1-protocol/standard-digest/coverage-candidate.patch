@@ -1,0 +1,18 @@
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -2226,3 +2226,15 @@
+ 原正确侧137文件/500审计、两错各20/27的清单不是已验收声明；共513名包含支持与反例。
+ JSON/SHA其它标准实例、物理事务/未知提交/重启、认证、producer/driver、Resume 和完整V3
+ 仍开放；#751已交付的12个Create包保持其原范围，不重复计数。
++
++## V3 标准 SHA 字段候选范围
++
++[标准摘要切片](../verification/experiments/stage1-protocol/standard-digest/README.md)基于 #752
++的精确 ef9aaf82；生产仍保留 integration 9c50da7c 的原式。最小纯库命名候选、有限
++A9/A6/B4 符号解释和公共接线分别待协调采用，原 FixedOutput/BlockSize 后端失败保留。
++FullDigestContract 对任意完整正常输入给出全部32字节及整个接收者值；两个真实错误版
++在同一合同/模型/库/正常见证下拒绝。复用原字节数学及 #752 条件 BLOB/Load 提供者，
++完整值关系消去原正常摘要 agrees；不声称原库/编译器或一般旧新机器等价。
++精确局部结果与原始日志见 #635/本批 PR，不把预检、单文件构建或未完成记录当验收。
++ning 普通/原生、公共登记/累计审计/冻结及共享入口各自取得，完整 JSON/标准 IO、
++认证/资源、producer/driver、物理事务/未知提交/重启、Resume 与完整 V3 保持开放。

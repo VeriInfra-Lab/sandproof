@@ -1,0 +1,34 @@
+import SandboxModel.Lifecycle.Protocol.StandardBlobObserve
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.StandardBlob
+noncomputable section
+
+/-- Typed mathematical result lifting, preserving the whole supplied Context. -/
+def carryReply (self : Context) (action : Result BlobColumns.PairOutcome) : Result (Outcome × Context) := do
+  let reply ← action
+  match reply with
+  | .Err error => .ok (.Err (.Sqlite error), self)
+  | .Ok pair => .ok (.Ok pair, self)
+
+/-- Lifts a proved result of the actual generated helper through the actual
+normal standard wrapper. The premise is supplied by a real helper proof in
+this view, not treated as a trusted business/library callback. -/
+theorem observed_result (row : rusqlite.row.Row) (statement : Str)
+    (reply : BlobColumns.PairOutcome)
+    (returned : controller.lifecycle_inbox.codec.read_blob_pair row 0#usize 1#usize = .ok reply) :
+    observedActual (Values.observing row) statement = .ok ((match reply with
+      | .Err error => .Err (.Sqlite error)
+      | .Ok pair => .Ok pair), Values.observing row) := by
+  calc
+    _ = carryReply (Values.observing row)
+      (controller.lifecycle_inbox.codec.read_blob_pair row 0#usize 1#usize) :=
+        observed_refines row statement
+    _ = carryReply (Values.observing row) (.ok reply) :=
+      congrArg (carryReply (Values.observing row)) returned
+    _ = _ := by cases reply <;> simp [carryReply]
+
+end
+end SandboxModel.Stage1Protocol.StandardBlob
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.observed_result

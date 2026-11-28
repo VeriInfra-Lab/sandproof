@@ -1,7 +1,7 @@
 //! Fixed deployment-wide physical envelope. These declarations allocate no
 //! blocks: the host must validate the single shared-filesystem activation and
-//! observe this entire envelope free before new work. Existing allocation is
-//! deliberately credited zero; a racy `du`/statvfs subtraction is never used.
+//! retain the full growth envelope while checking only the new operation's
+//! headroom. Existing allocation gets no racy `du`/statvfs subtraction credit.
 
 use crate::{AdmissionLimits, JournalError};
 use serde::{Deserialize, Serialize};
@@ -55,8 +55,8 @@ pub struct PhysicalBuildStorage {
     pub inode_budget: u64,
 }
 
-/// Bounded immutable copies and incomplete downloads, charged separately from
-/// the center's build registry and each VM's private writable disk.
+/// Bounded immutable copies and incomplete downloads. Both use one payload
+/// limit, separate from the center registry and each VM's writable disk.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PhysicalTemplateCache {
@@ -66,7 +66,9 @@ pub struct PhysicalTemplateCache {
     pub max_entries: u64,
     pub max_downloads: u64,
     pub max_entry_bytes: u64,
+    /// Combined bytes reserved for ready entries and pending downloads.
     pub artifact_bytes: u64,
+    /// Sublimit for incomplete payloads, including recovery observations.
     pub temporary_bytes: u64,
     pub metadata_bytes: u64,
     pub inode_budget: u64,
@@ -121,13 +123,12 @@ impl PhysicalTemplateCache {
         self.peak_bytes()?;
         Ok(())
     }
+    /// The cache charges ready and pending descriptors to the same total and
+    /// publishes by renaming the original directory. Only metadata is additional.
     /// # Errors
-    /// Complete and unknown temporary copies both retain their full provision.
+    /// The combined provision must be representable in bytes.
     pub fn peak_bytes(&self) -> Result<u64, JournalError> {
-        add(
-            add(self.artifact_bytes, self.temporary_bytes)?,
-            self.metadata_bytes,
-        )
+        add(self.artifact_bytes, self.metadata_bytes)
     }
 }
 
@@ -140,7 +141,11 @@ pub struct PhysicalServiceData {
     pub owner_uid: u32,
     pub peak_bytes: u64,
     pub inode_budget: u64,
+    /// A single runtime's protected snapshot project has a separate hard quota.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub on_demand_capture: bool,
 }
+
 impl PhysicalServiceData {
     fn validate(&self) -> Result<(), JournalError> {
         if !absolute(&self.root)
@@ -152,6 +157,69 @@ impl PhysicalServiceData {
             return Err(JournalError::UnsupportedStore);
         }
         Ok(())
+    }
+}
+
+/// One observation of the leased filesystem, shared by its single runtime.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CaptureSpace {
+    pub usable_bytes: u64,
+    pub available_bytes: u64,
+}
+
+/// A pause holds both its new files and the disk blocks that an older snapshot
+/// can pin while a restored or new instance writes to its own working disk.
+#[cfg(feature = "durable")]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CapturePhysicalBytes {
+    pub(crate) capture: u64,
+    pub(crate) restore: u64,
+}
+
+#[cfg(feature = "durable")]
+impl CapturePhysicalBytes {
+    pub(crate) fn for_capture(
+        full: &crate::capture::FullCaptureWorkRequest,
+    ) -> Result<Self, JournalError> {
+        // Only the VMM's Full RAM/state are newly written. Seal and Load use
+        // same-XFS reflinks. Their extent/CoW metadata has its own profile budget.
+        Ok(Self {
+            capture: add(
+                add(full.memory_bytes, full.state_bytes)?,
+                2 * 262_144 + 65_536,
+            )?,
+            restore: full.disk_bytes,
+        })
+    }
+
+    pub(crate) fn checked_add(self, other: Self) -> Result<Self, JournalError> {
+        Ok(Self {
+            capture: add(self.capture, other.capture)?,
+            restore: add(self.restore, other.restore)?,
+        })
+    }
+}
+
+#[cfg(feature = "durable")]
+pub(crate) struct CaptureAdmission {
+    pub(crate) space: CaptureSpace,
+    pub(crate) fixed_bytes: u64,
+    pub(crate) cleanup_and_fs_bytes: u64,
+}
+
+#[cfg(feature = "durable")]
+impl CaptureAdmission {
+    pub(crate) fn fits(
+        &self,
+        held: CapturePhysicalBytes,
+        next: CapturePhysicalBytes,
+    ) -> Result<bool, JournalError> {
+        let total = held.checked_add(next)?;
+        // Already allocated bytes remain included in the durable upper bound,
+        // but must not also be deducted from the current free-space sample.
+        let required = add(self.fixed_bytes, add(total.capture, total.restore)?)?;
+        let needed_now = add(self.cleanup_and_fs_bytes, next.capture)?;
+        Ok(self.space.usable_bytes >= required && self.space.available_bytes >= needed_now)
     }
 }
 
@@ -262,14 +330,89 @@ impl PhysicalPool {
 }
 
 impl PhysicalStorageProfile {
-    /// Fresh activation leaves one complete peak free even after every managed
-    /// writer has reached its maximum. This deliberate zero-credit contract
-    /// costs twice the envelope but permits repeated cleanup/create cycles.
+    /// Fresh activation covers all configured growth plus the largest new-work
+    /// headroom. Template copies and already bounded writers are not duplicated
+    /// in every operation's free-space check. Inode policy remains independent.
     /// # Errors
     /// Unrepresentable provisioning requirements are unsupported.
     pub fn activation_bytes(&self) -> Result<u64, JournalError> {
-        let peak = self.peak_bytes()?;
-        add(peak, peak)
+        add(self.peak_bytes()?, self.new_work_headroom_bytes()?)
+    }
+
+    /// Extra space kept available for control records, failure cleanup and
+    /// filesystem metadata. These are global, not a second disk/template pool.
+    /// # Errors
+    /// Arithmetic overflow rejects the declaration.
+    pub fn cleanup_headroom_bytes(&self) -> Result<u64, JournalError> {
+        self.pools
+            .iter()
+            .try_fold(self.filesystem_overhead_bytes, |total, pool| {
+                add(total, pool.cleanup_reserve_bytes)
+            })
+    }
+
+    /// # Errors
+    /// A foreign pool or a disk above its logical quota cannot borrow capacity.
+    pub fn create_headroom_bytes(
+        &self,
+        pool: &PhysicalPool,
+        disk_bytes: u64,
+    ) -> Result<u64, JournalError> {
+        if !self.pools.contains(pool) || disk_bytes > pool.rootfs_budget_bytes {
+            return Err(JournalError::UnsupportedStore);
+        }
+        add(
+            self.cleanup_headroom_bytes()?,
+            add(
+                disk_bytes,
+                add(pool.kernel_copy_bytes, pool.runtime_copy_bytes)?,
+            )?,
+        )
+    }
+
+    /// # Errors
+    /// Only the exact registered cache can request download headroom.
+    pub fn cache_headroom_bytes(&self, cache: &PhysicalTemplateCache) -> Result<u64, JournalError> {
+        if !self.host_template_caches.contains(cache) {
+            return Err(JournalError::UnsupportedStore);
+        }
+        add(
+            self.cleanup_headroom_bytes()?,
+            add(cache.max_entry_bytes, cache.metadata_bytes)?,
+        )
+    }
+
+    /// Whole public workspace/registry provision remains conservative; this
+    /// does not borrow runtime disks or unrelated host caches for publication.
+    /// # Errors
+    /// Missing public-build capacity or overflow rejects the request.
+    pub fn publication_headroom_bytes(&self) -> Result<u64, JournalError> {
+        let public = self
+            .public_build
+            .as_ref()
+            .ok_or(JournalError::UnsupportedStore)?;
+        add(
+            self.cleanup_headroom_bytes()?,
+            add(public.workspace_bytes, public.registry_bytes)?,
+        )
+    }
+
+    /// Largest immediate operation; all simultaneous writers still share their
+    /// original bounded quotas in `peak_bytes`, not this headroom calculation.
+    /// # Errors
+    /// Unrepresentable requirements are unsupported.
+    pub fn new_work_headroom_bytes(&self) -> Result<u64, JournalError> {
+        let mut largest = self.cleanup_headroom_bytes()?;
+        for pool in &self.pools {
+            largest = largest.max(self.create_headroom_bytes(pool, pool.rootfs_budget_bytes)?);
+        }
+        for cache in &self.host_template_caches {
+            largest = largest.max(self.cache_headroom_bytes(cache)?);
+        }
+        if self.public_build.is_some() {
+            largest = largest.max(self.publication_headroom_bytes()?);
+        }
+        Ok(largest)
     }
 
     fn validate_roles(&self) -> Result<(), JournalError> {
@@ -348,6 +491,14 @@ impl PhysicalStorageProfile {
         }
         for service in &self.service_data {
             service.validate()?;
+            if service.on_demand_capture
+                && (self.pools.len() != 1
+                    || service.owner_uid != 0
+                    || !self.pools[0].chroot_base.ends_with("v")
+                    || self.pools[0].chroot_base.with_file_name("s") != service.root)
+            {
+                return Err(JournalError::UnsupportedStore);
+            }
             roots.push(service.root.as_path());
         }
         for (index, path) in roots.iter().enumerate() {
@@ -410,7 +561,9 @@ impl PhysicalStorageProfile {
             peak = add(peak, cache.peak_bytes()?)?;
         }
         for service in &self.service_data {
-            peak = add(peak, service.peak_bytes)?;
+            if !service.on_demand_capture {
+                peak = add(peak, service.peak_bytes)?;
+            }
         }
         Ok(peak)
     }
@@ -518,6 +671,57 @@ mod tests {
         // pending prepare and unknown cleanup, even if one pool is now idle.
         assert_eq!(profile.pools[0].peak_bytes().unwrap(), 1300);
     }
+
+    #[test]
+    fn operation_headroom_does_not_duplicate_unrelated_reserved_writers() {
+        let mut profile = profile();
+        assert_eq!(profile.cleanup_headroom_bytes().unwrap(), 450);
+        assert_eq!(
+            profile
+                .create_headroom_bytes(&profile.pools[0], 100)
+                .unwrap(),
+            600
+        );
+        assert_eq!(
+            profile
+                .create_headroom_bytes(&profile.pools[0], 1000)
+                .unwrap(),
+            1500
+        );
+        assert!(
+            profile
+                .create_headroom_bytes(&profile.pools[0], 1001)
+                .is_err()
+        );
+        let mut foreign = profile.pools[0].clone();
+        foreign.namespace = "2123456789abcdef".into();
+        assert!(profile.create_headroom_bytes(&foreign, 100).is_err());
+        assert_eq!(profile.publication_headroom_bytes().unwrap(), 1650);
+        assert_eq!(profile.activation_bytes().unwrap(), 5500);
+        // Existing static service material is still fully charged to growth,
+        // but a create does not need another copy of that service's storage.
+        profile.service_data.push(PhysicalServiceData {
+            root: "/host/static".into(),
+            owner_uid: 0,
+            peak_bytes: 4000,
+            inode_budget: 4,
+            on_demand_capture: false,
+        });
+        assert_eq!(profile.activation_bytes().unwrap(), 9500);
+        assert_eq!(
+            profile
+                .create_headroom_bytes(&profile.pools[0], 100)
+                .unwrap(),
+            600
+        );
+        // Even full warming leaves every declared operation's guard. Logical
+        // quotas, not a free-space sample, still constrain concurrent requests.
+        let peak = profile.peak_bytes().unwrap();
+        for allocated in [0, peak / 2, peak] {
+            let free = profile.activation_bytes().unwrap() - allocated;
+            assert!(free >= profile.new_work_headroom_bytes().unwrap());
+        }
+    }
     #[test]
     fn mismatch_overflow_unknown_roles_and_overlapping_roots_fail() {
         let mut profile = profile();
@@ -598,7 +802,7 @@ mod tests {
     }
 
     #[test]
-    fn cache_copies_unknown_downloads_and_metadata_extend_the_original_peak() {
+    fn cache_shares_its_payload_peak_and_retains_temporary_and_metadata_checks() {
         let mut profile = profile();
         let cache = PhysicalTemplateCache {
             namespace: "0123456789abcdef".into(),
@@ -613,11 +817,15 @@ mod tests {
         };
         cache.validate().unwrap();
         let extra = cache.peak_bytes().unwrap();
+        assert_eq!(extra, 2000 + cache.metadata_bytes);
         profile.filesystem_overhead_inodes += cache.inode_budget;
         profile.host_template_caches = vec![cache.clone()];
         profile.validate().unwrap();
         assert_eq!(profile.peak_bytes().unwrap(), 3850 + extra);
-        assert_eq!(profile.activation_bytes().unwrap(), 2 * (3850 + extra));
+        assert_eq!(
+            profile.activation_bytes().unwrap(),
+            3850 + extra + 450 + 1000 + cache.metadata_bytes
+        );
         for field in ["temporary", "metadata", "inode", "overlap", "namespace"] {
             let mut changed = profile.clone();
             let cache = &mut changed.host_template_caches[0];
@@ -646,6 +854,7 @@ mod tests {
     fn service_material_has_explicit_peak_and_inodes_not_filesystem_overhead_credit() {
         let mut profile = profile();
         profile.service_data = vec![PhysicalServiceData {
+            on_demand_capture: false,
             root: "/host/center-service".into(),
             owner_uid: 64001,
             peak_bytes: 4096,
@@ -654,7 +863,7 @@ mod tests {
         profile.filesystem_overhead_inodes += 4;
         profile.validate().unwrap();
         assert_eq!(profile.peak_bytes().unwrap(), 3850 + 4096);
-        assert_eq!(profile.activation_bytes().unwrap(), 2 * (3850 + 4096));
+        assert_eq!(profile.activation_bytes().unwrap(), 3850 + 4096 + 1650);
         profile.service_data[0].root = "/host/registry/nested".into();
         assert!(profile.validate().is_err());
         profile.service_data[0].root = "/host/center-service".into();

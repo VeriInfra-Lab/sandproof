@@ -1,0 +1,149 @@
+import SandproofUnloadContinuedReady.Types
+import OriginalRowsDriver
+open Aeneas Aeneas.Std
+namespace SandproofUnloadContinuedReady
+namespace CursorOps
+open SandboxModel.Stage1Protocol.OriginalSourceSqliteOps (outputValue fromSessionValue)
+def bindArray1 {T : Type} (dict : rusqlite.types.to_sql.ToSql T)
+    (values : Array T 1#usize) (statement : rusqlite.statement.Statement) :
+    Result ((core.result.Result Unit rusqlite.error.Error) ×
+      rusqlite.statement.Statement) := do
+  let expected := statement.row.canonical.expectedParameters
+  if expected = 0 then
+    .ok (.Err (statement.row.canonical.countError 1), statement)
+  else
+    let value ← Array.index_usize values 0#usize
+    let encoded ← dict.to_sql value
+    match encoded with
+    | .Err error => .ok (.Err error, statement)
+    | .Ok encoded =>
+      let raw ← outputValue encoded
+      let (reply, rowAfter) ← statement.source.bindFirst statement.sql statement.row raw
+      let after := { statement with row := rowAfter, boundArguments := [raw] }
+      match reply with
+      | .Err error => .ok (.Err error, after)
+      | .Ok () =>
+        if expected = 1 then .ok (.Ok (), after)
+        else .ok (.Err (statement.row.canonical.countError 1), after)
+
+def rowGet {I T : Type} (indexDict : rusqlite.row.RowIndex I)
+    (convertDict : rusqlite.types.from_sql.FromSql T)
+    (row : rusqlite.row.Row) (position : I) :
+    Result (core.result.Result T rusqlite.error.Error) :=
+  SandproofSqliteSession.rowGet
+    (fun position _rawStatement => indexDict.idx position row.statement)
+    (fun value => convertDict.column_result (fromSessionValue value))
+    row.original position
+
+def queryMap {T P F : Type} (paramsDict : rusqlite.params.Params P)
+    (_callDict : core.ops.function.FnMut F rusqlite.row.Row
+      (core.result.Result T rusqlite.error.Error))
+    (statement : rusqlite.statement.Statement) (params : P) (callback : F) :
+    Result ((core.result.Result (rusqlite.row.MappedRows F) rusqlite.error.Error) ×
+      rusqlite.statement.Statement) := do
+  let (reply, after) ← paramsDict.__bind_in params statement
+  match reply with
+  | .Err error => .ok (.Err error, after)
+  | .Ok () =>
+    let trace := after.source.issueScan after.sql after.row after.boundArguments
+    .ok (.Ok {
+      mapped := {
+        cursor := { query := after.query, trace := trace, calls := 0 }
+        callback := callback }
+      statement := after }, after)
+
+def sharedToSql {T : Type} (dict : rusqlite.types.to_sql.ToSql T) (value : T) :
+    Result (core.result.Result rusqlite.types.to_sql.ToSqlOutput rusqlite.error.Error) :=
+  dict.to_sql value
+
+end CursorOps
+
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
+abbrev rusqlite.Connection.prepare := SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.prepare
+abbrev ArrayT1.Insts.RusqliteParamsParams.__bind_in := @CursorOps.bindArray1
+abbrev rusqlite.row.MappedRows.Insts.CoreIterTraitsIteratorIteratorResultTError.next := @SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.mappedNext
+abbrev rusqlite.row.Row.get := @CursorOps.rowGet
+abbrev Usize.Insts.RusqliteRowRowIndex.idx := SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.index
+abbrev rusqlite.statement.Statement.query_map := @CursorOps.queryMap
+abbrev alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result := SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.blobColumn
+abbrev Shared0T.Insts.RusqliteTypesTo_sqlToSql.to_sql := @CursorOps.sharedToSql
+abbrev Str.Insts.RusqliteTypesTo_sqlToSql.to_sql := SandboxModel.Stage1Protocol.OriginalSourceSqliteOps.strToSql
+variable [Representations] in
+def core.option.Option.Some.constructor {T : Type} (value : T) : Result (Option T) := .ok (some value)
+variable [Representations] in
+def P.Insts.CoreOpsFunctionFnOnceTupleTOption.call_once {T : Type} (f : T → Result (Option T)) (value : T) : Result (Option T) := f value
+variable [Representations] in
+def core.option.Option.is_none_or 
+  {T F : Type} (call : core.ops.function.FnOnce F T Bool) : Option T → F → Result Bool
+  | none, _ => .ok true
+  | some value, state => call.call_once state value
+
+variable [Representations] in
+def core.option.Option.map 
+  {T U F : Type} (call : core.ops.function.FnOnce F T U) : Option T → F → Result (Option U)
+  | none, _ => .ok none
+  | some value, state => do
+    let mapped ← call.call_once state value
+    .ok (some mapped)
+
+variable [Representations] in
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq 
+  {T : Type} (cmp : core.cmp.PartialEq T T) : Option T → Option T → Result Bool
+  | none, none => .ok true
+  | some x, some y => cmp.eq x y
+  | _, _ => .ok false
+
+variable [Representations] in
+def JournalError.Insts.CoreConvertFromError.from (error : rusqlite.error.Error) : Result JournalError := .ok (.Sqlite error)
+variable [Representations] in
+def JournalError.Insts.CoreConvertFromContractError.from (error : sandproof_protocol.ContractError) : Result JournalError := .ok (.Contract error)
+class Operations [Representations] where
+  activationCommand : sandbox_controller_core.capture.continuation.OriginalContinueIdentity → Result sandbox_controller_core.model.Command
+  equalCommand : sandbox_controller_core.model.Command → sandbox_controller_core.model.Command → Result Bool
+  deserializeEffect {__D : Type} {Clause0_Error : Type} (serde_coredeDeserializerInst : serde_core.de.Deserializer __D Clause0_Error) : __D → Result (core.result.Result sandbox_controller_core.model.EffectId Clause0_Error)
+  effectCommand : sandbox_controller_core.model.EffectId → Result sandbox_controller_core.model.Command
+  equalOperationKey : sandbox_controller_core.model.OperationKey → sandbox_controller_core.model.OperationKey → Result Bool
+  logicalEffect : sandbox_controller_core.model.World → sandbox_controller_core.model.LogicalEffectId → Result (Option sandbox_controller_core.model.LogicalEffectRecord)
+  operationText : sandproof_protocol.OperationId → Result Str
+  deserializeAction {C : Type} {__D : Type} {Clause1_Error : Type} (serde_coredeDeserializeInst : serde_core.de.Deserialize C) (serde_coredeDeserializerInst : serde_core.de.Deserializer __D Clause1_Error) : __D → Result (core.result.Result (sandproof_protocol.WorkAction C) Clause1_Error)
+  deserializeReceipt {E : Type} {__D : Type} {Clause1_Error : Type} (serde_coredeDeserializeInst : serde_core.de.Deserialize E) (serde_coredeDeserializerInst : serde_core.de.Deserializer __D Clause1_Error) : __D → Result (core.result.Result (sandproof_protocol.WorkReceipt E) Clause1_Error)
+  validateReceipt {E : Type} {C : Type} (ResourceEvidenceInst : sandproof_protocol.ResourceEvidence E) : sandproof_protocol.WorkReceipt E → sandproof_protocol.WorkAction C → Result (core.result.Result Unit sandproof_protocol.ContractError)
+  decodeFullJson {T : Type} (serde_coredeDeserializeInst : serde_core.de.Deserialize T) : Slice Std.U8 → Result (core.result.Result T serde_json.error.Error)
+  cloneQuestion : capture.continuation.OriginalContinueWorkRequest → Result capture.continuation.OriginalContinueWorkRequest
+  questionSource : capture.continuation.OriginalContinueWorkRequest → Result capture.source.SourceObservationRequirement
+  cloneProcess : capture.SourceProcessIdentity → Result capture.SourceProcessIdentity
+  equalProcess : capture.SourceProcessIdentity → capture.SourceProcessIdentity → Result Bool
+  operationId : Str → sandbox_controller_core.model.OperationKey → Result (core.result.Result sandproof_protocol.OperationId JournalError)
+  equalLocal : controller.internal_inbox.model.InternalLocalBinding → controller.internal_inbox.model.InternalLocalBinding → Result Bool
+  loadRetainedSources : rusqlite.Connection → Result (core.result.Result (Option controller.lifecycle_inbox.source_work.codec.Sources) JournalError)
+  historicalIdentity : sandbox_controller_core.model.World → controller.internal_inbox.model.InternalLocalBinding → controller.lifecycle_inbox.readiness.NativeCreateSnapshot → Result (Option sandbox_controller_core.capture.continuation.OriginalContinueIdentity)
+  retainedKey : controller.lifecycle_inbox.source_work.SourceWorkRecord → Result (Option sandbox_controller_core.model.OperationKey)
+  retainedWork : controller.lifecycle_inbox.source_work.SourceWorkRecord → sandbox_controller_core.model.World → Result (core.result.Result (Option capture.continuation.OriginalContinueWorkRequest) JournalError)
+  checkActionRecord : controller.lifecycle_inbox.source_work.codec.Sources → sandbox_controller_core.model.World → Str → sandproof_protocol.WorkAction sandbox_controller_core.model.EffectId → Result (core.result.Result (Option controller.lifecycle_inbox.source_work.SourceWorkRecord) JournalError)
+variable [Representations] [ops : Operations]
+abbrev sandbox_controller_core.capture.continuation.OriginalContinueIdentity.activation_command := @ops.activationCommand
+abbrev sandbox_controller_core.model.Command.Insts.CoreCmpPartialEqCommand.eq := @ops.equalCommand
+abbrev sandbox_controller_core.model.EffectId.Insts.Serde_coreDeDeserialize.deserialize := @ops.deserializeEffect
+abbrev sandbox_controller_core.model.EffectId.command := @ops.effectCommand
+abbrev sandbox_controller_core.model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq := @ops.equalOperationKey
+abbrev sandbox_controller_core.model.World.logical_effect := @ops.logicalEffect
+abbrev sandproof_protocol.OperationId.as_str := @ops.operationText
+abbrev sandproof_protocol.WorkAction.Insts.Serde_coreDeDeserialize.deserialize := @ops.deserializeAction
+abbrev sandproof_protocol.WorkReceipt.Insts.Serde_coreDeDeserialize.deserialize := @ops.deserializeReceipt
+abbrev sandproof_protocol.WorkReceipt.validate_for := @ops.validateReceipt
+abbrev serde_json.de.from_slice := @ops.decodeFullJson
+abbrev capture.continuation.OriginalContinueWorkRequest.Insts.CoreCloneClone.clone := @ops.cloneQuestion
+abbrev capture.continuation.OriginalContinueWorkRequest.impl.source := @ops.questionSource
+abbrev capture.SourceProcessIdentity.Insts.CoreCloneClone.clone := @ops.cloneProcess
+abbrev capture.SourceProcessIdentity.Insts.CoreCmpPartialEqSourceProcessIdentity.eq := @ops.equalProcess
+abbrev controller.identity.operation_id := @ops.operationId
+abbrev controller.internal_inbox.model.InternalLocalBinding.Insts.CoreCmpPartialEqInternalLocalBinding.eq := @ops.equalLocal
+abbrev controller.lifecycle_inbox.source_work.codec.load := @ops.loadRetainedSources
+abbrev controller.lifecycle_inbox.source_work.full.continuation.historical_identity := @ops.historicalIdentity
+abbrev controller.lifecycle_inbox.source_work.full.key := @ops.retainedKey
+abbrev controller.lifecycle_inbox.source_work.full.continuation.work := @ops.retainedWork
+abbrev controller.lifecycle_inbox.source_work.full.continuation.action_record := @ops.checkActionRecord
+end SandproofUnloadContinuedReady

@@ -1,0 +1,69 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordValidationValues
+
+-- Decoded values and explicit encoding providers; no durable-acceptance or resource claim.
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxRecordValidation
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+open InboxSave.Values (saved terminal renewal unload)
+
+theorem created_kind (later : Option U64) :
+    InboxEntry.entryView unload (inbox later) (session later) created EnvelopeValues.context = .ok (.Ok 0#usize) := by
+  have accepted := (Validation.expectedAccepted_success_iff _ _).mpr SavedRetirement.Values.normal_envelopes.1
+  simp only [SavedRetirement.Values.createIntent,
+    EnvelopeValues.intent, Validation.Examples.createPayload] at accepted
+  have count : InboxEntry.countResult 1 = .ok 1#usize := InboxEntry.count_result_val 1#usize
+  cases later <;>
+    simp [InboxEntry.entryView, UnloadResolution.validateView, InboxEntry.prefixInvalid,
+      created, InboxRecord.pendingEntry, accepted, RenewalResultTag.IsError,
+      InboxEntry.countSessions, InboxEntry.countEntries, count, InboxEntry.operationResult,
+      InboxEntry.isRenew, inbox, session, entries, resolved, first, next, unloadIntent,
+      InboxValidation.Values.recordedSession, SessionShape.Values.normal,
+      SavedRetirement.Values.normal, create, SavedRetirement.Values.createIntent,
+      EnvelopeValues.intent, config, ConfigValidation.Values.fixture,
+      ConfigBudget.Values.fixture, ConfigBudget.Values.small, vector, Validation.Examples.createPayload]
+
+theorem resolved_kind (later : Option U64) :
+    InboxEntry.entryView unload (inbox later) (session later) resolved EnvelopeValues.context = .ok (.Ok 1#usize) := by
+  have accepted := (Validation.expectedAccepted_success_iff _ _).mpr first_envelope
+  simp only [first, unloadIntent, create, SavedRetirement.Values.createIntent,
+    EnvelopeValues.intent, Validation.Examples.createPayload] at accepted
+  have count : InboxEntry.countResult 1 = .ok 1#usize := InboxEntry.count_result_val 1#usize
+  cases later <;>
+    simp [InboxEntry.entryView, UnloadResolution.validateView, UnloadResolution.unload,
+      UnloadResolution.afterEncoding, UnloadResolution.metadataInvalid,
+      UnloadResolution.resultOf, UnloadResolution.factsInvalid, facts, InboxSave.Values.unload,
+      InboxEntry.prefixInvalid, resolved, InboxRecord.pendingEntry, accepted, RenewalResultTag.IsError,
+      InboxEntry.countSessions, InboxEntry.countEntries, count, InboxEntry.operationResult,
+      InboxEntry.isRenew, inbox, session, entries, created, first, next, unloadIntent,
+      InboxValidation.Values.recordedSession, SessionShape.Values.normal,
+      SavedRetirement.Values.normal, create, SavedRetirement.Values.createIntent,
+      EnvelopeValues.intent, vector]
+
+theorem pending_kind (capture : U64) :
+    InboxEntry.entryView unload (inbox (some capture)) (session (some capture))
+      (InboxRecord.pendingEntry (next capture)) EnvelopeValues.context = .ok (.Ok 1#usize) := by
+  have accepted := (Validation.expectedAccepted_success_iff _ _).mpr (next_envelope capture)
+  simp only [next, unloadIntent, create, SavedRetirement.Values.createIntent,
+    EnvelopeValues.intent, Validation.Examples.createPayload] at accepted
+  have count : InboxEntry.countResult 1 = .ok 1#usize := InboxEntry.count_result_val 1#usize
+  simp [InboxEntry.entryView, UnloadResolution.validateView, InboxEntry.prefixInvalid,
+    InboxRecord.pendingEntry, accepted, RenewalResultTag.IsError,
+    InboxEntry.countSessions, InboxEntry.countEntries, count, InboxEntry.operationResult,
+    InboxEntry.isRenew, inbox, session, entries, created, resolved, first, next, unloadIntent,
+    InboxValidation.Values.recordedSession, SessionShape.Values.normal,
+    SavedRetirement.Values.normal, create, SavedRetirement.Values.createIntent,
+    EnvelopeValues.intent, vector]
+
+
+end
+end SandboxModel.Stage1Protocol.InboxRecordValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.created_kind
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.resolved_kind
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.pending_kind

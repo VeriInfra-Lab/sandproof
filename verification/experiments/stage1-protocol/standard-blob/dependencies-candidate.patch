@@ -1,0 +1,26 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -283,6 +283,23 @@
+ 实际 JSON/SHA/SQL 来源、持久收件、producer/driver、Resume 和真实资源仍由各自提供方
+ 闭合；不能由这几份值定理推出完整标准实例或整个 V3 系统正确。
+ 
++### A6/V0 V3 标准双 BLOB 读取候选
++
++[标准读取包](../../verification/experiments/stage1-protocol/standard-blob/README.md)仍为未采用的
++最小源/有限库候选。正常值解释不等于库实现机器证明；实际采用和验收须另取得。
++
++| 固定符号 | 有限合同及提供者 | 自有结论与边界 |
++|---|---|---|
++| rusqlite 0.40.2 Connection::query_row | V0/固定库：同一原连接及完整 SQL 先 prepare，再绑定零参数并调用 Rows::get_expected_row；保留原失败、首行和原回调，不增加唯一行检查 | 实际回调和标准方法六体透明；SQL、索引0/1、有序完整字节、首错及整个 Context 对应 |
++| Statement::ensure_parameter_count | V0/固定库：count=0 接受，否则原 InvalidParameterCount(0,count)；实际 Unit 绑定透明 | 参数个数不等于结果列数；旧空数组机器一般等价仍未声称 |
++| Row::get<usize,Vec<u8>> | V0/固定库：同一个原 Row/Statement/列、完整 ValueRef、原转换错误的 index/name/type 和库错误载体 | 不把同值载体当物理对象或同事务证明 |
++| usize::idx、Vec<u8>::column_result | V0/固定库：完整索引界和五类 ValueRef；仅 Blob 返回全部原字节，其余保留 InvalidType | 正常成功 BLOB 长度≤2147483647由正常行库条件提供，不是假设所有手造值合法 |
++
++正常行条件有具体 SQL/Row 见证；原 Load 仅替换 query_bytes_pair 字段，正常摘要 agrees、
++其余 IO、Graphic 和完整解码字符串表示继续显式保留。A4/V5 另提供真实活连接/租约、
++同事务/连贯读取、提交未知与恢复；不由值对应推出16MiB业务限额、两读一致、材料、
++授权或耐久接受。V7、V1/V2、V4/V5、V6 的原责任不并入读库合同。
++
+ ## Redis 与 SQLite 的落地合同
+ 
+ | 引擎/代码 | 外部合同与部署核对 | 自有待证连接 |

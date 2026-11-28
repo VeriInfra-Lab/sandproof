@@ -1,0 +1,147 @@
+import ActualStartupParentRead
+import ActualStartupRowChain
+import ParentStartupSlot
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+open SandproofUnloadStartupJoint (startupKey startupPrepare actual_expected_prepare
+  actual_second_row_prepare_resource rowAction rowReceipt)
+open SandboxModel.Stage1Protocol.DigestByteBridge (referenceOutput)
+open SandboxModel.Stage1Protocol.OriginalRowsDriver (run)
+variable [Representations] [ParentCalls]
+variable [SandproofUnloadStartupJoint.Representations]
+
+/-- Same-world conditions of the initial Create branch. In particular the
+record and ledger are observations of the exact world and local key supplied
+to the outer call. They are not recomputed from the returned startup array. -/
+structure OriginalPrepareContext [SandproofUnloadStartupJoint.Operations]
+    (world : UnloadFirstActualStartup.World)
+    (binding : UnloadFirstActualStartup.Local) (plan : UnloadFirstActualStartup.Plan) where
+  record : SandproofUnloadStartupJoint.sandbox_controller_core.model.SandboxRecord
+  ledger : SandproofUnloadStartupJoint.sandbox_controller_core.model.OperationLedgerRecord
+  vm : SandproofUnloadStartupJoint.sandbox_controller_core.ids.VmId
+  slot : SandproofUnloadStartupJoint.sandbox_controller_core.ids.NetSlotId
+  recordRead : SandproofUnloadStartupJoint.sandbox_controller_core.model.World.sandbox_record
+    world binding.sandbox = .ok (some record)
+  ledgerRead : SandproofUnloadStartupJoint.sandbox_controller_core.model.World.operation_record
+    world (startupKey binding) = .ok (some ledger)
+  vmRead : record.current_vm = some vm
+  slotRead : record.net_slot = some slot
+  sealed : plan.sealed = true
+  vmEq : SandproofUnloadStartupJoint.sandbox_controller_core.ids.VmId.Insts.CoreCmpPartialEqVmId.eq vm vm = .ok true
+  slotEq : SandproofUnloadStartupJoint.sandbox_controller_core.ids.NetSlotId.Insts.CoreCmpPartialEqNetSlotId.eq slot slot = .ok true
+  planVm : plan.vm = some vm
+  planSlot : plan.slot = some slot
+  epoch : plan.epoch = record.epoch
+  generation : plan.generation = record.generation
+  create : ledger.operation.kind = .Create
+  source : plan.restore_from = none
+  clone : SandproofUnloadStartupJoint.sandbox_controller_core.model.NetworkPolicy.Insts.CoreCloneClone.clone
+    record.policy = .ok record.policy
+
+/-- Consume the observed SQL write and the exact PrepareVm provider before
+building the parent question. The resulting SHA always starts with the
+original raw bytes; no equality of digests is inverted. -/
+theorem actual_first_work_uses_observed_prepare (base : SandproofUnloadStartupJoint.Operations) :
+    letI : SandproofUnloadStartupJoint.Operations := SandproofUnloadStartupJoint.bindStartupRowsB4 base
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : rusqlite.transaction.Transaction}
+    {ns : Str} {intent : Intent} {now : I64} {input : SourceSnapshot}
+    (reads : FirstRead host serde tx ns intent now input)
+    (startupHost : SandproofUnloadStartupJoint.host_contract.HostEvidence E)
+    (startupSerde : SandproofUnloadStartupJoint.serde_core.de.DeserializeOwned E)
+    (carriers : StartupCarriers)
+    (calls : UnloadFirstActualStartup.Opened startupHost startupSerde (cast carriers.tx tx)
+      ns (cast carriers.world input.world) (carriers.localView reads.localValue))
+    (output : UnloadFirstActualStartup.Output)
+    (prepare : OriginalPrepareContext (cast carriers.world input.world)
+      (carriers.localView reads.localValue) calls.plan)
+    (startupReturned : SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records
+      startupHost startupSerde (cast carriers.tx tx) ns (cast carriers.world input.world)
+      (carriers.localView reads.localValue) = .ok (.Ok output))
+    (fromError : SandproofUnloadStartupJoint.JournalError → JournalError)
+    (linked : ParentStartupLinked host serde startupHost startupSerde tx ns input.world reads.localValue
+      carriers fromError)
+    (digestRepresentation : Sha256Array = Binding)
+    (receiptDigestsLinked : LinkedReceiptDigests digestRepresentation reads.originalReceipts)
+    (normalReceiptBytes : ∀ raw ∈ reads.originalReceipts.val,
+      (alloc.vec.Vec.deref raw).val.length < 2^61)
+    (encodedAnchor : alloc.vec.Vec U8) (binding : Binding)
+    (encode : ParentCalls.encodeCompleteSourceAnchor reads.expected = .ok (.Ok encodedAnchor))
+    (digest : ParentCalls.digestCompleteBytes (alloc.vec.Vec.deref encodedAnchor) = .ok binding)
+    (cloneResource : ∀ resource : sandproof_protocol.ResourceRef,
+      ParentCalls.cloneResource resource = .ok resource)
+    (cloneLimits : ParentCalls.cloneLimits input.limits = .ok input.limits),
+    ∃ (work : Work) (pair : UnloadFirstActualStartup.Pair)
+      (row : UnloadFirstActualStartup.RawRow) (actionBytes : UnloadFirstActualStartup.Bytes)
+      (receipt : SandproofUnloadStartupJoint.sandproof_protocol.WorkReceipt E),
+      calls.writtenHere row pair ∧
+      row = .Ok (actionBytes, pair.2) ∧
+      rowAction actionBytes = .ok (.Ok pair.1) ∧
+      SandproofUnloadStartupJoint.sandbox_controller_core.model.EffectId.command pair.1.command =
+        .ok (startupPrepare (carriers.localView reads.localValue) calls.plan prepare.vm prepare.slot) ∧
+      SandproofUnloadStartupJoint.controller.identity.resource ns
+        (startupPrepare (carriers.localView reads.localValue) calls.plan prepare.vm prepare.slot) =
+          .ok (.Ok pair.1.identity.resource) ∧
+      rowReceipt startupSerde pair.2 = .ok (.Ok receipt) ∧
+      SandproofUnloadStartupJoint.sandproof_protocol.WorkReceipt.validate_for
+        startupHost.sandproof_protocolResourceEvidenceInst receipt pair.1 = .ok (.Ok ()) ∧
+      controller.lifecycle_inbox.source_work.snapshot.current
+        host serde tx ns intent now input = .ok (.Ok work) ∧
+      work.requirement.resource = cast carriers.resource pair.1.identity.resource ∧
+      work.anchor.original_actions.val[1]? = some (carriers.actionView pair.1).identity ∧
+      work.anchor.original_receipts.val[1]? = some
+        (cast digestRepresentation (referenceOutput (alloc.vec.Vec.deref pair.2))) ∧
+      reads.originalReceipts.val[1]? = some pair.2 := by
+  letI : SandproofUnloadStartupJoint.Operations := SandproofUnloadStartupJoint.bindStartupRowsB4 base
+  intro E host serde tx ns intent now input reads startupHost startupSerde carriers calls output
+    prepare startupReturned fromError linked digestRepresentation receiptDigestsLinked normalReceiptBytes
+    encodedAnchor binding encode digest cloneResource cloneLimits
+  let startupLocal := carriers.localView reads.localValue
+  let startupWorld := cast carriers.world input.world
+  have driver := UnloadFirstActualStartup.actual_drive_uses_B4 base calls
+  obtain ⟨_, rows, row, pair, ordered, second, written, observed⟩ :=
+    UnloadFirstActualStartup.actual_startup_second_checked
+      startupHost startupSerde (cast carriers.tx tx) ns startupWorld startupLocal
+      calls output driver startupReturned
+  have expected := actual_expected_prepare startupWorld startupLocal prepare.record calls.plan
+    prepare.ledger prepare.vm prepare.slot calls.commands prepare.recordRead calls.selectedPlan
+    prepare.ledgerRead prepare.vmRead prepare.slotRead prepare.sealed prepare.vmEq prepare.slotEq
+    prepare.planVm prepare.planSlot prepare.epoch prepare.generation prepare.create prepare.source
+    prepare.clone calls.expected
+  have prepareAt : (alloc.vec.Vec.deref calls.commands).val[1]? =
+      some (startupPrepare startupLocal calls.plan prepare.vm prepare.slot) := by
+    simpa [alloc.vec.Vec.deref] using expected
+  obtain ⟨actionBytes, receipt, rowBytes, decoded, exactCommand, exactResource, receiptBytes, validated⟩ :=
+    actual_second_row_prepare_resource startupHost startupSerde startupWorld ns startupLocal
+      (alloc.vec.Vec.deref calls.commands) calls.plan prepare.vm prepare.slot
+      row pair prepare.source prepareAt observed
+  have actualParentRead := (actual_startup_supplies_parent_read host serde startupHost startupSerde
+    tx ns input.world reads.localValue carriers fromError calls output linked startupReturned).1
+  have samePair := core.result.Result.Ok.inj
+    (Result.ok_injective (reads.startupRead.symm.trans actualParentRead))
+  have sameActions : reads.originalActions = transportStartupActions carriers output.1 :=
+    congrArg Prod.fst samePair
+  have sameReceipts : reads.originalReceipts = output.2 :=
+    congrArg Prod.snd samePair
+  let transported := rows.map (fun row => (carriers.actionView row.1, row.2))
+  have actionOrder : reads.originalActions.val = transported.map Prod.fst := by
+    rw [sameActions]
+    simp [transported, transportStartupActions, ordered.2.1, List.map_map, Function.comp_def]
+  have receiptOrder : reads.originalReceipts.val = transported.map Prod.snd := by
+    rw [sameReceipts]
+    simpa [transported, List.map_map, Function.comp_def] using ordered.2.2.1
+  have secondTransported : transported[1]? = some (carriers.actionView pair.1, pair.2) := by
+    exact second_after_action_transport rows carriers.actionView pair.1 pair.2 second
+  obtain ⟨work, workReturned, resource, action, hash, raw⟩ :=
+    actual_first_full_work_from_startup_slot reads transported (carriers.actionView pair.1)
+      pair.2 actionOrder receiptOrder secondTransported
+      (cast carriers.resource pair.1.identity.resource) rfl digestRepresentation receiptDigestsLinked
+      normalReceiptBytes encodedAnchor binding encode digest (cloneResource _) cloneLimits
+  exact ⟨work, pair, row, actionBytes, receipt, written, rowBytes, decoded, exactCommand, exactResource,
+    receiptBytes, validated, workReturned, resource, action, hash, raw⟩
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.actual_first_work_uses_observed_prepare

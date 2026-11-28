@@ -1,0 +1,29 @@
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Equality
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Examples
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.Inhabited
+open Aeneas Aeneas.Std SandproofSourcePreservationRust
+namespace SandboxModel.Stage1Protocol.SourcePreservation
+open controller.lifecycle_inbox.source_work.retirement Values
+namespace NegativeProducer
+noncomputable section
+
+theorem shared_normal (seed : Record) :
+    preserves_saved_facts (base seed) (settled seed) = .ok true := by
+  simp [preserves_saved_facts, core.option.Option.is_some_and, option_witness_ne, Values.base, Values.settled, controller.lifecycle_inbox.source_work.retirement.plan, plan_eq, controller.lifecycle_inbox.source_work.retirement.preserves_saved_facts.closure.Insts.CoreOpsFunctionFnOnceTupleHostReleaseWitnessBool.call_once]
+
+theorem bad_actual (seed : Record) :
+    preserves_saved_facts (base seed) (dropProducer seed) = .ok true := by
+  simp [preserves_saved_facts, core.option.Option.is_some_and, option_witness_ne, Values.base, dropProducer, controller.lifecycle_inbox.source_work.retirement.plan, plan_eq, controller.lifecycle_inbox.source_work.retirement.preserves_saved_facts.closure.Insts.CoreOpsFunctionFnOnceTupleHostReleaseWitnessBool.call_once]
+
+theorem rejects_same_full_contract : ¬ FullPreservationContract preserves_saved_facts := by
+  intro contract
+  have failed := contract (base default) (dropProducer default)
+  rw [bad_actual, producer_expected] at failed
+  simp at failed
+end
+end NegativeProducer
+end SandboxModel.Stage1Protocol.SourcePreservation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.NegativeProducer.shared_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.NegativeProducer.bad_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.NegativeProducer.rejects_same_full_contract

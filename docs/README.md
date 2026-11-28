@@ -2,7 +2,7 @@
 
 [项目入口](../README.md) · [开发、分支与测试规则](../CONTRIBUTING.md)
 
-只维护下列长期主题；同一规则不在多篇文档重复定义。任务状态在 GitHub issue/里程碑，旧报告和旧方案在 Git 历史，实验产物在忽略的 artifacts。
+只维护下列长期主题；同一规则不在多篇文档重复定义。任务认领和推进在 GitHub issue/里程碑；实现、工程验收与证明适用范围统一见[覆盖记录的当前摘要](proof-coverage.md#current-status)。各页不重复维护动态状态；精确历史输入留在覆盖记录及 Git/PR，原始实验产物在忽略的 artifacts。
 
 | 层次 | 文档 | 唯一负责的内容 | 维护者 |
 |---|---|---|---|
@@ -27,7 +27,7 @@
 |---|---|
 | 公共定义与外部条件 | [V0 公共基础](formal/00-foundations.md) · [依赖与可信链登记](formal/dependencies.md) |
 | 中心控制线 | [V1 中心纯决策](formal/01-center-core.md) · [V2 Redis持久协调](formal/02-center-store.md) |
-| 宿主本地控制线 | [V3 协议与持久收件](formal/03-protocol-inbox.md) · [V4 本地纯控制](formal/04-local-core.md) · [V5 SQLite与编排](formal/05-local-service.md) |
+| 宿主本地控制线 | [V3 协议与持久收件](formal/03-protocol-inbox.md) · [V3 事务和来源行的证明边界](formal/v3-transaction-source-boundaries.md) · [V4 本地纯控制](formal/04-local-core.md) · [V5 SQLite与编排](formal/05-local-service.md) |
 | 宿主执行线 | [V6 真实资源、围栏与清理](formal/06-host-execution.md) |
 | 公开接口与数据线 | [V7 鉴权、参数与查询](formal/07-public-api.md) · [V8 两端网关](formal/08-data-gateway.md) |
 | 系统连接 | [V9 生命周期组合与条件完成性](formal/09-system-composition.md) |

@@ -203,3 +203,47 @@ fn another_known_writer_cannot_keep_the_exchange_waiting_after_helper_exit() {
     holder.stdin.take().unwrap().write_all(b"finish\n").unwrap();
     assert!(holder.wait().unwrap().success());
 }
+
+#[test]
+fn durable_full_drop_keeps_original_child_and_slot_until_exit() {
+    let _serial = PROCESS_TEST_LOCK.lock().unwrap();
+    let mut child = launch("IFS= read -r input; printf ready; IFS= read -r release < \"$input\"");
+    let temp = tempfile::tempdir().unwrap();
+    let fifo = temp.path().join("release");
+    rustix::fs::mknodat(
+        rustix::fs::CWD,
+        &fifo,
+        rustix::fs::FileType::Fifo,
+        rustix::fs::Mode::RUSR | rustix::fs::Mode::WUSR,
+        0,
+    )
+    .unwrap();
+    let identity = crate::RuntimeProcessIdentity::capture(child.id()).unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(format!("{}\n", fifo.display()).as_bytes())
+        .unwrap();
+    let mut ready = [0; 5];
+    child
+        .stdout
+        .as_mut()
+        .unwrap()
+        .read_exact(&mut ready)
+        .unwrap();
+    assert_eq!(&ready, b"ready");
+    child.retain_until_exit();
+    let mut policy = limits();
+    policy.timeout = Duration::from_millis(10);
+    assert!(child.exchange(&[], policy).is_err());
+    assert!(identity.is_alive().unwrap());
+    drop(child);
+    assert!(identity.is_alive().unwrap());
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&fifo)
+        .unwrap()
+        .write_all(b"done\n")
+        .unwrap();
+}

@@ -9,12 +9,13 @@ use sandproof_internal::{
     ClientTls, DataReceiver, InternalClient, InternalServer, LifecycleReceiver, Limits,
     ReceiveError, RegisteredEndpoint, ServerTls, TransportError,
 };
-use sandproof_protocol::internal::ProbeRequest;
+use sandproof_protocol::internal::{NodeIdentity, ProbeRequest};
 use sandproof_protocol::lifecycle::{
     AuthenticatedCenterContext, CenterIdentity, LifecycleAccessIdentity, OperationKey,
 };
 use std::{
     io,
+    net::SocketAddr,
     pin::Pin,
     sync::{Arc, Mutex},
     task::{Context, Poll},
@@ -26,6 +27,10 @@ use tokio::{
 };
 #[path = "support/tls.rs"]
 mod tls;
+use tls::Certificates;
+#[cfg(unix)]
+#[path = "support/python_relay.rs"]
+mod python_relay;
 #[path = "../../sandbox-protocol/tests/support/lifecycle.rs"]
 mod wire;
 
@@ -51,7 +56,15 @@ impl sandproof_internal::ValidationReceiver for Streams {
         Err(ReceiveError::Unavailable)
     }
 }
-impl LifecycleReceiver for Streams {}
+impl LifecycleReceiver for Streams {
+    async fn observe_resume(
+        &self,
+        _: sandproof_protocol::lifecycle::AcceptedLifecycleIntent,
+        _: sandproof_protocol::lifecycle::AuthenticatedCenterContext,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, ReceiveError> {
+        Err(ReceiveError::Unavailable)
+    }
+}
 impl DataReceiver for Streams {
     async fn receive_data(
         &self,
@@ -189,6 +202,101 @@ async fn idle_client(client: &InternalClient) {
     })
     .await
     .unwrap();
+}
+
+/// The same real stream body stays open after its first frame. The relay must
+/// forward that frame before EOF, then release the actual Host connection when
+/// the caller cancels. No command/VM or local data authorization is simulated.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn original_stream_crosses_python_relay_before_eof_and_cancels_backend() {
+    let f = Fixture::new().await;
+    let mut relay = python_relay::PythonRelay::start_streaming(
+        &f.certificates,
+        f.address,
+        &wire::node("host-a"),
+    );
+    let client = InternalClient::new(
+        ClientTls::new(
+            f.certificates.center.material(),
+            vec![f.certificates.ca.der().clone()],
+            vec![f.certificates.host.pin()],
+        )
+        .unwrap(),
+        RegisteredEndpoint::new(relay.address, "host.test".into(), wire::node("host-a")).unwrap(),
+        Limits::new(3, Duration::from_secs(1), Duration::from_secs(2)).unwrap(),
+    );
+    let mut response = client
+        .stream_data(&identity(), data_request(), Arc::new(()), max_deadline())
+        .await
+        .unwrap();
+    let sender = f.senders.lock().unwrap()[0].clone();
+    sender
+        .send(Ok(Frame::data(Bytes::from_static(b"started without EOF"))))
+        .await
+        .unwrap();
+    let frame = tokio::time::timeout(Duration::from_secs(2), response.body_mut().frame())
+        .await
+        .unwrap()
+        .unwrap()
+        .unwrap()
+        .into_data()
+        .unwrap();
+    assert_eq!(frame, "started without EOF");
+    assert!(!sender.is_closed());
+    assert_eq!(client.active_calls(), 1);
+    drop(response);
+    idle_client(&client).await;
+    tokio::time::timeout(Duration::from_secs(2), sender.closed())
+        .await
+        .unwrap();
+    relay.stop();
+    f.stop().await;
+}
+
+/// Normal completion must survive the relay's TLS close, not just first-frame
+/// forwarding and caller cancellation. The original client must observe EOF.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn original_stream_completes_through_python_relay_without_truncated_http() {
+    let f = Fixture::new().await;
+    let mut relay = python_relay::PythonRelay::start_streaming(
+        &f.certificates,
+        f.address,
+        &wire::node("host-a"),
+    );
+    let client = InternalClient::new(
+        ClientTls::new(
+            f.certificates.center.material(),
+            vec![f.certificates.ca.der().clone()],
+            vec![f.certificates.host.pin()],
+        )
+        .unwrap(),
+        RegisteredEndpoint::new(relay.address, "host.test".into(), wire::node("host-a")).unwrap(),
+        Limits::new(3, Duration::from_secs(1), Duration::from_secs(2)).unwrap(),
+    );
+    let response = client
+        .stream_data(&identity(), data_request(), Arc::new(()), max_deadline())
+        .await
+        .unwrap();
+    let sender = f.senders.lock().unwrap().pop().unwrap();
+    sender
+        .send(Ok(Frame::data(Bytes::from_static(b"started"))))
+        .await
+        .unwrap();
+    sender
+        .send(Ok(Frame::data(Bytes::from_static(b"finished"))))
+        .await
+        .unwrap();
+    drop(sender);
+    let collected = tokio::time::timeout(Duration::from_secs(2), response.into_body().collect())
+        .await
+        .expect("original body deadline")
+        .expect("complete response must not become an HTTP truncation");
+    assert_eq!(collected.to_bytes(), "startedfinished");
+    idle_client(&client).await;
+    relay.stop();
+    f.stop().await;
 }
 
 #[tokio::test]

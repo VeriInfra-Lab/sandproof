@@ -1,0 +1,52 @@
+--- a/verification/experiments/stage1-protocol/registered.py
++++ b/verification/experiments/stage1-protocol/registered.py
+@@ -68,0 +69 @@
++    ('stage1-digest-uses', str(HERE/'digest-uses/native.py'), False),
+@@ -349,0 +351,12 @@
++        native_pass_fds = ()
++        if label == 'stage1-digest-uses':
++            path = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK')
++            descriptor = os.environ.get('SANDPROOF_PROOF_HEAVY_LOCK_FD')
++            if not path or descriptor is None:
++                raise ValueError('digest native case requires the inherited shared coordination lock')
++            fd = int(descriptor)
++            if fd < 0:
++                raise ValueError('negative native coordination descriptor')
++            os.fstat(fd)
++            args += ['--lock', str(Path(path).resolve(strict=True)), '--lock-fd', str(fd)]
++            native_pass_fds = (fd,)
+@@ -353 +366 @@
+-        def action(driver=Path(driver), args=args, output=output,
++        def action(driver=Path(driver), args=args, output=output, pass_fds=native_pass_fds,
+@@ -355 +368 @@
+-            _invoke(root, driver, args)
++            _invoke(root, driver, args, pass_fds=pass_fds)
+@@ -438,0 +452,2 @@
++    add('digest-uses', HERE/'digest-uses/formal.py',
++        native=('stage1-digest-uses',), cases=('actual', 'input-empty', 'tail-zero'))
+@@ -442,0 +458,2 @@
++    if result.get('kind') == 'current-adopted-digest-uses-complete-development-batch':
++        return [row.get('actual', {}) for row in result.get('variants', {}).values()]
+@@ -551,0 +569,19 @@
++    if job['name'] == 'digest-uses':
++        variants = result.get('variants', {})
++        if (result.get('kind') != 'current-adopted-digest-uses-complete-development-batch'
++                or result.get('prepare_only') is not False
++                or set(variants) != set(job['cases'])
++                or result.get('same_complete_contract_and_value_library_carriers') is not True
++                or result.get('source_binding', {}).get('complete') is not True
++                or any(None in {row.get(key) for row in variants.values()}
++                       or len({row.get(key) for row in variants.values()}) != 1
++                       for key in ('common_contract_sha256', 'common_values_sha256',
++                                   'common_library_sha256', 'common_carriers_sha256'))
++                or any(row.get('complete') is not True
++                       or row.get('capture_complete') is not True
++                       or row.get('translation_complete') is not True
++                       or row.get('property_rejected') is not (name != 'actual')
++                       or row.get('actual', {}).get('files') != row.get('files')
++                       or row.get('actual', {}).get('audits') != row.get('audits')
++                       for name, row in variants.items())):
++            raise ValueError('missing complete current digest correct/two-mutant or fixed-library binding evidence')
+@@ -1053 +1089 @@
+-    if job['name'] in ('create-attachment-flow', 'create-fixed-identity', 'create-lifetime-sql', 'create-standard-adapter', 'create-standard-identity', 'create-standard-sql'):
++    if job['name'] in ('create-attachment-flow', 'create-fixed-identity', 'create-lifetime-sql', 'create-standard-adapter', 'create-standard-identity', 'create-standard-sql', 'digest-uses'):

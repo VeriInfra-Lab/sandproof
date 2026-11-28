@@ -1,0 +1,81 @@
+import SandboxModel.Lifecycle.Protocol.InboxRenewalCheckpoint
+import SandboxModel.Lifecycle.Protocol.InboxRenewalContains
+import SandboxModel.Lifecycle.Protocol.InboxRenewalUnapplied
+import SandboxModel.Lifecycle.Protocol.RenewalBindings
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_protocol.lifecycle.renewal
+namespace SandboxModel.Stage1Protocol.InboxRenewal
+open scoped Classical
+noncomputable section
+
+theorem frontier_callback (binding : BorrowedVecBinding) {E : Type} (encoding : renewal_confirmation.RenewalEncoding E)
+    (confirmed : RenewalConfirmation) (session : Session) (through : U64) :
+    renewal_confirmation.validate_session_using.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once
+      encoding (confirmed, session) through =
+      .ok (decide (through < 2#u64) || decide (through ≥ confirmed.request.accepted_version) ||
+        containsVersion session.entries.val through) := by
+  unfold renewal_confirmation.validate_session_using.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool.call_once
+  simp only [contains_version_with_binding binding]
+  split <;> simp_all
+  split <;> simp_all
+
+theorem frontier_spec (binding : BorrowedVecBinding) {E : Type} (encoding : renewal_confirmation.RenewalEncoding E)
+    (confirmed : RenewalConfirmation) (session : Session) :
+    core.option.Option.is_some_and
+      (renewal_confirmation.validate_session_using.closure.Insts.CoreOpsFunctionFnOnceTupleU64Bool encoding)
+      session.compacted_sdk_through (confirmed, session) = .ok (frontierInvalid session confirmed) := by
+  cases h : session.compacted_sdk_through <;>
+    simp [core.option.Option.is_some_and, SandproofFoundationsRust.core.option.Option.is_some_and,
+      frontier_callback binding, frontierInvalid, h]
+
+theorem validate_session_with_binding (binding : BorrowedVecBinding) {E : Type} (encoding : renewal_confirmation.RenewalEncoding E)
+    (session : Session) :
+    renewal_confirmation.validate_session_using encoding session = validateView encoding.encode session := by
+  unfold renewal_confirmation.validate_session_using validateView
+  simp only [core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref, bind_tc_ok]
+  cases h : session.confirmed_renewal with
+  | none =>
+    simp only [core.option.Option.is_none, corrupt]
+    split <;> rfl
+  | some confirmed =>
+    have shape := Renewal.shape_refines confirmed
+    simp only [renewal_valid] at shape
+    simp only [shape, bind_tc_ok, Bool.decide_iff]
+    split
+    · apply congrArg (fun continuation => Bind.bind (encoding.encode confirmed) continuation)
+      funext result
+      cases result with
+      | Err error =>
+        simp [core.result.Result.Insts.CoreOpsTry.branch,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+          sandproof_controller_service.JournalError.Insts.CoreConvertFromError.from]
+      | Ok bytes =>
+        simp [core.result.Result.Insts.CoreOpsTry.branch, checkpoint_with_binding binding, frontier_spec binding,
+          unapplied_sdk_with_binding binding, afterEncoding, corrupt, core.option.Option.is_none,
+          alloc.vec.Vec.len, sandproof_protocol.lifecycle.RENEWAL_CONFIRMATION_BODY_BYTES, ← Validation.ok_ite]
+    · rfl
+
+theorem validate_session_spec {E : Type} (encoding : renewal_confirmation.RenewalEncoding E)
+    (session : Session) :
+    renewal_confirmation.validate_session_using encoding session = validateView encoding.encode session :=
+  validate_session_with_binding borrowed_vec_model encoding session
+
+theorem full_contract_with_binding (binding : BorrowedVecBinding) : FullRenewalSessionContract run := by
+  intro encode session
+  exact validate_session_with_binding binding ⟨encode⟩ session
+
+theorem full_contract : FullRenewalSessionContract run := by
+  intro encode session
+  exact validate_session_spec ⟨encode⟩ session
+
+end
+end SandboxModel.Stage1Protocol.InboxRenewal
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.frontier_callback
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.frontier_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.validate_session_spec
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.validate_session_with_binding
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRenewal.full_contract_with_binding

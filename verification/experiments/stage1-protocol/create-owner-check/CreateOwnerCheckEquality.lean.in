@@ -1,0 +1,14 @@
+import SandboxModel.Lifecycle.Protocol.CreateOwnerCheckModel
+import SandboxModel.Lifecycle.Protocol.OwnerMapping
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.CreateOwnerCheck
+theorem internal_ne (left right : sandbox_controller_core.ids.TenantId) :
+    core.cmp.PartialEq.ne.trait_default
+      sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId left right =
+      .ok (decide (left ≠ right)) := by
+  simp [core.cmp.PartialEq.ne.trait_default, core.cmp.PartialEq.ne.default,
+    sandbox_controller_core.ids.TenantId.Insts.CoreCmpPartialEqTenantId.eq]
+  exact ⟨congrArg UScalar.val, UScalar.eq_of_val_eq⟩
+
+end SandboxModel.Stage1Protocol.CreateOwnerCheck
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateOwnerCheck.internal_ne

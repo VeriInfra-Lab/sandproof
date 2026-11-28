@@ -1,0 +1,37 @@
+import SandboxModel.Lifecycle.Protocol.SourceOrigin.WitnessSupport
+namespace SandboxModel.Stage1Protocol.SourceOrigin.Examples
+open Aeneas Aeneas.Std SandproofSourceOriginRust
+open sandbox_controller_core WitnessSupport
+
+theorem normal_expected : Expected Values.world Values.inbox Values.anchor 0#usize = .ok (.Ok ()) := by
+  classical
+  simp only [Expected, Values.anchor, find_inbox]
+  simp [readAt, Values.inbox, Values.session,
+    Values.entry, Values.singleton, Values.origin, Values.key, plan_contents, row_contents,
+    Values.world, SandboxModel.Foundations.tableLookup, Values.plan, Values.row,
+    originKind, EpochExpected, OriginFields]
+
+theorem generation_expected : Expected Values.world Values.inbox Values.otherGeneration 0#usize = Reject := by
+  classical
+  simp only [Expected, Values.otherGeneration, Values.anchor, find_inbox]
+  simp [readAt, Values.inbox,
+    Values.session, Values.entry, Values.singleton, Values.origin, Values.key,
+    plan_contents, row_contents, Values.world, SandboxModel.Foundations.tableLookup,
+    Values.plan, Values.row, originKind, EpochExpected, OriginFields, Reject]
+
+theorem vm_expected : Expected Values.world Values.inbox Values.otherVm 0#usize = Reject := by
+  classical
+  simp only [Expected, Values.otherVm, Values.anchor, find_inbox]
+  simp [readAt, Values.inbox,
+    Values.session, Values.entry, Values.singleton, Values.origin, Values.key,
+    plan_contents, row_contents, Values.world, SandboxModel.Foundations.tableLookup,
+    Values.plan, Values.row, originKind, EpochExpected, OriginFields, Reject]
+
+theorem session_expected : Expected Values.world Values.duplicated Values.anchor 1#usize = Reject := by
+  classical
+  simp [Expected, Values.anchor, find_duplicated, Reject]
+end SandboxModel.Stage1Protocol.SourceOrigin.Examples
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.Examples.normal_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.Examples.generation_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.Examples.vm_expected
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.Examples.session_expected

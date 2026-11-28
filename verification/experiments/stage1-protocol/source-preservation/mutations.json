@@ -1,0 +1,30 @@
+{
+  "drop-producer": {
+    "source": "controller-service/src/controller/lifecycle_inbox/source_work/retirement.rs",
+    "before": "        .producer\n        .is_some_and(|fact| new.material_release.producer != Some(fact))\n        || old\n            .material_release\n            .consumer\n            .is_some_and(|fact| new.material_release.consumer != Some(fact))\n",
+    "after": "        .consumer\n        .is_some_and(|fact| new.material_release.consumer != Some(fact))\n",
+    "before_source_sha256": "adae46047f72df39496e9d8e1f32619c7b74a85ae2b9a8a48a8407021457a3c3",
+    "after_source_sha256": "0d0a91c8a2d67d7327c6c401018e0191753f2feeaa4ccf4af57f52190fded149"
+  },
+  "drop-consumer": {
+    "source": "controller-service/src/controller/lifecycle_inbox/source_work/retirement.rs",
+    "before": "        || old\n            .material_release\n            .consumer\n            .is_some_and(|fact| new.material_release.consumer != Some(fact))\n",
+    "after": "",
+    "before_source_sha256": "adae46047f72df39496e9d8e1f32619c7b74a85ae2b9a8a48a8407021457a3c3",
+    "after_source_sha256": "299b10708c85dca92c504b5fcf3239925412bb71f15bbe0c0fbe6a0f3d2f0baf"
+  },
+  "plan-binding-only": {
+    "source": "controller-service/src/controller/lifecycle_inbox/source_work/retirement.rs",
+    "before": "        (Some(previous), Some(next)) => plan(previous) == plan(next),\n",
+    "after": "        (Some(previous), Some(next)) => plan(previous).plan_binding == plan(next).plan_binding,\n",
+    "before_source_sha256": "adae46047f72df39496e9d8e1f32619c7b74a85ae2b9a8a48a8407021457a3c3",
+    "after_source_sha256": "f0fd96b5d3f887830c84c1c73d2839add10bca90a3c11ad321b6a757a4d9b3b6"
+  },
+  "forget-settled": {
+    "source": "controller-service/src/controller/lifecycle_inbox/source_work/retirement.rs",
+    "before": "        (None, _) => true,\n        (Some(MaterialRetirementState::Settled { .. }), next) => next == &old.retirement,\n",
+    "after": "        (None | Some(MaterialRetirementState::Settled { .. }), _) => true,\n",
+    "before_source_sha256": "adae46047f72df39496e9d8e1f32619c7b74a85ae2b9a8a48a8407021457a3c3",
+    "after_source_sha256": "59a3823ee4dbe3f5e422cae0e14f5ab6762b559e677d88a185c192bbdd069582"
+  }
+}

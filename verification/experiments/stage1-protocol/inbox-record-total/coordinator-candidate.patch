@@ -1,0 +1,21 @@
+--- a/scripts/verify-stage1-protocol.sh
++++ b/scripts/verify-stage1-protocol.sh
+@@ -12,7 +12,7 @@
+ bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record/formal.py --require-native --variant wrong-recorded-version --output "$EVIDENCE/record-wrong-version"
+ bash scripts/python-entry.sh tools/proof_native_suite.py require stage1-inbox-append
+-bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-append/formal.py --require-native --variant correct --output "$EVIDENCE/append-correct"
+-bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-append/formal.py --require-native --variant skip-sdk-gate --output "$EVIDENCE/append-skip-sdk"
+-bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-append/formal.py --require-native --variant skip-prior-capture --output "$EVIDENCE/append-skip-capture"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record-total/formal.py --require-native --variant correct --output "$EVIDENCE/record-total-correct"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record-total/formal.py --require-native --variant skip-sdk-gate --output "$EVIDENCE/record-total-skip-sdk"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-record-total/formal.py --require-native --variant skip-prior-capture --output "$EVIDENCE/record-total-skip-capture"
+ echo 'Retained Stage1 protocol profiles and all registered actual Rust mutants passed.'
+ echo 'Typed pure guards and complete value binding only; not whole lifecycle, bytes/TLS, async or ledger truth.'
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -52,4 +52,5 @@
+ | V3 收件记录候选 | 保留重放/冲突的完整状态保持；任意 fresh 首错与全字段追加；实际 record 的新会话组合；两个同合同真实 Rust 形式反例，见[候选范围](../verification/experiments/stage1-protocol/inbox-record/README.md) | 固定 a9c 的隔离重构候选；原版/候选机器等价、生产采用、ning/native 和共享验收未完成；已有会话另见追加候选；SQL/提交/恢复及完整 V3 待证 |
+ | V3 已有会话追加候选 | 任意有界会话的实际 record_existing 首拒绝/完整状态追加，以及实际 record 的无保留 key/首 session 选择组合；SDK 门槛与前驱 capture 遗漏的同合同真实 Rust 反例，见[候选范围](../verification/experiments/stage1-protocol/inbox-append/README.md) | 固定 a9c、复用父记录重构；原版/候选机器等价、生产采用、ning/native 和共享验收未完成；输入从已解码值开始，不含 SQL/提交/恢复、认证/JSON/TLS 或完整 V3 |
++| V3 纯内存 record 统一候选 | 复用原 lookup/FreshPost/ExistingPost，对任意已解码 Inbox/intent 组合三条分支；两个真实 Rust 错误版否定同一 FullRecordContract，见[候选范围](../verification/experiments/stage1-protocol/inbox-record-total/README.md) | 同一个隔离重构；生产/库合同采用、ning/native 和共享验收待完成；不含 record_lifecycle_intent 的事务、未知提交/恢复、GLOBAL→LOCAL 或完整 V3 |
+ | V4 | 原 CaptureHandoff 值方法局部证明；候选多代 workflow、checkpoint 与历史退休已有真实 Rust 组件回归 | 新历史校验、源绑定、资源责任、退休守卫及完整 World 对应均未证明；原局部证明不覆盖这些改动 |
+ | V5 | 候选原 SQL 唯一恢复认领、材料使用责任、激活前记录、逐代凭据索引、不重置恢复寿命及多轮 SourceWork 有组件检查 | SQL/回调的整体对应；Continue 与 GC 有定向组件结果，实际维护与最终结算组合仍待完整验收；新实现对应证明未完成 |

@@ -5,14 +5,38 @@ not turn tests into skips or relax a production assertion; it reports the
 excluded Linux groups and cannot be presented as complete functional acceptance.
 """
 import argparse
+from concurrent.futures import ProcessPoolExecutor
+import importlib
+import io
+import multiprocessing
+import os
 from pathlib import Path
 import sys
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+# These contract/fixture modules inspect frozen inputs or use private temporary
+# directories. Tests using live services, sockets, shared builds and new modules
+# stay in the ordinary serial suite until reviewed.
+LIGHT_MODULES = frozenset('test_' + name for name in """
+    btree_set_binding callback_state_contract capture_caller_replay child_observation
+    condvar_contract data_drain_extraction first_chain_extraction foundations_extraction
+    guest_extraction joinset_contract json_counter_extraction json_identifiers_extraction
+    json_request_binding loop_callbacks_contract network_extraction notify_contract
+    owned_message_contract pause_dispatch_replay pause_dispatch_scope pause_publication_components
+    pause_publication_replay pause_receipt_replay pause_receipt_scope pause_stop_components
+    pause_stop_replay revocation_contract schema_domains schema_domains_binding
+    shared_field_bindings std_mutex_contract task_contract tls_certificate_binding
+    tls_pin_contract tokio_rwlock_contract
+""".split())
 # These groups exercise original Linux production primitives, rather than a
 # substitute Mach-O helper, sendfile API or filesystem accounting algorithm.
 LINUX_GROUPS = {
+    'test_lifecycle_command_disconnect.LinuxRelayTests': 'actual Linux procfs identity and pidfd relay exit',
+    'test_lifecycle_late_material_receipt.LinuxLateMaterialPhysicalReaderTests': 'real Linux procfs process/start/boot observations',
+    'test_ci_retention.RetentionTests': 'Linux mountinfo and same-filesystem bind-mount refusal',
+    'test_ci_private_templates.PrivateTemplateTests': 'Linux mountinfo before private template retirement',
     'test_guest_probe.LinuxResourceSnapshotTests': 'real Linux procfs status and smaps_rollup reads',
     'test_template_build_windows.WindowBridgeTests': 'ELF and /proc/self/fd execution of the checked inode',
     'test_template_build_service.BuildTests': 'real Linux request-window helper',
@@ -24,6 +48,11 @@ LINUX_GROUPS = {
     'test_template_sparse.SparseArtifactTests': 'Linux sendfile semantics and allocated-block guarantees',
     'test_sparse_artifact_hash.LinuxSparseArtifactHashTests': 'real Linux sparse extent queries and positioned reads',
     'test_template_physical_storage.PhysicalProfileTests': 'Linux shared-filesystem lease and block rounding',
+    'test_lifecycle_activation_destroy.ActualStopSocketTests': 'real Linux Unix SO_PEERCRED on the original terminal Stop gate',
+    'test_lifecycle_freeze_destroy.OriginalSourceHoldTests': 'real Linux procfs and pidfd source hold',
+    'test_lifecycle_freeze_destroy.OriginalUnixPauseTests': 'real Linux procfs and Unix SO_PEERCRED pause query',
+    'test_lifecycle_freeze_destroy.FreezeStopWiringTests': 'real Linux Unix SO_PEERCRED on the original Stop gate',
+    'test_lifecycle_freeze_expiry.OriginalCenterListenerTests': 'real Linux procfs socket ownership at Center restart',
 }
 
 
@@ -55,6 +84,48 @@ def preflight(mode):
         raise ValueError('full functional checks require Linux; use --portable for partial development checks')
 
 
+def light_module(item):
+    name, expected = item
+    suite = unittest.TestLoader().loadTestsFromModule(importlib.import_module(name))
+    if [test.id() for test in leaves(suite)] != expected:
+        raise ValueError('parallel module differs from discovered tests: ' + name)
+    log = io.StringIO()
+    result = unittest.TextTestRunner(stream=log, verbosity=2).run(suite)
+    passed = result.wasSuccessful() and not result.skipped and result.testsRun == len(expected)
+    return result.testsRun, passed, log.getvalue()
+
+
+def run_parallel_linux(chosen, workers):
+    modules = {}
+    serial = unittest.TestSuite()
+    total = chosen.countTestCases()
+    for test in leaves(chosen):
+        name = type(test).__module__
+        if name in LIGHT_MODULES:
+            modules.setdefault(name, []).append(test.id())
+        else:
+            serial.addTest(test)
+    ran = 0
+    passed = True
+    if modules:
+        # Each module runs with its own interpreter state and unittest fixtures.
+        started = time.monotonic()
+        with ProcessPoolExecutor(max_workers=min(workers, len(modules)),
+                                 mp_context=multiprocessing.get_context('spawn')) as pool:
+            for count, success, log in pool.map(light_module, modules.items()):
+                sys.stderr.write(log)
+                ran += count
+                passed = passed and success
+        print(f'Independent modules: {ran} tests in {time.monotonic()-started:.3f}s', file=sys.stderr)
+    if serial.countTestCases():
+        result = unittest.TextTestRunner(verbosity=2).run(serial)
+        ran += result.testsRun
+        passed = passed and result.wasSuccessful() and not result.skipped
+    print(f'Linux tool tests: ran {ran}/{total}; independent modules={len(modules)}, '
+          f'worker limit={workers}', file=sys.stderr)
+    return 0 if passed and ran == total else 1
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--mode', choices=('portable', 'linux'), default='linux')
@@ -62,11 +133,20 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         preflight(args.mode)
+        workers = int(os.environ.pop('SANDPROOF_STAGE1_LIGHT_JOBS', '1'))
+        if not 1 <= workers <= 64 or (workers > 1 and (
+                args.mode != 'linux' or workers > len(os.sched_getaffinity(0)))):
+            raise ValueError('light workers require 1..64 available Linux CPUs')
     except ValueError as error:
         parser.error(str(error))
     if args.preflight_only:
         print(f'Python {sys.version.split()[0]}; tool-test mode={args.mode}')
         return 0
+    # Unit fixtures exercise the scheduler defaults in isolation. An operator's
+    # choices for this batch still belong to the parent native/formal processes.
+    for name in ('SANDPROOF_STAGE1_NATIVE_JOBS', 'SANDPROOF_STAGE1_JOBS',
+                 'SANDPROOF_STAGE1_RESUME_FROM', 'SANDPROOF_PROOF_RECOMPUTE'):
+        os.environ.pop(name, None)
     sys.path.insert(0, str(ROOT))
     suite = unittest.defaultTestLoader.discover(str(ROOT / 'tools/tests'))
     chosen, excluded = partition(suite, args.mode)
@@ -76,6 +156,8 @@ def main(argv=None):
           f'Linux-only not run={sum(excluded.values())}', file=sys.stderr)
     if not chosen.countTestCases():
         parser.error('empty test selection is not acceptance')
+    if workers > 1:
+        return run_parallel_linux(chosen, workers)
     result = unittest.TextTestRunner(verbosity=2).run(chosen)
     # Environment-dependent skips in the required Linux suite are not green
     # acceptance (for example, missing ldd or a C compiler).

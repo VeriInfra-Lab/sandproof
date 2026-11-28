@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "v0_adopted": false,
+  "production_baseline": "a9c9967889c4cf298e4378c7106948018835fc64",
+  "parent_commit": "bf0cfc75ff5ead503297565e9572ed07d03dd954",
+  "result_tag": {
+    "commit": "3e2a7dc2efc00c8efbe226486ee704605b73bf82",
+    "path": "SandboxModel/Lifecycle/Protocol/RenewalResultTag.lean",
+    "sha256": "8237a9b238eb4fc2ebc9ab358ec343f6238f981b1f62849e424f97131d7c0b15"
+  },
+  "stdlib": {
+    "1.97.0": {
+      "convert/num.rs": "dfb01dca46ba5fc8defaad61c26e3a03eb29e4ac090693f5c853020b5b3b6b13",
+      "num/error.rs": "90c897311885ce115e057eedd67876219f9c2d6da0476e340eeeb5d370ce9725"
+    },
+    "nightly-2026-08-18": {
+      "convert/num.rs": "cef1248e8e76d58077b34f622c51d07f25d78a1293783a6bd7ae371f639b84db",
+      "num/error.rs": "f66e9b263eb9f9aab957801d08a4a8185d7d15e5945a9f491023986d19ca2636"
+    }
+  },
+  "backend_scalar_model_sha256": "c67346b6a2d471d04a1bdcdf71af4efcfaa0206c1c4540de34016283c7733624",
+  "audits": [
+    "SandboxModel.Stage1Protocol.CreateConversion.actual_result",
+    "SandboxModel.Stage1Protocol.CreateConversion.succeeds_iff",
+    "SandboxModel.Stage1Protocol.CreateConversion.failure_iff",
+    "SandboxModel.Stage1Protocol.CreateConversion.success_value",
+    "SandboxModel.Stage1Protocol.CreateConversion.erase_preserves_actual_is_err",
+    "SandboxModel.Stage1Protocol.CreateConversion.erasure_does_not_preserve_kind",
+    "SandboxModel.Stage1Protocol.CreateConversion.zero_negative_boundaries",
+    "SandboxModel.Stage1Protocol.CreateConversion.error_fields_roundtrip",
+    "SandboxModel.Stage1Protocol.CreateConversion.error_value_roundtrip",
+    "SandboxModel.Stage1Protocol.CreateConversion.error_kind_preserved",
+    "SandboxModel.Stage1Protocol.CreateConversion.failure_payload_iff",
+    "SandboxModel.Stage1Protocol.CreateConversion.never_panics"
+  ]
+}

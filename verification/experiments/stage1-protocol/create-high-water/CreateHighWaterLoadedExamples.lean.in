@@ -1,0 +1,61 @@
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterComplete
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterValues
+import SandboxModel.Lifecycle.Protocol.CreateLoadExamples
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateHighWater.LoadedExamples
+noncomputable section
+open InboxValidation.Values InboxLoad.Values
+
+abbrev inbox := CreateLoadCapacity.Examples.inbox
+abbrev intent := CreateLoadCapacity.Examples.intent
+abbrev binding := Values.binding 2#u64
+
+-- The imported fixture has actual successful validation/load and a complete Create intent.
+-- This proves the guard/install prefix; later save may still reject the resulting Inbox.
+theorem fresh_accepts : CreateOwnerCheck.newRun inbox Values.emptyWorld binding = .ok (.Ok ()) := by
+  rw [CreateOwnerCheck.new_complete]
+  apply congrArg Result.ok
+  have required : CreateOwnerSuccessor.expected inbox Values.emptyWorld binding.sandbox = .Ok 2#u64 := by
+    change OwnerMapping.allocation 1 = .Ok 2#u64
+    exact OwnerMapping.Values.allocation_known 1 2#u64 (by scalar_tac) (by scalar_tac)
+  unfold CreateOwnerCheck.newExpected
+  rw [required]
+  simp [CreateOwnerCheck.guardExpected, binding, Values.binding]
+
+theorem existing_missing (session : Session) (read : inbox.sessions.val[0]? = some session) :
+    CreateOwnerCheck.existingRun inbox session.owner binding.owner = .ok (.Ok false) := by
+  have row : some recordedSession = some session := by
+    exact read
+  have same := (Option.some.inj row).symm
+  subst session
+  rw [CreateOwnerCheck.existing_complete]
+  rfl
+
+theorem loaded_selected_checked_install :
+    ∃ (session : Session) (entry : Entry),
+      inbox.sessions.val[0]? = some session ∧ session.entries.val[0]? = some entry ∧
+      entry.intent = intent ∧ CreateInstall.run inbox 0#usize 0#usize binding ⦃ result =>
+        CreateInstall.Installed inbox 0#usize 0#usize session entry binding result ∧
+        inbox.owner_high_water.val ≤ result.owner_high_water.val ⦄ := by
+  exact CreateHighWater.loaded_selected_checked_install saved terminal (N := Unit) ⟨renewal⟩
+    (U := Unit) ⟨unload⟩ ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract
+    (CreateLoadCapacity.Fixture.ioFor inbox) CreateLoadCapacity.Examples.represented []
+    (completeTrace inbox) inbox (by simpa using CreateLoadCapacity.Examples.loaded [])
+    intent 0#usize 0#usize 2#u64 binding Values.emptyWorld CreateLoadCapacity.Examples.selected
+    (by intro session read; exact Or.inr ⟨existing_missing session read, fresh_accepts⟩)
+
+theorem normal_returns_greater : ∃ result,
+    CreateInstall.run inbox 0#usize 0#usize binding = .ok result ∧
+    inbox.owner_high_water.val ≤ result.owner_high_water.val := by
+  obtain ⟨session, entry, _, _, _, installed⟩ := loaded_selected_checked_install
+  obtain ⟨result, returned, _, high⟩ := WP.spec_imp_exists installed
+  exact ⟨result, returned, high⟩
+
+end
+end SandboxModel.Stage1Protocol.CreateHighWater.LoadedExamples
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.LoadedExamples.fresh_accepts
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.LoadedExamples.existing_missing
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.LoadedExamples.loaded_selected_checked_install
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.LoadedExamples.normal_returns_greater

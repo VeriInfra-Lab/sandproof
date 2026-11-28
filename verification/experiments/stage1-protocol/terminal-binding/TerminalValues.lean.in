@@ -1,0 +1,70 @@
+import SandboxModel.Lifecycle.Protocol.TerminalModel
+import SandboxModel.Lifecycle.Protocol.EnvelopeValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+open sandproof_protocol.lifecycle.terminal
+namespace SandboxModel.Stage1Protocol.Terminal.Values
+
+def original : AcceptedLifecycleIntent := { EnvelopeValues.intent 1#u64 with
+  request := { (EnvelopeValues.intent 1#u64).request with operation := .Destroy } }
+def retained : AcceptedLifecycleIntent := { original with retention := ⟨1#u16, 9#u64⟩ }
+def highest : AcceptedLifecycleIntent := { original with
+  request := { original.request with binding := { original.request.binding with
+    expected := .Version 18446744073709551614#u64 } },
+  accepted_version := 18446744073709551615#u64,
+  retention := ⟨4096#u16, 18446744073709551615#u64⟩ }
+def observation (request : AcceptedLifecycleIntent) (status : TerminalStatus) :
+    TerminalLifecycleObservation := ⟨request, status⟩
+
+def foreignCenter : AcceptedLifecycleIntent := { original with center := ⟨"deployment", "other-center"⟩ }
+def nonDestroy : AcceptedLifecycleIntent := EnvelopeValues.intent 1#u64
+def zeroSlot : AcceptedLifecycleIntent := { original with retention := ⟨0#u16, 1#u64⟩ }
+def wrongVersion : AcceptedLifecycleIntent := { original with accepted_version := 2#u64 }
+def overflow : AcceptedLifecycleIntent := { highest with
+  request := { highest.request with binding := { highest.request.binding with
+    expected := .Version 18446744073709551615#u64 } } }
+def absentDestroy : AcceptedLifecycleIntent := { original with
+  request := { original.request with binding := { original.request.binding with expected := .Absent } } }
+
+theorem normal_envelopes : ∀ request ∈ [original, retained, highest],
+    Validation.ValidEnvelope request EnvelopeValues.context := by
+  intro request member
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl | rfl
+  all_goals simp [Validation.ValidEnvelope, Validation.ValidRequest, Validation.headersOK,
+    Validation.expectationOK, Validation.operationOK, Validation.retentionOK, Validation.versionOK,
+    original, retained, highest, EnvelopeValues.intent, EnvelopeValues.context,
+    EnvelopeValues.node, EnvelopeValues.center]
+  all_goals decide
+
+theorem normal_matches : ∀ request ∈ [original, retained, highest], ∀ status,
+    Matches (observation request status) request := by
+  intro request member status
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+  rcases member with rfl | rfl | rfl
+  all_goals simp [Matches, observation, original, retained, highest,
+    EnvelopeValues.intent, Validation.retentionOK, Validation.versionOK]
+  all_goals decide
+
+theorem rejected_shapes :
+    ¬ Matches (observation foreignCenter .Cleaned) original ∧
+    ¬ Matches (observation nonDestroy .Cleaned) nonDestroy ∧
+    ¬ Matches (observation zeroSlot .Cleaned) zeroSlot ∧
+    ¬ Matches (observation wrongVersion .Cleaned) wrongVersion ∧
+    ¬ Matches (observation overflow .Cleaned) overflow := by
+  simp [Matches, observation, original, foreignCenter, nonDestroy, zeroSlot, wrongVersion,
+    overflow, highest, EnvelopeValues.intent, EnvelopeValues.center,
+    Validation.retentionOK, Validation.versionOK]
+  decide
+
+theorem absent_destroy_matches : Matches (observation absentDestroy .Pending) absentDestroy := by
+  simp [Matches, observation, absentDestroy, original, EnvelopeValues.intent,
+    Validation.retentionOK, Validation.versionOK]
+
+end SandboxModel.Stage1Protocol.Terminal.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.Values.normal_envelopes
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.Values.normal_matches
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.Values.rejected_shapes
+#audit_controller_proof SandboxModel.Stage1Protocol.Terminal.Values.absent_destroy_matches

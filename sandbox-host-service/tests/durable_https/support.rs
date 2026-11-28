@@ -45,7 +45,7 @@ pub fn application(
 }
 
 pub fn audit(path: &Path) -> sandproof_controller_service::LifecycleAudit {
-    let reserve = complete_fixture::CLEANUP_BYTES + 1000;
+    let reserve = current::CLEANUP_BYTES + 1000;
     sandproof_controller_service::ControllerJournal::audit_lifecycle_complete(
         path,
         "0123456789abcdef",

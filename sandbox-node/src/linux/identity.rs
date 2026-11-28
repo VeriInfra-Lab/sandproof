@@ -33,9 +33,10 @@ impl LinuxWorker {
         sandbox: core::SandboxId,
         vm: core::VmId,
     ) -> NodeResult<RuntimeConfig> {
-        let secret = self.secret(sandbox)?;
-        let observed = self.observation_config(vm, secret.template.as_ref())?;
+        let secret = self.secret_for_vm(sandbox, vm)?;
+        let observed = self.observation_config(sandbox, vm, secret.template.as_ref())?;
         Ok(RuntimeConfig {
+            guest_instance_id: observed.guest_instance_id,
             console_policy: observed.console_policy,
             jailer: observed.jailer,
             firecracker: observed.firecracker,
@@ -55,6 +56,7 @@ impl LinuxWorker {
 
     pub(super) fn observation_config(
         &self,
+        sandbox: core::SandboxId,
         vm: core::VmId,
         template: Option<&TemplateBinding>,
     ) -> NodeResult<RuntimeObservationConfig> {
@@ -62,6 +64,7 @@ impl LinuxWorker {
         let vm_name = self.vm_name(vm);
         launch_observation::bind_template(
             RuntimeObservationConfig {
+                guest_instance_id: format!("sb-{}-{}", self.config.namespace, sandbox.0),
                 console_policy: self.config.bounded_host.console_policy.map(
                     |policy| match policy {
                         sandproof_controller_service::ConsolePolicy::Discard => {
@@ -93,7 +96,7 @@ impl LinuxWorker {
     pub(super) fn slot(&self, slot: core::NetSlotId) -> NodeResult<SlotBinding> {
         let path = self.slot_path(slot);
         check_trusted_path(&path)?;
-        let value: SlotBinding = serde_json::from_reader(File::open(&path)?)?;
+        let value: SlotBinding = crate::json_file::from_reader(File::open(&path)?)?;
         File::open(path.parent().ok_or("slot parent")?)?.sync_all()?;
         if value.slot != slot {
             return Err("slot mapping identity mismatch".into());
@@ -106,18 +109,9 @@ impl LinuxWorker {
         sandbox: core::SandboxId,
         generation: core::Generation,
     ) -> NodeResult<SlotBinding> {
-        let mut found = None;
-        for entry in fs::read_dir(self.config.state_dir.join("slots"))? {
-            let entry = entry?;
-            let binding: SlotBinding = serde_json::from_reader(File::open(entry.path())?)?;
-            if binding.sandbox == sandbox && binding.generation == generation {
-                if found.is_some() {
-                    return Err("ambiguous VM for workspace".into());
-                }
-                found = Some(binding);
-            }
-        }
-        found.ok_or_else(|| "no VM for workspace".into())
+        // The protected host-position table already names the exact published
+        // slot. Directory-wide decoding also reads another VM's staged writes.
+        self.workspace_slot_binding(sandbox, generation)
     }
 
     pub(super) fn vm_for_workspace(
@@ -131,7 +125,7 @@ impl LinuxWorker {
     pub(super) fn fence(&self, sandbox: core::SandboxId) -> NodeResult<Fence> {
         let path = self.fence_path(sandbox);
         check_trusted_path(&path)?;
-        let value = serde_json::from_reader(File::open(&path)?)?;
+        let value = crate::json_file::from_reader(File::open(&path)?)?;
         File::open(path.parent().ok_or("fence parent")?)?.sync_all()?;
         Ok(value)
     }
@@ -154,12 +148,7 @@ impl LinuxWorker {
         self.require_occupied_action(action)?;
         let command = action.command.command();
         let generation = decisions::command_generation(command);
-        if !decisions::action_fields_match(action, &self.config.namespace)
-            || action.identity.resource
-                != decisions::command_resource(command, &self.config.namespace)?
-        {
-            return Err("host action identity mismatch".into());
-        }
+        decisions::validate_action_identity(action, &self.config.namespace)?;
         if let Some(generation) = generation {
             // PrepareVm creates the first slot binding. All later actions,
             // including old cleanup and read-only observations, must carry

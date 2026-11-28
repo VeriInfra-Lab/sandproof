@@ -6,6 +6,7 @@ Pass only a one-job encoded JIT configuration on stdin. Runtime files are privat
 to this installation; only files created by this invocation are removed.
 """
 import argparse
+from contextlib import ExitStack
 import base64
 from contextlib import contextmanager
 import fcntl
@@ -25,14 +26,25 @@ import sys
 import time
 import uuid
 
+if __package__:
+    from . import ci_source_cache
+else:
+    import ci_source_cache
+
 ROOT = Path('/var/lib/sandproof-ci')
-ROLES = {'rust': (4096, 4, 32), 'sdk': (3072, 4, 32),
+ROLES = {'rust': (4096, 4, 32), 'sdk': (6144, 8, 32),
          'harbor': (2048, 2, 32), 'title': (768, 1, 32),
          'policy': (768, 1, 32), 'bootstrap': (4096, 4, 32),
          'preheat': (4096, 4, 32)}
 PREPARATION_ROLES = {'bootstrap', 'preheat'}
 MAX_ROLE_WORKERS = 2
 PROXY = 'http://10.0.2.100:3128'
+# The pinned runner looks up an archive by GitHub's resolved owner and SHA.
+CHECKOUT_REF = '11d5960a326750d5838078e36cf38b85af677262'
+CHECKOUT_ARCHIVE_SHA256 = '0f48a50cf2edeea3d6e270f8dae645529128ca8b2954993891a2fb8f7b16145a'
+CHECKOUT_ARCHIVE_BYTES = 434773
+CHECKOUT_ARCHIVE_NAME = f'actions-checkout-{CHECKOUT_REF}.tar.gz'
+ACTION_ARCHIVE_CACHE = '/usr/local/lib/sandproof-ci/action-archives'
 RUNNER_JOBS = {'rust': 'rust', 'sdk': 'sdk-contract', 'harbor': 'harbor-inputs',
                'title': 'pr-title', 'policy': 'pr-policy'}
 RUNNER_WAIT_SECONDS = 300
@@ -62,7 +74,7 @@ def lock_slot(role, slot):
     return lock
 
 
-def qemu_command(directory, role):
+def qemu_command(directory, role, source_disk=None):
     memory, cpus, _ = ROLES[role]
     # restrict disables ordinary guest-to-host/external connectivity. Only this
     # fixed guestfwd can reach the host's domain/port restricted CI proxy.
@@ -74,6 +86,7 @@ def qemu_command(directory, role):
             '-serial', 'stdio',
             '-drive', 'file=' + str(directory / 'work.qcow2') + ',if=virtio,format=qcow2',
             '-drive', 'file=' + str(directory / 'seed.img') + ',if=virtio,format=raw,readonly=on',
+            *(['-drive', f'file={source_disk.image},if=virtio,format=raw,readonly=on'] if source_disk else []),
             '-netdev', network, '-device', 'virtio-net-pci,netdev=ci',
             # guestfwd invokes a fixed socat helper. exec must remain allowed;
             # setpriv below supplies OS-enforced no-new-privileges instead.
@@ -84,11 +97,161 @@ def file_entry(path, content, permissions='0644', owner='root:root'):
     return {'path': path, 'content': content, 'permissions': permissions, 'owner': owner}
 
 
-def cloud_config(role, jit='', pins=None, dependency_bundle=None, completion_nonce=None):
+def load_checkout_archive():
+    """Read one administrator-installed archive without altering the host cache."""
+    try:
+        fd = os.open(ROOT / CHECKOUT_ARCHIVE_NAME, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return None
+    with os.fdopen(fd, 'rb') as stream:
+        info = os.fstat(stream.fileno())
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o222
+                or info.st_size != CHECKOUT_ARCHIVE_BYTES):
+            raise ValueError('checkout archive must be root-owned, read-only and match the pinned size')
+        data = stream.read(CHECKOUT_ARCHIVE_BYTES + 1)
+    if hashlib.sha256(data).hexdigest() != CHECKOUT_ARCHIVE_SHA256:
+        raise ValueError('checkout archive differs from the pinned SHA256')
+    return data
+
+
+# This root recipe runs before the unprivileged listener, only in its disposable
+# overlay. It never accepts a PR-supplied path, image, device or shell command.
+COW_SCRATCH_ROOT = '/var/lib/sandproof-ci-cow'
+COW_SCRATCH_SETUP = r"""import json, os, pwd, stat, subprocess, sys
+from pathlib import Path
+
+ROOT = Path('/var/lib/sandproof-ci-cow')
+SIZE = 1024 ** 3
+PROBE = r'''import fcntl, json, os, stat, subprocess, sys, tempfile
+from pathlib import Path
+if sys.flags.optimize != 0:
+    raise ValueError('scratch probe requires enabled assertions')
+root = Path('/var/lib/sandproof-ci-cow/mount/tmp')
+assert os.geteuid() != 0
+info = root.stat()
+assert info.st_uid == os.geteuid() and stat.S_IMODE(info.st_mode) == 0o700
+with tempfile.TemporaryDirectory(dir=root) as directory:
+    directory = Path(directory)
+    source, target = directory / 'source', directory / 'target'
+    flags = os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW
+    with os.fdopen(os.open(source, flags, 0o600), 'wb+') as src:
+        src.write(b'original' * 512)
+        src.flush()
+        os.fsync(src.fileno())
+        with os.fdopen(os.open(target, flags, 0o600), 'wb+') as dst:
+            fcntl.ioctl(dst.fileno(), 0x40049409, src.fileno())
+            os.fsync(dst.fileno())
+            a, b = os.fstat(src.fileno()), os.fstat(dst.fileno())
+            assert a.st_dev == b.st_dev and a.st_ino != b.st_ino
+            assert a.st_nlink == b.st_nlink == 1
+            assert dst.read() == b'original' * 512
+            dst.seek(0)
+            dst.write(b'T')
+            dst.flush()
+            src.seek(0)
+            assert src.read(1) == b'o'
+            src.seek(1)
+            src.write(b'S')
+            src.flush()
+            dst.seek(0)
+            assert dst.read(2) == b'Tr'
+    executable = directory / 'executable'
+    executable.write_text('#!/bin/sh\nexit 0\n')
+    executable.chmod(0o700)
+    subprocess.run([str(executable)], check=True, timeout=10)
+print(json.dumps({'runner_uid': os.geteuid(), 'python_optimize': sys.flags.optimize,
+                  'clone_and_write_isolation': True,
+                  'executable_tmpdir': True}))
+'''
+
+
+def run():
+    if sys.flags.optimize != 0:
+        raise ValueError('scratch preparation requires enabled assertions')
+    if os.geteuid() != 0:
+        raise ValueError('scratch preparation requires the trusted guest root recipe')
+    for parent in [ROOT.parent, *ROOT.parent.parents]:
+        info = parent.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError('scratch ancestor is not a protected root directory')
+    os.umask(0o077)
+    ROOT.mkdir(mode=0o711)  # Existing entries are never adopted or reformatted.
+    ROOT.chmod(0o711)
+    image, mount = ROOT / 'scratch.img', ROOT / 'mount'
+    mount.mkdir(mode=0o700)
+    fd = os.open(image, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        os.posix_fallocate(fd, 0, SIZE)
+        os.fsync(fd)
+        def identity():
+            info = os.fstat(fd)
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0
+                    or stat.S_IMODE(info.st_mode) != 0o600 or info.st_nlink != 1
+                    or info.st_size != SIZE):
+                raise ValueError('scratch image identity changed')
+            current = image.lstat()
+            if (current.st_dev, current.st_ino) != (info.st_dev, info.st_ino):
+                raise ValueError('scratch image name changed')
+            return (info.st_dev, info.st_ino)
+        original = identity()
+        subprocess.run(['/usr/sbin/mkfs.xfs', '-f', '-K', '-m', 'reflink=1',
+                        '/proc/self/fd/' + str(fd)], pass_fds=(fd,), check=True, timeout=30)
+        if identity() != original:
+            raise ValueError('scratch format changed the image identity')
+        os.fsync(fd)
+        subprocess.run(['/usr/bin/mount', '-o', 'loop,prjquota,nodev,nosuid',
+                        str(image), str(mount)], check=True, timeout=30)
+        if identity() != original:
+            raise ValueError('scratch mount changed the image identity')
+        filesystem = json.loads(subprocess.run(['/usr/bin/findmnt', '--json',
+            '--target', str(mount), '--output', 'TARGET,FSTYPE,OPTIONS'],
+            check=True, capture_output=True, text=True, timeout=10).stdout)['filesystems']
+        if len(filesystem) != 1 or filesystem[0]['target'] != str(mount):
+            raise ValueError('scratch mount observation is ambiguous')
+        entry = filesystem[0]
+        options = set(entry['options'].split(','))
+        if (entry['fstype'] != 'xfs' or not {'rw', 'nodev', 'nosuid'} <= options
+                or not options & {'prjquota', 'pquota'} or 'noexec' in options):
+            raise ValueError('scratch filesystem or mount options do not meet the job contract')
+        mount.chmod(0o711)
+        tmp = mount / 'tmp'
+        tmp.mkdir(mode=0o700)
+        runner = pwd.getpwnam('runner')
+        os.chown(tmp, runner.pw_uid, runner.pw_gid)
+        probe = subprocess.run(['/usr/sbin/runuser', '-u', 'runner', '--',
+            '/usr/bin/python3', '-I', '-c', PROBE], check=True, capture_output=True,
+            text=True, timeout=30)
+        witness = json.loads(probe.stdout)
+        if witness != {'runner_uid': runner.pw_uid, 'python_optimize': 0,
+                       'clone_and_write_isolation': True,
+                       'executable_tmpdir': True}:
+            raise ValueError('scratch runner capability probe did not complete')
+        info = os.fstat(fd)
+        print('SANDPROOF_CI_COW_READY ' + json.dumps(dict(witness,
+            preparation_python_optimize=sys.flags.optimize,
+            logical_bytes=SIZE, allocated_bytes=info.st_blocks * 512,
+            filesystem=entry['fstype'], mount_options=sorted(options))), flush=True)
+    finally:
+        os.close(fd)
+
+
+if __name__ == '__main__':
+    run()
+"""
+
+
+def cloud_config(role, jit='', pins=None, dependency_bundle=None, completion_nonce=None, source_disk=None,
+                 *, checkout_archive=None):
+    if role in PREPARATION_ROLES:
+        if source_disk is not None:
+            raise ValueError('PR source is only for ordinary job disks')
+        if checkout_archive is not None:
+            raise ValueError('checkout archive is only for ordinary job disks')
+    cargo_jobs = 4 if role == 'sdk' else 2
     env = ('http_proxy=' + PROXY + '\nhttps_proxy=' + PROXY + '\n'
            'HTTP_PROXY=' + PROXY + '\nHTTPS_PROXY=' + PROXY + '\n'
            'no_proxy=localhost,127.0.0.1\nNO_PROXY=localhost,127.0.0.1\n'
-           'CARGO_BUILD_JOBS=2\nRUST_TEST_THREADS=2\n'
+           f'CARGO_BUILD_JOBS={cargo_jobs}\nRUST_TEST_THREADS=2\n'
            'PATH=/home/runner/.cargo/bin:/home/runner/.local/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin\n')
     result = {'hostname': 'sandproof-ci-' + role, 'ssh_pwauth': False,
               'disable_root': True,
@@ -253,9 +416,28 @@ if processes():
             file_entry('/home/runner/.jitconfig', jit, '0600', 'runner:runner'),
             file_entry('/opt/actions-runner/start-jit.sh', start, '0755'),
             file_entry('/etc/systemd/system/sandproof-ci-job.service', unit)]
+        if checkout_archive is not None:
+            result['write_files'][0]['content'] += f'ACTIONS_RUNNER_ACTION_ARCHIVE_CACHE={ACTION_ARCHIVE_CACHE}\n'
+            result['write_files'].append(dict(file_entry(
+                f'{ACTION_ARCHIVE_CACHE}/actions_checkout/{CHECKOUT_REF}.tar.gz',
+                base64.b64encode(checkout_archive).decode(), '0444'), encoding='b64'))
+        preparation = ''
+        if role in {'rust', 'sdk'}:
+            result['write_files'][0]['content'] += 'TMPDIR=' + COW_SCRATCH_ROOT + '/mount/tmp\n'
+            result['write_files'].append(file_entry('/root/ci-cow-scratch.py',
+                                                   COW_SCRATCH_SETUP, '0500'))
+            preparation = '/usr/bin/python3 -I /root/ci-cow-scratch.py && '
+        if source_disk:
+            mount = ci_source_cache.MOUNT
+            git_bin = ci_source_cache.GUEST_BIN
+            result['write_files'][0]['content'] = result['write_files'][0]['content'].replace('PATH=', f'PATH={git_bin}:', 1)
+            result['write_files'].append(file_entry(git_bin+'/git',ci_source_cache.guest_wrapper(source_disk),'0555'))
+            preparation += (f'{{ /usr/bin/install -d -m0755 {mount} && '
+                            f'/usr/bin/mount -t iso9660 -o ro,nosuid,nodev,noexec LABEL={ci_source_cache.LABEL} {mount} '
+                            '|| echo "Sandproof CI source mount unavailable; using GitHub checkout"; } && ')
         result['runcmd'] = [['chown', '-R', 'runner:runner', '/opt/actions-runner'],
             ['systemctl', 'daemon-reload'], ['bash', '-c',
-            'if runuser -u runner -- python3 /opt/sandproof-ci/check-isolation.py; then '
+            'if ' + preparation + 'runuser -u runner -- python3 /opt/sandproof-ci/check-isolation.py; then '
             'systemctl start --no-block sandproof-ci-job.service; else poweroff; fi']]
     return result
 
@@ -493,7 +675,7 @@ def cleanup_work(directory):
             path.unlink()
 
 
-def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None):
+def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None, source_disk=None):
     slot = valid_slot(role, slot or role)
     if os.geteuid() != 0:
         raise ValueError('host provisioning must run as root; guest jobs never do')
@@ -530,7 +712,9 @@ def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None
     nonce = secrets.token_hex(32) if role == 'preheat' else None
     started = time.time()
     try:
-        config = cloud_config(role, jit, pins, dependency_bundle, nonce)
+        checkout_archive = None if role in PREPARATION_ROLES else load_checkout_archive()
+        config = cloud_config(role, jit, pins, dependency_bundle, nonce, source_disk,
+                              checkout_archive=checkout_archive)
         (directory / 'user-data').write_text('#cloud-config\n' + json.dumps(config))
         (directory / 'user-data').chmod(0o600)
         (directory / 'meta-data').write_text('instance-id: ci-' + run_id + '\n')
@@ -544,7 +728,7 @@ def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None
             os.chown(directory / name, account.pw_uid, account.pw_gid)
             (directory / name).chmod(0o600)
         command = ['/usr/sbin/runuser', '-u', 'sandproof-ci-vm', '--',
-                   '/usr/bin/setpriv', '--no-new-privs'] + qemu_command(directory, role)
+                   '/usr/bin/setpriv', '--no-new-privs'] + qemu_command(directory, role, source_disk)
         process = subprocess.Popen(command, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
         wait_with_bounded_logs(process, directory, timeout, job_name=RUNNER_JOBS.get(role))
@@ -589,6 +773,8 @@ def run(role, jit, pins, timeout, run_id=None, slot=None, dependency_bundle=None
         if role == 'preheat':
             report['dependency_input_sha256'] = dependency_bundle['input_sha256']
             report['candidate_pins'] = str(candidate_path) if candidate_path is not None else None
+        if source_disk:
+            report['available_source_merge'] = source_disk.merge
         (directory / 'report.json').write_text(json.dumps(report) + '\n')
         cleanup_work(directory)
         print(json.dumps(report), flush=True)
@@ -609,6 +795,7 @@ def main():
     parser.add_argument('--run-id', type=valid_run_id)
     parser.add_argument('--slot')
     parser.add_argument('--dependency-input', type=Path)
+    parser.add_argument('--source-request', type=json.loads)
     args = parser.parse_args()
     if not 60 <= args.timeout <= 7200:
         parser.error('timeout must be between 60 and 7200 seconds')
@@ -616,6 +803,8 @@ def main():
         parser.error('job VMs require exactly one private JIT source')
     if (args.role == 'preheat') != (args.dependency_input is not None):
         parser.error('only preheat requires --dependency-input')
+    if args.source_request is not None and args.role in PREPARATION_ROLES:
+        parser.error('PR source is only for ordinary job disks')
     try:
         pins = json.loads(args.pins.read_text())
         jit = sys.stdin.read(131073).strip() if args.jit_stdin else ''
@@ -635,7 +824,17 @@ def main():
             with preparation_guard(identity):
                 run(args.role, jit, pins, args.timeout, identity, args.slot, bundle)
         else:
-            run(args.role, jit, pins, args.timeout, args.run_id, args.slot)
+            with ExitStack() as lifetime:
+                disk=None
+                if args.source_request is not None:
+                    try:
+                        source=ci_source_cache.PullSource(**args.source_request)
+                        settings=ci_source_cache.load_settings()
+                        if settings:
+                            disk=lifetime.enter_context(ci_source_cache.SourceCache().acquire(source,settings))
+                    except (ValueError,TypeError,OSError,subprocess.SubprocessError) as error:
+                        print('CI PR source unavailable: '+type(error).__name__,flush=True)
+                run(args.role, jit, pins, args.timeout, args.run_id, args.slot, source_disk=disk)
     except (ValueError, OSError, subprocess.SubprocessError) as error:
         print('CI VM provisioning failed: ' + str(error), file=sys.stderr)
         return 1

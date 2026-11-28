@@ -426,7 +426,12 @@ impl AuthorityPort for MemoryAuthority {
             .state
             .lifecycle_session(owner, session)
             .ok_or(sandproof_center_core::DecisionError::NotFound)?;
-        if record.operations().first().map(|op| op.intent()) != Some(original) {
+        if record
+            .operations()
+            .first()
+            .map(sandproof_center_core::LifecycleOperationRecord::intent)
+            != Some(original)
+        {
             return Err(sandproof_center_core::DecisionError::Stale.into());
         }
         let current = record.operations().last().unwrap().intent();

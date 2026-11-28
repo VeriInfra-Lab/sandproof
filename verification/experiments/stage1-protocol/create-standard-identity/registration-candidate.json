@@ -1,0 +1,134 @@
+{
+  "kind": "candidate-only-standard-delegate-public-registration",
+  "package": "create-standard-identity",
+  "requires_prior_packages": [
+    "create-attachment-flow",
+    "create-fixed-identity",
+    "create-lifetime-sql",
+    "create-standard-adapter"
+  ],
+  "zero_context_patch": true,
+  "shared_input_hashes": {
+    "verification/experiments/stage1-protocol/registered.py": {
+      "root": "fdc9f8cb55f515e046b0d3bc31a52d45b6e806bd60f9b32d58a46b741f34274d",
+      "after_prior": "176e15d109175d7eba12d31d4bda17a2585d25b25bf1bd7a2099a029ed6f2402",
+      "after_this": "3ac4019e9ec74d998fe7359c835917c2f50bdab83309839d0003822b394c9faa"
+    },
+    "docs/formal/dependencies.md": {
+      "root": "157315632fa0343fd88aa9738a767df5d43a8732a1a56f59b321cda29bc440b4",
+      "after_prior": "3aa37077655f4e7ff8cd1c6813fded4eda9d702f9c6d593573ec9e5fbd434ad8",
+      "after_this": "47dc21bd25e8a4e88fac8705ce476ac93274720b691b57acf2f195277ed1a0b1"
+    },
+    "docs/proof-coverage.md": {
+      "root": "f8da14f2bf47cddd414734500ae3d1eea89843f30994adb858f293118f739698",
+      "after_prior": "ade8e1bfa361b8f25c74ffbd8327d770532038d47248cdea66b6d482c81981ae",
+      "after_this": "42041a3c28522bf1998c32066b40f37bd5420f475419d5a9e3a8580c5965744b"
+    }
+  },
+  "native_label": "stage1-create-standard-identity",
+  "formal_cases": [
+    "actual",
+    "namespace-omitted",
+    "number-truncated"
+  ],
+  "native_views": [
+    "actual",
+    "namespace-omitted",
+    "number-truncated",
+    "restored"
+  ],
+  "native_assertions_per_view": 5,
+  "all_unique_audit_names": [
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.invalid_expected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_expected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_output_representable",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_represented",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.unicode_expected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.all_numeric_bits_retained",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.empty_namespace_accepted",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.invalid_namespace_rejected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.normal_accepted",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.unicode_namespace_rejected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.full_identity_contract",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.identity_complete",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.sandbox_constructor_complete",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_agrees",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_complete",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.actual_namespace_lost",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.helper_normal_unchanged",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.still_accepts_empty_zero",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.actual_number_truncated",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.helper_normal_unchanged",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.still_accepts_empty_zero",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.Witnesses.invalid_namespace_keeps_complete_context",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.Witnesses.maximum_number_complete_context",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.Witnesses.normal_complete_context",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.actual_full_arguments_and_context",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.full_standard_identity_contract",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.normal_full_value_and_context",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.standard_identity_complete"
+  ],
+  "reused_helper_audit_names": [
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.invalid_expected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_expected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_output_representable",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.normal_represented",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Values.unicode_expected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.all_numeric_bits_retained",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.empty_namespace_accepted",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.invalid_namespace_rejected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.normal_accepted",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.Witnesses.unicode_namespace_rejected",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.full_identity_contract",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.identity_complete",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.sandbox_constructor_complete",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_agrees",
+    "SandboxModel.Stage1Protocol.CreateFixedIdentity.validator_complete"
+  ],
+  "new_unique_audit_names": [
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.actual_namespace_lost",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.helper_normal_unchanged",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NamespaceWireCounter.still_accepts_empty_zero",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.actual_number_truncated",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.helper_normal_unchanged",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.same_full_contract_rejected",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.NumberWireCounter.still_accepts_empty_zero",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.Witnesses.invalid_namespace_keeps_complete_context",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.Witnesses.maximum_number_complete_context",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.Witnesses.normal_complete_context",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.actual_full_arguments_and_context",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.full_standard_identity_contract",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.normal_full_value_and_context",
+    "SandboxModel.Stage1Protocol.StandardIdentityDelegate.standard_identity_complete"
+  ],
+  "expected_views": {
+    "actual": {
+      "files": 29,
+      "audits": 22
+    },
+    "namespace-omitted": {
+      "files": 28,
+      "audits": 19
+    },
+    "number-truncated": {
+      "files": 28,
+      "audits": 19
+    }
+  },
+  "patches": {
+    "registration-candidate.patch": "b39413c49fa5718b1c6c633d1072631bb2e8355ed9b4200ebb44eae966558d8b",
+    "dependencies-candidate.patch": "5baaadee64fdfb884ba6a9c40ee075faaa21dac9a56dc8de4c0868ca8070ef1a",
+    "coverage-candidate.patch": "6f7410e3ef143df9926b145a80c4e8ddc7ed574b69525c71c82e572e7a5b46d7"
+  },
+  "patch_application_only_checked": true,
+  "ordinary_or_native_tests_run": false,
+  "global_counts_must_be_recomputed": true,
+  "shared_files_modified": false,
+  "public_formal_entry_complete": false,
+  "native_checks_run": false,
+  "shared_acceptance": false,
+  "full_v3": false
+}

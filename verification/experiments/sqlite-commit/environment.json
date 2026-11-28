@@ -11,7 +11,7 @@
     "Option/Result/ControlFlow/tuple": "plain payloads or transaction/callback disposal under the stated A4/B2/B4 frame; original pure backend erasure remains explicit"
   },
   "core": {
-    "llbc_digest": "af2dada557099a55f5505ad695b64d334ebd0c8e60a1b3a0a0ecd2be863af6a7",
+    "llbc_digest": "7edd58b4962fd5d556ed26f705f345a55982fb38112a5b797126ec0dccc9b5a8",
     "charon_options": {
       "ullbc": false,
       "precise_drops": false,
@@ -139,7 +139,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "d78fd45eb50c0cdda4c839e30f4d5644c789ffb374716bbefdc7064fd0c4ef5c"
+          "declaration_sha256": "055c324c03c9f7dbe9f089fe1f05670e7b171490ee8c3ead9ddde6f1453dc27f"
         },
         {
           "def_id": 1,
@@ -200,7 +200,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "60b38f314d4f1872556b5ffd1a34a7d4eae59f2d149c69da7e9e62fb2b391ee0"
+          "declaration_sha256": "fc3a073138f7ec1ffda13f90dd8c4aac90c6c103c144d429d69b344274d525e0"
         },
         {
           "def_id": 2,
@@ -228,7 +228,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "3db7b9462042d8be29e3ffb9b16039624a2a8dbd9967345cb62ad4af50dee1fd"
+          "declaration_sha256": "7a0be5f0fc9eaa719c70815f469a2c92e751671ff5dddfb09894a31000fa0fd4"
         },
         {
           "def_id": 3,
@@ -274,7 +274,7 @@
                       "Deduplicated": 7
                     },
                     {
-                      "Deduplicated": 34
+                      "Deduplicated": 35
                     }
                   ],
                   "const_generics": [
@@ -300,13 +300,13 @@
                                 "regions": [],
                                 "types": [
                                   {
-                                    "Deduplicated": 31
+                                    "Deduplicated": 32
                                   },
                                   {
                                     "Deduplicated": 7
                                   },
                                   {
-                                    "Deduplicated": 34
+                                    "Deduplicated": 35
                                   }
                                 ],
                                 "const_generics": [],
@@ -326,13 +326,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 29
+                      "Deduplicated": 30
                     },
                     {
                       "Deduplicated": 7
                     },
                     {
-                      "Deduplicated": 34
+                      "Deduplicated": 35
                     }
                   ],
                   "const_generics": [],
@@ -343,7 +343,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "9360dbe3556cfa6245703f316e6bf41f06989883573e471028b5f1fafe4bc2ed"
+          "declaration_sha256": "02c907571f0a9fc6aa9e710f19562b2cbd6f3e3329d8845c73de4c94d7bf5c18"
         },
         {
           "def_id": 4,
@@ -395,7 +395,7 @@
                       "Deduplicated": 7
                     },
                     {
-                      "Deduplicated": 34
+                      "Deduplicated": 35
                     }
                   ],
                   "const_generics": [],
@@ -420,10 +420,10 @@
                                     "Deduplicated": 7
                                   },
                                   {
-                                    "Deduplicated": 31
+                                    "Deduplicated": 32
                                   },
                                   {
-                                    "Deduplicated": 34
+                                    "Deduplicated": 35
                                   }
                                 ],
                                 "const_generics": [],
@@ -443,13 +443,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
                       "Deduplicated": 7
                     },
                     {
-                      "Deduplicated": 34
+                      "Deduplicated": 35
                     }
                   ],
                   "const_generics": [],
@@ -460,7 +460,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "2865a6cc39df6d86287f9e21afabf13a3a5c7a5af0f2bcf4ab16829cefcf8083"
+          "declaration_sha256": "fdd7d3a88029ab5f14100cb830ecce6bd8d67230ec45d305920b68aa7bc9c4ed"
         },
         {
           "def_id": 5,
@@ -506,7 +506,7 @@
                       "Deduplicated": 7
                     },
                     {
-                      "Deduplicated": 34
+                      "Deduplicated": 35
                     }
                   ],
                   "const_generics": [
@@ -532,13 +532,13 @@
                                 "regions": [],
                                 "types": [
                                   {
-                                    "Deduplicated": 31
+                                    "Deduplicated": 32
                                   },
                                   {
                                     "Deduplicated": 7
                                   },
                                   {
-                                    "Deduplicated": 34
+                                    "Deduplicated": 35
                                   }
                                 ],
                                 "const_generics": [],
@@ -558,13 +558,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 29
+                      "Deduplicated": 30
                     },
                     {
                       "Deduplicated": 7
                     },
                     {
-                      "Deduplicated": 34
+                      "Deduplicated": 35
                     }
                   ],
                   "const_generics": [],
@@ -575,7 +575,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "1345f6553a5cce4fefe7da2f732b39c9994e2f0859f673b0fc11bb24711b3a73"
+          "declaration_sha256": "7e41d842c01261cc571a391b0292663fe02ca06657f91b62278c9bcb17374604"
         },
         {
           "def_id": 6,
@@ -627,7 +627,7 @@
                       "Deduplicated": 7
                     },
                     {
-                      "Deduplicated": 34
+                      "Deduplicated": 35
                     }
                   ],
                   "const_generics": [],
@@ -644,13 +644,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
                       "Deduplicated": 7
                     },
                     {
-                      "Deduplicated": 34
+                      "Deduplicated": 35
                     }
                   ],
                   "const_generics": [],
@@ -661,7 +661,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "d8d4f725468d8c99aec91b03a67aaacea1d99e64a5da52abe50ebc8383c9dc92"
+          "declaration_sha256": "3d962801eb6eca3d78fb92c3db77bd3082120cec8ee7bcefcec4c82cb70be8c7"
         },
         {
           "def_id": 7,
@@ -723,7 +723,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
                       "Deduplicated": 6
@@ -737,7 +737,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "488d957eb9aea725b9116dc068d439b75b1775126c610f720f24313de4e8ae92"
+          "declaration_sha256": "9ca41d38bde6ac21ead63b00e81fdaefb67b56d69bb1b71862852d02d8c31b31"
         },
         {
           "def_id": 8,
@@ -799,7 +799,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
                       "Deduplicated": 6
@@ -813,7 +813,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "780a7662c942ff3ad8cef7460f650a9115effab1c96f4bf73254d22d48fe9e5a"
+          "declaration_sha256": "a9e0dfdb74373528fafe08e6ea45a08482c9bc479aaca6890a17a8e7e5e072a7"
         },
         {
           "def_id": 9,
@@ -872,13 +872,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 39
+                      "Deduplicated": 40
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     }
                   ],
                   "const_generics": [],
@@ -889,7 +889,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "41e5963b77ea707675f175dabd603a87cb600cb06bcafb5aefac8560a6f47bbc"
+          "declaration_sha256": "cf4741c73d7ad4da15d91160dc41bb5fc45a84957b55f01fe38df708a92a1212"
         },
         {
           "def_id": 10,
@@ -948,13 +948,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 39
+                      "Deduplicated": 40
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     }
                   ],
                   "const_generics": [],
@@ -965,7 +965,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "a8523f1aa089e15d2796a2c1f9a6cd620039fb648ccd3b0a7758d1da67085ca0"
+          "declaration_sha256": "60c77f6f37b2ee6390417ff3e5bb3fb04235cccde7767727bfbfe55f40ad3381"
         },
         {
           "def_id": 11,
@@ -1005,7 +1005,7 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "Normal",
-          "declaration_sha256": "b182359ffca7033234af439aa91d17560998cc9a573f2e2d46857b4e0d40f232"
+          "declaration_sha256": "83abbfb6a77837b94db136a5e8d37751c01b100aeb106a1cf4a8d3748b04214a"
         },
         {
           "def_id": 12,
@@ -1045,7 +1045,7 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "Normal",
-          "declaration_sha256": "46a6a1cdf7a25a43b0665013fc826533acfe574995050a5d5c17ae986c901a4d"
+          "declaration_sha256": "faa18135dc10b64443c5004a40fd4900a8eada1dc32e7c3fa99b8b8e7d8372f9"
         },
         {
           "def_id": 13,
@@ -1107,7 +1107,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
                       "Deduplicated": 6
@@ -1121,7 +1121,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "abe58b13789308f0f0a2d3ac50eb3bad3b1d0abff82995a045837de749a5450b"
+          "declaration_sha256": "c695d02b05e9cf7b13b85187cbfa1ed14d4c5ee6203af4f0228ca0f41bfc3224"
         },
         {
           "def_id": 14,
@@ -1183,7 +1183,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
                       "Deduplicated": 6
@@ -1197,7 +1197,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "733ada4d9973640253776d06a35e3ea779a82801de9e04521a906456c1025eba"
+          "declaration_sha256": "4011f71598431afce5c00a4548c73cc4b18d4b38f8d6902330f5cd140bf10e5e"
         },
         {
           "def_id": 15,
@@ -1259,7 +1259,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
                       "Deduplicated": 6
@@ -1273,7 +1273,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "0963874611b666a4bd65d5df1736af4f77de421554777a051c4f88b5498ce354"
+          "declaration_sha256": "d9050450460360b2d402ac228dd020eaa7ea95faf1bafad88fe4acd7391e61ce"
         },
         {
           "def_id": 16,
@@ -1335,7 +1335,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
                       "Deduplicated": 6
@@ -1349,7 +1349,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "d8a044ac233431648d20488ae6f754ad008c3d82972c7767c6af9c02e877054d"
+          "declaration_sha256": "c40f8a7ed286473acd394fe8170d61544d96b3c7671381a84718f2bec24dd9ee"
         },
         {
           "def_id": 17,
@@ -1408,13 +1408,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 39
+                      "Deduplicated": 40
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     }
                   ],
                   "const_generics": [],
@@ -1425,7 +1425,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "4f543ee277fa9ef5ecf49b66735dfb2cfec6d074931c5a3af583b018135cd92e"
+          "declaration_sha256": "2cda7cc0664a9ef83fe271d59d4ee055e94f7648a9a706cca29caa1aa93595bb"
         },
         {
           "def_id": 18,
@@ -1484,13 +1484,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 39
+                      "Deduplicated": 40
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     }
                   ],
                   "const_generics": [],
@@ -1501,7 +1501,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "1c0a56a99567377508d0acf41492514e0d77fea46950ca2de0349378bcd4d0c2"
+          "declaration_sha256": "4156f3cc04b8b880911df5fa8a39faad0c7e43a1c7358b33170e2b40fee45361"
         },
         {
           "def_id": 19,
@@ -1560,13 +1560,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 39
+                      "Deduplicated": 40
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     }
                   ],
                   "const_generics": [],
@@ -1577,7 +1577,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "005fe3c655d9444001e4c749337a34c7b6d4885e48442d9fd55ec8696663a043"
+          "declaration_sha256": "22f0557e916d07992594f648d3dafd9c4e2835c6d8f978379903c8dc131a7a72"
         },
         {
           "def_id": 20,
@@ -1636,13 +1636,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 39
+                      "Deduplicated": 40
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     },
                     {
-                      "Deduplicated": 31
+                      "Deduplicated": 32
                     }
                   ],
                   "const_generics": [],
@@ -1653,7 +1653,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "4a92baab97313d75f024aa6be007a42a6d5abf7510fe3f53b8b145f01d2d8686"
+          "declaration_sha256": "f8011a98572f9223ed5f7ac6d21da2fdc7452ffe364674321c85c3d63b85e4b7"
         },
         {
           "def_id": 21,
@@ -1706,7 +1706,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "e4f713cd02e8da0a67b17261f0a0dfa438d28d1b6fbb13739cb2d4fbab7d0609"
+          "declaration_sha256": "94c4c08489624b8e714110cf050cdd123ff0f0ec7a807df518ce67445981d75a"
         },
         {
           "def_id": 22,
@@ -1759,7 +1759,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "e2b24fb0eb111e3a192ea2de1f02ddb32369b0c86d2b05d739e91dc0242d8d0c"
+          "declaration_sha256": "9bea06c1c391f636fbd6e8e8d3a2bf11989ec3caf79ccbe5eb26d085b260c11a"
         },
         {
           "def_id": 23,
@@ -1817,7 +1817,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "5a748d9a3a3f8664d9431a799b2256d07cc65bb563854a76d82ff9c331201fba"
+          "declaration_sha256": "48d8f200d98094bd445a20abe95a073f34c0f628802265a8566b8d2d7aebf0f0"
         },
         {
           "def_id": 24,
@@ -1845,7 +1845,7 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "AdtConstructor",
-          "declaration_sha256": "22c9d7fad01d59bb55e57a32acb6fba0d8f612fcc47c1f084fdbd495832fbc97"
+          "declaration_sha256": "29cbff32648831cf805b92be3cc6e593024c85a0658e9b19b7bbc22b99aebcff"
         },
         {
           "def_id": 25,
@@ -1901,7 +1901,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 80
+                      "Deduplicated": 81
                     }
                   ],
                   "const_generics": [],
@@ -1912,7 +1912,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "cfc6aab96533c5bd9ee6888f3e5c4de073498f1c9f7ff91e930274f0dd7a5c13"
+          "declaration_sha256": "53232c050927a284159270836252d68edbe7585e177fb15a66d9892d0e3de976"
         },
         {
           "def_id": 26,
@@ -1958,7 +1958,7 @@
                       "Deduplicated": 7
                     },
                     {
-                      "Deduplicated": 34
+                      "Deduplicated": 35
                     }
                   ],
                   "const_generics": [],
@@ -1980,7 +1980,7 @@
                                 "regions": [],
                                 "types": [
                                   {
-                                    "Deduplicated": 34
+                                    "Deduplicated": 35
                                   },
                                   {
                                     "Deduplicated": 7
@@ -2003,10 +2003,10 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 81
+                      "Deduplicated": 82
                     },
                     {
-                      "Deduplicated": 83
+                      "Deduplicated": 84
                     }
                   ],
                   "const_generics": [],
@@ -2017,7 +2017,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "c4aa2c2c0bec5eed787f0dcaa0d4917acd5918dd3d363ff09d3706744e72a7b6"
+          "declaration_sha256": "8496c919ab84b071692183b5a60d0f232114cf7cb1940f3930fa03910f68c5a1"
         },
         {
           "def_id": 27,
@@ -2075,7 +2075,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "10d18520dc5fa00b365d34a71f8289cb2410d2485d2942fab3ebb6c9a1a7e0c3"
+          "declaration_sha256": "63f8f88f9c88d8babf58aa71a6757d709ada75c7e69ba77b03a94d86c2b87d4c"
         },
         {
           "def_id": 29,
@@ -2134,7 +2134,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 52
+                      "Deduplicated": 53
                     }
                   ],
                   "const_generics": [],
@@ -2145,7 +2145,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "8167227e62aa7cd07e58b84b0c74a8723637efbde7f6ebeff5a70428c1434fef"
+          "declaration_sha256": "15a7d5c3730f777fc6a117f9778f384018e87dd59dc31d0081930655281e4ea6"
         },
         {
           "def_id": 30,
@@ -2194,7 +2194,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 86
+                      "Deduplicated": 87
                     }
                   ],
                   "const_generics": [],
@@ -2205,7 +2205,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "b0d7427ee842966407dcdc0f13ab46213def18a94ad9ed8dcf1df38ad613bf4e"
+          "declaration_sha256": "5a5b800ada175ca286b018ce7043147c1d24f27746b2aceee8cfb0f2e7cd3aa2"
         },
         {
           "def_id": 31,
@@ -2254,13 +2254,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 63
-                    },
-                    {
                       "Deduplicated": 64
                     },
                     {
-                      "Deduplicated": 48
+                      "Deduplicated": 65
+                    },
+                    {
+                      "Deduplicated": 49
                     }
                   ],
                   "const_generics": [],
@@ -2271,7 +2271,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "4fbdeea0f1c866dd54cecfc9efe15fb37e4cab64c5632dbad60d8016b16dd2ee"
+          "declaration_sha256": "18c9a0b9e79cd79878eff6f774fef30941ecb45208d2fb3a40f4f47c0d3aecbf"
         },
         {
           "def_id": 32,
@@ -2333,7 +2333,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 80
+                      "Deduplicated": 81
                     }
                   ],
                   "const_generics": [],
@@ -2344,7 +2344,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "b9a69353113b25ec49b8c4b62cacc9824935f7fbee8d40e7fc6bf508f364fe4d"
+          "declaration_sha256": "f3098d343a811b3271f2106b9d7edd58f3dfe64ab3cfcbe692c667146da7971c"
         },
         {
           "def_id": 33,
@@ -2400,7 +2400,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 80
+                      "Deduplicated": 81
                     }
                   ],
                   "const_generics": [],
@@ -2411,7 +2411,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "e02925ad91c895fc16b8e78af16d393d2a1363f53dd25e167454fa54a100bea6"
+          "declaration_sha256": "d19f20f51bda746c3b76457aa552087eeb305f638cb43993d2803697fe342645"
         },
         {
           "def_id": 34,
@@ -2479,7 +2479,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 90
+                      "Deduplicated": 91
                     }
                   ],
                   "const_generics": [],
@@ -2490,7 +2490,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "be017585475aa95b33ab24a4fa0f773ab7f99dff580bef9ca41ca9c058e6b1f4"
+          "declaration_sha256": "e3e95458c6f73bf187637792135e85acbd257f2d8018faff1696a35e21c452ff"
         },
         {
           "def_id": 35,
@@ -2561,7 +2561,7 @@
         }
       ],
       "drop_sites": 81,
-      "all_drop_sites_sha256": "037beef90880dcad94da666c60656b4a2fda8de47f10996aaa6381a39ba918b2",
+      "all_drop_sites_sha256": "7d6ab27a7d4d50a02fade629d6a91cb604760fc33f86de47c829950aa9077f8c",
       "drop_groups": [
         {
           "function": 11,
@@ -2598,7 +2598,7 @@
           ],
           "unwind": true,
           "count": 4,
-          "sites_sha256": "8e2009fa64a220cc7b4e121bb2ffaeab70dc8c1a3ed9fde94251f2bf3872a7fa"
+          "sites_sha256": "f4021a68779b6720335ee4451854685cf96d008f5eed68e874752bc0a4feb152"
         },
         {
           "function": 11,
@@ -2625,7 +2625,7 @@
                           "trait_refs": [],
                           "types": [
                             {
-                              "Deduplicated": 40
+                              "Deduplicated": 41
                             }
                           ]
                         },
@@ -2640,7 +2640,7 @@
           },
           "unwind": true,
           "count": 1,
-          "sites_sha256": "e23d88f3543623557579971a379f5edd1ef368b3c737efec8474da0489455f03"
+          "sites_sha256": "6d7fd3e815e982f63a0230f5493ac0a39ae9beec94e929bd1b5dc25da31cf0c1"
         },
         {
           "function": 11,
@@ -2654,7 +2654,7 @@
           },
           "unwind": true,
           "count": 17,
-          "sites_sha256": "802ef5ede013bcec7fb211db9ab438329e5428ef581459af1106daf8dd6d25cd"
+          "sites_sha256": "34ba3038d1be13dba73dc6a66c46794db01f4be88689a8be47dfb55a8455b147"
         },
         {
           "function": 11,
@@ -2681,7 +2681,7 @@
           ],
           "unwind": true,
           "count": 1,
-          "sites_sha256": "7db60cb10ecad81c87a0da3a0f1445c88b5ca224438e4ec31903d40643da6c2d"
+          "sites_sha256": "2f59e7b517242cf759a493359401a2f1e85a5532ca6341fce7303823af6a8768"
         },
         {
           "function": 11,
@@ -2737,7 +2737,7 @@
           },
           "unwind": false,
           "count": 1,
-          "sites_sha256": "bd385ad292729df772bcdafc0fda252a60922bba783b9ff94cb8663122d31bc2"
+          "sites_sha256": "9be953191136eff68a72ab1b9e8656bbf647ce33f0ec07a4d20cb583fd56561c"
         },
         {
           "function": 11,
@@ -2774,7 +2774,7 @@
           ],
           "unwind": true,
           "count": 5,
-          "sites_sha256": "e4c7805ec96555ebc32313eb393c000d21ee69ecf260bb1aacf554bb69640bb5"
+          "sites_sha256": "9bbbe69e6aaaf8985285fb6eadb1b287562f907036f45a6de0dd56e994f9b904"
         },
         {
           "function": 11,
@@ -2817,7 +2817,7 @@
           ],
           "unwind": true,
           "count": 2,
-          "sites_sha256": "29e66e42b920318a21b830478c113b166a1ea3feb8681e4d6c3bb56767e3552d"
+          "sites_sha256": "5f3603884c64f0fbf6bfdfa08217699ce6a4c90af9cd99c8c7139d99be1654c4"
         },
         {
           "function": 11,
@@ -2854,7 +2854,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "1db5656767d255ce147e63abac41a07214069bfe21eb68e614b4b267c9d38979"
+          "sites_sha256": "10f4dff7039ae84631692ff3f80d48d636c533767ea0258ae93638bcf1b1ae65"
         },
         {
           "function": 11,
@@ -2897,7 +2897,7 @@
           ],
           "unwind": false,
           "count": 2,
-          "sites_sha256": "aa91cd6e5a0e91e99ecb181b73cd9f10086bfaf2accf78fff9d9a46c9ead4378"
+          "sites_sha256": "f7af506a4260849eb33a18ba096c9d396ffb6ef5a41ab8210c071cd7beeb1b39"
         },
         {
           "function": 11,
@@ -2911,7 +2911,7 @@
           },
           "unwind": false,
           "count": 2,
-          "sites_sha256": "c930ecb2c74e758a290193c329851849be38389f832e48e5c4d389370fb104c6"
+          "sites_sha256": "044045e662951ff0aa879e787a8de8753a4ebed3bea54e11fd73ea08df30329c"
         },
         {
           "function": 11,
@@ -2948,7 +2948,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "c55988e0fc909d11bca7b09b9d268d722c27d839bf46c3d67c3c61ad243189b0"
+          "sites_sha256": "fe6cb493e61930b599c786b39d2069a0609f06bb28a9e076391fc44f038db116"
         },
         {
           "function": 12,
@@ -2962,7 +2962,7 @@
           },
           "unwind": true,
           "count": 14,
-          "sites_sha256": "ead4933d75023d7e58363e91b7fa91e8b936be5414e6e04deece04d4d02eaa42"
+          "sites_sha256": "1edb52a189633c24f99144f76fea5883904fd3f1ff8d1b47c50c0671cb901e2a"
         },
         {
           "function": 12,
@@ -2989,7 +2989,7 @@
           ],
           "unwind": true,
           "count": 1,
-          "sites_sha256": "d0becca74b94f1551a2ab6faa8e757c687bebeb6c3179820ba7b85d0a590ed54"
+          "sites_sha256": "19aaff33cbee20778bbd5b42b2aef55a4dc2d495a3007469b046a147c1202604"
         },
         {
           "function": 12,
@@ -3040,7 +3040,7 @@
           ],
           "unwind": true,
           "count": 9,
-          "sites_sha256": "ecbb9cec38d66e6ca3c1fc99fd8fd8e6c4929789ac2e0f765c5add0e556e6f36"
+          "sites_sha256": "b49013d0a3c9e90ee4738d2356d5ccb838b3fa7f23f12fff1d32eb965937f671"
         },
         {
           "function": 12,
@@ -3054,7 +3054,7 @@
           },
           "unwind": false,
           "count": 3,
-          "sites_sha256": "b51080dab544a1509c5eef089fe86a76cfc688418b53469397c87a98d5f11fe7"
+          "sites_sha256": "f5de8ab97c89f9d4b0877b0d63a66a8f2bd8b10fcc0510e9691566887370dc2f"
         },
         {
           "function": 12,
@@ -3091,7 +3091,7 @@
           ],
           "unwind": true,
           "count": 2,
-          "sites_sha256": "a192800c2b6e4f3e61401a1c3c66b701d65d11ac3f4d4397d92f32553490ec10"
+          "sites_sha256": "9a5bf4bb84b401e22f9878d57d621d485e1fe04b4ff84faacb72b62f684b3ff5"
         },
         {
           "function": 12,
@@ -3128,7 +3128,7 @@
           ],
           "unwind": false,
           "count": 2,
-          "sites_sha256": "8aa3fd06d75306ec9047e1f72b5c169c7312d5806122be2baefa0ae7a4cbe6d7"
+          "sites_sha256": "a9a8c2a266f9a78d10ba514c819b275bca3b7b81757c3e65100922f9cdf61fc1"
         },
         {
           "function": 12,
@@ -3165,7 +3165,7 @@
           ],
           "unwind": false,
           "count": 3,
-          "sites_sha256": "77f35cdf3460288b1d3610efb10748dcee85e86ddbc1a1085aee3db6fd5d3222"
+          "sites_sha256": "75b077a45dd8cb572ef91c23fff592c0359902923524a2a6857ec63c8af78d16"
         },
         {
           "function": 12,
@@ -3179,7 +3179,7 @@
           },
           "unwind": false,
           "count": 1,
-          "sites_sha256": "73066fc2a5c9b8e969d0569058bf34df12dd73e2e774ac49a78a1e5b6af56b76"
+          "sites_sha256": "264b4b1d861d2664e88e5293a079caf6a91a2a3d284e2b887da283bae39e3156"
         },
         {
           "function": 30,
@@ -3221,13 +3221,13 @@
           },
           "unwind": false,
           "count": 1,
-          "sites_sha256": "65ba5add4c639edc7c2432626de8bc2b237ab58a82680df4666e8ff025fc87a0"
+          "sites_sha256": "e936d200925cd44e772528aa5b1c7afc0ecddb46b6eb958868863d1bc2d2bd7a"
         }
       ]
     }
   },
   "wrapper": {
-    "llbc_digest": "8de6b2c915d5ef7c77d0b9aabca401ac119bda4f43fa09bec74453694344b09e",
+    "llbc_digest": "1663d2eacf1de325956f3deec5a064a50c1e7bd0669dfe85a073f7a238078cf1",
     "charon_options": {
       "ullbc": false,
       "precise_drops": false,
@@ -3355,7 +3355,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "39ddc25cce81504a6f92dcb11bd65bf643b68e43920fb33bff9032715a1195fe"
+          "declaration_sha256": "d34e3532b73e4c0c2851e667dae4978194202df537da2767fffa55dcafc6c9f0"
         },
         {
           "def_id": 1,
@@ -3416,7 +3416,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "ae8b69cce3d67380ed7b2f2d3d2fb8d7a527a181542eeeea5fd0054282ff9b5a"
+          "declaration_sha256": "4f806c8978997b1a39fd41ee335a10ddffb779cce3623ea2981ed6fccc1750f5"
         },
         {
           "def_id": 2,
@@ -3444,7 +3444,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "8830e38217c00f044f2f43800b6818f5df2e07ef24cb6537ce11ec59cc203592"
+          "declaration_sha256": "c23d5fe3c4b5c7e358fabf2400631464576067f63a96931f67874cbb7a8e7998"
         },
         {
           "def_id": 3,
@@ -3490,12 +3490,12 @@
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 139
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [
                     {
-                      "Deduplicated": 1
+                      "Deduplicated": 2
                     }
                   ],
                   "trait_refs": [
@@ -3516,13 +3516,13 @@
                                 "regions": [],
                                 "types": [
                                   {
-                                    "Deduplicated": 136
+                                    "Deduplicated": 156
                                   },
                                   {
                                     "Deduplicated": 10
                                   },
                                   {
-                                    "Deduplicated": 139
+                                    "Deduplicated": 159
                                   }
                                 ],
                                 "const_generics": [],
@@ -3542,13 +3542,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 134
+                      "Deduplicated": 154
                     },
                     {
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 139
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3559,7 +3559,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "2fcd696ec074d8f9a2f4886e22a79d11634ab7ff9c26754d49955dcf7182a8d1"
+          "declaration_sha256": "ffdf831e2aa1bbadc1c51d9a0639e1f7db221b6e6411062d18c32de23c6acf2b"
         },
         {
           "def_id": 4,
@@ -3611,7 +3611,7 @@
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 139
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3636,10 +3636,10 @@
                                     "Deduplicated": 10
                                   },
                                   {
-                                    "Deduplicated": 136
+                                    "Deduplicated": 156
                                   },
                                   {
-                                    "Deduplicated": 139
+                                    "Deduplicated": 159
                                   }
                                 ],
                                 "const_generics": [],
@@ -3659,13 +3659,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 139
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3676,7 +3676,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "5765db647586d10c95e134ef517a61edc9d8b17a031469965d69e637d5eae68f"
+          "declaration_sha256": "7392b17a45e6f609b7bbcfeb93422142a5f347492287e686491019c4df7b3c54"
         },
         {
           "def_id": 5,
@@ -3722,12 +3722,12 @@
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 139
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [
                     {
-                      "Deduplicated": 1
+                      "Deduplicated": 2
                     }
                   ],
                   "trait_refs": [
@@ -3748,13 +3748,13 @@
                                 "regions": [],
                                 "types": [
                                   {
-                                    "Deduplicated": 136
+                                    "Deduplicated": 156
                                   },
                                   {
                                     "Deduplicated": 10
                                   },
                                   {
-                                    "Deduplicated": 139
+                                    "Deduplicated": 159
                                   }
                                 ],
                                 "const_generics": [],
@@ -3774,13 +3774,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 134
+                      "Deduplicated": 154
                     },
                     {
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 139
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3791,7 +3791,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "373a3253f506b19265f82aa0a3fb1ea93969c86636f751c27e4ae4f853c57f09"
+          "declaration_sha256": "e0a43ecf3494be909f46b9e98f8611105f75c3e94f29fe6d818ae998f930f3aa"
         },
         {
           "def_id": 6,
@@ -3843,7 +3843,7 @@
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 139
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3860,13 +3860,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 139
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -3877,7 +3877,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "ae67442570996e92cedd93968b754298cc127718343548c42438d6adb0668c8c"
+          "declaration_sha256": "404557edd3c88ab61b7fbeb470677a168fa6764e86582358c63d237a06324b51"
         },
         {
           "def_id": 7,
@@ -3939,7 +3939,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -3953,7 +3953,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "fb0a6df2fc92a350b1dbc88fd9f2fa2a4a0e421a8294fd1fa452fb1f0028f916"
+          "declaration_sha256": "2845252f950bb8f8438f2ffa3c73c8575e38e8ba834ae262ba9d6b1681da877c"
         },
         {
           "def_id": 8,
@@ -4015,7 +4015,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -4029,7 +4029,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "7f1e6629f3a9065a90a1384eb26d8f5708d107e0c1f6bf0d23fabbad9de70fce"
+          "declaration_sha256": "f5415ddbea373029d54671606def9e38654051654dffb114dab1366f635c246e"
         },
         {
           "def_id": 9,
@@ -4088,13 +4088,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 144
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4105,7 +4105,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "6e5162ef7430e76b3bd0b06e242fb15b1358d4407b808802655fd27150a2b51e"
+          "declaration_sha256": "01955acf8530d83d98abca2bce151e898a6327d58e37d2dbc90742cd08cba537"
         },
         {
           "def_id": 10,
@@ -4164,13 +4164,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 144
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4181,7 +4181,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "d941499d7cfde788c8df009df1a7761d6ed5716d76604aa49fe16926f89523c9"
+          "declaration_sha256": "8c0f4616dd5e8bc89fca4ab75276ac4ac2a6e3d36d6c10bc8c6f3eeaa41921b5"
         },
         {
           "def_id": 11,
@@ -4215,7 +4215,7 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "Normal",
-          "declaration_sha256": "2bba2ab6777ba2c5a8e167302c03bf1814e52464a7f0e9cae9f49da61464993c"
+          "declaration_sha256": "b8ae62a21dfe00ddd37c385a718a2fc3f73a082e505f9a4c693a11806c6a6c7d"
         },
         {
           "def_id": 12,
@@ -4277,7 +4277,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -4291,7 +4291,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "b0448b576f0a10f2f085e1ac9ed760bc340a28800002d5c8c462ccfb9c9e1c03"
+          "declaration_sha256": "cd227fbf520b065ed09359a9a7d3ef5d42ac612a5e9c7c08d5ddd52d4c665e26"
         },
         {
           "def_id": 13,
@@ -4353,7 +4353,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -4367,7 +4367,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "74313ee41ac084a54e589259e65d547b62b704b885604a8fc3ea98a0a6ebc5c9"
+          "declaration_sha256": "ab27768445557438dcd5617287522092144cbedeec58babeb511c78a71f9f6a8"
         },
         {
           "def_id": 14,
@@ -4429,7 +4429,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -4443,7 +4443,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "708bb6059a97a4dc85bdc1c8f372d16227c3ef68c5be2628844bff0e5f25c196"
+          "declaration_sha256": "af99b96b5371244824701cdef4fced5c9a788d0fedbc64c94329864728f1f01e"
         },
         {
           "def_id": 15,
@@ -4505,7 +4505,7 @@
                       "Deduplicated": 0
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
                       "Deduplicated": 9
@@ -4519,7 +4519,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "6e74597f04898f000efe74f68e7486cf04dede2a52934eefb2889ecbebef2ea0"
+          "declaration_sha256": "766494a5478b923a7c486ba1e3d3296c0f60f35b6c5fe7c0f1737d1f96ee529c"
         },
         {
           "def_id": 16,
@@ -4578,13 +4578,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 144
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4595,7 +4595,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "e6d839b4554bc708de3a5a5b461573ed5b98a225100be769de8a394d865232ea"
+          "declaration_sha256": "340a1a22db42b4f2c6ad230ec4357f04e2f43e1b6084d66f80e48abce4df7858"
         },
         {
           "def_id": 17,
@@ -4654,13 +4654,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 144
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4671,7 +4671,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "68aff838c2313241518633635369653a11d1328f26929cb1a8c33910533c5993"
+          "declaration_sha256": "406718cd4a9d0f7e0cd1b3e83972c7d9e32f7f4bee989161f63e21b99a0140eb"
         },
         {
           "def_id": 18,
@@ -4730,13 +4730,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 144
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4747,7 +4747,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "b396b4022af59101aab7fb96a592b296d71ce791ff8b9a7fb41e82abb9279a4d"
+          "declaration_sha256": "e8198398523d31fd70aa2dce21625bb0e48c8b62469e848ddb31c89d86576f54"
         },
         {
           "def_id": 19,
@@ -4806,13 +4806,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 144
+                      "Deduplicated": 164
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     },
                     {
-                      "Deduplicated": 136
+                      "Deduplicated": 156
                     }
                   ],
                   "const_generics": [],
@@ -4823,7 +4823,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "ac734d761bdd334d765c4c98c9a7ac7017c962f5bfa5dcfc6181519be3f25e32"
+          "declaration_sha256": "86b1c5d5b7e6565de6f830d76341e19a4894741a62da2975291dc15ae732044d"
         },
         {
           "def_id": 20,
@@ -4883,7 +4883,7 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "Normal",
-          "declaration_sha256": "d3ca61c7a7553208b0f243052657e13558704225b0f727c5d81b09b15cb97b57"
+          "declaration_sha256": "5c2fbaa7f340c2ad2402f1be18ed81d37c9f982aa08e51a8c2ca61f9f02a672d"
         },
         {
           "def_id": 22,
@@ -4923,7 +4923,7 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "Normal",
-          "declaration_sha256": "1ec463c8e0715996d259523a63379c2366b165d325f0e592bc6c0df8e9b19dd6"
+          "declaration_sha256": "136dccd1689e7633f9ca863d36e2cb9bbdb3b16e6317bfb944697713a64841ba"
         },
         {
           "def_id": 23,
@@ -4990,7 +4990,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 148
+                      "Deduplicated": 166
                     }
                   ],
                   "const_generics": [],
@@ -5001,7 +5001,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "f394c778dd01c6ea62d3ad2945de7bb3a8ebe579b58f6d4fe596c410c6dee0bd"
+          "declaration_sha256": "73bf72d8088aa4ae5cff697b8eb35acbd66c47f3766b068304f007eb02077a4e"
         },
         {
           "def_id": 24,
@@ -5054,7 +5054,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "bfbb7fd992effbb586743d8e450de0540e12e54e46013ce75f2d9b953aac83c5"
+          "declaration_sha256": "da9fe844844d971858ed24f9d68c885b2852b0411ac504069f7a7164c6d73e1f"
         },
         {
           "def_id": 25,
@@ -5107,7 +5107,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "30396cb230ed8d59b4fdd7fa8ca3a0bf0b928004334d97c355470ec75fa369ac"
+          "declaration_sha256": "2027d8bbb3a1e2527e4f26957aaf76b46e30738b71e017fe2b9e0d8edbe1c1a4"
         },
         {
           "def_id": 26,
@@ -5165,7 +5165,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "a328c7b06666a6e1d15e870ae3e1852418403efdb1436f0660178e7af905a821"
+          "declaration_sha256": "c05343846d11870cc37b12517c2b420361007b9f4722391700142344d1bdd0c7"
         },
         {
           "def_id": 27,
@@ -5193,7 +5193,7 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "AdtConstructor",
-          "declaration_sha256": "dd508d80e29b633e1789a22f56f080c503824adf67df0a581ab21fec361a34cf"
+          "declaration_sha256": "e7c79909ea4331f4d3ed644c3ce7027b707192c582f73a76861023288c0f624a"
         },
         {
           "def_id": 28,
@@ -5249,7 +5249,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 220
+                      "Deduplicated": 238
                     }
                   ],
                   "const_generics": [],
@@ -5260,7 +5260,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "95c410de5378d3dedbb483d8ebd28d528f778c7ee8cce1e357a9ac37b3d11fd4"
+          "declaration_sha256": "407481072588c544b5af5be05a8b1b8893ecd4114870e7b55e72e66a75f55b41"
         },
         {
           "def_id": 29,
@@ -5306,7 +5306,7 @@
                       "Deduplicated": 10
                     },
                     {
-                      "Deduplicated": 139
+                      "Deduplicated": 159
                     }
                   ],
                   "const_generics": [],
@@ -5328,7 +5328,7 @@
                                 "regions": [],
                                 "types": [
                                   {
-                                    "Deduplicated": 139
+                                    "Deduplicated": 159
                                   },
                                   {
                                     "Deduplicated": 10
@@ -5351,10 +5351,10 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 221
+                      "Deduplicated": 239
                     },
                     {
-                      "Deduplicated": 223
+                      "Deduplicated": 241
                     }
                   ],
                   "const_generics": [],
@@ -5365,7 +5365,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "d19818b622d897fca710cd487818290b5b9888eb776f3a6a87cd59fa5fd941b8"
+          "declaration_sha256": "049cd95cf7fccd9021ce70e038d39bc499a358a7d590f0792f12b8b0dc009d51"
         },
         {
           "def_id": 30,
@@ -5426,7 +5426,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 225
+                      "Deduplicated": 243
                     },
                     {
                       "Deduplicated": 17
@@ -5440,7 +5440,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "468a3841da016064322c3efa8f0280ac3c53e8c0c0ee72fee275c3168f05a45e"
+          "declaration_sha256": "b6013af06820fcdf22a7157af3ac432af8c8d15b48605b503714c6e65a310130"
         },
         {
           "def_id": 31,
@@ -5501,7 +5501,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 225
+                      "Deduplicated": 243
                     },
                     {
                       "Deduplicated": 17
@@ -5515,7 +5515,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "6863e67a1ac48beef760d722bcc667f2bef58faeff2add10c22e588fbdbb6f3f"
+          "declaration_sha256": "0b4e82708c307edb58710e4d2c0c3d87a4670ef8101762f6f58aa711882fafef"
         },
         {
           "def_id": 32,
@@ -5576,7 +5576,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 148
+                      "Deduplicated": 166
                     }
                   ],
                   "const_generics": [],
@@ -5587,7 +5587,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "f8c9f275dce3d0887bf0ae50078141f91d86f2510d6e504040025360fd3741a0"
+          "declaration_sha256": "505735a2612793e5b3ce8d18aee5bbf3b578d5a5172191e78692c4ff4087d06b"
         },
         {
           "def_id": 33,
@@ -5646,7 +5646,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 195
+                      "Deduplicated": 213
                     }
                   ],
                   "const_generics": [],
@@ -5657,7 +5657,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "60dfbc03110066458748b6901251304c6087344d33c921b35518ffbd0fb8de59"
+          "declaration_sha256": "b4040fc01b6f9f59a9c581bd73e2160435001d708553d930260453a4bbafba82"
         },
         {
           "def_id": 34,
@@ -5706,7 +5706,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 270
+                      "Deduplicated": 287
                     }
                   ],
                   "const_generics": [],
@@ -5717,7 +5717,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "cdc12c55275586385717b6c52ecdaa8228c09fcb9f5754eec15e9a8e3fef5746"
+          "declaration_sha256": "764c4bf145dca74f876e613ac4fc5a4260833376d4d8210ec77a12ba86ea7b22"
         },
         {
           "def_id": 35,
@@ -5766,13 +5766,13 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 206
+                      "Deduplicated": 224
                     },
                     {
-                      "Deduplicated": 207
+                      "Deduplicated": 225
                     },
                     {
-                      "Deduplicated": 150
+                      "Deduplicated": 168
                     }
                   ],
                   "const_generics": [],
@@ -5783,7 +5783,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "f6561384f6a9e5470c6acd5aafb8d9d1155e932caae09a2f46899ce4b5100a61"
+          "declaration_sha256": "42405b479e2fdb81ba17c212b6b042911fa7d9ad62e59a70f07407bc32013431"
         },
         {
           "def_id": 36,
@@ -5845,7 +5845,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 220
+                      "Deduplicated": 238
                     }
                   ],
                   "const_generics": [],
@@ -5856,7 +5856,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "4be644056c4a5efd4beba3d1100b92b268a4cc1b05766f1e2ad99844ca5dcce2"
+          "declaration_sha256": "991ac21449e8ca176f4316eed0e2bdfe072902ff339dcdb5c1d0112e12d0891e"
         },
         {
           "def_id": 37,
@@ -5912,7 +5912,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 220
+                      "Deduplicated": 238
                     }
                   ],
                   "const_generics": [],
@@ -5923,7 +5923,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "c0fdd98f5f13ca3c0397fdaf2073dccc231ebee82ebd4f0acdb6afa12fd5b424"
+          "declaration_sha256": "1ad6b6cea1bab8540c5f3ca89d431360a641de9485364741f6b656f1480b84e8"
         },
         {
           "def_id": 38,
@@ -5991,7 +5991,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 274
+                      "Deduplicated": 291
                     }
                   ],
                   "const_generics": [],
@@ -6002,7 +6002,7 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "99934f1c627bdceebad8b5764495f0a1d1a7ede7ef30e82c94b47d5217933c0a"
+          "declaration_sha256": "7d8d180393d142b6f93f67a928bb8b28d3e97d14192dc35a8180c83acc82b00d"
         },
         {
           "def_id": 39,
@@ -6069,7 +6069,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "c2b13331fb7ff1779a48f8fd1187f264d7165a29699937b30abb8a8df79f00fa"
+          "declaration_sha256": "2f91d4323ed5c12bf0c0b1f6c04e470bf2d588d8531e08c7ac44aeefb5d9b8b2"
         },
         {
           "def_id": 40,
@@ -6122,7 +6122,7 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "a6f3222186dd2e2dc76b6611c14c356989ea753146bf8b0a44d997b230b5962a"
+          "declaration_sha256": "9070e3ae3aeb1582240c17959b63d2fea4eb613e583a80d4afe6d2e9b5d31616"
         },
         {
           "def_id": 41,
@@ -6181,7 +6181,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 277
+                      "Deduplicated": 294
                     },
                     {
                       "Deduplicated": 9
@@ -6195,7 +6195,7 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "ce7ce1c66186ec46747e3d389956d7e524426eb9c13c4b6eefcd1ba737b4b13b"
+          "declaration_sha256": "2adbe829154d3f602ae372480ac818b7118ac194ac9f07e038babd813dabea96"
         },
         {
           "def_id": 42,
@@ -6252,7 +6252,7 @@
               "item_id": 0
             }
           },
-          "declaration_sha256": "d031bd8bf7537a8ad2421b54dd35fb05cc8b483a22188ee38717505c01d03c46"
+          "declaration_sha256": "dec5ab2fffe891e6144847f514673236dd5dda74b83935aa0aaf30ca36918538"
         },
         {
           "def_id": 44,
@@ -6292,64 +6292,10 @@
           "opacity": "Transparent",
           "body": "Structured",
           "src": "Normal",
-          "declaration_sha256": "f54a29548ea1eeadc33e719f2a6c1137825af76ee37aecf3dd2fbeff322637d9"
+          "declaration_sha256": "2c4062f8476d956383ff355e35ff6d4a47fe5f2c45da0704b05fc56691c088d5"
         },
         {
           "def_id": 45,
-          "name": [
-            {
-              "Ident": [
-                "rusqlite",
-                0
-              ]
-            },
-            {
-              "Ident": [
-                "transaction",
-                0
-              ]
-            },
-            {
-              "Impl": {
-                "Ty": {
-                  "params": {
-                    "regions": [
-                      {
-                        "index": 0,
-                        "name": null,
-                        "variance": "Unknown",
-                        "mutability": "Unknown"
-                      }
-                    ],
-                    "types": [],
-                    "const_generics": [],
-                    "trait_clauses": [],
-                    "regions_outlive": [],
-                    "types_outlive": [],
-                    "trait_type_constraints": []
-                  },
-                  "skip_binder": {
-                    "Deduplicated": 8
-                  },
-                  "kind": "InherentImplBlock"
-                }
-              }
-            },
-            {
-              "Ident": [
-                "rollback",
-                0
-              ]
-            }
-          ],
-          "label": "rusqlite::transaction::rollback",
-          "opacity": "Opaque",
-          "body": "Opaque",
-          "src": "Normal",
-          "declaration_sha256": "02d91e420083f7dd117f3bc28352e296ad3c1ba5c7d075bde5d1233735b2cc59"
-        },
-        {
-          "def_id": 46,
           "name": [
             {
               "Ident": [
@@ -6405,7 +6351,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 276
+                      "Deduplicated": 293
                     }
                   ],
                   "const_generics": [],
@@ -6416,10 +6362,10 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "b6cc46c87e2dc79ea0efc9ebaefb0b0bbba56d433891fa7e22bc9b7b233fc5e5"
+          "declaration_sha256": "f223580a2b3206625692f947a0dd9e4cc380fb00b7ff125eedb8f78931cc3328"
         },
         {
-          "def_id": 47,
+          "def_id": 46,
           "name": [
             {
               "Ident": [
@@ -6481,7 +6427,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 277
+                      "Deduplicated": 294
                     }
                   ],
                   "const_generics": [],
@@ -6492,7 +6438,135 @@
               "reuses_default": false
             }
           },
-          "declaration_sha256": "f46422b19a58952304e36fc0b9f7d5a3c3ef6a01b342bc67dcfbe34c05e4b499"
+          "declaration_sha256": "ff7bf1cbdabe1ffb44d0c85b7e4c1ae8edbf390ecbb19045a030db6495e6d09d"
+        },
+        {
+          "def_id": 47,
+          "name": [
+            {
+              "Ident": [
+                "sandproof_controller_service",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "controller",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "transaction",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Trait": 16
+              }
+            },
+            {
+              "Ident": [
+                "drop",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Trait": 21
+              }
+            },
+            {
+              "Ident": [
+                "call_once",
+                0
+              ]
+            }
+          ],
+          "label": "sandproof_controller_service::controller::transaction::drop::call_once",
+          "opacity": "Transparent",
+          "body": "Structured",
+          "src": {
+            "TraitImpl": {
+              "impl_ref": {
+                "id": 21,
+                "generics": {
+                  "regions": [
+                    {
+                      "Var": {
+                        "Free": 0
+                      }
+                    },
+                    {
+                      "Var": {
+                        "Free": 1
+                      }
+                    }
+                  ],
+                  "types": [],
+                  "const_generics": [],
+                  "trait_refs": []
+                }
+              },
+              "trait_ref": {
+                "id": 4,
+                "generics": {
+                  "regions": [],
+                  "types": [
+                    {
+                      "Deduplicated": 301
+                    },
+                    {
+                      "Value": [
+                        304,
+                        {
+                          "Adt": {
+                            "id": 0,
+                            "generics": {
+                              "regions": [],
+                              "types": [
+                                {
+                                  "Value": [
+                                    305,
+                                    {
+                                      "Adt": {
+                                        "id": 2,
+                                        "generics": {
+                                          "regions": [
+                                            "Erased"
+                                          ],
+                                          "types": [],
+                                          "const_generics": [],
+                                          "trait_refs": []
+                                        },
+                                        "builtin": null
+                                      }
+                                    }
+                                  ]
+                                }
+                              ],
+                              "const_generics": [],
+                              "trait_refs": []
+                            },
+                            "builtin": "Tuple"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "Deduplicated": 144
+                    }
+                  ],
+                  "const_generics": [],
+                  "trait_refs": []
+                }
+              },
+              "item_id": 0,
+              "reuses_default": false
+            }
+          },
+          "declaration_sha256": "49852e092afa3a03213431af42f68866b3cd702fcb2dd646ef0b8723f9bb2888"
         },
         {
           "def_id": 48,
@@ -6550,108 +6624,10 @@
           "opacity": "Foreign",
           "body": "Opaque",
           "src": "Normal",
-          "declaration_sha256": "8cbf4bcc4a93513cc5d7c33e71ff75547379991cb8ca3a631f533fd75ee5b2c2"
+          "declaration_sha256": "5b638b355accf014a5cb9f6a1aa2189be1b46b372b410f2d32c16041221b13b7"
         },
         {
           "def_id": 49,
-          "name": [
-            {
-              "Ident": [
-                "rusqlite",
-                0
-              ]
-            },
-            {
-              "Ident": [
-                "transaction",
-                0
-              ]
-            },
-            {
-              "Impl": {
-                "Ty": {
-                  "params": {
-                    "regions": [
-                      {
-                        "index": 0,
-                        "name": null,
-                        "variance": "Unknown",
-                        "mutability": "Unknown"
-                      }
-                    ],
-                    "types": [],
-                    "const_generics": [],
-                    "trait_clauses": [],
-                    "regions_outlive": [],
-                    "types_outlive": [],
-                    "trait_type_constraints": []
-                  },
-                  "skip_binder": {
-                    "Deduplicated": 8
-                  },
-                  "kind": "InherentImplBlock"
-                }
-              }
-            },
-            {
-              "Impl": {
-                "Trait": 21
-              }
-            },
-            {
-              "Ident": [
-                "call_once",
-                0
-              ]
-            }
-          ],
-          "label": "rusqlite::transaction::call_once",
-          "opacity": "Opaque",
-          "body": "Opaque",
-          "src": {
-            "TraitImpl": {
-              "impl_ref": {
-                "id": 21,
-                "generics": {
-                  "regions": [
-                    {
-                      "Var": {
-                        "Free": 0
-                      }
-                    }
-                  ],
-                  "types": [],
-                  "const_generics": [],
-                  "trait_refs": []
-                }
-              },
-              "trait_ref": {
-                "id": 4,
-                "generics": {
-                  "regions": [],
-                  "types": [
-                    {
-                      "Deduplicated": 285
-                    },
-                    {
-                      "Deduplicated": 145
-                    },
-                    {
-                      "Deduplicated": 146
-                    }
-                  ],
-                  "const_generics": [],
-                  "trait_refs": []
-                }
-              },
-              "item_id": 0,
-              "reuses_default": false
-            }
-          },
-          "declaration_sha256": "bc7a282368998f621482260686e13619ce3d7e8aeb3c136ec13b5aad08492ee7"
-        },
-        {
-          "def_id": 50,
           "name": [
             {
               "Ident": [
@@ -6707,7 +6683,7 @@
                   "regions": [],
                   "types": [
                     {
-                      "Deduplicated": 277
+                      "Deduplicated": 294
                     },
                     {
                       "Deduplicated": 9
@@ -6721,11 +6697,137 @@
               "reuses_default": true
             }
           },
-          "declaration_sha256": "274bea9bd8c2aac9fda31f25ddff947a8a4c41d5e54d0ec0bf4727dcf0e2362b"
+          "declaration_sha256": "5411fddc92486a365a8466184fc8f9ae0d98b9192790643f059ce7f2634a2045"
+        },
+        {
+          "def_id": 50,
+          "name": [
+            {
+              "Ident": [
+                "rusqlite",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "transaction",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Ty": {
+                  "params": {
+                    "regions": [
+                      {
+                        "index": 0,
+                        "name": null,
+                        "variance": "Unknown",
+                        "mutability": "Unknown"
+                      }
+                    ],
+                    "types": [],
+                    "const_generics": [],
+                    "trait_clauses": [],
+                    "regions_outlive": [],
+                    "types_outlive": [],
+                    "trait_type_constraints": []
+                  },
+                  "skip_binder": {
+                    "Deduplicated": 8
+                  },
+                  "kind": "InherentImplBlock"
+                }
+              }
+            },
+            {
+              "Ident": [
+                "rollback",
+                0
+              ]
+            }
+          ],
+          "label": "rusqlite::transaction::rollback",
+          "opacity": "Opaque",
+          "body": "Opaque",
+          "src": "Normal",
+          "declaration_sha256": "ace1c71afe704ee3c5e58c00fa9da769a1204c9dc5be9ddc6ae7c6471ac10cbb"
+        },
+        {
+          "def_id": 51,
+          "name": [
+            {
+              "Ident": [
+                "rusqlite",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "transaction",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "Transaction",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Trait": 23
+              }
+            },
+            {
+              "Builtin": [
+                "DropGlue",
+                0
+              ]
+            }
+          ],
+          "label": "rusqlite::transaction::Transaction",
+          "opacity": "Opaque",
+          "body": "Opaque",
+          "src": {
+            "TraitImpl": {
+              "impl_ref": {
+                "id": 23,
+                "generics": {
+                  "regions": [
+                    {
+                      "Var": {
+                        "Free": 0
+                      }
+                    }
+                  ],
+                  "types": [],
+                  "const_generics": [],
+                  "trait_refs": []
+                }
+              },
+              "trait_ref": {
+                "id": 5,
+                "generics": {
+                  "regions": [],
+                  "types": [
+                    {
+                      "Deduplicated": 12
+                    }
+                  ],
+                  "const_generics": [],
+                  "trait_refs": []
+                }
+              },
+              "item_id": 0,
+              "reuses_default": false
+            }
+          },
+          "declaration_sha256": "ea7f6fc9b49edacf923e61a89bdef61bf7db99d426bb664c472d1a4842c22eb1"
         }
       ],
-      "drop_sites": 117,
-      "all_drop_sites_sha256": "19d623147a210e3f2019723b0fced157cef1f62df05fa326c6dbc1ee656418d1",
+      "drop_sites": 120,
+      "all_drop_sites_sha256": "9b71fec2bff8ef61ab90e6ee17063c8b2e837f8e56a76e6971d28abe2f429573",
       "drop_groups": [
         {
           "function": 11,
@@ -6810,7 +6912,7 @@
           ],
           "unwind": true,
           "count": 3,
-          "sites_sha256": "1a96f3565a93d940c07f6e5866596149774ccdfbac968c325345085aad6a23f8"
+          "sites_sha256": "cc81d8592cd1a9d46af2bec7fa9afc785e428a67e12fb417beb301946ae4ddd4"
         },
         {
           "function": 11,
@@ -6838,7 +6940,7 @@
           },
           "unwind": false,
           "count": 1,
-          "sites_sha256": "2bde59699595232ab3bc55dfd9d0987d8f0cad5870ddeba38af7df48d00db7aa"
+          "sites_sha256": "ef2967335fbf91416cf20b4671712548155c7678dee563dd4e4308234ae54db4"
         },
         {
           "function": 11,
@@ -6881,7 +6983,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "87478badcf629f1e83a799fffacf9830fc510254c0e8467885f348c2a382cbe4"
+          "sites_sha256": "ba442bc6984767ec292d15dfd1aac9da0ac379c2d0010a669bf1b4d524350fdc"
         },
         {
           "function": 20,
@@ -6938,7 +7040,7 @@
           ],
           "unwind": true,
           "count": 2,
-          "sites_sha256": "2b35da692269f58c293a2acb824f78a1e5e2a85e09ce6600e2228f3cbe972512"
+          "sites_sha256": "52b619213fb764e5b1d121a421a9068386be6061eb6f0fbfd5348793c19b8cf4"
         },
         {
           "function": 20,
@@ -6952,7 +7054,7 @@
           },
           "unwind": false,
           "count": 1,
-          "sites_sha256": "37c91db05c27d613416ee036bddde6dec7a22946293314ade3439c2150addda7"
+          "sites_sha256": "62db5e39dd021e2a5fccbc86cd826b46d6ac0bb428d7172810e8c3d48a5c3302"
         },
         {
           "function": 20,
@@ -6995,7 +7097,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "e69a9c96e28fe0e68562fe0974aba97eec3a3b91968703f621780d88cd42aa6f"
+          "sites_sha256": "f5e35aedb2a789551f654759a38c2d6adf3aa97b63ededd751022790b71c61ba"
         },
         {
           "function": 22,
@@ -7032,7 +7134,7 @@
           ],
           "unwind": true,
           "count": 4,
-          "sites_sha256": "39613c9177a1c22368a019c03f9cd1c8cfaa5a4fd4b4e9c60042253a91436c56"
+          "sites_sha256": "ec15df949db5de2fbd5e3ec49407cc2f9c3c4febacc8c5c5d5822c9867efc549"
         },
         {
           "function": 22,
@@ -7059,7 +7161,7 @@
                           "trait_refs": [],
                           "types": [
                             {
-                              "Deduplicated": 187
+                              "Deduplicated": 205
                             }
                           ]
                         },
@@ -7074,7 +7176,7 @@
           },
           "unwind": true,
           "count": 1,
-          "sites_sha256": "d4ae94f9eab941c5667d329aa5ae2530656b0708ac5b1f7bb43c0630111dd897"
+          "sites_sha256": "dbbfb1806d3bbbf7bbc48cf2a82a59d28990856f2f51b678d97b1b395d8c7da0"
         },
         {
           "function": 22,
@@ -7088,7 +7190,7 @@
           },
           "unwind": true,
           "count": 17,
-          "sites_sha256": "dc0d79f0e510fde54388a2326535a90d884db327be2c5c7774e99d7e4dbb6f8b"
+          "sites_sha256": "f7c53f4f475ec026880bde5ae82352ac79a1c4bec46d94974acdd39ba5c2d56d"
         },
         {
           "function": 22,
@@ -7115,7 +7217,7 @@
           ],
           "unwind": true,
           "count": 1,
-          "sites_sha256": "160164b93d027cd722a893c2dc78dd1403a92fe75c15a7431bbb9b7a95c76ae2"
+          "sites_sha256": "4209b9d075eef74378ed42c9366e5b09e732d609dc06089d4074731488348962"
         },
         {
           "function": 22,
@@ -7171,7 +7273,7 @@
           },
           "unwind": false,
           "count": 1,
-          "sites_sha256": "17e75227f0313d4f19281c91d386647641ad728706fc2651240e1317f1a75b33"
+          "sites_sha256": "74f0a0b5a65d6215383da136e78ca6b4927e0a128ee76ba51c67aa0ee2147ce3"
         },
         {
           "function": 22,
@@ -7208,7 +7310,7 @@
           ],
           "unwind": true,
           "count": 5,
-          "sites_sha256": "53bb5f8336b61aecf301d232c72169e73cbd826581d9737690cdb1f238e6460b"
+          "sites_sha256": "c42d62a65a98bca5377308cb1bc50603f800cad5f7a221dcdb79a70ae4853610"
         },
         {
           "function": 22,
@@ -7251,7 +7353,7 @@
           ],
           "unwind": true,
           "count": 2,
-          "sites_sha256": "e6f1cf0256d765a23f1b460dd9781d81e679f2cbd15f87a7d2b0149b3360c875"
+          "sites_sha256": "95a560b1538a17947fdce88c9bc74e0f35524d59df2745a472471486db629515"
         },
         {
           "function": 22,
@@ -7288,7 +7390,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "a44d4ca27e9dcefec01663089234d3cfd5b7243f20ca377b1e4a36b0fcc2f96f"
+          "sites_sha256": "233a0321ac30267beb1f5b154b75aceb7d639f139b58f4f75b20f23fb7021d2e"
         },
         {
           "function": 22,
@@ -7331,7 +7433,7 @@
           ],
           "unwind": false,
           "count": 2,
-          "sites_sha256": "a52681170000da60cb6c2736eaa6588ca8984bda10c9b5c1b898cd7a48e1f8ff"
+          "sites_sha256": "c0d5271feddc0af7b0a20afc8fcbffff37123ed0e2d7d4ec25cf4b840f49db85"
         },
         {
           "function": 22,
@@ -7345,7 +7447,7 @@
           },
           "unwind": false,
           "count": 2,
-          "sites_sha256": "c52f74fff14d9c0a99b5d757f46b9e1cb250b4b257db50aeb3a68a3d0b86cca8"
+          "sites_sha256": "9289af1c80ce43478bb53f473ee7807bd04d323f9b62523e243d52de528280b5"
         },
         {
           "function": 22,
@@ -7382,7 +7484,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "118efd862574b96dd22883955737b8287381184250a605e06fb989dc3cd0955e"
+          "sites_sha256": "d5a55214321fbccd65abb42323a3c27dd08625336a0f237380a0623cdaffca7d"
         },
         {
           "function": 23,
@@ -7419,7 +7521,7 @@
           ],
           "unwind": true,
           "count": 1,
-          "sites_sha256": "74047876254eadd14b2e4e4fc0c83b3b81ec48b634b1957b43b6815710a38b4b"
+          "sites_sha256": "469e7bd8a9c7a0591701b49c83038ccdfdf4a86840dd79c1bcdf87e4e65ad59d"
         },
         {
           "function": 23,
@@ -7456,7 +7558,7 @@
           ],
           "unwind": true,
           "count": 2,
-          "sites_sha256": "4623d64f831c0b303846df83cd30f9a80c147d02a293b68bfecd36e629c4f027"
+          "sites_sha256": "56c1d09c9b20fa71189097c56004c9fff9ba0a32fe2537cbf2aca546fe99c3e2"
         },
         {
           "function": 23,
@@ -7493,7 +7595,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "6c239f6f326b315dbba1943d8001fc950ab1cdf308af077cbbc0cb43b9e4df2e"
+          "sites_sha256": "a7a5afe9eb25888be81da80ca3aa452781e914f67633b7a3297098e2789fe9ed"
         },
         {
           "function": 23,
@@ -7530,7 +7632,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "1e402ae97a394aeb0652643623c8e7a8b320e07accc8c0c54629f9643254fe27"
+          "sites_sha256": "b9ef489666a6f81a08a6ad3fed7b308788e95925edadfb2eafc75423cda760d2"
         },
         {
           "function": 30,
@@ -7604,7 +7706,7 @@
           ],
           "unwind": true,
           "count": 3,
-          "sites_sha256": "27d04a6cbc04152495ef857706ecd99cfc896f3560ef32f945dd6bb16dde4d98"
+          "sites_sha256": "f885b67bd285b3e5b9a2b8ba838f7348a85de680e68c302956d40b158643c55c"
         },
         {
           "function": 30,
@@ -7641,7 +7743,7 @@
           ],
           "unwind": false,
           "count": 3,
-          "sites_sha256": "bcb2c2285bf8681927f6aa872d7a3b1a006f36289465d6c893700054920938c5"
+          "sites_sha256": "1ccd820354f2c1eeac2bb49cf2c48275c11b1f89def97f1a88ce7f55866555d7"
         },
         {
           "function": 30,
@@ -7678,7 +7780,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "7720e2a5f4cd9a33ac36eb5a20588b32dbc7c970bd2d17d23511aa8e72983730"
+          "sites_sha256": "0cab98d808dd3ed6fc513f0a95a0cee3fad5b7d1c875eaf88449d3c464d15f49"
         },
         {
           "function": 31,
@@ -7715,7 +7817,7 @@
           ],
           "unwind": true,
           "count": 2,
-          "sites_sha256": "9c8249e1235a51ab0a3940eb4e8ccca0cc3b7d7592e4281f241c7179c944a5a7"
+          "sites_sha256": "1062e5ee32d932b954fc3fb04068471ec65620ec4f7c366679da127664ac3d5a"
         },
         {
           "function": 31,
@@ -7752,7 +7854,7 @@
           ],
           "unwind": false,
           "count": 1,
-          "sites_sha256": "4225656e581c72a27eeec052ae2b2c8c6abc19f8f485816d40caa28eb70da260"
+          "sites_sha256": "14cadf9e1cc714520f841c86b0cb2a843104249ccec330b2b7136b1d078f4c53"
         },
         {
           "function": 34,
@@ -7766,7 +7868,7 @@
           },
           "unwind": false,
           "count": 1,
-          "sites_sha256": "97370b4c3251582badae634be7bbf520e719329ac229f05ce2295137eea8fd6e"
+          "sites_sha256": "cea14a8e72659f1228655731cd1d0dabc3bcc3d978fc918e3876651eb65c51bd"
         },
         {
           "function": 44,
@@ -7780,7 +7882,7 @@
           },
           "unwind": true,
           "count": 14,
-          "sites_sha256": "50560ddd21f8d7f2712131837f0c52fec5d0f03147e7bff270ea81f58f107b40"
+          "sites_sha256": "2682dc2c244d9047488a72976309876681ff5216e57649b38bc7240dbc8eb0b9"
         },
         {
           "function": 44,
@@ -7807,7 +7909,7 @@
           ],
           "unwind": true,
           "count": 1,
-          "sites_sha256": "c856cbfc771a688e68a06745722be4fd237a55cc6287d3da0ea50878a5dc6b3a"
+          "sites_sha256": "1f43e70d5d2b6b246a94b58919c8cbab1e7afc74cf2698fc05e8c39ffa9c893f"
         },
         {
           "function": 44,
@@ -7821,7 +7923,7 @@
           },
           "unwind": true,
           "count": 7,
-          "sites_sha256": "ae2a44e137dede3e1925d67b6be9c1e4170fd699b8f7c554e7d9fd0145a49221"
+          "sites_sha256": "c178e0e8f619c7aecd0ba74e36591b8d66f7b60ff831de3469d3a27f3b10de7c"
         },
         {
           "function": 44,
@@ -7858,7 +7960,7 @@
           ],
           "unwind": true,
           "count": 9,
-          "sites_sha256": "53f5b6e049627267836f3362c283940d894cadfab7c693e552c6ef770c5bad76"
+          "sites_sha256": "40501e49494cb0faf9c06bfd6817e9b42ef5d9aab1085192dfa9cbaaa3d77e81"
         },
         {
           "function": 44,
@@ -7872,7 +7974,7 @@
           },
           "unwind": false,
           "count": 3,
-          "sites_sha256": "69f59ebe74f8324ebb3de3852efe6b04742fe82a43622278080edf9f5191cc67"
+          "sites_sha256": "a397dfbcbcbb5cc98519d69afb45b6cd1c43a5ae779d0b025109a934994f7e6d"
         },
         {
           "function": 44,
@@ -7909,7 +8011,7 @@
           ],
           "unwind": true,
           "count": 2,
-          "sites_sha256": "866db7d4962afd1ed02ef5181449cfdcad1020ebfa3bae3b717d5d4bf7a680d6"
+          "sites_sha256": "c503efd7ce2ca7eb455d92b9e12a71ad6a871f31dcd34d90ba58c7fb52a3933d"
         },
         {
           "function": 44,
@@ -7946,7 +8048,7 @@
           ],
           "unwind": false,
           "count": 2,
-          "sites_sha256": "c25de2bb84534f3de8967e7e6d0ae32761a20d331d6fd3d98be367f0be10ff24"
+          "sites_sha256": "4c288bc6b1cd869fea8170e4993e8df9be1974d1fd995dd3aa58bf1567ffcbb9"
         },
         {
           "function": 44,
@@ -7983,7 +8085,7 @@
           ],
           "unwind": false,
           "count": 3,
-          "sites_sha256": "25c3fffb34fe36dcc2079f6f43555522926fbb544bc37a50c9029524122cea53"
+          "sites_sha256": "193d0d803dcd7710e5927902d1ce1945e84c2203f3489a38b3c0ac87d74828c2"
         },
         {
           "function": 44,
@@ -7997,7 +8099,81 @@
           },
           "unwind": false,
           "count": 1,
-          "sites_sha256": "38ae903dce60e0e3fe5d9aa628d03089ba28340250e2eae8e8d2e5dce0882b9f"
+          "sites_sha256": "9a1b5d87362976fd06e2507072c3386a79365ece51f980923c2b3bb11272f9b2"
+        },
+        {
+          "function": 47,
+          "target": [
+            {
+              "Ident": [
+                "rusqlite",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "transaction",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "Transaction",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Trait": 23
+              }
+            },
+            {
+              "Builtin": [
+                "DropGlue",
+                0
+              ]
+            }
+          ],
+          "unwind": true,
+          "count": 2,
+          "sites_sha256": "7840f647f599e89f0ce84d14ab76bc39e328d299c7af62aa539e6f8b63261e3a"
+        },
+        {
+          "function": 47,
+          "target": [
+            {
+              "Ident": [
+                "rusqlite",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "transaction",
+                0
+              ]
+            },
+            {
+              "Ident": [
+                "Transaction",
+                0
+              ]
+            },
+            {
+              "Impl": {
+                "Trait": 23
+              }
+            },
+            {
+              "Builtin": [
+                "DropGlue",
+                0
+              ]
+            }
+          ],
+          "unwind": false,
+          "count": 1,
+          "sites_sha256": "3473b2f94b2174eb6e09e9cbd8e51f74446ea58377e0f84dee59b3fc26a6e6ee"
         }
       ]
     }
@@ -8032,8 +8208,8 @@
         "is_local": true,
         "source": {
           "file": "controller-service/src/lib.rs",
-          "begin_line": 98,
-          "end_line": 98
+          "begin_line": 108,
+          "end_line": 108
         },
         "is_opaque": false,
         "can_fail": true,
@@ -8049,8 +8225,8 @@
         "is_local": true,
         "source": {
           "file": "controller-service/src/lib.rs",
-          "begin_line": 98,
-          "end_line": 98
+          "begin_line": 108,
+          "end_line": 108
         },
         "is_opaque": false,
         "can_fail": true,
@@ -8143,6 +8319,18 @@
         }
       },
       {
+        "def_id": 27,
+        "lean_name": "SandproofSqliteRust.sandbox_controller_core.capture.continuation.CaptureReject",
+        "lean_file": "SandproofSqlite/Types.lean",
+        "rust_name": "sandbox_controller_core::capture::continuation::CaptureReject",
+        "is_local": false,
+        "source": {
+          "file": "controller-core/src/capture/continuation.rs",
+          "begin_line": 132,
+          "end_line": 132
+        }
+      },
+      {
         "def_id": 23,
         "lean_name": "SandproofSqliteRust.sandbox_controller_core.worker.WorkerReject",
         "lean_file": "SandproofSqlite/Types.lean",
@@ -8150,8 +8338,8 @@
         "is_local": false,
         "source": {
           "file": "controller-core/src/worker.rs",
-          "begin_line": 66,
-          "end_line": 66
+          "begin_line": 68,
+          "end_line": 68
         }
       },
       {
@@ -8203,7 +8391,7 @@
         }
       },
       {
-        "def_id": 29,
+        "def_id": 30,
         "lean_name": "SandproofSqliteRust.sandbox_controller_core.maintenance.windows.WindowReject",
         "lean_file": "SandproofSqlite/Types.lean",
         "rust_name": "sandbox_controller_core::maintenance::windows::WindowReject",
@@ -8215,7 +8403,7 @@
         }
       },
       {
-        "def_id": 28,
+        "def_id": 29,
         "lean_name": "SandproofSqliteRust.sandbox_controller_core.maintenance.slots.SlotReject",
         "lean_file": "SandproofSqlite/Types.lean",
         "rust_name": "sandbox_controller_core::maintenance::slots::SlotReject",
@@ -8227,7 +8415,7 @@
         }
       },
       {
-        "def_id": 27,
+        "def_id": 28,
         "lean_name": "SandproofSqliteRust.sandbox_controller_core.maintenance.retirement.RetirementReject",
         "lean_file": "SandproofSqlite/Types.lean",
         "rust_name": "sandbox_controller_core::maintenance::retirement::RetirementReject",
@@ -8246,8 +8434,8 @@
         "is_local": false,
         "source": {
           "file": "controller-core/src/maintenance.rs",
-          "begin_line": 63,
-          "end_line": 63
+          "begin_line": 69,
+          "end_line": 69
         }
       },
       {
@@ -8270,8 +8458,8 @@
         "is_local": false,
         "source": {
           "file": "controller-core/src/controller.rs",
-          "begin_line": 44,
-          "end_line": 44
+          "begin_line": 46,
+          "end_line": 46
         }
       },
       {
@@ -8282,8 +8470,8 @@
         "is_local": false,
         "source": {
           "file": "sandbox-protocol/src/lib.rs",
-          "begin_line": 31,
-          "end_line": 31
+          "begin_line": 35,
+          "end_line": 35
         }
       },
       {
@@ -8294,8 +8482,8 @@
         "is_local": true,
         "source": {
           "file": "controller-service/src/lib.rs",
-          "begin_line": 68,
-          "end_line": 75
+          "begin_line": 78,
+          "end_line": 85
         }
       },
       {
@@ -8306,8 +8494,8 @@
         "is_local": true,
         "source": {
           "file": "controller-service/src/lib.rs",
-          "begin_line": 93,
-          "end_line": 118
+          "begin_line": 103,
+          "end_line": 131
         }
       }
     ],
@@ -8335,8 +8523,8 @@
         "is_local": true,
         "source": {
           "file": "controller-service/src/lib.rs",
-          "begin_line": 98,
-          "end_line": 98
+          "begin_line": 108,
+          "end_line": 108
         },
         "impl_trait_def_id": 5,
         "impl_trait_rust_name": "core::ops::function::FnOnce",

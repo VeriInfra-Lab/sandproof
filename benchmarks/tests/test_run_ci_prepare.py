@@ -12,7 +12,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
 from benchmarks import run_ci_prepare as prepare
-from tools.benchmark_tasks import InvalidInput, PIN
+from tools.benchmark_tasks import InvalidInput, PIN, PIN21
 
 
 class CiPreparationRunTests(unittest.TestCase):
@@ -58,7 +58,7 @@ class CiPreparationRunTests(unittest.TestCase):
             patch.object(prepare, 'Task', return_value=task),
             patch.object(prepare, 'GenericEnvironment', self.construct),
             patch.object(prepare, 'publish_ready_fixture', self.publish),
-            patch.object(prepare, 'make_ci_fixture_manifest', self.make_manifest),
+            patch.object(prepare, 'make_prepared_manifest', self.make_manifest),
             patch.dict(os.environ, {'SANDPROOF_TEST_API_KEY': 'synthetic'}),
         )
         for manager in self.patches:
@@ -66,7 +66,9 @@ class CiPreparationRunTests(unittest.TestCase):
             self.addCleanup(manager.stop)
 
     def test_manifest_commit_requires_both_ready_items_and_both_exact_audits(self):
-        def envelope(items, lock):
+        def envelope(items, lock, *, source_kind):
+            self.assertEqual(source_kind, 'prepared-ci')
+            self.assertIs(lock, self.lock)
             self.assertEqual(self.events, [('publish', self.names[0]), ('audit', self.names[0]),
                                            ('publish', self.names[1]), ('audit', self.names[1])])
             self.assertEqual(items, [{'name': name} for name in self.names])
@@ -88,6 +90,28 @@ class CiPreparationRunTests(unittest.TestCase):
         for field in ('benchmark_passed', 'original_oracle', 'original_verifier', 'original_environment'):
             self.assertIs(report[field], False)
         self.assertEqual(report['scope'], 'fixture preparation only')
+
+    def test_prepare_original_uses_locked_oci_and_original_deadline(self):
+        entry = self.lock['tasks'][0]
+        lock = {'dataset': 'terminal-bench@2.1', 'tasks': [entry],
+                'source': dict(repository=PIN21.repository, commit=PIN21.commit)}
+        self.args.task = [entry['name']]
+        self.args.prepare_original_fixtures = self.destination
+        self.args.source_kind = 'oci'
+        self.args.original_oci_digest = 'sha256:' + 'e' * 64
+        self.make_manifest.return_value = {'schema_version': 1, 'fixtures': [{'name': entry['name']}]}
+        rows = asyncio.run(prepare.prepare_selected(self.args, lock))
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['status'], 'prepared')
+        self.assertTrue(rows[0]['original_build_deadline_applied'])
+        inputs = self.construct.call_args.kwargs
+        self.assertEqual(inputs['pinned_oci_digest'], self.args.original_oci_digest)
+        self.assertNotIn('context_archiver', inputs)
+        self.assertEqual(inputs['entry']['requirements']['build_timeout_sec'],
+                         entry['requirements']['build_timeout_sec'])
+        self.make_manifest.assert_called_once_with([{'name': entry['name']}], lock,
+                                                   source_kind='prepared-original')
+        self.envs[1].prepare_template.assert_not_awaited()
 
     def test_default_budget_is_independent_and_publishes_original_entries(self):
         original = copy.deepcopy(self.lock)

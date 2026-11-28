@@ -1,0 +1,82 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "v0_adopted": false,
+  "production_baseline": "a9c9967889c4cf298e4378c7106948018835fc64",
+  "parent_commit": "8dca00fcb8717771de31df307097fd762ce78805",
+  "unchanged_inputs": {
+    "SandboxModel/Lifecycle/Protocol/CreateObservationModel.lean": "416fdad8c0493fe1cd0ca3c8c7d8c6e3f539ecaf0217fa42d61c6e060240afd5",
+    "SandboxModel/Lifecycle/Protocol/CreateObservationValues.lean": "8360e31f54e9befaf8f9a5256dd2ddf3db98b796e2a4136b1168a00bbaca5f5d",
+    "verification/experiments/stage1-protocol/create-observation/conversion-candidate/CreateConversionBindings.lean.in": "7db95cb986ed84595f087def4429afef1edbb31881440a8428c074b58a940308",
+    "verification/experiments/stage1-protocol/create-observation/conversion-candidate/CreateConversionRepresentation.lean.in": "b923772fbd7dff15f6d706f2a1a0eed32d756b8bd20d2fe9d768993d83096bf2",
+    "verification/experiments/stage1-protocol/create-observation/conversion-candidate/review-inputs.json": "4f4c9778fe4a93b9ae40a1d1070c84bd325d45901427794072e35d071280d7d4"
+  },
+  "roots": [
+    "request_validate",
+    "replay_matches",
+    "accepted_validate",
+    "recorded_matches",
+    "ready_matches_create",
+    "ready_matches_resumed",
+    "ready_matches_resumed_renewal",
+    "resume_matches_request",
+    "create_matches_request",
+    "ready_matches_create_renewal",
+    "create_observation_equal",
+    "create_signed_deadline"
+  ],
+  "mutations": {
+    "create-response-key-only": "NegativeCreateKeyOnly",
+    "create-current-retention-omitted": "NegativeCreateRetention",
+    "create-refused-after-success": "NegativeCreateRefused",
+    "create-renewal-negative-wrap": "NegativeCreateWrap"
+  },
+  "result_bindings": {
+    "commit": "3e2a7dc2efc00c8efbe226486ee704605b73bf82",
+    "path": "SandboxModel/Lifecycle/Protocol/RenewalResultBindings.lean",
+    "sha256": "f01d2edd59bc325a6f9ab43aac1f443972e6ae565be4bf9a1eb1039ad88f62b8"
+  },
+  "audits": {
+    "CreateObservationExamples": [
+      "SandboxModel.Stage1Protocol.CreateValues.actual_normal_witnesses",
+      "SandboxModel.Stage1Protocol.CreateValues.actual_omissions_rejected",
+      "SandboxModel.Stage1Protocol.CreateValues.actual_negative_pending_allowed",
+      "SandboxModel.Stage1Protocol.CreateValues.actual_reused_key_allowed",
+      "SandboxModel.Stage1Protocol.CreateValues.actual_changed_non_refused_does_not_validate_original"
+    ],
+    "CreateObservationBindings": [
+      "SandboxModel.Stage1Protocol.CreateBinding.conversion_root_exact",
+      "SandboxModel.Stage1Protocol.CreateBinding.renewed_facts_refines",
+      "SandboxModel.Stage1Protocol.CreateBinding.renewed_facts_body_refines",
+      "SandboxModel.Stage1Protocol.CreateBinding.continued_facts_refines",
+      "SandboxModel.Stage1Protocol.CreateBinding.operation_rebuild",
+      "SandboxModel.Stage1Protocol.CreateBinding.create_facts_body_refines",
+      "SandboxModel.Stage1Protocol.CreateBinding.version_eq_bind",
+      "SandboxModel.Stage1Protocol.CreateBinding.non_refused_matches_refines",
+      "SandboxModel.Stage1Protocol.CreateBinding.refused_matches_refines",
+      "SandboxModel.Stage1Protocol.CreateBinding.matches_refines",
+      "SandboxModel.Stage1Protocol.CreateBinding.matches_complete",
+      "SandboxModel.Stage1Protocol.CreateBinding.accepts_iff",
+      "SandboxModel.Stage1Protocol.CreateBinding.rejects_iff",
+      "SandboxModel.Stage1Protocol.CreateBinding.accepts_preserves_header",
+      "SandboxModel.Stage1Protocol.CreateBinding.accepts_preserves_full_request",
+      "SandboxModel.Stage1Protocol.CreateBinding.refused_has_no_historical_success"
+    ],
+    "NegativeCreateKeyOnly": [
+      "SandboxModel.Stage1Protocol.NegativeCreateKeyOnly.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeCreateKeyOnly.violates_same_full_contract"
+    ],
+    "NegativeCreateRetention": [
+      "SandboxModel.Stage1Protocol.NegativeCreateRetention.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeCreateRetention.violates_same_full_contract"
+    ],
+    "NegativeCreateRefused": [
+      "SandboxModel.Stage1Protocol.NegativeCreateRefused.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeCreateRefused.violates_same_full_contract"
+    ],
+    "NegativeCreateWrap": [
+      "SandboxModel.Stage1Protocol.NegativeCreateWrap.actual_mutant_accepts",
+      "SandboxModel.Stage1Protocol.NegativeCreateWrap.violates_same_full_contract"
+    ]
+  }
+}

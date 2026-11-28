@@ -1,0 +1,23 @@
+
+// Extraction-only forwarding into the original recording entry.
+#[allow(dead_code)]
+pub(super) fn proof_record_actual_parent<'a, 'journal, R, T, N, U, B, D, C>(
+    tx: WorldTransaction<'journal>,
+    namespace: &'a str,
+    codec: D,
+    intent: &AcceptedLifecycleIntent,
+    context: &AuthenticatedCenterContext,
+    crashes: &mut C,
+) -> Result<LifecycleWorkState, JournalError>
+where
+    R: RetirementEncoding,
+    T: TerminalEncoding,
+    N: RenewalEncoding,
+    U: UnloadEncoding,
+    B: crate::capture::GraphicBytes,
+    D: RecordCodec,
+    C: CrashInjector,
+{
+    let transaction = StandardRecord { tx, namespace, codec };
+    record_transaction_using::<R, T, N, U, B, _, C>(transaction, intent, context, crashes)
+}

@@ -1,4 +1,4 @@
-//! Controlled HostPort facts around real center reducers, never KVM evidence.
+//! Controlled `HostPort` facts around real center reducers, never KVM evidence.
 use super::*;
 #[derive(Clone)]
 pub(super) struct Host {

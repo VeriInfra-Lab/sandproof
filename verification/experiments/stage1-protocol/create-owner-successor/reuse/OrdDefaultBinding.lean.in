@@ -1,0 +1,10 @@
+import Aeneas
+open Aeneas Aeneas.Std
+namespace SandproofStage1OwnerMappingRust
+/-- Private finite dictionary adapter for this actual U64 default-method call.
+    It forwards the original partial-order comparison to the unchanged backend
+    default implementation. No tool, generated body or new axiom is introduced. -/
+def core.cmp.Ord.max.default (dictionary : Aeneas.Std.core.cmp.Ord U64)
+    (left right : U64) : Result U64 :=
+  Aeneas.Std.core.cmp.Ord.max.default dictionary.partialOrdInst.lt left right
+end SandproofStage1OwnerMappingRust

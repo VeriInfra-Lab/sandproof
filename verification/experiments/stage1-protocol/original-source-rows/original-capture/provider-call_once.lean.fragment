@@ -1,0 +1,10 @@
+
+def
+  sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnOnceTupleU8Bool.call_once
+  (c : sandproof_protocol.valid_identifier.closure) (i : Std.U8) :
+  Result Bool
+  := do
+  let (b, _) ←
+    sandproof_protocol.valid_identifier.closure.Insts.CoreOpsFunctionFnMutTupleU8Bool.call_mut
+      c i
+  ok b

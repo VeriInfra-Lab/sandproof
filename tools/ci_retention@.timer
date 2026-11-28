@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily retired Sandproof artifact reclamation for %i
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=30m
+Persistent=true
+Unit=ci_retention@%i.service
+
+[Install]
+WantedBy=timers.target

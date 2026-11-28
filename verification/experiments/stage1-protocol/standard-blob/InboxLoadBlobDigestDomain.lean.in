@@ -1,0 +1,158 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadComposition
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+
+namespace SandboxModel.Stage1Protocol.InboxLoadBlobDigestDomain
+noncomputable section
+open InboxLoad
+
+abbrev Digest (E : Type) := E → Slice U8 → Result (Array U8 32#usize × E)
+
+/-- Only replaces the existing effect record's digest field. No new load,
+protocol or SQL model is introduced. -/
+def withDigest {E : Type} (io : InboxLoadEffects E) (digest : Digest E) : InboxLoadEffects E :=
+  { io with digest := digest }
+
+/-- Proposed finite usepoint condition for the actual successful Row.get<Vec<u8>>
+BLOB path. The fixed library source review supports this i32 domain; binding the
+standard receiver, statement/column and dictionary remains a provider obligation.
+This does not assert the 16MiB business quota or coherent repeated reads. -/
+def RowBlobBound {E : Type} (io : InboxLoadEffects E) : Prop :=
+  ∀ state bytes sha after,
+    io.query_bytes_pair state bodyStatement = .ok (.Ok (bytes, sha), after) →
+    bytes.val.length ≤ 2147483647
+
+theorem row_blob_digest_input_bound {E : Type} (io : InboxLoadEffects E)
+    (bounded : RowBlobBound io) (state : E) (bytes sha : alloc.vec.Vec U8) (after : E)
+    (read : io.query_bytes_pair state bodyStatement = .ok (.Ok (bytes, sha), after)) :
+    bytes.val.length < 2^61 := by
+  exact lt_of_le_of_lt (bounded state bytes sha after read) (by decide)
+
+theorem digest_view_normal_congr {E : Type} (io : InboxLoadEffects E) (digest : Digest E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (inbox : Inbox) (bytes sha : alloc.vec.Vec U8) (reserve : U64) (state : E)
+    (normal : bytes.val.length < 2^61)
+    (agrees : ∀ (state : E) (bytes : Slice U8), bytes.val.length < 2^61 →
+      io.digest state bytes = digest state bytes) :
+    digestView io validate budget inbox bytes sha reserve state =
+      digestView (withDigest io digest) validate budget inbox bytes sha reserve state := by
+  have supported : (alloc.vec.Vec.deref bytes).val.length < 2^61 := by
+    simpa only [alloc.vec.Vec.deref, Slice.from_val] using normal
+  unfold digestView
+  rw [agrees state (alloc.vec.Vec.deref bytes) supported]
+  rfl
+
+theorem body_view_normal_congr {E : Type} (io : InboxLoadEffects E) (digest : Digest E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (reserve : U64) (state : E) (bound : Nat) (small : bound < 2^61)
+    (bounded : ∀ bytes sha after,
+      io.query_bytes_pair state bodyStatement = .ok (.Ok (bytes, sha), after) →
+      bytes.val.length ≤ bound)
+    (agrees : ∀ (state : E) (bytes : Slice U8), bytes.val.length < 2^61 →
+      io.digest state bytes = digest state bytes) :
+    bodyView io validate budget reserve state =
+      bodyView (withDigest io digest) validate budget reserve state := by
+  unfold bodyView attempt
+  change Bind.bind (m := Result) (io.query_bytes_pair state bodyStatement) _ =
+    Bind.bind (m := Result) (io.query_bytes_pair state bodyStatement) _
+  apply bind_return_congr
+  intro returned equation
+  rcases returned with ⟨result, afterBytes⟩
+  cases result with
+  | Err error => rfl
+  | Ok pair =>
+    rcases pair with ⟨bytes, sha⟩
+    have normal : bytes.val.length < 2^61 := lt_of_le_of_lt (bounded bytes sha afterBytes equation) small
+    apply pair_continue_congr (io.decode_inbox afterBytes (alloc.vec.Vec.deref bytes))
+    intro decoded afterDecode
+    cases decoded with
+    | Err error => rfl
+    | Ok inbox =>
+      exact digest_view_normal_congr io digest validate budget inbox bytes sha reserve
+        afterDecode normal agrees
+
+theorem limits_view_normal_congr {E : Type} (io : InboxLoadEffects E) (digest : Digest E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64)
+    (capacity : controller.capacity.CapacityConfig) (length reserve : I64) (state : E)
+    (bounded : RowBlobBound io)
+    (agrees : ∀ (state : E) (bytes : Slice U8), bytes.val.length < 2^61 →
+      io.digest state bytes = digest state bytes) :
+    limitsView io validate budget capacity length reserve state =
+      limitsView (withDigest io digest) validate budget capacity length reserve state := by
+  have bodies : bodyView io validate budget = bodyView (withDigest io digest) validate budget := by
+    funext reserve state
+    exact body_view_normal_congr io digest validate budget reserve state 2147483647
+      (by decide) (bounded state) agrees
+  unfold limitsView
+  rw [bodies]
+
+theorem capacity_view_normal_congr {E : Type} (io : InboxLoadEffects E) (digest : Digest E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64) (state : E)
+    (bounded : RowBlobBound io)
+    (agrees : ∀ (state : E) (bytes : Slice U8), bytes.val.length < 2^61 →
+      io.digest state bytes = digest state bytes) :
+    capacityView io validate budget state =
+      capacityView (withDigest io digest) validate budget state := by
+  have limits : limitsView io validate budget = limitsView (withDigest io digest) validate budget := by
+    funext capacity length reserve state
+    exact limits_view_normal_congr io digest validate budget capacity length reserve state bounded agrees
+  unfold capacityView
+  rw [limits]
+  rfl
+
+theorem load_view_normal_congr {E : Type} (io : InboxLoadEffects E) (digest : Digest E)
+    (validate : Inbox → Check) (budget : LifecycleInboxConfig → Result U64) (state : E)
+    (bounded : RowBlobBound io)
+    (agrees : ∀ (state : E) (bytes : Slice U8), bytes.val.length < 2^61 →
+      io.digest state bytes = digest state bytes) :
+    loadView io validate budget state = loadView (withDigest io digest) validate budget state := by
+  have capacity : capacityView io validate budget =
+      capacityView (withDigest io digest) validate budget := by
+    funext state
+    exact capacity_view_normal_congr io digest validate budget state bounded agrees
+  have current : currentView io validate budget = currentView (withDigest io digest) validate budget := by
+    funext state
+    unfold currentView
+    rw [capacity]
+    rfl
+  unfold loadView
+  rw [current]
+  rfl
+
+/-- Reuses the unchanged full actual Rust refinement. RowBlobBound is an explicit
+finite provider condition, not inferred from an arbitrary effect record. -/
+theorem actual_load_normal_digest_congr {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (io : InboxLoadEffects E) (represented : DecodedStringsRepresentable io)
+    (digest : Digest E) (state : E) (bounded : RowBlobBound io)
+    (agrees : ∀ (state : E) (bytes : Slice U8), bytes.val.length < 2^61 →
+      io.digest state bytes = digest state bytes) :
+    load_using saved terminal renewal unload graphic io state =
+      load_using saved terminal renewal unload graphic (withDigest io digest) state := by
+  have represented' : DecodedStringsRepresentable (withDigest io digest) := represented
+  rw [full_load_refines saved terminal renewal unload graphic graphicLaw io represented state,
+    full_load_refines saved terminal renewal unload graphic graphicLaw
+      (withDigest io digest) represented' state]
+  exact load_view_normal_congr io digest (InboxValidation.inboxView saved terminal renewal.encode unload.encode)
+    (fun config => .ok (budgetValue config)) state bounded agrees
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadBlobDigestDomain
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadBlobDigestDomain.digest_view_normal_congr
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadBlobDigestDomain.body_view_normal_congr
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadBlobDigestDomain.limits_view_normal_congr
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadBlobDigestDomain.capacity_view_normal_congr
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadBlobDigestDomain.load_view_normal_congr
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadBlobDigestDomain.actual_load_normal_digest_congr
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadBlobDigestDomain.row_blob_digest_input_bound

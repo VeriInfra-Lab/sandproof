@@ -4,11 +4,11 @@ use std::{
     io::{BufRead, BufReader, Read, Write},
     net::{Ipv4Addr, SocketAddrV4, TcpListener, TcpStream},
     sync::{
-        Arc,
+        Arc, Condvar, Mutex,
         atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 // Controlled proxy changes only delivery of an actual Redis reply. It neither
 // implements nor mocks the authority store. Frames/threads have fixed budgets.
@@ -17,6 +17,7 @@ pub(crate) struct ReplyLoss {
     pub(crate) armed: Arc<AtomicU8>,
     skip_writes: Arc<AtomicUsize>,
     stop: Arc<AtomicBool>,
+    timeout_release: Arc<(Mutex<bool>, Condvar)>,
     worker: Option<thread::JoinHandle<()>>,
 }
 impl ReplyLoss {
@@ -25,10 +26,13 @@ impl ReplyLoss {
         let address = SocketAddrV4::new(Ipv4Addr::LOCALHOST, listener.local_addr().unwrap().port());
         let armed = Arc::new(AtomicU8::new(0));
         let stop = Arc::new(AtomicBool::new(false));
+        let timeout_release = Arc::new((Mutex::new(false), Condvar::new()));
+        let worker_release = Arc::clone(&timeout_release);
         let skip_writes = Arc::new(AtomicUsize::new(0));
         let worker_skip = Arc::clone(&skip_writes);
         let worker_arm = Arc::clone(&armed);
         let worker_stop = Arc::clone(&stop);
+        let owner = thread::current().name().unwrap_or("unnamed").to_owned();
         let worker = thread::spawn(move || {
             for incoming in listener.incoming() {
                 if worker_stop.load(Ordering::SeqCst) {
@@ -74,17 +78,39 @@ impl ReplyLoss {
                             .query(&mut connect(target))
                             .unwrap();
                     }
-                    if upstream.get_mut().write_all(&request).is_err() {
+                    let started = Instant::now();
+                    if let Err(error) = upstream.get_mut().write_all(&request) {
+                        report(&owner, "upstream-write", fault, started, &error);
                         break;
                     }
-                    let Ok(reply) = frame(&mut upstream) else {
-                        break;
+                    let reply = match frame(&mut upstream) {
+                        Ok(reply) => reply,
+                        Err(error) => {
+                            report(&owner, "upstream-reply", fault, started, &error);
+                            break;
+                        }
                     };
+                    if fault == 3 {
+                        // The actual Redis commit has replied. Hold its reply
+                        // until the caller observes its unchanged read timeout.
+                        assert_eq!(reply, b":0\r\n");
+                        let (ready, changed) = &*worker_release;
+                        let (released, _) = changed
+                            .wait_timeout_while(
+                                ready.lock().unwrap(),
+                                Duration::from_secs(5),
+                                |value| !*value,
+                            )
+                            .unwrap();
+                        assert!(*released, "test must release the bounded timeout gate");
+                        break;
+                    }
                     if fault == 1 {
                         assert_eq!(reply, b":0\r\n");
                         break; // commit acknowledged by real engine, not by caller
                     }
-                    if client.get_mut().write_all(&reply).is_err() {
+                    if let Err(error) = client.get_mut().write_all(&reply) {
+                        report(&owner, "client-reply", fault, started, &error);
                         break;
                     }
                 }
@@ -95,8 +121,18 @@ impl ReplyLoss {
             armed,
             skip_writes,
             stop,
+            timeout_release,
             worker: Some(worker),
         }
+    }
+    pub(crate) fn timeout_after(&self, preceding_writes: usize) {
+        *self.timeout_release.0.lock().unwrap() = false;
+        self.skip_writes.store(preceding_writes, Ordering::SeqCst);
+        self.armed.store(3, Ordering::SeqCst);
+    }
+    pub(crate) fn release_timeout(&self) {
+        *self.timeout_release.0.lock().unwrap() = true;
+        self.timeout_release.1.notify_all();
     }
     pub(crate) fn lose_after(&self, preceding_writes: usize) {
         self.skip_writes.store(preceding_writes, Ordering::SeqCst);
@@ -106,10 +142,21 @@ impl ReplyLoss {
 impl Drop for ReplyLoss {
     fn drop(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        self.release_timeout();
         let _ = TcpStream::connect_timeout(&self.address.into(), Duration::from_secs(1));
         self.worker.take().unwrap().join().unwrap();
     }
 }
+// Failure metadata only: no requests, responses, credentials or arbitrary error
+// strings. Keep the original two-second transport limits and fault behavior.
+fn report(owner: &str, phase: &str, fault: u8, started: Instant, error: &std::io::Error) {
+    eprintln!(
+        "redis_fixture_proxy owner={owner} phase={phase} injected_fault={fault} elapsed_us={} kind={:?}",
+        started.elapsed().as_micros(),
+        error.kind(),
+    );
+}
+
 fn next_request<R: BufRead>(reader: &mut R, stop: &AtomicBool) -> std::io::Result<Option<Vec<u8>>> {
     loop {
         if stop.load(Ordering::SeqCst) {

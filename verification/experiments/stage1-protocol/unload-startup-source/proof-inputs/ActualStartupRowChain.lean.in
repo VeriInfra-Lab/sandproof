@@ -1,0 +1,180 @@
+import ActualStartupOutput
+import StartupScanInvariant
+import StartupRowsB4
+import SandproofUnloadStartupJoint.Provider
+
+open Aeneas Aeneas.Std
+namespace UnloadFirstActualStartup
+open SandproofUnloadStartupJoint
+open SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot
+open SandboxModel.Stage1Protocol.OriginalRowsDriver (run)
+open UnloadFirstStartupScan (Prefix second_slot_from_observed_write ordered_rows_keep_scan_slot)
+variable [r : Representations] [ops : Operations]
+
+abbrev RawRow := core.result.Result (Bytes × Bytes) rusqlite.error.Error
+abbrev Capture (E : Type) := startup_records.closure_1 E
+
+def Opened.captured {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : rusqlite.transaction.Transaction}
+    {ns : Str} {world : World} {localValue : Local}
+    (calls : Opened host serde tx ns world localValue) : Capture E :=
+  (world, ns, localValue, calls.commands, calls.plan)
+
+def Opened.writtenHere {E : Type} {host : host_contract.HostEvidence E}
+    {serde : serde_core.de.DeserializeOwned E} {tx : rusqlite.transaction.Transaction}
+    {ns : Str} {world : World} {localValue : Local}
+    (calls : Opened host serde tx ns world localValue) (row : RawRow) (pair : Pair) : Prop :=
+  UnloadFirstStartupScan.WrittenAtSecond (cursorIterator host serde) (acceptor host serde)
+    (calls.cursor, emptySlots, calls.captured) (fun state => state.val[1]?)
+    (fun observed _ => observed = row) pair
+
+/- In the concrete instance the admitted B4 dictionary changes op15 only.
+The generated iterator, closure, initial state, and other operations remain. -/
+omit ops in
+theorem actual_drive_uses_B4 (base : Operations) :
+    letI : Operations := bindStartupRowsB4 base
+    ∀ {E : Type} {host : host_contract.HostEvidence E}
+      {serde : serde_core.de.DeserializeOwned E} {tx : rusqlite.transaction.Transaction}
+      {ns : Str} {world : World} {localValue : Local}
+      (calls : Opened host serde tx ns world localValue),
+      calls.drive = run (cursorIterator host serde) (acceptor host serde)
+        calls.cursor emptySlots calls.captured := by
+  intros
+  rfl
+
+def VerifiedRow {E : Type} (host : host_contract.HostEvidence E)
+    (serde : serde_core.de.DeserializeOwned E) (scope : Capture E)
+    (row : RawRow) (pair : Pair) : Prop :=
+  let (world, ns, localValue, commands, plan) := scope
+  SecondRowFact host serde world ns localValue (alloc.vec.Vec.deref commands) plan row pair
+
+/- Read the generated callback, including the original Slice borrow and the
+Array writeback. No arbitrary callback or alternate scope is used. -/
+theorem actual_callback_normal {E : Type}
+    (host : host_contract.HostEvidence E) (serde : serde_core.de.DeserializeOwned E)
+    (scope : Capture E) (row : RawRow) (before after : Slots) (scope' : Capture E)
+    (called : (acceptor host serde).call_mut scope (row, before) = .ok ((.Ok (), after), scope')) :
+    scope' = scope ∧
+      (after.val[1]? = before.val[1]? ∨
+        ∃ pair, before.val[1]? = some none ∧ after.val[1]? = some (some pair) ∧
+          VerifiedRow host serde scope row pair) := by
+  rcases scope with ⟨world, ns, localValue, commands, plan⟩
+  change startup_records.closure_1.Insts.CoreOpsFunctionFnMutPairResultPairVecU8VecU8ErrorArrayOptionPairWorkActionEffectIdVecU85PairResultTupleJournalErrorArrayOptionPairWorkActionEffectIdVecU85.call_mut
+    host serde (world, ns, localValue, commands, plan) (row, before) = .ok ((.Ok (), after), scope') at called
+  unfold startup_records.closure_1.Insts.CoreOpsFunctionFnMutPairResultPairVecU8VecU8ErrorArrayOptionPairWorkActionEffectIdVecU85PairResultTupleJournalErrorArrayOptionPairWorkActionEffectIdVecU85.call_mut at called
+  simp [Array.to_slice_mut, lift, startup_records.closure_1] at called
+  obtain ⟨⟨reply, slice⟩, rowCall, returned⟩ := normalBind _ _ _ called
+  have whole := Result.ok_injective returned
+  have returnedPair := congrArg Prod.fst whole
+  have actualReply : reply = .Ok () := congrArg Prod.fst returnedPair
+  have restored : after = Array.from_slice before slice := (congrArg Prod.snd returnedPair).symm
+  refine ⟨(congrArg Prod.snd whole).symm, ?_⟩
+  have observed := actual_row_second_slot host serde world ns localValue
+    (alloc.vec.Vec.deref commands) plan row (Array.to_slice before) slice
+      (by simpa only [actualReply] using rowCall)
+  by_cases len : slice.val.length = (5#usize).val
+  · have output : after.val = slice.val := by simp [restored, Array.from_slice, len]
+    simpa [output, Array.to_slice, VerifiedRow] using observed
+  · have output : after = before := by rw [restored, Array.from_slice, dif_neg len]
+    exact Or.inl (congrArg (fun state : Slots => state.val[1]?) output)
+
+omit r ops in
+private theorem capture_of_observed_prefix {I F Item State Error : Type}
+    (iterator : core.iter.traits.iterator.Iterator I Item)
+    (callback : core.ops.function.FnMut F (Item × State)
+      (core.result.Result Unit Error × State))
+    (frame : ∀ f row before after f',
+      callback.call_mut f (row, before) = .ok ((.Ok (), after), f') → f' = f)
+    {initial reached : I × State × F}
+    (history : Prefix iterator callback initial reached) :
+    reached.2.2 = initial.2.2 := by
+  induction history with
+  | start => rfl
+  | next _ _ called ih =>
+    exact (frame _ _ _ _ _ called).trans ih
+
+/- The row premise is discharged by the actual fixed selector/handler
+inversion and the generated Array-to-Slice loan. It refers to a single call,
+and cannot certify a fabricated final slot or an unexecuted row. -/
+theorem actual_startup_second_is_an_observed_row {E : Type}
+    (host : host_contract.HostEvidence E) (serde : serde_core.de.DeserializeOwned E)
+    (tx : rusqlite.transaction.Transaction) (ns : Str) (world : World) (localValue : Local)
+    (calls : Opened host serde tx ns world localValue) (output : Output)
+    (verified : Capture E → RawRow → Pair → Prop)
+    (driver : calls.drive = run (cursorIterator host serde) (acceptor host serde)
+      calls.cursor emptySlots calls.captured)
+    (frame : ∀ scope row before after scope',
+      (acceptor host serde).call_mut scope (row, before) = .ok ((.Ok (), after), scope') →
+      scope' = scope)
+    (rowRule : ∀ scope row before after scope',
+      (acceptor host serde).call_mut scope (row, before) = .ok ((.Ok (), after), scope') →
+      after.val[1]? = before.val[1]? ∨
+        ∃ pair, before.val[1]? = some none ∧ after.val[1]? = some (some pair) ∧
+          verified scope row pair)
+    (returned : startup_records host serde tx ns world localValue = .ok (.Ok output)) :
+    ∃ slots rows row pair, OrderedOutput slots output rows ∧
+      rows[1]? = some pair ∧ calls.writtenHere row pair ∧ verified calls.captured row pair := by
+  obtain ⟨slots, rows, finished, ordered⟩ :=
+    actual_startup_has_ordered_pairs host serde tx ns world localValue calls output returned
+  have bound : 1 < rows.length := by rw [ordered.2.2.2]; decide
+  let pair := rows[1]'bound
+  have packed : rows[1]? = some pair := List.getElem?_eq_getElem bound
+  have atEnd : slots.val[1]? = some (some pair) := by
+    simp [ordered.1, List.getElem?_map, packed]
+  let authentic (row : RawRow) (p : Pair) := ∀ scope (before after : Slots) scope',
+    (acceptor host serde).call_mut scope (row, before) = .ok ((.Ok (), after), scope') →
+    before.val[1]? = some none → after.val[1]? = some (some p) → verified scope row p
+  have authenticWrite : ∀ row p, authentic row p := by
+    intro row p scope before after scope' called empty inserted
+    rcases rowRule scope row before after scope' called with same |
+      ⟨stored, _, hit, evidence⟩
+    · rw [empty, inserted] at same
+      cases same
+    · have samePair : stored = p := by
+        simpa only [Option.some.injEq] using hit.symm.trans inserted
+      subst stored
+      exact evidence
+  have step : ∀ scope (row : RawRow) (before after : Slots) scope',
+      (acceptor host serde).call_mut scope (row, before) = .ok ((.Ok (), after), scope') →
+      after.val[1]? = before.val[1]? ∨
+        ∃ p, before.val[1]? = some none ∧ after.val[1]? = some (some p) ∧ authentic row p := by
+    intro scope row before after scope' called
+    rcases rowRule scope row before after scope' called with same | ⟨p, empty, hit, _⟩
+    · exact Or.inl same
+    · exact Or.inr ⟨p, empty, hit, authenticWrite row p⟩
+  rw [driver] at finished
+  obtain ⟨position, before, scope, nextPosition, row, after, scope', history,
+    next, called, empty, hit, witness⟩ :=
+    second_slot_from_observed_write (cursorIterator host serde) (acceptor host serde)
+      calls.cursor emptySlots slots calls.captured (fun state => state.val[1]?)
+      authentic step (by simp [emptySlots]) finished pair atEnd
+  have sameScope : scope = calls.captured :=
+    capture_of_observed_prefix (cursorIterator host serde) (acceptor host serde) frame history
+  exact ⟨slots, rows, row, pair, ordered, packed,
+    ⟨position, before, scope, nextPosition, row, after, scope', history, next, called, empty, hit, rfl⟩,
+    sameScope ▸ witness scope before after scope' called empty hit⟩
+
+theorem actual_startup_second_checked {E : Type}
+    (host : host_contract.HostEvidence E) (serde : serde_core.de.DeserializeOwned E)
+    (tx : rusqlite.transaction.Transaction) (ns : Str) (world : World) (localValue : Local)
+    (calls : Opened host serde tx ns world localValue) (output : Output)
+    (driver : calls.drive = run (cursorIterator host serde) (acceptor host serde)
+      calls.cursor emptySlots calls.captured)
+    (returned : startup_records host serde tx ns world localValue = .ok (.Ok output)) :
+    ∃ slots rows row pair, OrderedOutput slots output rows ∧
+      rows[1]? = some pair ∧ calls.writtenHere row pair ∧
+      VerifiedRow host serde calls.captured row pair :=
+  actual_startup_second_is_an_observed_row host serde tx ns world localValue
+    calls output (VerifiedRow host serde) driver
+    (fun scope row before after scope' called =>
+      (actual_callback_normal host serde scope row before after scope' called).1)
+    (fun scope row before after scope' called =>
+      (actual_callback_normal host serde scope row before after scope' called).2)
+    returned
+
+end UnloadFirstActualStartup
+
+#audit_controller_proof UnloadFirstActualStartup.actual_drive_uses_B4
+#audit_controller_proof UnloadFirstActualStartup.actual_callback_normal
+#audit_controller_proof UnloadFirstActualStartup.actual_startup_second_is_an_observed_row
+#audit_controller_proof UnloadFirstActualStartup.actual_startup_second_checked

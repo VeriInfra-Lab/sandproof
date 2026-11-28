@@ -1,0 +1,51 @@
+import SandboxModel.Lifecycle.Protocol.StandardBlobValues
+import SandboxModel.Lifecycle.Protocol.StandardBlobLibrary
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+namespace SandboxModel.Stage1Protocol.StandardBlob
+noncomputable section
+
+abbrev observedActual := controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
+
+/-- Exact normal prefix observations, without assuming the actual callback is
+correct. The whole input Context is kept abstract rather than unfolded. -/
+theorem returned_row_wrapper (self : Context) (statement : Str) (row : rusqlite.row.Row)
+    (prepared : self.connection.canonical.prepare statement = .ok (.Ok 0))
+    (read : self.connection.expectedRow statement (issuedReadStatement self.connection statement 0) = .ok (.Ok row)) :
+    observedActual self statement = (do
+      let reply ← controller.lifecycle_inbox.codec.read_blob_pair row 0#usize 1#usize
+      match reply with
+      | .Err error => .ok (.Err (.Sqlite error), self)
+      | .Ok pair => .ok (.Ok pair, self)) := by
+  have binding : Tuple.Insts.RusqliteParamsParams.__bind_in ()
+      (issuedReadStatement self.connection statement 0) =
+      .ok (.Ok (), issuedReadStatement self.connection statement 0) := by
+    simpa [issuedReadStatement] using
+      empty_bind_refines (issuedReadStatement self.connection statement 0) ()
+  simp only [observedActual,
+    controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair,
+    rusqlite.Connection.query_row, prepared, bind_tc_ok]
+  simp [binding, read,
+    controller.lifecycle_inbox.codec.InboxLoadEffectsStandardConfigRead.query_bytes_pair.closure.Insts.CoreOpsFunctionFnOnceTupleSharedRowResultPairVecU8VecU8Error.call_once]
+  congr 1
+  funext reply
+  cases reply <;>
+    simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+      JournalError.Insts.CoreConvertFromError.from]
+
+/-- Same actual wrapper in correct and wrong environments; no correct Core
+or callback correctness theorem is imported. -/
+theorem observed_refines (row : rusqlite.row.Row) (statement : Str) :
+    observedActual (Values.observing row) statement = (do
+      let reply ← controller.lifecycle_inbox.codec.read_blob_pair row 0#usize 1#usize
+      match reply with
+      | .Err error => .ok (.Err (.Sqlite error), Values.observing row)
+      | .Ok pair => .ok (.Ok pair, Values.observing row)) :=
+  returned_row_wrapper (Values.observing row) statement row rfl rfl
+
+end
+end SandboxModel.Stage1Protocol.StandardBlob
+
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.returned_row_wrapper
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardBlob.observed_refines

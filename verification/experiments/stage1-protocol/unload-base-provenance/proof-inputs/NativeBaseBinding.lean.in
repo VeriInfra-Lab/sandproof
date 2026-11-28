@@ -1,0 +1,150 @@
+import NativeSnapshotFields
+import BaseSnapshotLink
+import ActualStartupParentRead
+
+open Aeneas Aeneas.Std
+
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+variable [Representations] [SandproofUnloadStartupJoint.Representations]
+
+abbrev Record := SandproofUnloadStartupJoint.sandbox_controller_core.model.SandboxRecord
+abbrev BaseReps (ready : Type) := BaseSnapshotLink.baseRepresentations Record ready
+abbrev BaseOps (ready : Type) := @SandproofUnloadBaseSnapshot.Operations (BaseReps ready)
+abbrev BaseLocal (ready : Type) := BaseSnapshotLink.BLocalBinding Record ready
+abbrev BaseNative (ready : Type) := BaseSnapshotLink.BNative Record ready
+
+/-- Reuse the same carriers for the entire record and the three native inputs
+    that identify the observed work. No second World or local is selected. -/
+@[reducible] def nativeReps (base : SandproofUnloadNativeSnapshot.Representations) :
+    SandproofUnloadNativeSnapshot.Representations :=
+  { base with
+    ty2 := rusqlite.Connection
+    ty3 := rusqlite.transaction.Transaction
+    ty5 := SandproofUnloadStartupJoint.sandbox_controller_core.ids.TenantId
+    ty6 := SandproofUnloadStartupJoint.sandbox_controller_core.ids.VmId
+    ty7 := SandproofUnloadStartupJoint.sandbox_controller_core.ids.SandboxId
+    ty8 := SandproofUnloadStartupJoint.sandbox_controller_core.ids.OperationId
+    ty9 := SandproofUnloadStartupJoint.sandbox_controller_core.ids.FsId
+    ty10 := SandproofUnloadStartupJoint.sandbox_controller_core.ids.NetSlotId
+    ty11 := SandproofUnloadStartupJoint.sandbox_controller_core.model.WorkspaceApiAccess
+    ty12 := SandproofUnloadStartupJoint.sandbox_controller_core.model.FilePolicyRef
+    ty13 := SandproofUnloadStartupJoint.sandbox_controller_core.model.RestoreSource
+    ty14 := SandproofUnloadStartupJoint.sandbox_controller_core.model.NetworkPolicy
+    ty15 := SandproofUnloadStartupJoint.sandbox_controller_core.model.FailureKind
+    ty16 := SandproofUnloadStartupJoint.sandbox_controller_core.model.Authority
+    ty17 := SandproofUnloadStartupJoint.sandbox_controller_core.model.LogicalEffectId
+    ty18 := UnloadFirstActualStartup.World }
+
+abbrev NativeOps (base : SandproofUnloadNativeSnapshot.Representations) :=
+  @SandproofUnloadNativeSnapshot.Calls (nativeReps base)
+abbrev NRecord (base : SandproofUnloadNativeSnapshot.Representations) :=
+  @SandproofUnloadNativeSnapshot.sandbox_controller_core.model.SandboxRecord (nativeReps base)
+abbrev NNative (base : SandproofUnloadNativeSnapshot.Representations) :=
+  @SandproofUnloadNativeSnapshot.controller.lifecycle_inbox.readiness.NativeCreateSnapshot (nativeReps base)
+
+structure NativeLeafViews (base : SandproofUnloadNativeSnapshot.Representations) (ready : Type) where
+  phaseToNative : SandproofUnloadStartupJoint.sandbox_controller_core.model.Phase →
+    SandproofUnloadNativeSnapshot.sandbox_controller_core.model.Phase
+  phaseToBase : SandproofUnloadNativeSnapshot.sandbox_controller_core.model.Phase →
+    sandbox_controller_core.model.Phase
+  vmToBase : SandproofUnloadStartupJoint.sandbox_controller_core.ids.VmId = sandbox_controller_core.ids.VmId
+  operationToBase :
+    @SandproofUnloadNativeSnapshot.sandbox_controller_core.model.Operation (nativeReps base) →
+      sandbox_controller_core.model.Operation
+  lifetimeToBase : SandproofUnloadNativeSnapshot.controller.admission.Lifetime → controller.admission.Lifetime
+  errorToBase : @SandproofUnloadNativeSnapshot.JournalError (nativeReps base) →
+    BaseSnapshotLink.BError Record ready
+
+def recordToNative {base : SandproofUnloadNativeSnapshot.Representations} {ready : Type}
+    (view : NativeLeafViews base ready) (record : Record) : NRecord base :=
+  letI : SandproofUnloadNativeSnapshot.Representations := nativeReps base
+  { owner := record.owner
+    phase := view.phaseToNative record.phase
+    terminal := record.terminal
+    epoch := record.epoch
+    generation := record.generation
+    current_vm := record.current_vm
+    workspace := record.workspace
+    workspace_access := record.workspace_access
+    file_policy := record.file_policy
+    durable_snapshot := record.durable_snapshot
+    restore_from := record.restore_from
+    net_slot := record.net_slot
+    policy := record.policy
+    desired := record.desired
+    effective := record.effective
+    current_operation := record.current_operation.map fun op =>
+      { id := op.id
+        epoch := op.epoch
+        kind := match op.kind with
+          | .Create => .Create
+          | .Pause => .Pause
+          | .Resume => .Resume
+          | .Kill => .Kill
+        status := match op.status with
+          | .Pending => .Pending
+          | .OutcomeUnknown => .OutcomeUnknown
+          | .Compensating reason => .Compensating reason
+          | .Succeeded => .Succeeded
+          | .Failed reason => .Failed reason } }
+
+def baseNativeView {base : SandproofUnloadNativeSnapshot.Representations} {ready : Type}
+    (carriers : StartupCarriers) (view : NativeLeafViews base ready)
+    (native : NNative base) : BaseNative ready :=
+  letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready
+  letI : SandproofUnloadNativeSnapshot.Representations := nativeReps base
+  { owner := cast carriers.localOwner.symm native.owner
+    phase := view.phaseToBase native.phase
+    terminal := native.terminal
+    epoch := native.epoch
+    generation := native.generation
+    current_vm := native.current_vm.map (cast view.vmToBase)
+    current_operation := native.current_operation.map view.operationToBase
+    lifetime := native.lifetime.map view.lifetimeToBase
+    uncertain_actions := alloc.vec.Vec.from
+      (native.uncertain_actions.val.map fun effect =>
+        cast carriers.effect { logical := effect.logical, attempt := effect.attempt })
+      (by simpa only [List.length_map] using native.uncertain_actions.property) }
+
+def baseLocalFromParent (ready : Type) (binding : Local) : BaseLocal ready :=
+  letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready
+  { sandbox := binding.sandbox, owner := binding.owner, operation := binding.operation }
+
+@[simp] theorem base_local_roundtrip (ready : Type) (binding : Local) :
+    BaseSnapshotLink.fromBaseLocal Record ready (baseLocalFromParent ready binding) = binding := by
+  cases binding
+  rfl
+
+def actualNativeRead {base : SandproofUnloadNativeSnapshot.Representations} {ready : Type}
+    (carriers : StartupCarriers) (view : NativeLeafViews base ready) (ops : NativeOps base)
+    (tx : rusqlite.transaction.Transaction) (ns : Str) (world : sandbox_controller_core.model.World)
+    (binding : BaseLocal ready) (record : Record) :
+    Result (core.result.Result (BaseNative ready) (BaseSnapshotLink.BError Record ready)) :=
+  letI : SandproofUnloadNativeSnapshot.Representations := nativeReps base
+  letI : SandproofUnloadNativeSnapshot.Calls := ops
+  let localValue := carriers.localView (BaseSnapshotLink.fromBaseLocal Record ready binding)
+  do
+    let result ← SandproofUnloadNativeSnapshot.controller.lifecycle_inbox.readiness.snapshot.native_snapshot
+      tx ns (cast carriers.world world)
+      { sandbox := localValue.sandbox, owner := localValue.owner, operation := localValue.operation }
+      (recordToNative view record)
+    match result with
+    | .Ok native => .ok (.Ok (baseNativeView carriers view native))
+    | .Err error => .ok (.Err (view.errorToBase error))
+
+variable [SandproofUnloadStartupJoint.Operations]
+
+@[reducible] def installNativeAndWorld {base : SandproofUnloadNativeSnapshot.Representations} {ready : Type}
+    (carriers : StartupCarriers) (view : NativeLeafViews base ready) (native : NativeOps base)
+    (ops : BaseOps ready) : BaseOps ready :=
+  letI : SandproofUnloadBaseSnapshot.Representations := BaseReps ready
+  { ops with
+    sandboxRecord := fun world sandbox =>
+      SandproofUnloadStartupJoint.sandbox_controller_core.model.World.sandbox_record
+        (cast carriers.world world) (cast carriers.localSandbox sandbox)
+    nativeSnapshot := actualNativeRead carriers view native }
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.base_local_roundtrip

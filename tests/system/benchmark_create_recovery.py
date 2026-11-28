@@ -19,6 +19,7 @@ import httpx
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import sqlite3
 import subprocess
@@ -61,7 +62,7 @@ def exercise(args):
         assert not any(p.is_dir() for p in parent.iterdir())
     root = Path(tempfile.mkdtemp(prefix='cr-', dir=args.scratch_parent))
     print('evidence=' + str(root), flush=True)
-    for name in ('db', 'state', 'jails', 'trial'):
+    for name in ('db', 'state', 'p', 'trial'):
         (root / name).mkdir(mode=0o700)
     namespace, build_id, key = secrets.token_hex(8), secrets.token_hex(16), secrets.token_hex(32)
     bound = descriptor('tpl-' + build_id, args.kernel, args.rootfs, 1, 256)
@@ -71,7 +72,7 @@ def exercise(args):
             'startup': {'workdir': '/', 'user': 'root', 'env_vars': {}}}
     url = f'http://127.0.0.1:{free_loopback_port()}'
     settings = {'namespace': namespace, 'database': str(root / 'db/controller.db'),
-        'node_state_dir': str(root / 'state'), 'chroot_base': str(root / 'jails'),
+        'node_state_dir': str(root / 'state'), 'chroot_base': str(root / 'p/v'),
         'jailer': str(args.jailer), 'firecracker': str(args.firecracker),
         'kernel': str(args.kernel), 'rootfs': str(args.rootfs), 'uid_base': args.uid_base,
         'vcpu_count': 1, 'memory_mib': 256,
@@ -85,14 +86,14 @@ def exercise(args):
         'templates': {'templates': [bound], 'aliases': {'base': bound['template_id']}, 'compute_limits': {
             'max_vcpus_global': 1, 'max_vcpus_per_tenant': 1,
             'max_memory_bytes_global': 512 * 1024**2, 'max_memory_bytes_per_tenant': 512 * 1024**2}}}
-    settings = complete_runtime(settings, slots=1)
+    settings = complete_runtime(settings, slots=1, inbox_sessions=2+settings["max_active_global"])
     service_record = args.service_cgroup_record
     registry = dict(root=str(root/'unused-registry'), max_templates_global=1,
         max_templates_per_tenant=1, max_artifact_bytes_global=args.rootfs.stat().st_size*2,
         max_artifact_bytes_per_tenant=args.rootfs.stat().st_size*2,
         max_template_disk_bytes=args.rootfs.stat().st_size, validation_timeout_secs=120)
     services = RuntimeServices.prepare(args, root, [settings], [settings['templates']], key,
-        url.removeprefix('http://'), service_record, job_count=2, registry_config=registry)
+        url.removeprefix('http://'), service_record, retained_sessions=2 + settings['max_active_global'], registry_config=registry)
     report = {'commit': commit, 'center_sha256': sha256_file(args.center),
               'host_sha256': sha256_file(args.host), 'namespace': namespace,
               'uid_base': args.uid_base, 'template': view, 'scope': 'prebuilt KVM create receipt recovery',
@@ -141,7 +142,7 @@ def exercise(args):
             assert actual['rootfs']['sha256'] == view['rootfsSha256']
             assert actual['resources'] == dict(cpu_count=view['cpuCount'],memory_mib=view['memoryMib'],
                 disk_bytes=view['diskBytes'],host_memory_bytes=view['hostMemoryBytes'])
-            claim['network_inode'] = json.loads((root/'jails/.claims'/name/'network.json').read_text())['namespace_inode']
+            claim['network_inode'] = json.loads((original_chroot(root) / '.claims'/name/'network.json').read_text())['namespace_inode']
         finally:
             services.processes.start('host-0')
         services.wait_ready(for_admission=False)

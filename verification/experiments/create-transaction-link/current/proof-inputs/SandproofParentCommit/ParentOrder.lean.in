@@ -1,0 +1,27 @@
+import SandproofParentCommit.ActualCalls
+import SandproofParentCommit.CommitOrder
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandproofParentCommitRust.ParentOrder
+
+open ActualCalls
+
+-- Instantiates the reused order theorem with the REAL concrete dictionary,
+-- including all four actual wrapper definitions and actual finish_commit.
+theorem actual_complete_first_error_order (owner : Owner) :
+    controller.transaction.WorldTransaction.commit owner =
+      CommitOrder.orderView actualEffects owner := by
+  rw [actual_commit_uses_concrete_dictionary]
+  exact CommitOrder.original_first_error_order actualEffects owner
+
+theorem actual_root_complete_first_error_order (owner : Owner) :
+    controller.transaction.proof_parent_commit owner =
+      CommitOrder.orderView actualEffects owner := by
+  rw [actual_anchor_uses_original_commit]
+  exact actual_complete_first_error_order owner
+
+end SandproofParentCommitRust.ParentOrder
+
+#audit_controller_proof SandproofParentCommitRust.ParentOrder.actual_complete_first_error_order
+#audit_controller_proof SandproofParentCommitRust.ParentOrder.actual_root_complete_first_error_order

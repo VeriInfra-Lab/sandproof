@@ -1,0 +1,93 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadHeader
+import SandboxModel.Lifecycle.Protocol.InboxLoadWitnesses
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.InboxLoad.Host24
+noncomputable section
+
+theorem declared_current_version : LIFECYCLE_STORE_FORMAT_VERSION = 24#i64 := by
+  simp only [LIFECYCLE_STORE_FORMAT_VERSION]
+
+theorem previous_version_differs : 23#i64 ≠ LIFECYCLE_STORE_FORMAT_VERSION := by
+  rw [declared_current_version]
+  decide
+
+variable {R T N U B E : Type}
+variable (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+variable (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+variable (graphic : GraphicBytes B) (io : InboxLoadEffects E)
+
+theorem previous_with_source_rejected (state afterExists afterVersion after : E) (hasInbox : Bool)
+    (first : io.query_bool state existsStatement = .ok (.Ok hasInbox, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok 23#i64, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok true, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err .CorruptStore, after) :=
+  legacy_with_source_rejected saved terminal renewal unload graphic io state afterExists afterVersion after
+    hasInbox 23#i64 previous_version_differs first second third
+
+theorem previous_inbox_without_source_rejected (state afterExists afterVersion after : E)
+    (first : io.query_bool state existsStatement = .ok (.Ok true, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok 23#i64, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok false, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err .CorruptStore, after) :=
+  legacy_present_inbox_rejected saved terminal renewal unload graphic io state afterExists afterVersion after
+    23#i64 previous_version_differs first second third
+
+-- The real helper still returns absence for a legacy version with both tables
+-- absent. This is not permission to open an incompatible host store.
+theorem previous_absent_tables_return_none (state afterExists afterVersion after : E)
+    (first : io.query_bool state existsStatement = .ok (.Ok false, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok 23#i64, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok false, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Ok none, after) :=
+  legacy_absence_success saved terminal renewal unload graphic io state afterExists afterVersion after
+    23#i64 previous_version_differs first second third
+
+theorem current_without_source_rejected (state afterExists afterVersion after : E) (hasInbox : Bool)
+    (first : io.query_bool state existsStatement = .ok (.Ok hasInbox, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok 24#i64, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok false, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err .CorruptStore, after) := by
+  apply current_source_missing saved terminal renewal unload graphic io state afterExists afterVersion after hasInbox first
+  · simpa only [declared_current_version] using second
+  · exact third
+
+theorem current_missing_inbox_rejected (state afterExists afterVersion after : E)
+    (first : io.query_bool state existsStatement = .ok (.Ok false, afterExists))
+    (second : io.checkpointconfigReadConfigEffectsInst.query_i64 afterExists versionStatement =
+      .ok (.Ok 24#i64, afterVersion))
+    (third : io.query_bool afterVersion sourceStatement = .ok (.Ok true, after)) :
+    load_using saved terminal renewal unload graphic io state = .ok (.Err .CorruptStore, after) := by
+  apply InboxLoad.current_missing_inbox_rejected saved terminal renewal unload graphic io
+    state afterExists afterVersion after first
+  · simpa only [declared_current_version] using second
+  · exact third
+
+-- Complete actual load control with explicit synthetic codec/SQL providers.
+theorem current_normal_loaded (trace : Values.Trace) :
+    load_using Values.saved Values.terminal (N := Unit) ⟨Values.renewal⟩ (U := Unit) ⟨Values.unload⟩
+      ComposedConfig.standardGraphic Values.normalEffects trace =
+      .ok (.Ok (some InboxValidation.Values.normal), trace ++ Values.completeTrace InboxValidation.Values.normal) :=
+  Values.normal_loaded trace
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad.Host24
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Host24.declared_current_version
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Host24.previous_version_differs
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Host24.previous_with_source_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Host24.previous_inbox_without_source_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Host24.previous_absent_tables_return_none
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Host24.current_without_source_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Host24.current_missing_inbox_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.Host24.current_normal_loaded

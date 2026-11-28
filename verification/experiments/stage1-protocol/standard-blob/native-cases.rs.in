@@ -1,0 +1,117 @@
+// Candidate shared assertions for ning. These are real rusqlite Row/standard
+// receiver API witnesses, not persisted Inbox/JSON, authentication or commit proofs.
+use super::{InboxLoadEffects, JournalError, read_blob_pair};
+use crate::controller::checkpoint::StandardConfigRead;
+use rusqlite::{Connection, Error, types::Type};
+
+fn standard(sql: &str) -> Result<(Vec<u8>, Vec<u8>), JournalError> {
+    let connection = Connection::open_in_memory()?;
+    let mut receiver = StandardConfigRead {
+        connection: &connection,
+    };
+    receiver.query_bytes_pair(sql)
+}
+
+fn table_standard(
+    left: &rusqlite::types::Value,
+    right: &rusqlite::types::Value,
+) -> Result<(Vec<u8>, Vec<u8>), JournalError> {
+    let connection = Connection::open_in_memory()?;
+    connection.execute_batch("CREATE TABLE proof_rows(a BLOB, b BLOB)")?;
+    connection.execute(
+        "INSERT INTO proof_rows VALUES (?1, ?2)",
+        rusqlite::params![left, right],
+    )?;
+    let mut receiver = StandardConfigRead {
+        connection: &connection,
+    };
+    receiver.query_bytes_pair("SELECT a, b FROM proof_rows")
+}
+
+#[test]
+fn common_normal() {
+    assert_eq!(
+        table_standard(
+            &rusqlite::types::Value::Blob(vec![17; 32]),
+            &rusqlite::types::Value::Blob(vec![17; 32])
+        )
+        .unwrap(),
+        (vec![17; 32], vec![17; 32])
+    );
+}
+
+#[test]
+fn distinct_complete_columns() {
+    assert_eq!(
+        table_standard(
+            &rusqlite::types::Value::Blob(vec![17; 32]),
+            &rusqlite::types::Value::Blob(vec![29; 32])
+        )
+        .unwrap(),
+        (vec![17; 32], vec![29; 32])
+    );
+}
+
+#[test]
+fn original_first_conversion_error() {
+    match table_standard(&rusqlite::types::Value::Null, &rusqlite::types::Value::Null).unwrap_err()
+    {
+        JournalError::Sqlite(Error::InvalidColumnType(index, name, kind)) => {
+            assert_eq!((index, name, kind), (0, "a".to_owned(), Type::Null));
+        }
+        error => panic!("unexpected original first-column error: {error:?}"),
+    }
+}
+
+#[test]
+fn original_second_conversion_error() {
+    match table_standard(
+        &rusqlite::types::Value::Blob(vec![17; 32]),
+        &rusqlite::types::Value::Null,
+    )
+    .unwrap_err()
+    {
+        JournalError::Sqlite(Error::InvalidColumnType(index, name, kind)) => {
+            assert_eq!((index, name, kind), (1, "b".to_owned(), Type::Null));
+        }
+        error => panic!("unexpected original second-column error: {error:?}"),
+    }
+}
+
+#[test]
+fn no_row_preserved() {
+    assert!(matches!(
+        standard("SELECT zeroblob(32), zeroblob(32) WHERE 0"),
+        Err(JournalError::Sqlite(Error::QueryReturnedNoRows))
+    ));
+}
+
+#[test]
+fn first_row_preserved() {
+    assert_eq!(standard("SELECT X'1111111111111111111111111111111111111111111111111111111111111111', X'1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d' UNION ALL SELECT zeroblob(32), zeroblob(32)").unwrap(), (vec![17; 32], vec![29; 32]));
+}
+
+#[test]
+fn helper_first_index_error() {
+    let connection = Connection::open_in_memory().unwrap();
+    let result = connection.query_row("SELECT NULL, NULL", [], |row| read_blob_pair(row, 2, 1));
+    assert!(matches!(result, Err(Error::InvalidColumnIndex(2))));
+}
+
+#[test]
+fn empty_blobs_preserved() {
+    assert_eq!(
+        standard("SELECT X'', X''").unwrap(),
+        (Vec::<u8>::new(), Vec::<u8>::new())
+    );
+}
+
+#[test]
+fn nonzero_parameters_reject_before_row() {
+    match standard("SELECT ?1, ?2").unwrap_err() {
+        JournalError::Sqlite(Error::InvalidParameterCount(requested, actual)) => {
+            assert_eq!((requested, actual), (0, 2));
+        }
+        error => panic!("unexpected original parameter-count error: {error:?}"),
+    }
+}

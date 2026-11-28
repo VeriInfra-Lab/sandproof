@@ -1,0 +1,49 @@
+import ParentCompleteDraft
+import Collections
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+open SandproofUnloadFirstObservation
+open SandboxModel.Stage1Protocol.DigestByteBridge (referenceOutput)
+variable [Representations] [ParentCalls]
+
+abbrev Sha256Array := Aeneas.Std.Array U8 32#usize
+
+def transportReceiptDigests (digestRepresentation : Sha256Array = Binding)
+    (result : alloc.vec.Vec Sha256Array) : alloc.vec.Vec Binding :=
+  alloc.vec.Vec.from (result.val.map (cast digestRepresentation))
+    (by simpa only [List.length_map] using result.property)
+
+/-- The actual call shares the complete receipt slice with the verified
+collector. Only the representation of its returned digests is transported. -/
+def LinkedReceiptDigests (digestRepresentation : Sha256Array = Binding) (receipts : Receipts) : Prop :=
+  ParentCalls.originalReceiptDigests (alloc.vec.Vec.deref receipts) =
+    (do
+      let result ← SandproofUnloadFirstCollections.controller.lifecycle_inbox.source_work.snapshot.original_receipt_digests
+        (alloc.vec.Vec.deref receipts)
+      .ok (transportReceiptDigests digestRepresentation result))
+
+theorem actual_receipt_digests_are_complete
+    (digestRepresentation : Sha256Array = Binding) (receipts : Receipts)
+    (digests : alloc.vec.Vec Binding)
+    (linked : LinkedReceiptDigests digestRepresentation receipts)
+    (normal : ∀ raw ∈ receipts.val, (alloc.vec.Vec.deref raw).val.length < 2^61)
+    (returned : ParentCalls.originalReceiptDigests (alloc.vec.Vec.deref receipts) = .ok digests) :
+    digests.val = receipts.val.map (fun raw =>
+      cast digestRepresentation (referenceOutput (alloc.vec.Vec.deref raw))) := by
+  have checked :=
+    SandboxModel.Stage1Protocol.UnloadFirstObservation.Collections.original_receipt_digests_complete
+      (alloc.vec.Vec.deref receipts) (by simpa [alloc.vec.Vec.deref] using normal)
+  obtain ⟨computed, actual, allBytes⟩ := WP.spec_imp_exists checked
+  have transported : ParentCalls.originalReceiptDigests (alloc.vec.Vec.deref receipts) =
+      .ok (transportReceiptDigests digestRepresentation computed) := by
+    simp only [LinkedReceiptDigests, actual, bind_tc_ok] at linked
+    exact linked
+  have agrees : digests = transportReceiptDigests digestRepresentation computed := by
+    exact Result.ok_injective (returned.symm.trans transported)
+  simp [agrees, transportReceiptDigests, allBytes, List.map_map, Function.comp_def,
+    alloc.vec.Vec.deref]
+
+end SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent
+
+#audit_controller_proof SandboxModel.Stage1Protocol.UnloadFirstObservation.Parent.actual_receipt_digests_are_complete

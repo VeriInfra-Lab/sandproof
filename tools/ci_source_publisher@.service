@@ -1,0 +1,22 @@
+[Unit]
+Description=Publish Sandproof PR source to the restricted CI transport
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=%i
+StateDirectory=sandproof-ci-source
+StateDirectoryMode=0700
+ExecStart=/usr/bin/python3 /opt/sandproof-ci-source/ci_source_cache.py --scratch ${STATE_DIRECTORY} --port 18410
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+MemoryMax=768M
+TasksMax=64
+
+[Install]
+WantedBy=multi-user.target

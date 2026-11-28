@@ -71,7 +71,7 @@ fn port_error_status(error: PortError) -> StatusCode {
         PortError::NotFound => StatusCode::NOT_FOUND,
         PortError::Conflict => StatusCode::CONFLICT,
         PortError::QuotaExceeded => StatusCode::TOO_MANY_REQUESTS,
-        PortError::Busy => StatusCode::SERVICE_UNAVAILABLE,
+        PortError::Busy | PortError::DataGateBusy => StatusCode::SERVICE_UNAVAILABLE,
         PortError::OutcomeUnknown | PortError::Failed => StatusCode::INTERNAL_SERVER_ERROR,
     }
 }

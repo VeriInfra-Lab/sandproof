@@ -1,0 +1,72 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppend
+import SandboxModel.Lifecycle.Protocol.InboxAppendSelections
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxAppend
+open Values InboxRecord
+
+theorem fixture_contract (session : Session) (limit : U16) (intent : AcceptedLifecycleIntent)
+    (selection : ExistingSelection (withSession session limit) intent 0#usize) :
+    (withSession session limit).record intent ⦃ out =>
+      ExistingPost (withSession session limit) 0#usize session intent
+        (existingDecision (withSession session limit) session intent) out ⦄ :=
+  record_existing_contract (withSession session limit) intent 0#usize selection
+
+theorem normal_unload_records_complete :
+    (withSession runningSession).record unload ⦃ out =>
+      ExistingPost (withSession runningSession) 0#usize runningSession unload (.append false) out ⦄ := by
+  simpa only [unload_decision] using fixture_contract runningSession 8#u16 unload unload_selection
+
+theorem normal_resume_records_complete :
+    (withSession afterUnload).record (resume 1#u64 2#u64) ⦃ out =>
+      ExistingPost (withSession afterUnload) 0#usize afterUnload (resume 1#u64 2#u64) (.append false) out ⦄ := by
+  simpa only [resume_decisions.1] using fixture_contract afterUnload 8#u16 (resume 1#u64 2#u64) (resume_selection _ _)
+
+theorem normal_sdk_renewal_records_complete :
+    (withSession runningSession).record firstRenew ⦃ out =>
+      ExistingPost (withSession runningSession) 0#usize runningSession firstRenew (.append false) out ⦄ := by
+  simpa only [renewal_decisions.1] using fixture_contract runningSession 8#u16 firstRenew renewal_selections.1
+
+theorem reserved_destroy_records_complete :
+    (withSession waitingSdk 3#u16).record destroy ⦃ out =>
+      ExistingPost (withSession waitingSdk 3#u16) 0#usize waitingSdk destroy (.append true) out ⦄ := by
+  simpa only [reserved_destroy_decision] using fixture_contract waitingSdk 3#u16 destroy reserved_destroy_selection
+
+theorem fixture_rejection (session : Session) (limit : U16) (intent : AcceptedLifecycleIntent)
+    (selection : ExistingSelection (withSession session limit) intent 0#usize)
+    (error : sandproof_controller_service.JournalError)
+    (decision : existingDecision (withSession session limit) session intent = .reject error) :
+    (withSession session limit).record intent = .ok (.Err error, withSession session limit) := by
+  have checked := fixture_contract session limit intent selection
+  rw [decision] at checked
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists checked
+  change out = (.Err error, withSession session limit) at post
+  simpa [post] using returned
+
+theorem different_capture_rejected_unchanged :
+    (withSession afterUnload).record (resume 2#u64 2#u64) =
+      .ok (.Err .UnsupportedInput, withSession afterUnload) :=
+  fixture_rejection afterUnload 8#u16 (resume 2#u64 2#u64) (resume_selection _ _) _ resume_decisions.2.1
+
+theorem dto_gap_rejected_by_inbox_unchanged :
+    (withSession afterUnload).record (resume 1#u64 3#u64) =
+      .ok (.Err .UnsupportedInput, withSession afterUnload) :=
+  fixture_rejection afterUnload 8#u16 (resume 1#u64 3#u64) (resume_selection _ _) _ resume_decisions.2.2
+
+theorem unconfirmed_sdk_rejected_unchanged :
+    (withSession waitingSdk).record laterRenew = .ok (.Err .UnresolvedAction, withSession waitingSdk) :=
+  fixture_rejection waitingSdk 8#u16 laterRenew renewal_selections.2 _ renewal_decisions.2
+
+end SandboxModel.Stage1Protocol.InboxAppend
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.fixture_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.normal_unload_records_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.normal_resume_records_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.normal_sdk_renewal_records_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.reserved_destroy_records_complete
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.fixture_rejection
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.different_capture_rejected_unchanged
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.dto_gap_rejected_by_inbox_unchanged
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.unconfirmed_sdk_rejected_unchanged

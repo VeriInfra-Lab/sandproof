@@ -223,8 +223,22 @@ impl<A: AuthorityPort, H: HostPort, T: TemplateProvider> CenterApplication<A, H,
         let incarnation = match &current.request.operation {
             LifecycleOperation::Create {
                 target_incarnation, ..
+            }
+            | LifecycleOperation::Resume {
+                target_incarnation, ..
             } => *target_incarnation,
             LifecycleOperation::Renew { incarnation, .. } => *incarnation,
+            LifecycleOperation::Unload {
+                source_incarnation, ..
+            } if record
+                .operations()
+                .last()
+                .and_then(|operation| operation.unloaded())
+                .and_then(|observation| observation.outcome.continued())
+                .is_some() =>
+            {
+                *source_incarnation
+            }
             _ => return Err(PortError::NotFound),
         };
         Ok(DataRoute {

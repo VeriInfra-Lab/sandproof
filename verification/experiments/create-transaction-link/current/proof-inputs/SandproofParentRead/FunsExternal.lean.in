@@ -1,0 +1,39 @@
+import SandproofParentRead.Types
+
+open Aeneas Aeneas.Std
+namespace SandproofParentReadRust
+
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
+-- Exact ordinary-read range used by the existing strict provider.
+def NormalWorldBorrow (count : Int) : Prop := 0 ≤ count ∧ count < 2^63 - 1
+instance (count : Int) : Decidable (NormalWorldBorrow count) :=
+  inferInstanceAs (Decidable (0 ≤ count ∧ count < 2^63 - 1))
+
+@[rust_fun "core::cell::{core::cell::RefCell<@T>}::borrow"]
+def core.cell.RefCell.borrow {T : Type} (cell : core.cell.RefCell T) :
+    Result (core.cell.Ref T) :=
+  if NormalWorldBorrow cell.beforeBorrowCount then
+    .ok ⟨cell.value, cell.beforeBorrowCount + 1⟩
+  else .fail .panic
+
+@[rust_fun "core::cell::{core::ops::deref::Deref<core::cell::Ref<'0, @T>, @T>}::deref"]
+def core.cell.Ref.Insts.CoreOpsDerefDeref.deref {T : Type} (guard : core.cell.Ref T) :
+    Result T := .ok guard.value
+
+-- The exact existing A6 Option::as_ref value model; no new Option algorithm.
+@[rust_fun "core::option::{core::option::Option<@T>}::as_ref"]
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  .ok value
+
+-- Existing separately verified clone, linked by the Root-reviewed A6/B4
+-- same-source/representation/normal-allocation conditions. This definition
+-- does not itself prove Rust clone correctness or cross-view type equality.
+@[rust_fun "sandbox_controller_core::model::{core::clone::Clone<sandbox_controller_core::model::World>}::clone"]
+def sandbox_controller_core.model.World.Insts.CoreCloneClone.clone
+    (value : sandbox_controller_core.model.World) :
+    Result sandbox_controller_core.model.World := .ok value
+
+end SandproofParentReadRust

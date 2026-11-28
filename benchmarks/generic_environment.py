@@ -100,11 +100,12 @@ class GenericEnvironment(SdkEnvironment):
     internet_access = True
 
     def __init__(self, *, entry, source, source_kind, build_url, sdk_options, start_audit=None,
-                 context_archiver=archive_context, **kwargs):
+                 context_archiver=archive_context, pinned_oci_digest=None, **kwargs):
         if 'build_mode' in kwargs:
             raise InvalidInput("build mode selection is no longer supported")
         self.entry, self.source, self.source_kind = entry, source, source_kind
         self.context_archiver = context_archiver
+        self.pinned_oci_digest = pinned_oci_digest
         self.client = BuildClient(build_url, sdk_options['api_key'])
         self.build_result = None
         self.build_log_error = None
@@ -121,6 +122,11 @@ class GenericEnvironment(SdkEnvironment):
     async def prepare_template(self):
         self.environment_repair = None
         request = build_request(self.entry, self.task_env_config, self.source_kind)
+        if pinned_digest := getattr(self, 'pinned_oci_digest', None):
+            if self.source_kind != 'oci':
+                raise InvalidInput('immutable source pin requires an OCI-reference build')
+            from benchmarks.prepare_ci_fixtures import _digest_reference
+            request['image'] = _digest_reference(request['image'], pinned_digest)
         context = self.trial_paths.trial_dir / 'context.tar'
         saved_path = self.trial_paths.trial_dir / 'build-intent.json'
         saved = None
@@ -259,6 +265,7 @@ class GenericEnvironment(SdkEnvironment):
             os.close(directory)
 
     async def start(self, force_build=False):
+        self.startup_timing = {}
         if not self._network_is_public:
             raise InvalidInput('only the fixed public IPv4 policy is supported in this runner')
         deadline = time.monotonic() + self.entry['requirements']['build_timeout_sec']
@@ -279,10 +286,12 @@ class GenericEnvironment(SdkEnvironment):
         self.runtime_intent = {'metadata': metadata, 'template': self.template}
         self.checkpoint('runtime-intent.json', self.runtime_intent)
         self.create_dispatched = True
+        create_started = time.monotonic()
         self._sandbox = await AsyncSandbox.create(
             template=self.template['templateId'], timeout=86400, allow_internet_access=self.internet_access,
             metadata=metadata,
             envs=self._startup_env(), **(self.sdk_options | {'request_timeout': remaining}))
+        self.startup_timing['create_ms'] = (time.monotonic() - create_started) * 1000
         self.sandbox_id = self._sandbox.sandbox_id
         self.checkpoint('runtime-identity.json', {'sandbox_id': self.sandbox_id, 'template': self.template})
         info = await self._sandbox.get_info()
@@ -294,5 +303,7 @@ class GenericEnvironment(SdkEnvironment):
         boundary = await self.exec('test ! -e /solution && test ! -e /tests', cwd='/', user='root', timeout_sec=30)
         if boundary.return_code:
             raise InvalidInput('template leaked reserved phase directories')
+        # The first guest command follows the original identity and host audit.
+        self.startup_timing['first_command_ms'] = (time.monotonic() - create_started) * 1000
         await self.ensure_dirs(['/logs/agent', '/logs/verifier', '/logs/artifacts'])
         await self._upload_environment_dir_after_start()

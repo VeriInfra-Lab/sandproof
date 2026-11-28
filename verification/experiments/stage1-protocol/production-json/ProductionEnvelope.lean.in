@@ -1,0 +1,166 @@
+import SandboxModel.Lifecycle.Protocol.EnvelopeBudget
+import SandboxModel.Lifecycle.Protocol.EnvelopeWriter
+import SandboxModel.Lifecycle.Protocol.AcceptedWire
+
+set_option autoImplicit false
+open Aeneas Aeneas.Std SandproofFoundationsRust SandproofStage1RequestRust
+open SandboxModel.Boundaries
+open SandboxModel.Stage1Protocol
+open SandproofStage1RequestRust.sandproof_protocol.lifecycle.authority
+
+namespace SandboxModel.Stage1Protocol.ProductionEnvelope
+
+/- The actual fixed from_slice/standard-derive/compact boundary. These are
+the existing A6/B4 records, not a new parser, axiom or business predicate.
+Source bindings select Accepted/Recorded and their exact original callbacks;
+the own callback and guard proofs remain the existing generated functions. -/
+abbrev Codec := EnvelopeBytes.JsonLibrary
+
+def AcceptedCallBinding {F : Type} (library : Codec)
+    (reader : core.ops.function.FnOnce F (Slice U8)
+      (core.result.Result EnvelopeBytes.Accepted serde_json.error.Error))
+    (capture : F) : Prop :=
+  ∀ bytes, reader.call_once capture bytes = library.decodeAccepted bytes
+
+theorem actual_call_keeps_parser_and_context {F : Type} (library : Codec)
+    (reader : core.ops.function.FnOnce F (Slice U8)
+      (core.result.Result EnvelopeBytes.Accepted serde_json.error.Error))
+    (capture : F) (call : AcceptedCallBinding library reader capture)
+    (bytes : Slice U8) (context : AuthenticatedCenterContext) :
+    accepted_decode reader bytes context capture = (do
+      let parsed ← library.decodeAccepted bytes
+      .ok (AcceptedWire.expectedPost context parsed)) := by
+  rw [AcceptedWire.candidate_refines]
+  simp only [AcceptedWire.expectedRun, call bytes]
+
+theorem actual_accepts_iff {F : Type} (library : Codec)
+    (reader : core.ops.function.FnOnce F (Slice U8)
+      (core.result.Result EnvelopeBytes.Accepted serde_json.error.Error))
+    (capture : F) (call : AcceptedCallBinding library reader capture)
+    (bytes : Slice U8) (context : AuthenticatedCenterContext)
+    (parsed : core.result.Result EnvelopeBytes.Accepted serde_json.error.Error)
+    (value : EnvelopeBytes.Accepted)
+    (read : library.decodeAccepted bytes = .ok parsed) :
+    accepted_decode reader bytes context capture = .ok (.Ok value) ↔
+      parsed = .Ok value ∧ Validation.ValidEnvelope value context := by
+  exact AcceptedWire.decoded_accepts_iff reader bytes context capture parsed value
+    ((call bytes).trans read)
+
+theorem parsed_own_fields_are_proved (library : Codec)
+    (standard : EnvelopeBytes.SliceContract library)
+    (bytes : Slice U8) (value : EnvelopeBytes.Accepted)
+    (read : library.decodeAccepted bytes = .ok (.Ok value)) :
+    EnvelopeBytes.InputDomain value :=
+  EnvelopeBytes.accepted_decode_provides_domain library standard bytes value read
+
+theorem actual_json_error_precedes_guard {F : Type} (library : Codec)
+    (reader : core.ops.function.FnOnce F (Slice U8)
+      (core.result.Result EnvelopeBytes.Accepted serde_json.error.Error))
+    (capture : F) (call : AcceptedCallBinding library reader capture)
+    (bytes : Slice U8) (context : AuthenticatedCenterContext)
+    (error : serde_json.error.Error)
+    (read : library.decodeAccepted bytes = .ok (.Err error)) :
+    accepted_decode reader bytes context capture =
+      .ok (.Err .InvalidJson) :=
+  AcceptedWire.parser_error_precedes_guard reader bytes context capture error
+    ((call bytes).trans read)
+
+theorem actual_parser_failure_preserved {F : Type} (library : Codec)
+    (reader : core.ops.function.FnOnce F (Slice U8)
+      (core.result.Result EnvelopeBytes.Accepted serde_json.error.Error))
+    (capture : F) (call : AcceptedCallBinding library reader capture)
+    (bytes : Slice U8) (context : AuthenticatedCenterContext) (error : Error)
+    (read : library.decodeAccepted bytes = .fail error) :
+    accepted_decode reader bytes context capture = .fail error :=
+  AcceptedWire.parser_failure_preserved reader bytes context capture error
+    ((call bytes).trans read)
+
+theorem actual_parser_divergence_preserved {F : Type} (library : Codec)
+    (reader : core.ops.function.FnOnce F (Slice U8)
+      (core.result.Result EnvelopeBytes.Accepted serde_json.error.Error))
+    (capture : F) (call : AcceptedCallBinding library reader capture)
+    (bytes : Slice U8) (context : AuthenticatedCenterContext)
+    (read : library.decodeAccepted bytes = .div) :
+    accepted_decode reader bytes context capture = .div :=
+  AcceptedWire.parser_divergence_preserved reader bytes context capture
+    ((call bytes).trans read)
+
+/- Own-field validity and the business guard are derived from the actual
+parse/guard result. They are not included in the trusted library condition. -/
+theorem accepted_normal_bounded_roundtrip {F : Type} (library : Codec)
+    (standard : EnvelopeBytes.SliceContract library)
+    (renderer : EnvelopeBudget.NormalRenderer library)
+    (reader : core.ops.function.FnOnce F (Slice U8)
+      (core.result.Result EnvelopeBytes.Accepted serde_json.error.Error))
+    (capture : F) (call : AcceptedCallBinding library reader capture)
+    (bytes : Slice U8) (context : AuthenticatedCenterContext)
+    (value : EnvelopeBytes.Accepted)
+    (read : library.decodeAccepted bytes = .ok (.Ok value))
+    (accepted : accepted_decode reader bytes context capture = .ok (.Ok value)) :
+    ∃ encoded limit,
+      SandproofEnvelopeBudgetRust.request_body_bytes = .ok limit ∧
+      library.compact (EnvelopeSchema.acceptedFields value) = .ok (.Ok encoded) ∧
+      library.decodeAccepted encoded.slice = .ok (.Ok value) ∧
+      encoded.val.length ≤ limit.val ∧
+      SandproofStage1RequestRust.accepted_validate value context = .ok (.Ok ()) := by
+  have domain := parsed_own_fields_are_proved library standard bytes value read
+  have valid := ((actual_accepts_iff library reader capture call bytes context
+    (.Ok value) value read).mp accepted).2
+  exact EnvelopeBudget.accepted_bounded_roundtrip library standard renderer value context domain valid
+
+theorem recorded_full_value_and_match (library : Codec)
+    (standard : EnvelopeBytes.SliceContract library)
+    (bytes : Slice U8) (value : EnvelopeBytes.Recorded)
+    (read : library.decodeRecorded bytes = .ok (.Ok value))
+    (original : EnvelopeBytes.Accepted) :
+    EnvelopeBytes.InputDomain value.intent ∧
+      (recorded_matches value original = .ok true ↔ Validation.RecordsOriginal value original) :=
+  EnvelopeBytes.decoded_record_keeps_exact_match library standard bytes value read original
+
+open SandproofBoundedWriterRust
+open SandproofBoundedWriterRust.sandproof_controller_service.template_registry.evidence
+open SandboxModel.Boundaries.BoundedWriter
+open SandboxModel.Boundaries.BoundedWriter.Refinement
+
+def RecordedWriterCallBinding {B R S : Type} (ops : BoundedBuffer B R)
+    (serializer : EnvelopeWriter.Serializer S B R EnvelopeBytes.Recorded)
+    (encode : EnvelopeBytes.Recorded → Usize → Result EnvelopeWriter.Encoded) : Prop :=
+  ∀ value limit, encode value limit = encode_bounded_using ops serializer value limit
+
+/- A's real record/reply proof supplies sameIntent. The library supplies the
+fixed serializer's calls; neither one assumes the record's business validity.
+The actual bounded writer, not a successful Vec reference alone, is checked. -/
+theorem recorded_writer_from_actual_input {B R S : Type}
+    (library : Codec) (slices : EnvelopeBytes.SliceContract library)
+    (input : Slice U8) (intent : EnvelopeBytes.Accepted)
+    (parsed : library.decodeAccepted input = .ok (.Ok intent))
+    (value : EnvelopeBytes.Recorded) (sameIntent : value.intent = intent)
+    (ops : BoundedBuffer B R) (view : B → WireBytes) (laws : BufferLaws ops view)
+    (serializer : EnvelopeWriter.Serializer S B R EnvelopeBytes.Recorded)
+    (rendered : EnvelopeBytes.Recorded → WireBytes)
+    (standard : EnvelopeWriter.StandardCalls ops serializer rendered)
+    (encode : EnvelopeBytes.Recorded → Usize → Result EnvelopeWriter.Encoded)
+    (call : RecordedWriterCallBinding ops serializer encode)
+    (limit : Usize) (actual reference : alloc.vec.Vec U8)
+    (empty : ∀ buffer, ops.new_buffer = .ok buffer → view buffer = [])
+    (emitted : library.compact (EnvelopeSchema.recordedFields value) = .ok (.Ok reference))
+    (sameRendering : rendered value = reference.val)
+    (success : encode value limit = .ok (.Ok actual)) :
+    library.decodeRecorded actual.slice = .ok (.Ok value) ∧ actual.val.length ≤ limit.val := by
+  have own := parsed_own_fields_are_proved library slices input intent parsed
+  have domain : EnvelopeBytes.InputDomain value.intent := sameIntent.symm ▸ own
+  exact EnvelopeWriter.recorded_writer_roundtrip ops view laws serializer rendered standard
+    library slices value domain limit actual reference empty emitted sameRendering
+    ((call value limit).symm.trans success)
+
+end SandboxModel.Stage1Protocol.ProductionEnvelope
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ProductionEnvelope.actual_call_keeps_parser_and_context
+#audit_controller_proof SandboxModel.Stage1Protocol.ProductionEnvelope.actual_accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.ProductionEnvelope.parsed_own_fields_are_proved
+#audit_controller_proof SandboxModel.Stage1Protocol.ProductionEnvelope.actual_json_error_precedes_guard
+#audit_controller_proof SandboxModel.Stage1Protocol.ProductionEnvelope.actual_parser_failure_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.ProductionEnvelope.actual_parser_divergence_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.ProductionEnvelope.accepted_normal_bounded_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.ProductionEnvelope.recorded_full_value_and_match
+#audit_controller_proof SandboxModel.Stage1Protocol.ProductionEnvelope.recorded_writer_from_actual_input

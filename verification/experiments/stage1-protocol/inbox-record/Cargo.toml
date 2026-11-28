@@ -1,0 +1,19 @@
+[package]
+name = "sandproof-stage1-inbox-record-extract"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+sandproof-protocol = { path = "../../../../sandbox-protocol" }
+sandproof-controller-service = { path = "../../../../controller-service" }
+
+# Match the real service unit-test dependency closure for native source admission.
+[dev-dependencies]
+tempfile = "=3.23.0"
+tokio = { version = "=1.49.0", features = ["rt", "macros", "time"] }

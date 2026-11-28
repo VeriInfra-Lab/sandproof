@@ -1,0 +1,102 @@
+import SandboxModel.Lifecycle.Protocol.OwnerMappingModel
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.OwnerMapping.Values
+open SandboxModel.Stage1Protocol.OwnerMapping
+
+def emptyStore (K V : Type) : sandbox_controller_core.store.Store K V :=
+  ⟨alloc.vec.Vec.new (K × V)⟩
+
+def emptyWorld : World := {
+  maintenance := none
+  sandboxes := emptyStore _ _
+  vms := emptyStore _ _
+  filesystems := emptyStore _ _
+  snapshots := emptyStore _ _
+  net_slots := emptyStore _ _
+  applied_file_policies := emptyStore _ _
+  worker_fences := emptyStore _ _
+  operations := emptyStore _ _
+  operation_plans := emptyStore _ _
+  resource_indexes := emptyStore _ _
+  logical_effects := emptyStore _ _
+  effect_keys := alloc.vec.Vec.new _
+  effects := emptyStore _ _
+  next_vm_id := 0#u64
+  next_slot_id := 0#u64
+  next_snapshot_id := 0#u64
+  next_manifest_digest := 0#u64
+  inflight := alloc.vec.Vec.new _
+  controller_up := true
+}
+
+def lane (slot : U16) : sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleRetentionLane :=
+  ⟨slot, 0#u64, some 1#u64, none⟩
+
+def config : sandproof_controller_service.controller.lifecycle_inbox.model.LifecycleInboxConfig := {
+  center := ⟨"deployment", "primary"⟩
+  node := ⟨"deployment", "host-a", 1#u64⟩
+  host_epoch := none
+  max_sessions := 2#u16
+  max_operations_per_session := 8#u16
+  max_options_bytes := 1024#u32
+  max_profile_bytes := 4096#u32
+  max_manifest_bytes := 16384#u32
+}
+
+def inbox (owners : alloc.vec.Vec Owner) (high : U64) : Inbox := {
+  config := config
+  host_epoch_observation := none
+  owner_high_water := high
+  owners := owners
+  sessions := alloc.vec.Vec.new _
+  lanes := alloc.vec.Vec.from [lane 1#u16, lane 2#u16] (by simp; scalar_tac)
+}
+
+def noOwners (high : U64) : Inbox := inbox (alloc.vec.Vec.new _) high
+
+def twoOwners : Inbox := inbox
+  (alloc.vec.Vec.from [⟨"alpha", 7#u64⟩, ⟨"bravo", 9#u64⟩] (by simp; scalar_tac)) 40#u64
+
+def repeatedOwner : Inbox := inbox
+  (alloc.vec.Vec.from [⟨"alpha", 7#u64⟩, ⟨"alpha", 9#u64⟩] (by simp; scalar_tac)) 9#u64
+
+def exhaustedExisting : Inbox := inbox
+  (alloc.vec.Vec.from [⟨"alpha", 7#u64⟩] (by simp; scalar_tac)) (U64.ofNatCore U64.max (by scalar_tac))
+
+def record (owner : U64) : sandbox_controller_core.model.SandboxRecord := {
+  owner := owner
+  phase := .Starting
+  terminal := false
+  epoch := 0#u64
+  generation := 0#u64
+  current_vm := none
+  workspace := 1#u64
+  workspace_access := .ManagedReadWrite
+  file_policy := ⟨7#u64⟩
+  durable_snapshot := none
+  restore_from := none
+  net_slot := none
+  policy := .DenyAll
+  desired := .Closed
+  effective := .Closed
+  current_operation := none
+}
+
+def worldTriple : World := { emptyWorld with sandboxes :=
+  ⟨alloc.vec.Vec.from [(1#u64, record 9#u64), (2#u64, record 40#u64), (3#u64, record 17#u64)]
+    (by simp; scalar_tac)⟩ }
+
+def worldMaximum : World := { emptyWorld with sandboxes :=
+  ⟨alloc.vec.Vec.from [(1#u64, record (U64.ofNatCore U64.max (by scalar_tac)))] (by simp; scalar_tac)⟩ }
+
+theorem allocation_known (highest : Nat) (next : U64) (safe : highest < U64.max)
+    (successor : next.val = highest + 1) : allocation highest = .Ok next := by
+  simp only [allocation, dif_pos safe]
+  congr 1
+  apply UScalar.eq_of_val_eq
+  exact successor.symm
+
+end SandboxModel.Stage1Protocol.OwnerMapping.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.OwnerMapping.Values.allocation_known

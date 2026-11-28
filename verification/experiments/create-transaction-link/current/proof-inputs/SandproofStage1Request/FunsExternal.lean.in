@@ -1,0 +1,233 @@
+import SandproofStage1Graphic.Funs
+import SandboxModel.Lifecycle.Protocol.RenewalResultTag
+import SandproofStage1Request.SharedValueBindings
+import SandproofStage1Request.Types
+import SandproofSqliteSession.ReadOps
+import SandproofSqliteSession.RecordQueryProviders
+import SandboxModel.Lifecycle.Protocol.DigestByteBridge
+open Aeneas Aeneas.Std
+set_option autoImplicit false
+
+namespace SandproofStage1RequestRust
+
+-- Reuse the fixed Foundations literal adapter without altering generated bodies.
+def toStr (text : String)
+    (bounded : text.toByteArray.size ≤ U32.max := by rw [U32.max_eq]; decide) : Str :=
+  Aeneas.Std.toStr text bounded
+
+def Bool.Insts.CoreCmpPartialEqBool.ne (left right : Bool) : Result Bool :=
+  .ok (left != right)
+
+def core.option.Option.is_some_and {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) (value : Option T) (state : F) : Result Bool :=
+  SandproofFoundationsRust.core.option.Option.is_some_and callback value state
+
+def core.option.Option.is_none_or {T F : Type}
+    (callback : core.ops.function.FnOnce F T Bool) (value : Option T) (state : F) : Result Bool :=
+  SandproofFoundationsRust.core.option.Option.is_none_or callback value state
+
+def core.option.Option.as_ref {T : Type} (value : Option T) : Result (Option T) :=
+  SandproofFoundationsRust.core.option.Option.as_ref value
+
+def core.option.Option.Insts.CoreCmpPartialEqOption.eq {T : Type}
+    (dictionary : core.cmp.PartialEq T T) (left right : Option T) : Result Bool :=
+  match left, right with
+  | none, none => .ok true
+  | some left, some right => dictionary.eq left right
+  | _, _ => .ok false
+
+def core.result.Result.ok {T E : Type} (value : core.result.Result T E) : Result (Option T) :=
+  SandproofFoundationsRust.core.result.Result.ok value
+
+def alloc.string.String.Insts.CoreCmpPartialEqString.eq
+    (left right : String) : Result Bool :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq left right
+
+def alloc.string.String.len (value : String) : Result Usize := do
+  let text ← SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  SandproofFoundationsRust.core.str.Str.len text
+
+def alloc.string.String.is_empty (value : String) : Result Bool := do
+  let text ← SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+  SandproofFoundationsRust.core.str.Str.is_empty text
+
+def alloc.string.String.Insts.CoreCloneClone.clone (value : String) : Result String :=
+  .ok value
+
+def alloc.string.String.Insts.CoreOpsDerefDerefStr.deref (value : String) : Result Str :=
+  SandproofFoundationsRust.alloc.string.String.Insts.CoreOpsDerefDerefStr.deref value
+
+def alloc.vec.Vec.is_empty {T : Type} (allocator : Type) (values : alloc.vec.Vec T) :
+    Result Bool := SandproofFoundationsRust.alloc.vec.Vec.is_empty allocator values
+
+def SharedAVec.Insts.CoreIterTraitsCollectIntoIteratorSharedATIter.into_iter
+    {T : Type} (_allocator : Type) (value : alloc.vec.Vec T) :
+    Result (core.slice.iter.Iter T) :=
+  core.slice.Slice.iter (alloc.vec.Vec.deref value)
+
+def core.result.Result.is_err {T E : Type} (value : core.result.Result T E) : Result Bool :=
+  SandproofStage1GraphicRust.core.result.Result.is_err value
+
+
+-- Ordinary guard observations from original ctor07. Unit in the backward
+-- result never asserts a physical shared write or an Err-path cache frame.
+def core.cell.RefCell.new {T : Type} (value : T) : Result (core.cell.RefCell T) :=
+  .ok ⟨value, 0⟩
+
+-- Only this single before-borrow observation is in scope. Unit is forced by
+-- the original generated backward signature; it does not mean the real cell
+-- is unchanged or has been updated. Neither fact follows from this binding.
+def core.cell.RefCell.borrow_mut {T : Type} (cell : core.cell.RefCell T) :
+    Result (core.cell.RefMut T × (core.cell.RefMut T → Unit)) :=
+  if cell.beforeBorrowCount = 0 then .ok (⟨cell.value, -1⟩, fun _ => ())
+  else .fail .panic
+
+def core.cell.RefMut.Insts.CoreOpsDerefDerefMut.deref_mut {T : Type}
+    (guard : core.cell.RefMut T) :
+    Result (T × (T → core.cell.RefMut T) × (core.cell.RefMut T → core.cell.RefMut T)) :=
+  .ok (guard.value, fun value => { guard with value }, fun returned => returned)
+
+
+def core.result.Result.and {T E U : Type} (value : core.result.Result T E)
+    (next : core.result.Result U E) : Result (core.result.Result U E) :=
+  match value with
+  | .Ok _ => .ok next
+  | .Err error => .ok (.Err error)
+
+-- Only the two reviewed opaque methods have physical transfer contracts.
+-- This record is an observation of the same original pair, not a heap.
+def sandproof_controller_service.controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.set_committed
+    (self : sandproof_controller_service.controller.transaction.TransactionCells)
+    (value : Option sandbox_controller_core.model.World) :
+    Result sandproof_controller_service.controller.transaction.TransactionCells :=
+  .ok { self with committed := { self.committed with value } }
+
+def sandproof_controller_service.controller.transaction.TransactionCells.Insts.Sandproof_controller_serviceControllerTransactionMemoCellsWorld.take_candidate
+    (self : sandproof_controller_service.controller.transaction.TransactionCells) :
+    Result (Option sandbox_controller_core.model.World ×
+      sandproof_controller_service.controller.transaction.TransactionCells) :=
+  .ok (self.candidate.value, { self with candidate := { self.candidate with value := none } })
+
+-- A datatype-only bridge for the original library column, covering all five
+-- cases. Every field/error is kept; the library operation is still shared.
+def observedValue (value : SandproofLoadBlobRust.rusqlite.types.value_ref.ValueRef) :
+    rusqlite.types.value_ref.ValueRef :=
+  match value with
+  | .Null => .Null
+  | .Integer value => .Integer value
+  | .Real value => .Real value
+  | .Text value => .Text value
+  | .Blob value => .Blob value
+
+def Usize.Insts.RusqliteRowRowIndex.idx := SandproofSqliteSession.index
+
+def I64.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+    (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result I64 rusqlite.types.from_sql.FromSqlError) :=
+  match value with
+  | .Integer value => .ok (.Ok value)
+  | _ => .ok (.Err invalidType)
+
+def rusqlite.row.Row.get {I T : Type} (indices : rusqlite.row.RowIndex I)
+    (values : rusqlite.types.from_sql.FromSql T) (row : rusqlite.row.Row) (position : I) :
+    Result (core.result.Result T rusqlite.error.Error) :=
+  SandproofSqliteSession.rowGet indices.idx
+    (fun value => values.column_result (observedValue value)) row position
+
+set_option linter.style.nameCheck false in
+def Tuple.Insts.RusqliteParamsParams.__bind_in := SandproofSqliteSession.bindUnit
+
+def rusqlite.Connection.query_row {T P F : Type} (parameters : rusqlite.params.Params P)
+    (callback : core.ops.function.FnOnce F rusqlite.row.Row
+      (core.result.Result T rusqlite.error.Error))
+    (connection : rusqlite.Connection) (sql : Str) (values : P) (closure : F) :
+    Result (core.result.Result T rusqlite.error.Error) :=
+  SandproofSqliteSession.queryRow parameters.__bind_in callback.call_once
+    connection.reads.current.single sql values closure
+
+-- Whole actual rollback observation from the existing shared call-view.
+def rusqlite.transaction.Transaction.rollback (transaction : rusqlite.transaction.Transaction) :
+    Result (core.result.Result Unit rusqlite.error.Error) :=
+  transaction.conn.rollbackReply
+
+-- Exact five-constructor transport reused from the actual update/read provider.
+def sharedValue (value : rusqlite.types.value_ref.ValueRef) :
+    SandproofLoadBlobRust.rusqlite.types.value_ref.ValueRef :=
+  match value with
+  | .Null => .Null
+  | .Integer value => .Integer value
+  | .Real value => .Real value
+  | .Text value => .Text value
+  | .Blob value => .Blob value
+
+def alloc.vec.VecU8.Insts.RusqliteTypesFrom_sqlFromSql.column_result
+    (value : rusqlite.types.value_ref.ValueRef) :
+    Result (core.result.Result (alloc.vec.Vec U8) rusqlite.types.from_sql.FromSqlError) :=
+  SandproofSqliteSession.blobColumn (sharedValue value)
+
+-- Byte-identical normal-domain SHA primitive used by the existing digest providers.
+-- This is its existing A9/A6/B4 boundary, not a new SHA implementation proof.
+def sandproof_controller_service.controller.lifecycle_inbox.sha256.digest
+    (bytes : Slice U8) : Result (Array U8 32#usize) :=
+  if bytes.val.length < 2^61 then
+    .ok (SandboxModel.Stage1Protocol.DigestByteBridge.referenceOutput bytes)
+  else .fail .panic
+
+-- The existing sole Session write response advances the selected read view on
+-- SQL Ok and Err. Retaining the original raw value never asserts SQL liveness.
+-- rollbackReply is a separate observation for its unique actual whole cleanup
+-- call, bound at that call point; it is NOT a pre-write database snapshot or a
+-- claim that hypothetical rollback outcomes are equal before/after this write.
+def sandproof_controller_service.controller.transaction.sqlite_io.execute_blobs
+    (transaction : rusqlite.transaction.Transaction)
+    (statement : Str) (bytes digest : Slice U8) :
+    Result (core.result.Result Usize rusqlite.error.Error × rusqlite.transaction.Transaction) := do
+  let (reply, reads) ← SandproofSqliteSession.executeBlobs
+    transaction.conn.reads statement bytes digest
+  .ok (reply, { transaction with conn := { transaction.conn with reads } })
+
+-- Normal read observation on the original reader; returned Self is an owner
+-- representation only, not a physical SQL Err frame or a liveness guarantee.
+def sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_i64
+    (self : sandproof_controller_service.controller.checkpoint.config.StandardConfigRead) (sql : Str) :
+    Result (core.result.Result (I64) sandproof_controller_service.JournalError ×
+      sandproof_controller_service.controller.checkpoint.config.StandardConfigRead) := do
+  let reply ← SandproofSqliteSession.queryI64 self.connection.reads.current.single sql ()
+  match reply with
+  | .Ok value => .ok (.Ok value, self)
+  | .Err error => .ok (.Err (.Sqlite error), self)
+
+-- Normal read observation on the original reader; returned Self is an owner
+-- representation only, not a physical SQL Err frame or a liveness guarantee.
+def sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerCheckpointConfigReadConfigEffects.query_bytes
+    (self : sandproof_controller_service.controller.checkpoint.config.StandardConfigRead) (sql : Str) :
+    Result (core.result.Result (alloc.vec.Vec U8) sandproof_controller_service.JournalError ×
+      sandproof_controller_service.controller.checkpoint.config.StandardConfigRead) := do
+  let reply ← SandproofSqliteSession.queryBytes self.connection.reads.current.single sql ()
+  match reply with
+  | .Ok value => .ok (.Ok value, self)
+  | .Err error => .ok (.Err (.Sqlite error), self)
+
+-- Normal read observation on the original reader; returned Self is an owner
+-- representation only, not a physical SQL Err frame or a liveness guarantee.
+def sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bool
+    (self : sandproof_controller_service.controller.checkpoint.config.StandardConfigRead) (sql : Str) :
+    Result (core.result.Result (Bool) sandproof_controller_service.JournalError ×
+      sandproof_controller_service.controller.checkpoint.config.StandardConfigRead) := do
+  let reply ← SandproofSqliteSession.queryBool self.connection.reads.current.single sql ()
+  match reply with
+  | .Ok value => .ok (.Ok value, self)
+  | .Err error => .ok (.Err (.Sqlite error), self)
+
+-- Normal read observation on the original reader; returned Self is an owner
+-- representation only, not a physical SQL Err frame or a liveness guarantee.
+def sandproof_controller_service.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_i64_pair
+    (self : sandproof_controller_service.controller.checkpoint.config.StandardConfigRead) (sql : Str) :
+    Result (core.result.Result (I64 × I64) sandproof_controller_service.JournalError ×
+      sandproof_controller_service.controller.checkpoint.config.StandardConfigRead) := do
+  let reply ← SandproofSqliteSession.queryI64Pair self.connection.reads.current.single sql ()
+  match reply with
+  | .Ok value => .ok (.Ok value, self)
+  | .Err error => .ok (.Err (.Sqlite error), self)
+
+end SandproofStage1RequestRust

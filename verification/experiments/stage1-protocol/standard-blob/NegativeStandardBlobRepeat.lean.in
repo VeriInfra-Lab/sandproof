@@ -1,0 +1,38 @@
+import SandboxModel.Lifecycle.Protocol.StandardBlobResult
+import SandboxModel.Lifecycle.Protocol.NegativeBlobRepeat
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+open SandboxModel.Stage1Protocol
+namespace SandboxModel.Stage1Protocol.NegativeStandardBlobRepeat
+noncomputable section
+open StandardBlob.Values
+abbrev actual := controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
+
+theorem common_normal :
+    actual normal sql = .ok (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.leftBytes), normal) := by
+  exact StandardBlob.observed_result BlobColumns.Values.normal sql
+    (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.leftBytes))
+    NegativeBlobRepeat.common_normal
+
+theorem actual_repeats_first :
+    actual distinct sql = .ok (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.leftBytes), distinct) := by
+  exact StandardBlob.observed_result BlobColumns.Values.distinct sql
+    (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.leftBytes))
+    NegativeBlobRepeat.actual_repeats_first
+
+theorem not_full_contract : ¬StandardBlob.FullStandardReadContract actual := by
+  intro contract
+  have impossible := contract distinct sql
+  rw [actual_repeats_first, expected_distinct] at impossible
+  have same := congrArg (fun (outcome : StandardBlob.Outcome × StandardBlob.Context) =>
+    match outcome.1 with
+    | .Ok (_, right) => right
+    | .Err _ => BlobColumns.Values.leftBytes) (Result.ok.injEq.mp impossible)
+  exact BlobColumns.Values.bytes_differ same
+
+end
+end SandboxModel.Stage1Protocol.NegativeStandardBlobRepeat
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeStandardBlobRepeat.common_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeStandardBlobRepeat.actual_repeats_first
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeStandardBlobRepeat.not_full_contract

@@ -1,0 +1,68 @@
+import SandproofStage1Request.Funs
+import SandboxModel.Lifecycle.Protocol.UnixPathValues
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.CreateAttachmentPath
+
+abbrev CurrentPath := SandproofStage1RequestRust.std.path.PathBuf
+abbrev StandardPath := UnixPathValues.PathValue
+abbrev Attachment := SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.CreateAttachment
+
+def toStandard (path : CurrentPath) : StandardPath :=
+  UnixPathValues.pack path.inner.inner.inner
+
+def fromStandard (path : StandardPath) : CurrentPath :=
+  ⟨⟨⟨UnixPathValues.bytes path⟩⟩⟩
+
+theorem current_roundtrip (path : CurrentPath) :
+    fromStandard (toStandard path) = path := rfl
+
+theorem standard_roundtrip (path : StandardPath) :
+    toStandard (fromStandard path) = path := rfl
+
+theorem all_current_bytes_preserved (path : CurrentPath) :
+    UnixPathValues.bytes (toStandard path) = path.inner.inner.inner := rfl
+
+theorem complete_value_iff (left right : CurrentPath) :
+    toStandard left = toStandard right ↔ left = right := by
+  constructor
+  · intro same
+    have := congrArg fromStandard same
+    simpa only [current_roundtrip] using this
+  · exact congrArg toStandard
+
+theorem actual_standard_projection (path : CurrentPath) :
+    SandproofUnixPathRust.path_bytes (toStandard path) = .ok path.inner.inner.inner := by
+  exact UnixPathValues.actual_path_bytes_exact _
+
+theorem kernel_field_roundtrip (attachment : Attachment) :
+    fromStandard (toStandard attachment.registered_template.kernel.path) =
+      attachment.registered_template.kernel.path := current_roundtrip _
+
+theorem rootfs_field_roundtrip (attachment : Attachment) :
+    fromStandard (toStandard attachment.registered_template.rootfs.path) =
+      attachment.registered_template.rootfs.path := current_roundtrip _
+
+theorem invalid_utf8_and_nul_preserved :
+    SandproofUnixPathRust.path_bytes (toStandard (fromStandard
+      (UnixPathValues.pack UnixPathValues.opaqueBytes))) = .ok UnixPathValues.opaqueBytes := by
+  rw [standard_roundtrip]
+  exact UnixPathValues.actual_path_bytes_exact _
+
+theorem omitted_byte_changes_current_full_value :
+    fromStandard (UnixPathValues.pack UnixPathValues.opaqueBytes) ≠
+      fromStandard (UnixPathValues.pack UnixPathValues.withoutLeadingZero) := by
+  intro same
+  have := congrArg toStandard same
+  simp only [standard_roundtrip] at this
+  exact UnixPathValues.omission_distinct_full_values this
+
+end SandboxModel.Stage1Protocol.CreateAttachmentPath
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentPath.current_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentPath.standard_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentPath.all_current_bytes_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentPath.complete_value_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentPath.actual_standard_projection
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentPath.kernel_field_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentPath.rootfs_field_roundtrip
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentPath.invalid_utf8_and_nul_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateAttachmentPath.omitted_byte_changes_current_full_value

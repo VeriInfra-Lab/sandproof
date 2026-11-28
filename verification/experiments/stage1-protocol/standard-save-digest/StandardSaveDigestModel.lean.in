@@ -1,0 +1,40 @@
+import SandproofStandardSaveDigest.Funs
+import SandboxModel.Lifecycle.Protocol.StandardDigestLibrary
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.StandardSaveDigest
+
+abbrev SaveContext := SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.StandardInboxSave
+abbrev ReadContext := SandproofStandardSaveDigestRust.controller.checkpoint.config.StandardConfigRead
+
+def actualSave (self : SaveContext) (bytes : Slice U8) :=
+  SandproofStandardSaveDigestRust.controller.lifecycle_inbox.codec.StandardInboxSave.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest self bytes
+
+def actualRebind (self : ReadContext) (bytes : Slice U8) :=
+  SandproofStandardSaveDigestRust.controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxSaveEffects.digest self bytes
+
+/-- Complete, reversible value representations of the actual one-field receivers.
+They assert neither a physical connection identity nor a durable transaction. -/
+def saveFromCommon (self : StandardDigest.Context) : SaveContext := ⟨self.connection⟩
+def saveToCommon (self : SaveContext) : StandardDigest.Context := ⟨self.connection⟩
+def readFromCommon (self : StandardDigest.Context) : ReadContext := ⟨self.connection⟩
+def readToCommon (self : ReadContext) : StandardDigest.Context := ⟨self.connection⟩
+
+def throughSave (self : StandardDigest.Context) (bytes : Slice U8) :
+    Result (Array U8 32#usize × StandardDigest.Context) := do
+  let (hash, after) ← actualSave (saveFromCommon self) bytes
+  .ok (hash, saveToCommon after)
+
+def throughRebind (self : StandardDigest.Context) (bytes : Slice U8) :
+    Result (Array U8 32#usize × StandardDigest.Context) := do
+  let (hash, after) ← actualRebind (readFromCommon self) bytes
+  .ok (hash, readToCommon after)
+
+/-- Both actual Save paths use the unchanged full SHA contract from the Load
+slice. The representations retain every actual receiver field in both directions. -/
+def FullSaveDigestContract : Prop :=
+  StandardDigest.FullDigestContract throughSave ∧
+  StandardDigest.FullDigestContract throughRebind
+
+end SandboxModel.Stage1Protocol.StandardSaveDigest

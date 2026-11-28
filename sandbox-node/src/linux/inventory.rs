@@ -41,7 +41,8 @@ impl LinuxWorker {
                 return Err("original launch has a different physical host context".into());
             }
             options.validate()?;
-            let config = self.observation_config(binding.vm, options.template.as_ref())?;
+            let config =
+                self.observation_config(binding.sandbox, binding.vm, options.template.as_ref())?;
             Ok(RuntimePhysicalObserver::for_existing(config)?)
         })
     }
@@ -83,7 +84,7 @@ impl LinuxWorker {
             if !metadata.is_file() || metadata.uid() != 0 || metadata.mode() & 0o077 != 0 {
                 return Err("untrusted slot record".into());
             }
-            let binding: SlotBinding = serde_json::from_reader(File::open(&path)?)?;
+            let binding: SlotBinding = crate::json_file::from_reader(File::open(&path)?)?;
             if binding.slot.0 != number {
                 return Err("slot filename or VM identity mismatch".into());
             }

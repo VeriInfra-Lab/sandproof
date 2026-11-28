@@ -1,0 +1,51 @@
+import SandboxModel.Lifecycle.Protocol.ConfigBudgetModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.ConfigBudget
+noncomputable section
+
+theorem required_bytes_refines (config : LifecycleInboxConfig) :
+    ∃ output, LifecycleInboxConfig.required_bytes config = .ok output ∧
+      output.val = bytes config := by
+  have positionBound := per_position_bound config
+  have fullBound := total_bound config
+  unfold perPosition at positionBound
+  unfold bytes perPosition at fullBound
+  apply WP.spec_imp_exists
+  unfold LifecycleInboxConfig.required_bytes
+  simp only [lift, bind_tc_ok]
+  step*
+  all_goals simp only [bytes, perPosition] at *
+  all_goals scalar_tac
+
+
+theorem required_bytes_full_contract : FullBudgetContract LifecycleInboxConfig.required_bytes :=
+  required_bytes_refines
+
+theorem required_bytes_iff (config : LifecycleInboxConfig) (output : U64) :
+    LifecycleInboxConfig.required_bytes config = .ok output ↔
+      output.val = bytes config := by
+  obtain ⟨actual, returned, exactValue⟩ := required_bytes_refines config
+  rw [returned]
+  constructor
+  · intro same
+    have equality : actual = output := by simpa only [Result.ok.injEq] using same
+    simpa only [← equality] using exactValue
+  · intro expected
+    have same : actual = output := UScalar.eq_of_val_eq (exactValue.trans expected.symm)
+    rw [same]
+
+theorem required_bytes_bound (config : LifecycleInboxConfig) :
+    ∃ output, LifecycleInboxConfig.required_bytes config = .ok output ∧
+      output.val ≤ 2005480217559047 := by
+  obtain ⟨output, returned, exactValue⟩ := required_bytes_refines config
+  exact ⟨output, returned, exactValue ▸ total_bound config⟩
+
+end
+end SandboxModel.Stage1Protocol.ConfigBudget
+
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigBudget.required_bytes_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigBudget.required_bytes_full_contract
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigBudget.required_bytes_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.ConfigBudget.required_bytes_bound

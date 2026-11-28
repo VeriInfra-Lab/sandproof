@@ -1,0 +1,82 @@
+import SandproofUnloadFrontier.Types
+
+open Aeneas Aeneas.Std
+
+namespace SandproofUnloadFrontier
+
+/-- Preserve the original error variant and payload across the two generated enums. -/
+def fromOriginalError : OriginalError → JournalError
+  | .Io payload => .Io payload
+  | .Sqlite payload => .Sqlite payload
+  | .CommitUncertain payload => .CommitUncertain payload
+  | .Json payload => .Json payload
+  | .Contract payload => .Contract payload
+  | .Conflict => .Conflict
+  | .IdentifierExhausted => .IdentifierExhausted
+  | .MaintenanceCapacity => .MaintenanceCapacity
+  | .CaptureMaterialQuotaExceeded => .CaptureMaterialQuotaExceeded
+  | .RevisionConflict => .RevisionConflict
+  | .ReceiptBeforeDispatch => .ReceiptBeforeDispatch
+  | .ConflictingReceipt => .ConflictingReceipt
+  | .UnsupportedStore => .UnsupportedStore
+  | .CorruptStore => .CorruptStore
+  | .CredentialIndexPoisoned => .CredentialIndexPoisoned
+  | .InjectedCrash payload => .InjectedCrash payload
+  | .ControllerRejected payload => .ControllerRejected payload
+  | .ControllerBusy => .ControllerBusy
+  | .UnsupportedInput => .UnsupportedInput
+  | .UnresolvedAction => .UnresolvedAction
+  | .OperationFailed => .OperationFailed
+  | .InvalidHostEvidence => .InvalidHostEvidence
+  | .ObsoleteReceipt => .ObsoleteReceipt
+
+def fromOriginalReply {α : Type} :
+    core.result.Result α OriginalError → core.result.Result α JournalError
+  | .Ok value => .Ok value
+  | .Err error => .Err (fromOriginalError error)
+
+def fromOriginalOwner (readInbox : ReadInbox)
+    (owner : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction) :
+    controller.transaction.WorldTransaction :=
+  { transaction := owner.transaction.map (fun tx => ⟨tx, readInbox⟩)
+    committed := owner.committed
+    candidate := owner.candidate
+    input_start := owner.input_start }
+
+def controller.transaction.WorldTransaction.begin (connection : rusqlite.Connection)
+    (committed : controller.transaction.CommittedWorld) :
+    Result ((core.result.Result controller.transaction.WorldTransaction JournalError) × rusqlite.Connection) := do
+  let (reply, after) ← SandproofUnloadWorldBegin.controller.transaction.WorldTransaction.begin
+    connection.origin committed
+  let translated := match reply with
+    | .Ok owner => core.result.Result.Ok (fromOriginalOwner connection.readInbox owner)
+    | .Err error => .Err (fromOriginalError error)
+  .ok (translated, ⟨after, connection.readInbox⟩)
+
+def controller.transaction.WorldTransaction.Insts.CoreOpsDerefDerefTransaction.deref
+    (owner : controller.transaction.WorldTransaction) : Result rusqlite.transaction.Transaction :=
+  match owner.transaction with
+  | some tx => .ok tx
+  | none => .fail .panic
+
+def rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref
+    (transaction : rusqlite.transaction.Transaction) : Result rusqlite.Connection := do
+  let connection ←
+    SandproofUnloadWorldBegin.rusqlite.transaction.Transaction.Insts.CoreOpsDerefDerefConnection.deref
+      transaction.origin
+  .ok ⟨connection, transaction.readInbox⟩
+
+def controller.lifecycle_inbox.codec.load (connection : rusqlite.Connection) :
+    Result (core.result.Result (Option controller.lifecycle_inbox.model.Inbox) JournalError) := do
+  let reply ← connection.readInbox connection.origin.base
+  .ok (fromOriginalReply reply)
+
+def controller.lifecycle_inbox.authenticated (inbox : controller.lifecycle_inbox.model.Inbox)
+    (intent : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent)
+    (context : sandproof_protocol.lifecycle.authority.AuthenticatedCenterContext) :
+    Result (core.result.Result Unit JournalError) := do
+  let reply ← SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.authenticated
+    inbox intent context
+  .ok (fromOriginalReply reply)
+
+end SandproofUnloadFrontier

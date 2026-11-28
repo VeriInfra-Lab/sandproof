@@ -3,6 +3,8 @@
 #[allow(dead_code, reason = "shared original application fixture")]
 #[path = "../../controller-service/tests/support/lifecycle_application.rs"]
 mod current;
+#[path = "driver/maintenance.rs"]
+mod maintenance;
 use current::fixture as local;
 use sandproof_controller_service::{
     CreateReadiness, InternalTemplate,
@@ -186,16 +188,7 @@ async fn authority_fault_during_advance_halts_before_another_healthy_request() {
     assert_eq!(host.active_work(), 0);
 }
 
-#[tokio::test]
-async fn durable_scan_advances_original_create_then_destroy_without_manual_request_queue() {
-    let dir = tempfile::tempdir().unwrap();
-    let state = state();
-    let app = application(
-        &dir.path().join("db"),
-        state.clone(),
-        Arc::new(local::TestClock(AtomicI64::new(10))),
-    );
-    let host = HostLifecycle::new(app.clone());
+async fn assert_initial_host_status(host: &HostLifecycle<local::TestHost>) {
     let (observed_at_ms, free) = host
         .free_resources(config().node, config().compute)
         .await
@@ -217,6 +210,19 @@ async fn durable_scan_advances_original_create_then_destroy_without_manual_reque
         serde_json::from_slice::<HostStatus>(&serde_json::to_vec(&status).unwrap()).unwrap(),
         status
     );
+}
+
+#[tokio::test]
+async fn durable_scan_advances_original_create_then_destroy_without_manual_request_queue() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = state();
+    let app = application(
+        &dir.path().join("db"),
+        state.clone(),
+        Arc::new(local::TestClock(AtomicI64::new(10))),
+    );
+    let host = HostLifecycle::new(app.clone());
+    assert_initial_host_status(&host).await;
     let create = current::request();
     host.record_lifecycle(create.clone(), current::context())
         .await

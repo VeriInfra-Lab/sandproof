@@ -53,30 +53,17 @@ fn matching_host() -> Arc<Mutex<local::fixture::State>> {
 struct HeldMissing {
     first_pass: std::sync::Barrier,
     arrivals: std::sync::atomic::AtomicUsize,
+    healthy_entered: Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
+    healthy_release: Mutex<std::sync::mpsc::Receiver<()>>,
 }
 
-#[tokio::test]
-async fn exact_durable_confirmation_precedes_reuse_and_old_messages_cannot_touch_successor() {
+async fn confirm_original_termination(
+    host: &HostLifecycle<local::fixture::TestHost>,
+    create: &AcceptedLifecycleIntent,
+) -> sandproof_protocol::lifecycle::LifecycleWindowClose {
     use sandproof_protocol::lifecycle::{
         ExpectedSession, LifecycleWindowClose, TerminalLifecycleObservation, TerminalStatus,
     };
-    let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("db");
-    let physical = matching_host();
-    let app = Arc::new(local::application(&path, physical.clone(), true));
-    app.establish_lifecycle_host_epoch().unwrap();
-    let host = HostLifecycle::new(app.clone());
-    let create = local::request();
-    host.record_lifecycle(create.clone(), local::context())
-        .await
-        .unwrap();
-    host.advance(
-        create.clone(),
-        Some(local::fixture::template()),
-        local::fixture::compute(),
-    )
-    .await
-    .unwrap();
     let mut destroy = create.clone();
     destroy.accepted_version = 2;
     destroy.request.binding.expected = ExpectedSession::Version(1);
@@ -138,6 +125,29 @@ async fn exact_durable_confirmation_precedes_reuse_and_old_messages_cannot_touch
             .unwrap()
             .matches(&forged)
     );
+    close
+}
+
+#[tokio::test]
+async fn exact_durable_confirmation_precedes_reuse_and_old_messages_cannot_touch_successor() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("db");
+    let physical = matching_host();
+    let app = Arc::new(local::application(&path, physical.clone(), true));
+    app.establish_lifecycle_host_epoch().unwrap();
+    let host = HostLifecycle::new(app.clone());
+    let create = local::request();
+    host.record_lifecycle(create.clone(), local::context())
+        .await
+        .unwrap();
+    host.advance(
+        create.clone(),
+        Some(local::fixture::template()),
+        local::fixture::compute(),
+    )
+    .await
+    .unwrap();
+    let close = confirm_original_termination(&host, &create).await;
     drop((host, app));
     let app = Arc::new(local::application(&path, physical, false));
     let host = HostLifecycle::new(app.clone());
@@ -204,6 +214,18 @@ impl TemplateSource for HeldMissing {
             }
             Err(ApplicationError::NotFound)
         } else {
+            self.healthy_entered
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap()
+                .send(())
+                .unwrap();
+            self.healthy_release
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(5))
+                .expect("original healthy template gate was not released");
             Templates.bound(binding)
         }
     }
@@ -242,9 +264,13 @@ async fn four_unavailable_entries_cannot_starve_the_fifth_real_create() {
             .unwrap();
         requests.push(request);
     }
+    let (healthy_entered, entered) = tokio::sync::oneshot::channel();
+    let (release_healthy, healthy_release) = std::sync::mpsc::channel();
     let templates = Arc::new(HeldMissing {
         first_pass: std::sync::Barrier::new(5),
         arrivals: std::sync::atomic::AtomicUsize::new(0),
+        healthy_entered: Mutex::new(Some(healthy_entered)),
+        healthy_release: Mutex::new(healthy_release),
     });
     let first_host = host.clone();
     let first_templates = templates.clone();
@@ -265,7 +291,23 @@ async fn four_unavailable_entries_cannot_starve_the_fifth_real_create() {
     assert!(physical.lock().unwrap().actions.is_empty());
     // The next finite pass rotates the original inbox scan. It does not create
     // another authoritative queue or turn missing material into NotAccepted.
-    let report = host.drive_once(config(), templates).await.unwrap();
+    let second_host = host.clone();
+    let second = tokio::spawn(async move { second_host.drive_once(config(), templates).await });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        entered.await.unwrap();
+        // Selection and completion are different facts. The same scan also
+        // runs maintenance, whose original sandbox guard may legitimately
+        // make an admitted Create yield Busy. Hold the selected fifth worker
+        // at the template boundary until the other original callbacks finish.
+        // No extra scan/retry, application hook, or deadline change is needed.
+        while host.active_work() != 1 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    release_healthy.send(()).unwrap();
+    let report = second.await.unwrap().unwrap();
     assert_eq!(report.advanced, 1);
     assert!(matches!(
         app.observe_lifecycle_create(&requests[4], &local::context())

@@ -1,0 +1,36 @@
+import SandboxModel.Lifecycle.Protocol.StandardBlobResult
+import SandboxModel.Lifecycle.Protocol.NegativeBlobOrder
+
+open Aeneas Aeneas.Std SandproofLoadBlobRust
+open SandboxModel.Stage1Protocol
+namespace SandboxModel.Stage1Protocol.NegativeStandardBlobOrder
+noncomputable section
+open StandardBlob.Values
+abbrev actual := controller.checkpoint.config.StandardConfigRead.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCodecInboxLoadEffects.query_bytes_pair
+
+theorem common_normal :
+    actual normal sql = .ok (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.leftBytes), normal) := by
+  exact StandardBlob.observed_result BlobColumns.Values.normal sql
+    (.Ok (BlobColumns.Values.leftBytes, BlobColumns.Values.leftBytes))
+    NegativeBlobOrder.common_normal
+
+theorem actual_second_error : actual bothErrors sql = .ok (.Err (.Sqlite ⟨12⟩), bothErrors) := by
+  exact StandardBlob.observed_result BlobColumns.Values.bothErrors sql
+    (.Err ⟨12⟩) NegativeBlobOrder.actual_second_error
+
+theorem not_full_contract : ¬StandardBlob.FullStandardReadContract actual := by
+  intro contract
+  have impossible := contract bothErrors sql
+  rw [actual_second_error, expected_first_error] at impossible
+  have identities := congrArg (fun (outcome : StandardBlob.Outcome × StandardBlob.Context) =>
+    match outcome.1 with
+    | .Err (.Sqlite error) => error.identity
+    | _ => 0) (Result.ok.injEq.mp impossible)
+  cases identities
+
+end
+end SandboxModel.Stage1Protocol.NegativeStandardBlobOrder
+
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeStandardBlobOrder.common_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeStandardBlobOrder.actual_second_error
+#audit_controller_proof SandboxModel.Stage1Protocol.NegativeStandardBlobOrder.not_full_contract

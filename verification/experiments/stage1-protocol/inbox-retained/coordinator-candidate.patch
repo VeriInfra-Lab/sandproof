@@ -1,0 +1,21 @@
+--- a/tools/proof_native_suite.py
++++ b/tools/proof_native_suite.py
+@@ -182,0 +183,3 @@
++    target = work / 'stage1-inbox-retained'
++    native_case('stage1-inbox-retained', ROOT, target, lambda p=target:
++        call(['verification/experiments/stage1-protocol/inbox-retained/native.py', '--output', p]))
+@@ -260 +263 @@
+-    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append','stage1-inbox-state','stage1-inbox-position','stage1-inbox-lineage'])
++    req = sub.add_parser('require'); req.add_argument('case', choices=['functional','task','revocation','owned-message','notify','joinset','std-mutex','condvar','tokio-rwlock','sqlite-correct','schema-domains','loop-callbacks','sqlite-statements','child-observation','callback-state','bounded-writer','btree-set-binding','protected-directory','tokio-mutex','stage1-protocol','stage1-inbox-record','stage1-inbox-append','stage1-inbox-state','stage1-inbox-position','stage1-inbox-lineage','stage1-inbox-retained'])
+--- a/scripts/verify-stage1-protocol.sh
++++ b/scripts/verify-stage1-protocol.sh
+@@ -29,0 +30,5 @@
++bash scripts/python-entry.sh tools/proof_native_suite.py require stage1-inbox-retained
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-retained/formal.py --require-native --variant correct --output "$EVIDENCE/retained-correct"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-retained/formal.py --require-native --variant reverse-compaction-bound --output "$EVIDENCE/retained-reverse-compaction-bound"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-retained/formal.py --require-native --variant reverse-confirmation-bound --output "$EVIDENCE/retained-reverse-confirmation-bound"
++bash scripts/python-entry.sh verification/experiments/stage1-protocol/inbox-retained/formal.py --require-native --variant zero-version-adjacency --output "$EVIDENCE/retained-zero-version-adjacency"
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -57,0 +58 @@
++| V3 原保留历史版本校验候选 | follows_retained 的任意值完整接受/拒绝条件、合法封套见证及三个真实 Rust 同合同反例；见[范围](../verification/experiments/stage1-protocol/inbox-retained/README.md) | ning/native 与公共验收待完成；不代表删除历史真实发生、完整 Inbox.validate、validate_lifetimes 或持久收件事务 |

@@ -1,0 +1,25 @@
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterModel
+import SandboxModel.Lifecycle.Protocol.CreateHighWaterInstall
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateHighWater
+
+theorem full_checked_install_contract : FullCheckedInstallContract
+    CreateOwnerCheck.existingRun CreateOwnerCheck.newRun CreateInstall.run := by
+  intro inbox world binding s e session entry sessionRead entryRead ownerLimit checked
+  obtain ⟨bound, same⟩ := List.getElem?_eq_some_iff.mp sessionRead
+  obtain ⟨ebound, esame⟩ := List.getElem?_eq_some_iff.mp entryRead
+  have entryBound : e.val < inbox.sessions.val[s.val].entries.val.length := by
+    simpa [same] using ebound
+  have installed := CreateInstall.install_complete inbox s e binding bound entryBound
+    (by intro _; exact CreateInstall.owners_room_from_limit inbox ownerLimit)
+  have framed : CreateInstall.run inbox s e binding ⦃ result =>
+      CreateInstall.Installed inbox s e session entry binding result ⦄ := by
+    simpa [same, esame] using installed
+  obtain ⟨result, returned, post⟩ := WP.spec_imp_exists framed
+  rw [returned]
+  apply WP.spec.ret
+  exact ⟨post, checked_install_high_water inbox result s e session entry binding world post checked⟩
+
+end SandboxModel.Stage1Protocol.CreateHighWater
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateHighWater.full_checked_install_contract

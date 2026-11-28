@@ -1,0 +1,72 @@
+import SandboxModel.Lifecycle.Protocol.SourcePreservation.StateEquality
+open Aeneas Aeneas.Std SandproofSourcePreservationRust
+namespace SandboxModel.Stage1Protocol.SourcePreservation
+open controller.lifecycle_inbox.source_work.retirement
+noncomputable section
+local instance corePropDecidable (p : Prop) : Decidable p := Classical.propDecidable p
+
+theorem producer_guard_exact (before after : Record) :
+    core.option.Option.is_some_and
+      preserves_saved_facts.closure.Insts.CoreOpsFunctionFnOnceTupleHostReleaseWitnessBool
+      before.material_release.producer after =
+      .ok (decide (¬ Retains before.material_release.producer after.material_release.producer)) := by
+  cases saved : before.material_release.producer <;>
+    simp [core.option.Option.is_some_and, Retains,
+      preserves_saved_facts.closure.Insts.CoreOpsFunctionFnOnceTupleHostReleaseWitnessBool.call_once,
+      option_witness_ne]
+
+theorem consumer_guard_exact (before after : Record) :
+    core.option.Option.is_some_and
+      preserves_saved_facts.closure_1.Insts.CoreOpsFunctionFnOnceTupleHostReleaseWitnessBool
+      before.material_release.consumer after =
+      .ok (decide (¬ Retains before.material_release.consumer after.material_release.consumer)) := by
+  cases saved : before.material_release.consumer <;>
+    simp [core.option.Option.is_some_and, Retains,
+      preserves_saved_facts.closure_1.Insts.CoreOpsFunctionFnOnceTupleHostReleaseWitnessBool.call_once,
+      option_witness_ne]
+
+theorem preserves_exact (before after : Record) :
+    preserves_saved_facts before after = .ok (Expected before after) := by
+  simp only [preserves_saved_facts, producer_guard_exact, consumer_guard_exact, bind_tc_ok]
+  by_cases producerGood : Retains before.material_release.producer after.material_release.producer
+  · by_cases consumerGood : Retains before.material_release.consumer after.material_release.consumer
+    · simp only [producerGood, consumerGood]
+      cases old : before.retirement with
+      | none => simp [Expected, Preserves, RetainsState, old, producerGood, consumerGood]
+      | some saved =>
+        cases saved with
+        | Retiring previous =>
+          cases next : after.retirement with
+          | none => simp [Expected, Preserves, RetainsState, old, next, producerGood, consumerGood]
+          | some following =>
+            cases following <;>
+              simp [plan, plan_eq, Expected, Preserves, RetainsState, old, next,
+                producerGood, consumerGood, eq_comm]
+        | Settled saved settled =>
+          simp [option_state_eq, Expected, Preserves, RetainsState, old, producerGood, consumerGood]
+    · simp [Expected, Preserves, producerGood, consumerGood]
+  · simp [Expected, Preserves, producerGood]
+
+theorem full_preservation : FullPreservationContract preserves_saved_facts := preserves_exact
+
+theorem accepts_iff (before after : Record) :
+    preserves_saved_facts before after = .ok true ↔ Preserves before after := by
+  rw [preserves_exact]
+  simp [Expected]
+
+theorem rejects_iff (before after : Record) :
+    preserves_saved_facts before after = .ok false ↔ ¬ Preserves before after := by
+  rw [preserves_exact]
+  simp [Expected]
+
+theorem total (before after : Record) : ∃ result, preserves_saved_facts before after = .ok result :=
+  ⟨Expected before after, preserves_exact before after⟩
+end
+end SandboxModel.Stage1Protocol.SourcePreservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.producer_guard_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.consumer_guard_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.preserves_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.full_preservation
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.accepts_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.rejects_iff
+#audit_controller_proof SandboxModel.Stage1Protocol.SourcePreservation.total

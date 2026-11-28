@@ -1,0 +1,53 @@
+import SandboxModel.Lifecycle.Protocol.StandardSqlDelegateFixture
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlComplete
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlFixture
+open Aeneas Aeneas.Std SandproofLifecycleSqlRust
+namespace SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter
+open Fixture LifetimeSqlFixture
+
+def selected (deadline : I64) (sandbox : Str) : Effects :=
+  normalEffects selectedWorld (observing deadline sandbox 17#usize)
+
+theorem original_normal_specification :
+    expected (selected normalDeadline normalSandbox) statement normalDeadline normalSandbox =
+      .ok (.Ok 17#usize, selected normalDeadline normalSandbox) := by
+  change (do
+    let result ←
+      LifetimeSql.expected (observing normalDeadline normalSandbox 17#usize)
+        statement normalDeadline normalSandbox
+    .ok (result,selected normalDeadline normalSandbox)) = _
+  rw [normal_expected]
+  simp only [bind_tc_ok]
+
+theorem actual_deadline_is_lost :
+    call (selected normalDeadline normalSandbox) statement normalDeadline normalSandbox =
+      .ok (.Ok 0#usize,selected normalDeadline normalSandbox) := by
+  have zero : normalDeadline &&& 0#i64 = 0#i64 := by decide
+  unfold call sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateLifetimeSqlEffects.execute_lifetime_update
+  simp only [zero, lift, bind_tc_ok]
+  rw [LifetimeSql.execute_complete]
+  simp [LifetimeSql.expected, selected, Fixture.normalEffects, LifetimeSqlFixture.observing, LifetimeSql.completeInputs,
+    normalDeadline]
+
+theorem still_preserves_zero_deadline :
+    call (selected 0#i64 normalSandbox) statement 0#i64 normalSandbox =
+      .ok (.Ok 17#usize,selected 0#i64 normalSandbox) := by
+  have zero : (0#i64) &&& 0#i64 = 0#i64 := by decide
+  unfold call sandproof_controller_service.controller.lifecycle_inbox.StandardCreateAttachment.Insts.Sandproof_controller_serviceControllerLifecycle_inboxCreateLifetimeSqlEffects.execute_lifetime_update
+  simp only [zero, lift, bind_tc_ok]
+  rw [LifetimeSql.execute_complete]
+  simp [LifetimeSql.expected, selected, Fixture.normalEffects, LifetimeSqlFixture.observing, LifetimeSql.completeInputs]
+
+theorem same_full_contract_rejected : ¬FullStandardSqlContract call := by
+  intro law
+  have promised := law (selected normalDeadline normalSandbox) statement normalDeadline normalSandbox
+  rw [actual_deadline_is_lost, original_normal_specification] at promised
+  have reply := congrArg Prod.fst (Result.ok_injective promised)
+  injection reply with rows
+  exact (by decide : (0#usize) ≠ 17#usize) rows
+
+end SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.original_normal_specification
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.actual_deadline_is_lost
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.still_preserves_zero_deadline
+#audit_controller_proof SandboxModel.Stage1Protocol.StandardSqlDelegate.DeadlineWireCounter.same_full_contract_rejected

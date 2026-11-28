@@ -1,0 +1,24 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.AnchorEquality
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.Examples
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch.NegativeAnchor
+open Values
+theorem anchor_comparison (left right : Work) : proof_source_work_eq left right =
+    .ok (by classical exact decide (left.anchor = right.anchor)) := by
+  exact anchor_eq left.anchor right.anchor
+theorem shared_normal : proof_source_work_eq base base = .ok true := by simp [anchor_comparison]
+theorem bad_actual : proof_source_work_eq base changedLimits = .ok true := by
+  simp [anchor_comparison, changedLimits]
+theorem omitted_key : proof_source_work_eq base changedKey = .ok true := by
+  simp [anchor_comparison, changedKey]
+theorem rejects_same_full_contract : ¬ FullWorkContract proof_source_work_eq := by
+  intro contract
+  have failed := contract base changedLimits
+  rw [bad_actual, limits_expected] at failed
+  simp at failed
+end SandboxModel.Stage1Protocol.SourceWorkMatch.NegativeAnchor
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.NegativeAnchor.anchor_comparison
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.NegativeAnchor.shared_normal
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.NegativeAnchor.bad_actual
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.NegativeAnchor.omitted_key
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.NegativeAnchor.rejects_same_full_contract

@@ -6,7 +6,9 @@ import unittest
 from tools.check_schema_domains import load_environment
 from tools.check_schema_domains_binding import (KINDS, byte_snapshot, check_byte_registry)
 
-ROOT = Path(__file__).resolve().parents[2]
+from tools.tests.proof_input_fixture import reference_root
+
+ROOT = reference_root()
 
 
 class StatusByteBindingTests(unittest.TestCase):

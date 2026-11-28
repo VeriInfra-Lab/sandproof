@@ -1,0 +1,158 @@
+name = "sandbox-model"
+version = "0.1.0"
+defaultTargets = ["SandboxModel"]
+
+[[lean_lib]]
+name = "SandboxModel"
+
+[[lean_lib]]
+name = "CaptureCaller"
+srcDir = "verification/aeneas/capture-handoff/caller"
+
+[[lean_lib]]
+name = "PauseStopWrong"
+srcDir = "verification/aeneas/pause-publication/wrong-stop"
+
+[[lean_lib]]
+name = "PauseHandoffWrong"
+srcDir = "verification/aeneas/pause-stop/wrong-permit"
+
+[[lean_lib]]
+name = "PauseDispatchWrong"
+srcDir = "verification/aeneas/pause-dispatch/wrong-binding"
+
+[[lean_lib]]
+name = "SandproofFoundations"
+srcDir = "verification/aeneas/foundations"
+
+[[lean_lib]]
+name = "SandproofNetwork"
+srcDir = "verification/aeneas/network"
+
+[[lean_lib]]
+name = "SandproofDataDrain"
+srcDir = "verification/aeneas/data-drain"
+
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
+
+[[lean_lib]]
+name = "SandproofTls"
+srcDir = "verification/aeneas/tls"
+
+[[lean_lib]]
+name = "SandproofStdMutex"
+srcDir = "verification/aeneas/std-mutex"
+
+[[lean_lib]]
+name = "SandproofSchemaDomains"
+srcDir = "verification/aeneas/schema-domains"
+
+[[lean_lib]]
+name = "SandproofLoopCallbacks"
+srcDir = "verification/aeneas/loop-callbacks"
+
+[[lean_lib]]
+name = "SandproofSqliteStatements"
+srcDir = "verification/aeneas/sqlite-statements"
+
+[[lean_lib]]
+name = "SandproofSqlite"
+srcDir = "verification/aeneas/sqlite"
+
+[[lean_lib]]
+name = "SandproofChildObservation"
+srcDir = "verification/aeneas/child-observation/concrete"
+
+[[lean_lib]]
+name = "SandproofCallbackState"
+srcDir = "verification/aeneas/callback-state"
+
+[[lean_lib]]
+name = "SandproofBoundedWriter"
+srcDir = "verification/aeneas/bounded-writer"
+
+[[lean_lib]]
+name = "SandproofBtreeSetProbe"
+srcDir = "verification/aeneas/btree-set-binding"
+
+[[lean_lib]]
+name = "SandproofProtectedDirectory"
+srcDir = "verification/aeneas/protected-directory/correct"
+
+[[lean_lib]]
+name = "SandproofProtectedDirectoryBad"
+srcDir = "verification/aeneas/protected-directory/bypass-writes"
+
+[[lean_lib]]
+name = "SandproofStage1Carriers"
+srcDir = "verification/aeneas/stage1-protocol/carriers"
+
+[[lean_lib]]
+name = "SandproofStage1Request"
+srcDir = "verification/aeneas/stage1-protocol/request"
+
+[[lean_lib]]
+name = "SandproofStage1Manifest"
+srcDir = "verification/aeneas/stage1-protocol/manifest"
+
+[[lean_lib]]
+name = "SandproofStage1Graphic"
+srcDir = "verification/aeneas/stage1-protocol/graphic"
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "SandproofDigestArray32"
+srcDir = "verification/aeneas/stage1-protocol/digest-array32"
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "SandproofTxFinish"
+srcDir = "verification/aeneas/transaction-finish"
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "SandproofStandardRecord"
+srcDir = "verification/experiments/stage1-protocol/protocol-record/standard-read/generated"
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "V3CreateSqlStep"
+srcDir = "verification/aeneas/create-transaction-link"
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "SandproofSqliteSession"
+srcDir = "verification/aeneas/create-transaction-link"
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "SandproofLoadBlob"
+srcDir = "verification/aeneas/create-transaction-link"
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "SandproofStandardCreate"
+srcDir = "verification/aeneas/create-transaction-link"
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "SandproofRecordFinish"
+srcDir = "verification/aeneas/record-finish"
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "SandproofParentRead"
+srcDir = "verification/aeneas/parent-world-read"
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "SandproofParentCommit"
+srcDir = "verification/aeneas/parent-commit"
+leanOptions = { weak.linter.style.nameCheck = false }
+
+[[lean_lib]]
+name = "SandproofActualRecord"
+srcDir = "verification/aeneas/actual-record"

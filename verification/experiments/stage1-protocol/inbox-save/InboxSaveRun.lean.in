@@ -1,0 +1,22 @@
+import SandboxModel.Lifecycle.Protocol.InboxSaveModel
+import SandboxModel.Lifecycle.Protocol.ComposedConfigProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+namespace SandboxModel.Stage1Protocol.InboxSave
+noncomputable section
+
+def runSave {E : Type} (saved : RetirementEncoding Unit) (terminal : TerminalEncoding Unit)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (io : InboxSaveEffects E) (inbox : Inbox) (state : E) : Outcome E :=
+  save_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic io inbox state
+
+end
+end SandboxModel.Stage1Protocol.InboxSave

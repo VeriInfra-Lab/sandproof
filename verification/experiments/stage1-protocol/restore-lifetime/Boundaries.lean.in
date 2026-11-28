@@ -1,0 +1,22 @@
+import SandboxModel.Lifecycle.Protocol.RestoreLifetime.Witnesses
+open Aeneas Aeneas.Std SandproofRestoreValidationRust
+namespace SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses
+open controller.lifecycle_inbox.source_work.restore.continued_exit
+
+theorem missing_lifetime : lifetime_matches {native with lifetime := none} saved 50#i64 = .ok false := by rfl
+theorem missing_started : lifetime_matches {native with lifetime := some {life with started_at_ms := none}} saved 50#i64 = .ok false := by rfl
+theorem negative_clock : lifetime_matches native saved ((-1)#i64) = .ok false := by rfl
+theorem changed_maximum : lifetime_matches native {saved with max_end_at_ms := 201#u64} 50#i64 = .ok false := by simp [lifetime_matches, native, saved, life, lift]
+theorem future_saved_observation : lifetime_matches native {saved with observed_at_ms := 51#u64} 50#i64 = .ok false := by simp [lifetime_matches, native, saved, life, lift]
+theorem deadline_is_strict : lifetime_matches native saved 100#i64 = .ok false := by simp [lifetime_matches, native, saved, life, lift]
+
+/-- The function alone does not require saved observation at or after start. -/
+theorem earlier_saved_observation_allowed : lifetime_matches native {saved with observed_at_ms := 5#u64} 50#i64 = .ok true := by simp [lifetime_matches, native, saved, life, lift]
+end SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.missing_lifetime
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.missing_started
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.negative_clock
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.changed_maximum
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.future_saved_observation
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.deadline_is_strict
+#audit_controller_proof SandboxModel.Stage1Protocol.RestoreLifetime.Witnesses.earlier_saved_observation_allowed

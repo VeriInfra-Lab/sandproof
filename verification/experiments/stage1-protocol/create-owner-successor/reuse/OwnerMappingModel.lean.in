@@ -1,0 +1,31 @@
+import SandproofStage1OwnerMapping.Types
+open Aeneas Aeneas.Std SandproofStage1OwnerMappingRust
+namespace SandboxModel.Stage1Protocol.OwnerMapping
+abbrev Record := sandbox_controller_core.ids.SandboxId × sandbox_controller_core.model.SandboxRecord
+abbrev Inbox := sandproof_controller_service.controller.lifecycle_inbox.model.Inbox
+abbrev Owner := sandproof_controller_service.controller.lifecycle_inbox.model.Owner
+abbrev World := sandbox_controller_core.model.World
+abbrev JournalError := sandproof_controller_service.JournalError
+
+def maximum (initial : Nat) (records : List Record) : Nat :=
+  records.foldl (fun prior row => max prior row.2.owner.val) initial
+
+def allocation (highest : Nat) : core.result.Result U64 JournalError :=
+  if safe : highest < U64.max then
+    .Ok (U64.ofNatCore (highest + 1) (by scalar_tac))
+  else .Err .IdentifierExhausted
+
+def expectedFrom (inbox : Inbox) (world : World) (owner : sandproof_protocol.TenantId) (rows : List Owner) :
+    core.result.Result U64 JournalError :=
+  match rows.find? (fun row => decide (row.external = owner)) with
+  | some row => .Ok row.local
+  | none => allocation (maximum inbox.owner_high_water.val world.sandboxes.entries.val)
+
+def expected (inbox : Inbox) (world : World) (owner : sandproof_protocol.TenantId) :
+    core.result.Result U64 JournalError := expectedFrom inbox world owner inbox.owners.val
+
+def FullOwnerContract (run : Inbox → World → sandproof_protocol.TenantId → Result (core.result.Result U64 JournalError)) : Prop :=
+  ∀ inbox world owner, run inbox world owner = .ok (expected inbox world owner)
+
+
+end SandboxModel.Stage1Protocol.OwnerMapping

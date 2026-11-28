@@ -1,0 +1,121 @@
+import SandboxModel.Lifecycle.Protocol.InboxCompositionModel
+import SandboxModel.Lifecycle.Protocol.InboxOwnerWitnesses
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+namespace SandboxModel.Stage1Protocol.InboxValidation.Values
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+
+variable (saved : sandproof_controller_service.controller.lifecycle_inbox.native_retirement.RetirementEncoding Unit)
+    (terminal : TerminalEncoding Unit) (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+
+theorem fixture_representable : ConfigValidation.Representable normal.config :=
+  ConfigValidation.Values.normal_representable _ (by simp [normal])
+
+theorem normal_model_accepted : inboxView saved terminal renewal unload normal = .ok (.Ok ()) := by
+  have valid : ConfigValidation.Valid normal.config :=
+    ConfigValidation.Values.normal_valid ConfigValidation.Values.fixture (by simp)
+  have checked : RetentionLane.successor 0#u64 = some 1#u64 := by decide
+  simp only [inboxView, valid, not_true_eq_false, ↓reduceIte]
+  simp [normal, vector, ConfigValidation.Values.fixture,
+    ConfigBudget.Values.fixture, ConfigBudget.Values.small, laneScan, RetentionLane.validateView,
+    checked, RetiredIdentity.validationResult, RetiredIdentity.remainingConflict,
+    RetiredIdentity.conflictAt, HostMatches, OwnersValid, alice, bob, sessionsView]
+
+def recordedSession : Session := { SessionShape.Values.normal with incarnation := some 101#u64 }
+def recorded : Inbox := { normal with sessions := vector [recordedSession] (by decide) }
+
+theorem recorded_shape : SessionShape.BeforePrior recorded recordedSession := by
+  simp [SessionShape.BeforePrior, SessionShape.FirstWindowMatches, recorded, recordedSession,
+    SessionShape.Values.normal, SavedRetirement.Values.normal, SessionShape.Values.entry,
+    SavedRetirement.Values.createIntent, EnvelopeValues.intent, normal, vector,
+    ConfigValidation.Values.fixture, ConfigBudget.Values.fixture, ConfigBudget.Values.small]
+
+theorem recorded_entry :
+    InboxEntry.entryView unload recorded recordedSession (SessionShape.Values.entry SessionShape.Values.createIntent)
+      (decodedContext recorded.config) = .ok (.Ok 0#usize) := by
+  have valid := SavedRetirement.Values.normal_envelopes.1
+  have accepted := (Validation.expectedAccepted_success_iff _ _).mpr valid
+  have ctx : decodedContext recorded.config = EnvelopeValues.context := rfl
+  simp only [ctx, InboxEntry.entryView, UnloadResolution.validateView,
+    SessionShape.Values.entry, bind_tc_ok]
+  simp only [InboxEntry.prefixInvalid, accepted, RenewalResultTag.IsError]
+  have one : InboxEntry.countResult 1 = .ok 1#usize := InboxEntry.count_result_val 1#usize
+  simp [recorded, recordedSession, SessionShape.Values.normal, SavedRetirement.Values.normal,
+    normal, vector, SessionShape.Values.entry, InboxEntry.countSessions, InboxEntry.countEntries,
+    one, InboxEntry.operationResult, InboxEntry.isRenew,
+    SavedRetirement.Values.createIntent, EnvelopeValues.intent, ConfigValidation.Values.fixture,
+    ConfigBudget.Values.fixture, ConfigBudget.Values.small, Validation.Examples.createPayload]
+
+
+def createSummary : EntrySummary := ⟨1#u64, fun index => if index.val = 0 then 1 else 0⟩
+
+theorem recorded_order : entryScan unload recorded recordedSession (decodedContext recorded.config)
+    recordedSession.entries.val initialSummary = .ok (.Ok createSummary) := by
+  change entryScan unload recorded recordedSession (decodedContext recorded.config)
+    [SessionShape.Values.entry SessionShape.Values.createIntent] initialSummary = _
+  rw [entryScan]
+  have increasing : ¬SessionShape.Values.createIntent.accepted_version ≤ initialSummary.maximum := by decide
+  have retained : InboxRetained.expected recordedSession initialSummary.maximum
+      SessionShape.Values.createIntent = true := by decide
+  simp only [SessionShape.Values.entry, increasing, retained, Bool.true_eq_false,
+    and_false, ↓reduceIte]
+  have checkedEntry := recorded_entry unload
+  simp only [SessionShape.Values.entry] at checkedEntry
+  rw [checkedEntry]
+  have room : 1 ≤ U16.max := by scalar_tac
+  simp [incrementKind, initialSummary, createSummary, entryScan, room,
+    SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+
+theorem recorded_session : sessionView saved terminal renewal unload recorded 0#usize
+    recordedSession (decodedContext recorded.config) = .ok (.Ok ()) := by
+  have receipt : SavedRetirement.validateView saved recordedSession = .ok (.Ok ()) := rfl
+  have shape : SessionShape.validateView saved terminal recorded 0#usize recordedSession = .ok (.Ok ()) := by
+    rw [SessionShape.validateView, receipt]
+    simp only [bind_tc_ok, recorded_shape, ↓reduceIte]
+    simp [recorded, recordedSession, normal, vector,
+      SessionShape.Values.normal, SavedRetirement.Values.normal, SessionShape.checkConfirmed]
+  have renewed : InboxRenewal.validateView renewal recordedSession = .ok (.Ok ()) := rfl
+  have lineage : InboxLineage.expectedResult recordedSession = .Ok () := by
+    simp [InboxLineage.expectedResult, InboxLineage.scan, InboxLineage.step, InboxLineage.initial,
+      InboxLineage.observed, recordedSession, SessionShape.Values.normal, vector,
+      SessionShape.Values.entry, SavedRetirement.Values.createIntent, EnvelopeValues.intent]
+  have summary : SummaryFields recorded recordedSession createSummary := by
+    simp [SummaryFields, recordedSession, SessionShape.Values.normal, createSummary]
+  simp only [sessionView, shape, renewed, recorded_order, lineage, summary,
+    bind_tc_ok, ↓reduceIte]
+
+theorem recorded_model_accepted : inboxView saved terminal renewal unload recorded = .ok (.Ok ()) := by
+  have valid : ConfigValidation.Valid recorded.config :=
+    ConfigValidation.Values.normal_valid ConfigValidation.Values.fixture (by simp)
+  have checked : RetentionLane.successor 0#u64 = some 1#u64 := by decide
+  simp only [inboxView, valid, not_true_eq_false, ↓reduceIte]
+  have ownerFields : OwnersValid recorded := normal_owner_fields
+  have lanes : laneScan terminal.encode (decodedContext recorded.config) recorded.lanes.val 0 = .ok true := by
+    simp [recorded, normal, vector, laneScan, RetentionLane.validateView, checked]
+  have noRetired : RetiredIdentity.validationResult (RetiredIdentity.remainingConflict recorded 0) = .Ok () := by
+    simp [RetiredIdentity.validationResult, RetiredIdentity.remainingConflict, RetiredIdentity.conflictAt,
+      recorded, normal, vector]
+  have host : HostMatches recorded := by simp [HostMatches, recorded, normal]
+  have sessionsBound : ¬recorded.sessions.val.length > recorded.config.max_sessions.val := by decide
+  have ownersBound : ¬recorded.owners.val.length > recorded.config.max_sessions.val := by decide
+  have laneCount : ¬recorded.lanes.val.length ≠ recorded.config.max_sessions.val := by decide
+  simp only [sessionsBound, ownersBound, laneCount, ↓reduceIte, lanes, bind_tc_ok,
+    Bool.true_eq_false, noRetired, host, ownerFields, not_true_eq_false]
+  change sessionsView saved terminal renewal unload recorded (decodedContext recorded.config)
+    [recordedSession] 0#usize = _
+  have next : 0#usize + 1#usize = Result.ok 1#usize := InboxEntry.count_result_val 1#usize
+  simp only [sessionsView, next, bind_tc_ok, recorded_session]
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.fixture_representable
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.normal_model_accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.recorded_shape
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.recorded_entry
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.recorded_order
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.recorded_session
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.Values.recorded_model_accepted

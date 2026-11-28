@@ -1,0 +1,108 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadCapacityValidation
+import SandboxModel.Lifecycle.Protocol.InboxLoadMaintenanceBounds
+import SandboxModel.Lifecycle.Protocol.InboxLoadConfigRead
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.checkpoint.config
+
+namespace SandboxModel.Stage1Protocol.InboxLoadConfig
+noncomputable section
+
+-- This view contains the independent field and ordered arithmetic checks.
+-- It does not call either generated business validator.
+open scoped Classical in
+def maintenanceResult (config : MaintenanceConfig) :
+    Result (core.result.Result Unit JournalError) :=
+  if 3 ≤ config.max_operations_per_sandbox.val ∧ config.max_operations_per_sandbox.val ≤ 128 then
+    if ∀ value ∈ InboxLoadMaintenance.fields config, InboxLoadCapacity.ScalarValid value then
+      if config.max_input_bytes.val > config.max_tail_bytes.val then .ok (.Err .UnsupportedStore)
+      else match config.capacity with
+        | none => .ok (.Err .UnsupportedStore)
+        | some capacity => InboxLoadCapacity.capacityView capacity config
+    else .ok (.Err .UnsupportedStore)
+  else .ok (.Err .UnsupportedStore)
+
+theorem maintenance_full_refines (config : MaintenanceConfig) :
+    MaintenanceConfig.validate config = maintenanceResult config := by
+  rw [InboxLoadMaintenance.maintenance_refines]
+  simp only [InboxLoadMaintenance.maintenanceView, InboxLoadMaintenance.tail,
+    InboxLoadCapacity.capacity_refines, maintenanceResult]
+  rfl
+
+-- The previous control-flow view and this full view have the same query,
+-- decode, state and error structure. Only the proved business result is
+-- substituted below; neither version assumes that a decoded config is valid.
+def readFullView {E : Type} (io : ReadConfigEffects E) (state : E) : Outcome E := do
+  let (format, afterFormat) ← io.query_i64 state formatStatement
+  match format with
+  | .Err error => .ok (.Err error, afterFormat)
+  | .Ok version =>
+    if version ≠ journal.MAINTAINED_FORMAT_VERSION then
+      .ok (.Err .UnsupportedStore, afterFormat)
+    else do
+      let (encoded, afterBytes) ← io.query_bytes afterFormat configStatement
+      match encoded with
+      | .Err error => .ok (.Err error, afterBytes)
+      | .Ok bytes =>
+        let (decoded, afterDecode) ← io.decode_maintenance afterBytes (alloc.vec.Vec.deref bytes)
+        match decoded with
+        | .Err error => .ok (.Err error, afterDecode)
+        | .Ok config =>
+          let validated ← maintenanceResult config
+          match validated with
+          | .Err error => .ok (.Err error, afterDecode)
+          | .Ok () => .ok (.Ok (some config), afterDecode)
+
+theorem read_full_refines {E : Type} (io : ReadConfigEffects E) (state : E) :
+    read_using io state = readFullView io state := by
+  rw [read_refines]
+  simp only [readView, readFullView, maintenance_full_refines]
+  rfl
+
+def capacityReadView {E : Type} (io : ReadConfigEffects E) (state : E) :
+    Result ((core.result.Result (Option controller.capacity.CapacityConfig) JournalError) × E) := do
+  let (decoded, after) ← readFullView io state
+  match decoded with
+  | .Err error => .ok (.Err error, after)
+  | .Ok none => .ok (.Err .UnsupportedStore, after)
+  | .Ok (some config) =>
+    match config.capacity with
+    | none => .ok (.Err .UnsupportedStore, after)
+    | some capacity => .ok (.Ok (some capacity), after)
+
+theorem capacity_read_refines {E : Type} (io : ReadConfigEffects E) (state : E) :
+    controller.capacity.config_using io state = capacityReadView io state := by
+  unfold controller.capacity.config_using controller.checkpoint.config_using capacityReadView
+  rw [read_full_refines]
+  apply congrArg (fun continuation => Bind.bind (m := Result) (readFullView io state) continuation)
+  funext read
+  rcases read with ⟨decoded, after⟩
+  cases decoded with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok policy =>
+    cases policy with
+    | none => simp [core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+    | some config =>
+      cases capacity : config.capacity <;>
+        simp [core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.ok_or, capacity,
+          core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+-- Shared full-value contract for future correct and wrong Rust views. Concrete
+-- JSON/SQL providers and source-to-candidate adoption remain separate duties.
+def FullConfigReadContract {E : Type}
+    (run : ReadConfigEffects E → E → Outcome E) : Prop :=
+  ∀ io state, run io state = readFullView io state
+
+theorem full_config_read_contract {E : Type} :
+    FullConfigReadContract (read_using (E := E)) := read_full_refines
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadConfig
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.maintenance_full_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.read_full_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.capacity_read_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.full_config_read_contract

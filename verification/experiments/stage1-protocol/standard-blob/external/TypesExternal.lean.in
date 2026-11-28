@@ -1,0 +1,72 @@
+import SandproofSqliteStatements.TypesExternal
+import SandproofLoadBlob.ReadValueData
+
+open Aeneas Aeneas.Std
+namespace SandproofLoadBlobRust
+
+abbrev rusqlite.error.Error := SandproofSqliteRust.rusqlite.error.Error
+
+/-- Candidate identity view for the library-internal conversion error.
+Only the fixed Vec<u8> dictionary and its InvalidType result are used here. -/
+structure rusqlite.types.from_sql.FromSqlError where
+  identity : Nat
+
+def invalidType : rusqlite.types.from_sql.FromSqlError := ⟨0⟩
+
+/-- Proposed single-call row statement observation. The existing parameter
+statement is retained as one canonical value, not redefined. Column metadata
+is a new finite read-interface requirement for main/V0, not an adopted type.
+Neither the object tag nor value equality proves a physical transaction. -/
+structure ReadStatementObservation where
+  canonical : SandproofSqliteStatementsRust.rusqlite.statement.Statement
+  object : Nat
+  columns : Usize
+  invalidIndex : Usize → rusqlite.error.Error
+
+abbrev rusqlite.statement.Statement := ReadStatementObservation
+
+/-- Finite immutable observations for this one original Row callback.
+Actual Row/statement/column/error binding and normal BLOB validity remain
+explicit library conformance duties. No connection or query oracle is added. -/
+structure RowObservation where
+  object : Nat
+  statement : ReadStatementObservation
+  column : Usize → rusqlite.types.value_ref.ValueRef
+  conversionError : Usize → rusqlite.types.value_ref.ValueRef →
+    rusqlite.types.from_sql.FromSqlError → rusqlite.error.Error
+
+abbrev rusqlite.row.Row := RowObservation
+
+abbrev core.io.error.Error := SandproofSqliteRust.core.io.error.Error
+abbrev serde_json.error.Error := SandproofSqliteRust.serde_json.error.Error
+
+/-- Unadopted single-call read extension of the canonical Connection value.
+It retains the whole canonical value and finite original statement/first-row
+observations. Neither value equality nor these logical object tags establishes
+a physical connection, live transaction, consistent later call or durable row. -/
+structure ConnectionReadObservation where
+  canonical : SandproofSqliteStatementsRust.rusqlite.Connection
+  statementObject : Str → Nat
+  columns : Str → Usize
+  invalidIndex : Str → Usize → rusqlite.error.Error
+  expectedRow : Str → ReadStatementObservation →
+    Result (core.result.Result RowObservation rusqlite.error.Error)
+
+abbrev rusqlite.Connection := ConnectionReadObservation
+
+/-- The canonical prepare count and error provider remain the single values.
+Read metadata must describe the same actual issued statement under finite
+library conformance. A parameter count is not a result column count. -/
+def issuedReadStatement (connection : rusqlite.Connection) (sql : Str)
+    (count : Nat) : rusqlite.statement.Statement := {
+  canonical := {
+    expectedParameters := count
+    arguments := []
+    countError := connection.canonical.countError count
+  }
+  object := connection.statementObject sql
+  columns := connection.columns sql
+  invalidIndex := connection.invalidIndex sql
+}
+
+end SandproofLoadBlobRust

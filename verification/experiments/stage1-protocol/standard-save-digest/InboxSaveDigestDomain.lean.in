@@ -1,0 +1,120 @@
+import SandboxModel.Lifecycle.Protocol.InboxSaveProofs
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+namespace SandboxModel.Stage1Protocol.InboxSaveDigestDomain
+noncomputable section
+open InboxSave
+
+/-- Extract only the already specified real config budget, without adding a
+new JSON, authentication, SQL-history or allocation premise. -/
+theorem valid_config_budget (inbox : Inbox) (valid : ConfigValidation.Valid inbox.config) :
+    ConfigBudget.bytes inbox.config ≤ 16777216 := by
+  rcases valid with ⟨_, _, _, _, _, _, _, _, _, _, _, _, budget⟩
+  exact budget
+
+theorem encoded_digest_input_bound (inbox : Inbox) (valid : ConfigValidation.Valid inbox.config)
+    (bytes : alloc.vec.Vec U8) (within : bytes.val.length ≤ ConfigBudget.bytes inbox.config) :
+    (alloc.vec.Vec.deref bytes).val.length < 2^61 := by
+  have budget := valid_config_budget inbox valid
+  have limit : 16777216 < (2:Nat)^61 := by decide
+  have length : bytes.val.length < (2:Nat)^61 := by omega
+  simpa only [alloc.vec.Vec.deref, Slice.from_val] using length
+
+/-- All results and complete callback states are retained. Only the digest's
+behavior outside its real caller domain may differ. -/
+theorem encode_and_save_normal_digest_congr {E : Type}
+    (left right : InboxSaveEffects E) (inbox : Inbox) (state : E)
+    (valid : ConfigValidation.Valid inbox.config)
+    (sameEncode : left.encode = right.encode) (sameUpdate : left.update = right.update)
+    (sameDigest : ∀ (state : E) (bytes : Slice U8), bytes.val.length < 2^61 →
+      left.digest state bytes = right.digest state bytes) :
+    encodeAndSave left inbox state = encodeAndSave right inbox state := by
+  unfold encodeAndSave
+  rw [←sameEncode]
+  apply congrArg (fun continuation => Bind.bind (left.encode state inbox) continuation)
+  funext encoded
+  rcases encoded with ⟨result, afterEncode⟩
+  cases result with
+  | Err error => rfl
+  | Ok bytes =>
+    by_cases over : bytes.val.length > ConfigBudget.bytes inbox.config
+    · simp [over]
+    · simp [over]
+      have within : bytes.val.length ≤ ConfigBudget.bytes inbox.config := by omega
+      have normal := encoded_digest_input_bound inbox valid bytes within
+      rw [sameDigest afterEncode (alloc.vec.Vec.deref bytes) normal, sameUpdate]
+
+theorem save_view_normal_digest_congr {R T E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (left right : InboxSaveEffects E) (inbox : Inbox) (state : E)
+    (sameEncode : left.encode = right.encode) (sameUpdate : left.update = right.update)
+    (sameDigest : ∀ (state : E) (bytes : Slice U8), bytes.val.length < 2^61 →
+      left.digest state bytes = right.digest state bytes) :
+    saveView saved terminal renewal unload left inbox state =
+      saveView saved terminal renewal unload right inbox state := by
+  by_cases valid : ConfigValidation.Valid inbox.config
+  · unfold saveView
+    apply congrArg (fun continuation => Bind.bind
+      (InboxValidation.inboxView saved terminal renewal unload inbox) continuation)
+    funext validated
+    cases validated with
+    | Err error => rfl
+    | Ok value =>
+      cases value
+      exact encode_and_save_normal_digest_congr left right inbox state valid sameEncode sameUpdate sameDigest
+  · have rejected : InboxValidation.inboxView saved terminal renewal unload inbox =
+        .ok (.Err .CorruptStore) := by
+      simp only [InboxValidation.inboxView, if_pos valid, InboxValidation.rejected]
+    simp only [saveView, rejected, bind_tc_ok]
+
+/-- Uses the existing actual Rust refinement and its unchanged full contract.
+This is a decoded-value/domain result, not durable acceptance or JSON binding. -/
+theorem actual_save_normal_digest_congr {E : Type}
+    (saved : RetirementEncoding Unit) (terminal : TerminalEncoding Unit)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding)
+    (left right : InboxSaveEffects E) (inbox : Inbox) (state : E)
+    (represented : ConfigValidation.Representable inbox.config)
+    (sameEncode : left.encode = right.encode) (sameUpdate : left.update = right.update)
+    (sameDigest : ∀ (state : E) (bytes : Slice U8), bytes.val.length < 2^61 →
+      left.digest state bytes = right.digest state bytes) :
+    runSave saved terminal renewal unload left inbox state =
+      runSave saved terminal renewal unload right inbox state := by
+  rw [full_save_contract saved terminal renewal unload left inbox state represented,
+    full_save_contract saved terminal renewal unload right inbox state represented]
+  exact save_view_normal_digest_congr saved terminal renewal unload left right inbox state
+    sameEncode sameUpdate sameDigest
+
+
+/-- The same caller-domain result for the actual fully generic Rust Save root. -/
+theorem actual_save_using_normal_digest_congr {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : renewal_confirmation.RenewalEncoding N)
+    (unload : unload_resolution.UnloadEncoding U)
+    (graphic : capture.GraphicBytes B) (graphicLaw : ComposedConfig.FullGraphicContract graphic)
+    (left right : InboxSaveEffects E) (inbox : Inbox) (state : E)
+    (represented : ConfigValidation.Representable inbox.config)
+    (sameEncode : left.encode = right.encode) (sameUpdate : left.update = right.update)
+    (sameDigest : ∀ (state : E) (bytes : Slice U8), bytes.val.length < 2^61 →
+      left.digest state bytes = right.digest state bytes) :
+    save_using saved terminal renewal unload graphic left inbox state =
+      save_using saved terminal renewal unload graphic right inbox state := by
+  rw [save_refines saved terminal renewal unload graphic graphicLaw left inbox state represented,
+    save_refines saved terminal renewal unload graphic graphicLaw right inbox state represented]
+  exact save_view_normal_digest_congr saved terminal renewal.encode unload.encode
+    left right inbox state sameEncode sameUpdate sameDigest
+
+end
+end SandboxModel.Stage1Protocol.InboxSaveDigestDomain
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSaveDigestDomain.valid_config_budget
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSaveDigestDomain.encoded_digest_input_bound
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSaveDigestDomain.encode_and_save_normal_digest_congr
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSaveDigestDomain.save_view_normal_digest_congr
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSaveDigestDomain.actual_save_normal_digest_congr
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxSaveDigestDomain.actual_save_using_normal_digest_congr

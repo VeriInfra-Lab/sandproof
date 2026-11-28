@@ -1,0 +1,41 @@
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlComplete
+import SandboxModel.Lifecycle.Protocol.LifetimeSqlFixture
+
+open Aeneas Aeneas.Std
+namespace SandboxModel.Stage1Protocol.LifetimeSqlWitnesses
+open SandproofLifecycleSqlRust
+open LifetimeSql LifetimeSqlFixture
+
+abbrev execute := sandproof_controller_service.controller.lifecycle_inbox.lifetime_sql.execute
+
+theorem normal_full_values :
+    execute (observing normalDeadline normalSandbox 17#usize)
+      statement normalDeadline normalSandbox = .ok (.Ok 17#usize) := by
+  exact (execute_complete _ _ _ _).trans (normal_expected _ _ _)
+
+theorem zero_success_is_preserved :
+    execute (observing normalDeadline normalSandbox 0#usize)
+      statement normalDeadline normalSandbox = .ok (.Ok 0#usize) := by
+  exact (execute_complete _ _ _ _).trans (normal_expected _ _ _)
+
+theorem negative_integer_and_full_text :
+    execute (observing ((-1)#i64) (SandproofLifecycleSqlRust.toStr "原始\x00尾") 17#usize)
+      statement ((-1)#i64) (SandproofLifecycleSqlRust.toStr "原始\x00尾") = .ok (.Ok 17#usize) := by
+  exact (execute_complete _ _ _ _).trans (normal_expected _ _ _)
+
+theorem prepare_error_short_circuits :
+    execute prepareRejected statement normalDeadline normalSandbox =
+      .ok (.Err (.Sqlite sqliteError)) := by
+  exact (execute_complete _ _ _ _).trans (prepare_error_expected _ _)
+
+theorem run_error_is_preserved :
+    execute runRejected statement normalDeadline normalSandbox =
+      .ok (.Err (.Sqlite sqliteError)) := by
+  exact (execute_complete _ _ _ _).trans (run_error_expected _ _)
+
+end SandboxModel.Stage1Protocol.LifetimeSqlWitnesses
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.normal_full_values
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.zero_success_is_preserved
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.negative_integer_and_full_text
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.prepare_error_short_circuits
+#audit_controller_proof SandboxModel.Stage1Protocol.LifetimeSqlWitnesses.run_error_is_preserved

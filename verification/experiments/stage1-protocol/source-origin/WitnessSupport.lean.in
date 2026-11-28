@@ -1,0 +1,228 @@
+import SandboxModel.Lifecycle.Protocol.SourceOrigin.Values
+import SandboxModel.Lifecycle.Protocol.SourceOrigin.Epoch
+import SandboxModel.Foundations.LoopCallbacks.Refinement
+open Aeneas Aeneas.Std SandproofSourceOriginRust
+namespace SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport
+open sandbox_controller_core
+abbrev Iter (T : Type) := core.iter.adapters.enumerate.Enumerate (core.slice.iter.Iter T)
+
+def cursor (values : Slice T) (index : Usize) : Iter T := ⟨⟨values, index.val⟩, index⟩
+
+theorem next_none (values : Slice T) (index : Usize) (bound : values.val.length ≤ index.val) :
+    core.iter.adapters.enumerate.IteratorEnumerate.next
+      (core.iter.traits.iterator.IteratorSliceIter T) (cursor values index) =
+      .ok (none, cursor values index) := by
+  simp [core.iter.adapters.enumerate.IteratorEnumerate.next,
+    core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, Nat.not_lt.mpr bound]
+
+theorem next_some (values : Slice T) (index next : Usize)
+    (bound : index.val < values.val.length) (added : next.val = index.val + 1) :
+    core.iter.adapters.enumerate.IteratorEnumerate.next
+      (core.iter.traits.iterator.IteratorSliceIter T) (cursor values index) =
+      .ok (some (index, values.val[index.val]), cursor values next) := by
+  have add : ((index + 1#usize) : Result Usize) = .ok next := by
+    obtain ⟨v, hv, post⟩ := (WP.spec_equiv_exists _ _).mp
+      (Usize.add_bv_spec (x := index) (y := 1#usize) (by scalar_tac))
+    have same : v = next := by scalar_tac
+    simpa [same] using hv
+  simp [core.iter.adapters.enumerate.IteratorEnumerate.next,
+    core.slice.iter.IteratorSliceIter.next, cursor, Slice.len, bound, add, added]
+
+
+theorem bytes_eq (xs ys : List U8) (h : xs.length = ys.length) :
+    List.allM (fun (p : U8 × U8) => (.ok (decide (p.1 = p.2)) : Result Bool))
+      (List.zip xs ys) = .ok (decide (xs = ys)) := by
+  induction xs generalizing ys with
+  | nil => cases ys <;> simp_all [pure]
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp at h
+    | cons y ys =>
+      have hlen : xs.length = ys.length := by simpa using h
+      by_cases heq : x = y <;> simp [pure, ih ys hlen, heq]
+
+theorem array_eq (a b : Array U8 32#usize) :
+    core.array.equality.PartialEqArray.eq core.cmp.PartialEqU8 a b =
+      .ok (decide (a = b)) := by
+  have heq : ∀ x y : U8, (x.val = y.val) ↔ x = y := by intro x y; scalar_tac
+  simp [core.array.equality.PartialEqArray.eq, heq, bytes_eq a.val b.val (by simp),
+    ← Array.eq_iff]
+
+theorem vec_eq (a b : alloc.vec.Vec U8) :
+    alloc.vec.partial_eq.PartialEqVec.eq core.cmp.PartialEqU8 a b =
+      .ok (decide (a = b)) := by
+  by_cases h : a.length = b.length
+  · simp [alloc.vec.partial_eq.PartialEqVec.eq, h, bytes_eq a.val b.val h,
+      ← alloc.vec.Vec.eq_iff]
+  · have hab : a ≠ b := by intro e; subst b; exact h rfl
+    simp [alloc.vec.partial_eq.PartialEqVec.eq, h, hab]
+
+
+theorem origin_self_eq :
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCmpPartialEqAcceptedLifecycleIntent.eq
+      Values.origin Values.origin = .ok true := by
+  simp [sandproof_protocol.internal.lifecycle.Resources.Insts.CoreCmpPartialEqResources.eq,
+    sandproof_protocol.ResourceId.Insts.CoreCmpPartialEqResourceId.eq,
+    sandproof_protocol.internal.lifecycle.CreateBinding.Insts.CoreCmpPartialEqCreateBinding.eq,
+    sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq,
+    sandproof_protocol.NodeId.Insts.CoreCmpPartialEqNodeId.eq,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    sandproof_protocol.internal.NodeIdentity.Insts.CoreCmpPartialEqNodeIdentity.eq,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    sandproof_protocol.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    sandproof_protocol.lifecycle.authority.CenterId.Insts.CoreCmpPartialEqCenterId.eq,
+    sandproof_protocol.lifecycle.authority.CenterIdentity.Insts.CoreCmpPartialEqCenterIdentity.eq,
+    sandproof_protocol.lifecycle.identity.IncarnationId.Insts.CoreCmpPartialEqIncarnationId.eq,
+    sandproof_protocol.lifecycle.request.LifecycleOperation.Insts.CoreCmpPartialEqLifecycleOperation.eq,
+    sandproof_protocol.lifecycle.identity.ExpectedSession.Insts.CoreCmpPartialEqExpectedSession.eq,
+    sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq,
+    sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq,
+    sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq,
+    sandproof_protocol.lifecycle.identity.SessionId.Insts.CoreCmpPartialEqSessionId.eq,
+    sandproof_protocol.lifecycle.identity.OperationBinding.Insts.CoreCmpPartialEqOperationBinding.eq,
+    sandproof_protocol.lifecycle.request.LifecycleRequest.Insts.CoreCmpPartialEqLifecycleRequest.eq,
+    sandproof_protocol.lifecycle.identity.RetentionWindowId.Insts.CoreCmpPartialEqRetentionWindowId.eq,
+    sandproof_protocol.lifecycle.identity.RetentionBinding.Insts.CoreCmpPartialEqRetentionBinding.eq,
+    sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent.Insts.CoreCmpPartialEqAcceptedLifecycleIntent.eq,
+    sandproof_protocol.lifecycle.request.LifecycleOperation.read_discriminant,
+    sandproof_protocol.lifecycle.identity.ExpectedSession.read_discriminant,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    array_eq, vec_eq, Values.origin, Values.node, Values.create]
+
+theorem wire_key_self_eq :
+    sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq
+      Values.origin.request.binding.key Values.origin.request.binding.key = .ok true := by
+  simp [sandproof_protocol.internal.PositiveCounter.Insts.CoreCmpPartialEqPositiveCounter.eq,
+    sandproof_protocol.DeploymentId.Insts.CoreCmpPartialEqDeploymentId.eq,
+    sandproof_protocol.TenantId.Insts.CoreCmpPartialEqTenantId.eq,
+    sandproof_protocol.lifecycle.identity.RequestSequence.Insts.CoreCmpPartialEqRequestSequence.eq,
+    sandproof_protocol.lifecycle.identity.RequestWindowId.Insts.CoreCmpPartialEqRequestWindowId.eq,
+    sandproof_protocol.lifecycle.identity.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq,
+    alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    SandproofFoundationsRust.alloc.string.String.Insts.CoreCmpPartialEqString.eq,
+    Values.origin, Values.node]
+
+theorem entry_hit :
+    controller.lifecycle_inbox.model.Session.find_entry Values.session Values.origin =
+      .ok (.Ok (some 0#usize)) := by
+  have body : controller.lifecycle_inbox.model.Session.find_entry_loop.body Values.origin
+      (cursor (alloc.vec.Vec.deref Values.session.entries) 0#usize) =
+      .ok (.done (.Ok (some 0#usize))) := by
+    unfold controller.lifecycle_inbox.model.Session.find_entry_loop.body
+    rw [next_some _ 0#usize 1#usize
+      (by simp [Values.session, Values.singleton, alloc.vec.Vec.deref]) (by scalar_tac)]
+    simp [Values.session, Values.singleton, Values.entry, alloc.vec.Vec.deref,
+      wire_key_self_eq, origin_self_eq, core.cmp.PartialEq.ne.trait_default,
+      core.cmp.PartialEq.ne.default]
+  have completed : controller.lifecycle_inbox.model.Session.find_entry_loop
+      (cursor (alloc.vec.Vec.deref Values.session.entries) 0#usize) Values.origin =
+      .ok (.Ok (some 0#usize)) := by
+    unfold controller.lifecycle_inbox.model.Session.find_entry_loop
+    rw [loop, body]
+    simp
+  simpa [controller.lifecycle_inbox.model.Session.find_entry, core.slice.Slice.iter,
+    core.iter.traits.iterator.Iterator.enumerate.trait_default,
+    core.iter.traits.iterator.Iterator.enumerate.default, cursor] using completed
+
+theorem find_first (inbox : Inbox) (front : inbox.sessions.val[0]? = some Values.session) :
+    controller.lifecycle_inbox.model.Inbox.find inbox Values.origin =
+      .ok (.Ok (some (0#usize, 0#usize))) := by
+  cases shape : inbox.sessions.val with
+  | nil => simp [shape] at front
+  | cons head tail =>
+    have same : head = Values.session := by simpa [shape] using front
+    have body : controller.lifecycle_inbox.model.Inbox.find_loop.body Values.origin
+        (cursor (alloc.vec.Vec.deref inbox.sessions) 0#usize) =
+        .ok (.done (.Ok (some (0#usize,0#usize)))) := by
+      unfold controller.lifecycle_inbox.model.Inbox.find_loop.body
+      rw [next_some _ 0#usize 1#usize
+        (by simp [alloc.vec.Vec.deref, shape]) (by scalar_tac)]
+      simp [alloc.vec.Vec.deref, shape, same, entry_hit, core.result.Result.Insts.CoreOpsTry.branch]
+    have completed : controller.lifecycle_inbox.model.Inbox.find_loop
+        (cursor (alloc.vec.Vec.deref inbox.sessions) 0#usize) Values.origin =
+        .ok (.Ok (some (0#usize,0#usize))) := by
+      unfold controller.lifecycle_inbox.model.Inbox.find_loop
+      rw [loop, body]
+      simp
+    simpa [controller.lifecycle_inbox.model.Inbox.find, core.slice.Slice.iter,
+      core.iter.traits.iterator.Iterator.enumerate.trait_default,
+      core.iter.traits.iterator.Iterator.enumerate.default, cursor] using completed
+
+def sharedStore (rows : store.Store K V) :
+    SandproofLoopCallbacksRust.sandbox_controller_core.store.Store K V := ⟨rows.entries⟩
+
+theorem get_agrees (comparison : core.cmp.PartialEq K K) (rows : store.Store K V) (key : K) :
+    store.Store.get comparison rows key =
+      SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get comparison (sharedStore rows) key := by
+  unfold store.Store.get store.Store.get_loop
+    SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get
+    SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get_loop
+  have bodies (index : Usize) : store.Store.get_loop.body comparison rows key index =
+      SandproofLoopCallbacksRust.sandbox_controller_core.store.Store.get_loop.body
+        comparison (sharedStore rows) key index := by rfl
+  simp only [bodies]
+
+theorem native_key_eq (left right : model.OperationKey) :
+    model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq left right =
+      .ok (decide (left = right)) := by
+  rcases left with ⟨ls, lo⟩
+  rcases right with ⟨rs, ro⟩
+  simp [model.OperationKey.Insts.CoreCmpPartialEqOperationKey.eq,
+    ids.SandboxId.Insts.CoreCmpPartialEqSandboxId.eq,
+    ids.OperationId.Insts.CoreCmpPartialEqOperationId.eq]
+  split_ifs <;> simp_all
+
+theorem native_get (rows : store.Store model.OperationKey V) (key : model.OperationKey) :
+    store.Store.get model.OperationKey.Insts.CoreCmpPartialEqOperationKey rows key =
+      .ok (SandboxModel.Foundations.tableLookup key rows.entries.val) := by
+  rw [get_agrees]
+  exact SandboxModel.Foundations.LoopCallbacks.original_get_refines
+    model.OperationKey.Insts.CoreCmpPartialEqOperationKey
+    (by intro left right; exact native_key_eq left right) (sharedStore rows) key
+
+theorem plan_query : model.World.operation_plan Values.world Values.key = .ok (some Values.plan) := by
+  rw [model.World.operation_plan, native_get]
+  simp [Values.world, Values.singleton, SandboxModel.Foundations.tableLookup]
+
+theorem row_query : model.World.operation_record Values.world Values.key = .ok (some Values.row) := by
+  rw [model.World.operation_record, native_get]
+  simp [Values.world, Values.singleton, SandboxModel.Foundations.tableLookup]
+
+theorem plan_contents (world : World) (key : model.OperationKey) :
+    model.World.operation_plan world key =
+      .ok (SandboxModel.Foundations.tableLookup key world.operation_plans.entries.val) := by
+  exact native_get world.operation_plans key
+
+theorem row_contents (world : World) (key : model.OperationKey) :
+    model.World.operation_record world key =
+      .ok (SandboxModel.Foundations.tableLookup key world.operations.entries.val) := by
+  exact native_get world.operations key
+
+theorem find_inbox : controller.lifecycle_inbox.model.Inbox.find Values.inbox Values.origin =
+    .ok (.Ok (some (0#usize,0#usize))) :=
+  find_first Values.inbox (by simp [Values.inbox, Values.singleton])
+
+theorem find_duplicated : controller.lifecycle_inbox.model.Inbox.find Values.duplicated Values.origin =
+    .ok (.Ok (some (0#usize,0#usize))) :=
+  find_first Values.duplicated (by simp [Values.duplicated])
+
+end SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.next_none
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.next_some
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.bytes_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.array_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.vec_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.origin_self_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.wire_key_self_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.entry_hit
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.find_first
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.get_agrees
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.native_key_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.native_get
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.plan_query
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.row_query
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.plan_contents
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.row_contents
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.find_inbox
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOrigin.WitnessSupport.find_duplicated

@@ -14,6 +14,9 @@ use crate::{
 #[must_use]
 pub fn startup_effect_in_current_abort(world: &World, effect: &EffectId) -> bool {
     let command = effect.command();
+    if crate::capture::continuation::activation_in_current_abort(world, effect) {
+        return true;
+    }
     let (sandbox, epoch, generation) = match *command {
         Command::InstallFence {
             sandbox,
@@ -69,8 +72,10 @@ pub fn startup_effect_in_current_abort(world: &World, effect: &EffectId) -> bool
     let Some(plan) = world.operation_plan(original_key) else {
         return false;
     };
+    let restored_prepare = resumed_prepare_origin(world, original, plan, command, record);
     let same_compensation = operation.id == original_key.operation
-        && operation.kind == OperationKind::Create
+        && (operation.kind == OperationKind::Create
+            || operation.kind == OperationKind::Resume && restored_prepare)
         && matches!(operation.status, OperationStatus::Compensating(_))
         && record.epoch == epoch;
     let later_kill = operation.kind == OperationKind::Kill
@@ -80,7 +85,7 @@ pub fn startup_effect_in_current_abort(world: &World, effect: &EffectId) -> bool
     record.terminal
         && record.phase == Phase::Revoking
         && (same_compensation || later_kill)
-        && original.operation.kind == OperationKind::Create
+        && (original.operation.kind == OperationKind::Create || restored_prepare)
         && original_key.sandbox == sandbox
         && plan.key == original_key
         && record.generation == generation
@@ -94,6 +99,44 @@ pub fn startup_effect_in_current_abort(world: &World, effect: &EffectId) -> bool
             world.effect_status(effect),
             Some(EffectStatus::Dispatched | EffectStatus::OutcomeUnknown)
         )
+}
+
+// This accepts only a positive observation of the original load after its
+// fault clears. Unknown Prepare remains unresolved: no Stop/abort exception,
+// new loader, activation, End or material release is created here.
+fn resumed_prepare_origin(
+    world: &World,
+    original: &crate::OperationLedgerRecord,
+    plan: &crate::OperationPlan,
+    command: &Command,
+    record: &crate::SandboxRecord,
+) -> bool {
+    let crate::OperationInput::Resume { source } = original.input else {
+        return false;
+    };
+    let Command::PrepareVm {
+        source: Some(actual),
+        ..
+    } = command
+    else {
+        return false;
+    };
+    original.operation.kind == OperationKind::Resume
+        && plan.restore_from == Some(source)
+        && *actual == source
+        && record.durable_snapshot == Some(source)
+        && world
+            .snapshots
+            .get(&source.snapshot)
+            .is_some_and(|snapshot| {
+                snapshot.owner == record.owner
+                    && snapshot.sandbox == original.sandbox
+                    && snapshot.workspace == record.workspace
+                    && snapshot.source_generation.checked_add(1) == Some(plan.generation)
+                    && snapshot.manifest == source.manifest
+                    && snapshot.stage == crate::SnapshotStage::Durable
+                    && snapshot.immutable
+            })
 }
 
 fn startup_command_matches(
@@ -199,16 +242,7 @@ pub(crate) fn record_late_startup(
             WorkerEvent::ConfigureNetwork { sandbox, slot }
         }
         Command::ActivateVm { vm, generation, .. } => {
-            let stored = world.vm_record(vm).ok_or(WorkerReject::ResourceNotFound)?;
-            if stored.owner != record.owner
-                || stored.sandbox != sandbox
-                || stored.generation != generation
-                || stored.status != VmStatus::Prepared
-            {
-                return Err(WorkerReject::IdentityMismatch);
-            }
-            let mut updated = *stored;
-            updated.status = VmStatus::Executing;
+            let updated = late_activated_vm(world, effect, record, vm, generation)?;
             next.vms.put(vm, updated);
             WorkerEvent::ActivateVm { sandbox, vm }
         }
@@ -233,6 +267,29 @@ pub(crate) fn record_late_startup(
         _ => return Err(WorkerReject::IdentityMismatch),
     };
     Ok(WorkerDecision { event, next })
+}
+
+fn late_activated_vm(
+    world: &World,
+    effect: &EffectId,
+    record: &crate::SandboxRecord,
+    vm: crate::VmId,
+    generation: crate::Generation,
+) -> Result<crate::Vm, crate::WorkerReject> {
+    use crate::WorkerReject;
+    let stored = world.vm_record(vm).ok_or(WorkerReject::ResourceNotFound)?;
+    if stored.owner != record.owner
+        || stored.sandbox != effect.command().sandbox()
+        || stored.generation != generation
+        || (stored.status != VmStatus::Prepared
+            && !(crate::capture::continuation::activation_in_current_abort(world, effect)
+                && matches!(stored.status, VmStatus::Frozen | VmStatus::Executing)))
+    {
+        return Err(WorkerReject::IdentityMismatch);
+    }
+    let mut updated = *stored;
+    updated.status = VmStatus::Executing;
+    Ok(updated)
 }
 
 fn late_prepare(
@@ -276,6 +333,9 @@ fn late_prepare(
 /// This is not permission to execute it again; only fence/stop may proceed.
 #[must_use]
 pub fn activation_in_current_abort(world: &World, effect: &EffectId) -> bool {
+    if crate::capture::continuation::activation_bound_in_current_abort(world, effect) {
+        return true;
+    }
     let Command::ActivateVm {
         sandbox,
         epoch,
@@ -310,7 +370,8 @@ pub fn activation_in_current_abort(world: &World, effect: &EffectId) -> bool {
     let Some(original) = world.operation_record(original_key) else {
         return false;
     };
-    if original.operation.kind != OperationKind::Create {
+    let resume = resume_activation_origin(world, original, plan, effect);
+    if original.operation.kind != OperationKind::Create && !resume {
         return false;
     }
     let same_compensation = original_key == key
@@ -319,6 +380,15 @@ pub fn activation_in_current_abort(world: &World, effect: &EffectId) -> bool {
         && record.epoch == epoch;
     let later_kill =
         original_key != key && operation.kind == OperationKind::Kill && record.epoch > epoch;
+    if resume
+        && (!later_kill
+            || current_plan.key != key
+            || !current_plan.sealed
+            || current_plan.epoch != record.epoch
+            || current_plan.generation != generation)
+    {
+        return false;
+    }
     let Some(slot) = plan.slot else {
         return false;
     };
@@ -342,6 +412,53 @@ pub fn activation_in_current_abort(world: &World, effect: &EffectId) -> bool {
         && logical.current_attempt == effect.attempt
         && logical.result.is_none()
         && activation_resources_match(world, record, sandbox, generation, vm, slot)
+}
+
+// A restored candidate can be stopped without learning whether activation
+// succeeded. Its load must already be acknowledged for this exact sealed
+// source/VM/slot; an unknown Prepare is never covered by this exception.
+fn resume_activation_origin(
+    world: &World,
+    original: &crate::OperationLedgerRecord,
+    plan: &crate::OperationPlan,
+    effect: &EffectId,
+) -> bool {
+    let crate::OperationInput::Resume { source } = original.input else {
+        return false;
+    };
+    let Command::ActivateVm {
+        sandbox,
+        epoch,
+        generation,
+        vm,
+    } = *effect.command()
+    else {
+        return false;
+    };
+    let Some(slot) = plan.slot else {
+        return false;
+    };
+    original.operation.kind == OperationKind::Resume
+        && original.sandbox == sandbox
+        && original.operation.id == plan.key.operation
+        && original.operation.epoch == epoch
+        && plan.key.sandbox == sandbox
+        && plan.sealed
+        && plan.epoch == epoch
+        && plan.generation == generation
+        && plan.vm == Some(vm)
+        && plan.restore_from == Some(source)
+        && effect_succeeded_check(
+            world,
+            &Command::PrepareVm {
+                sandbox,
+                epoch,
+                generation,
+                vm,
+                slot,
+                source: Some(source),
+            },
+        )
 }
 
 fn activation_resources_match(
@@ -502,11 +619,17 @@ pub fn activation_coverage_origin(
         && coverage.epoch > epoch
         && stop_ledger.operation.kind == OperationKind::Kill;
     original_key.sandbox == sandbox
-        && original.operation.kind == OperationKind::Create
-        && original_plan.sealed
+        && (original.operation.kind == OperationKind::Create
+            && original_plan.sealed
+            && original_plan.vm == Some(vm)
+            || resume_activation_origin(world, original, original_plan, effect)
+            || original.operation.kind == OperationKind::Pause
+                && crate::capture::continuation::activation_belongs_to_continuation(
+                    original_plan,
+                    effect.command(),
+                ))
         && original_plan.epoch == epoch
         && original_plan.generation == generation
-        && original_plan.vm == Some(vm)
         && (same || later)
         && stop_ledger.operation.epoch == coverage.epoch
         && stop_plan.epoch == coverage.epoch
@@ -739,6 +862,230 @@ mod tests {
             .unwrap()
             .clone();
         (world, activation, stop)
+    }
+
+    // Controlled predicate inputs. The service regression separately reaches
+    // the Resume/Unknown/Destroy state through the original SQLite journal.
+    fn restore_abort() -> (World, EffectId, OperationKey) {
+        let (mut world, activation) = pending_activation();
+        let key = OperationKey {
+            sandbox: SandboxId(1),
+            operation: OperationId(1),
+        };
+        let source = RestoreSource {
+            snapshot: SnapshotId(31),
+            manifest: SnapshotManifestRef {
+                digest: ManifestDigest(37),
+            },
+        };
+        let mut original = world.operation_record(key).unwrap().clone();
+        original.operation.kind = OperationKind::Resume;
+        original.input = OperationInput::Resume { source };
+        world.operations.put(key, original.clone());
+        let mut record = world.sandbox_record(key.sandbox).unwrap().clone();
+        record.current_operation = Some(original.operation);
+        record.restore_from = Some(source);
+        world.sandboxes.put(key.sandbox, record);
+        let mut plan = world.operation_plan(key).unwrap().clone();
+        plan.restore_from = Some(source);
+        world.operation_plans.put(key, plan.clone());
+        let prepare = EffectId::initial(Command::PrepareVm {
+            sandbox: key.sandbox,
+            epoch: plan.epoch,
+            generation: plan.generation,
+            vm: plan.vm.unwrap(),
+            slot: plan.slot.unwrap(),
+            source: Some(source),
+        });
+        world.effects.put(
+            prepare.clone(),
+            EffectStatus::Acknowledged(EffectOutcome::Succeeded(ResultDigest(11))),
+        );
+        world.logical_effects.put(
+            prepare.logical.clone(),
+            LogicalEffectRecord {
+                origin: EffectOrigin::Operation(key),
+                current_attempt: 0,
+                remaining_retries: 0,
+                result: Some(LogicalEffectResult::Succeeded {
+                    attempt: 0,
+                    result: ResultDigest(11),
+                }),
+            },
+        );
+        world.effect_keys.push(prepare);
+        world = step(
+            &world,
+            ControllerInput::Request(Request::Kill(KillRequest {
+                actor: Actor::Tenant(TenantId(1)),
+                sandbox: key.sandbox,
+                operation: OperationId(2),
+            })),
+        );
+        (world, activation, key)
+    }
+
+    #[test]
+    fn restored_activation_requires_exact_sealed_source_and_scope_for_terminal_takeover() {
+        let (world, activation, key) = restore_abort();
+        assert!(activation_in_current_abort(&world, &activation));
+        assert!(!startup_effect_in_current_abort(&world, &activation));
+        assert!(only_uncertain_activation_for_abort(&world, key.sandbox));
+        let plan = world.operation_plan(key).unwrap();
+        let mut variants = Vec::new();
+        let mut changed = plan.clone();
+        changed.vm = Some(VmId(99));
+        variants.push(changed);
+        let mut changed = plan.clone();
+        changed.slot = Some(NetSlotId(99));
+        variants.push(changed);
+        let mut changed = plan.clone();
+        changed.epoch += 1;
+        variants.push(changed);
+        let mut changed = plan.clone();
+        changed.generation += 1;
+        variants.push(changed);
+        let mut changed = plan.clone();
+        changed.sealed = false;
+        variants.push(changed);
+        let mut changed = plan.clone();
+        changed.restore_from = None;
+        variants.push(changed);
+        let mut changed = plan.clone();
+        changed.restore_from.as_mut().unwrap().manifest.digest = ManifestDigest(99);
+        variants.push(changed);
+        for changed in variants {
+            let mut invalid = world.clone();
+            invalid.operation_plans.put(key, changed);
+            assert!(!activation_in_current_abort(&invalid, &activation));
+            assert!(!only_uncertain_activation_for_abort(&invalid, key.sandbox));
+        }
+        let prepare = world
+            .effect_ids()
+            .iter()
+            .find(|effect| {
+                matches!(
+                    effect.command(),
+                    Command::PrepareVm {
+                        source: Some(_),
+                        ..
+                    }
+                )
+            })
+            .unwrap()
+            .clone();
+        let mut load_unknown = world.clone();
+        load_unknown
+            .effects
+            .put(prepare, EffectStatus::OutcomeUnknown);
+        assert!(!activation_in_current_abort(&load_unknown, &activation));
+        assert!(!only_uncertain_activation_for_abort(
+            &load_unknown,
+            key.sandbox
+        ));
+        assert!(effect::handle_effect_dispatch(&world, activation.clone()).is_err());
+        assert!(
+            handle_controller(
+                &world,
+                ControllerInput::Effect(EffectInput::Receipt(
+                    activation,
+                    EffectOutcome::Succeeded(ResultDigest(99))
+                ))
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn restored_activation_retirement_requires_confirmed_current_stop_and_fence() {
+        let (world, activation, _) = restore_abort();
+        let world = execute(&world, |c| {
+            matches!(c, Command::InstallFence { terminal: true, .. })
+        });
+        let row = world.sandbox_record(SandboxId(1)).unwrap();
+        let world = step(
+            &world,
+            ControllerInput::Scheduler(SchedulerInput::StopVm(
+                SandboxId(1),
+                row.generation,
+                row.current_vm.unwrap(),
+            )),
+        );
+        let stop = world
+            .effect_ids()
+            .iter()
+            .find(|effect| matches!(effect.command(), Command::StopVm { .. }))
+            .unwrap()
+            .clone();
+        assert!(handle_retire_activation(&world, activation.clone(), stop.clone()).is_err());
+        assert!(!checkpoint::retired_activation_valid(&world, &activation));
+        let stopped = execute(&world, |c| c == stop.command());
+        let retired = handle_retire_activation(&stopped, activation.clone(), stop.clone())
+            .unwrap()
+            .next;
+        let Some(EffectStatus::RetiredByStop(coverage)) = retired.effect_status(&activation) else {
+            panic!("original unknown restore activation must retire by its exact Stop");
+        };
+        assert!(activation_coverage_origin(&retired, &activation, coverage));
+        assert!(checkpoint::retired_activation_valid(&retired, &activation));
+        assert!(!effect_succeeded_check(&retired, activation.command()));
+        assert!(
+            handle_controller(
+                &retired,
+                ControllerInput::Effect(EffectInput::Receipt(
+                    activation.clone(),
+                    EffectOutcome::Succeeded(ResultDigest(99))
+                ))
+            )
+            .is_err()
+        );
+        let mut unfenced = stopped.clone();
+        unfenced.worker_fences.put(
+            SandboxId(1),
+            WorkerFence {
+                epoch: coverage.epoch,
+                terminal: false,
+            },
+        );
+        assert!(handle_retire_activation(&unfenced, activation.clone(), stop.clone()).is_err());
+        let mut missing_stop = retired.clone();
+        missing_stop
+            .effects
+            .put(stop.clone(), EffectStatus::OutcomeUnknown);
+        assert!(!checkpoint::retired_activation_valid(
+            &missing_stop,
+            &activation
+        ));
+        let mut mismatched_coverage = retired.clone();
+        mismatched_coverage.effects.put(
+            activation.clone(),
+            EffectStatus::RetiredByStop(StopCoverage {
+                result: ResultDigest(99),
+                ..coverage
+            }),
+        );
+        assert!(!checkpoint::retired_activation_valid(
+            &mismatched_coverage,
+            &activation
+        ));
+        let mut missing_fence = retired.clone();
+        missing_fence.effects.put(
+            EffectId::initial(Command::InstallFence {
+                sandbox: SandboxId(1),
+                epoch: coverage.epoch,
+                terminal: true,
+            }),
+            EffectStatus::OutcomeUnknown,
+        );
+        assert!(!checkpoint::retired_activation_valid(
+            &missing_fence,
+            &activation
+        ));
+        let mut old_epoch = stop.clone();
+        if let Command::StopVm { epoch, .. } = &mut old_epoch.logical.command {
+            *epoch -= 1;
+        }
+        assert!(handle_retire_activation(&stopped, activation, old_epoch).is_err());
     }
 
     #[test]

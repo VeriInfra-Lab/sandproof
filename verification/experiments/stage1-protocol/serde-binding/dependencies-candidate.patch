@@ -1,0 +1,16 @@
+--- a/docs/formal/dependencies.md
++++ b/docs/formal/dependencies.md
+@@ -844,3 +844,13 @@
+ Tokio Mutex 不提供中毒结果，本合同不承诺 FIFO、无条件完成或 panic 回滚。Session.init 的 payload 是 `()`，不能推导另一把 current RwLock 中的令牌、身份或默认值正确。CommandInput 的 take/替换可能有可观察析构和 I/O；finish 可以在 Busy 时发布完成，Started 不能推成 input 为 Some 或 FD 已关闭。授权、实际写入、部分前缀、退出、资源归还和内部进展由 V8/V9 证明。
+ 
+ 21 项目标是条件模型、合法见证和模型反例；实际 Session 提前释放副本由原生同一持锁断言拒绝，不能称作 Rust 形式反例。正常组件测试、实际接线审查和条件模型证明分别报告，不扩大已有 A6/B2 信任范围。
++
++### 协议 4 标准封套序列化使用点（候选，待主控采用）
++
++[逐符号候选](../../verification/experiments/stage1-protocol/serde-binding/README.md)
++把原 A6/B4 限定到完整 Accepted/Recorded 标准派生、实际 to_vec/to_writer 与原 Writer。
++全 26 个实际 Serialize 体、完整字段引用/字典/错误分支及固定库特性由重新抽取的完整
++LLBC 和原生全文/真实字段遗漏回归核对。生产 raw_value 特性与普通 Vec 视图分别登记。
++原字段单射、编号转换、守卫与 Writer 性质继续由已生成体定理提供；此源码绑定不是
++第三方库精化定理。采用前 StandardCalls/NormalRenderer 仍是显式未落实条件；本项
++不采用完整 parser SliceContract，不扩大到业务校验、认证、持久收件或整个 Serde。

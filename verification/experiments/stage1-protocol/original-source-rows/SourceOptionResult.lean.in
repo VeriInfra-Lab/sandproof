@@ -1,0 +1,25 @@
+import Aeneas
+import SandboxModel.ProofAuditCommand
+
+/- The current raw caller contains exactly three `lift (Option.ok_or ...)`
+uses. Match that pure signature without changing any generated expression.
+The equation below identifies the lifted adapter with the fixed Aeneas library
+operation for every Option and error; it adds no new library assumption. -/
+open Aeneas Aeneas.Std
+namespace SandproofOriginalSourceRowsRust
+
+def core.option.Option.ok_or {T E : Type} (value : Option T) (failure : E) :
+    core.result.Result T E :=
+  match value with
+  | some value => .Ok value
+  | none => .Err failure
+
+theorem option_ok_or_lift_matches_fixed_library {T E : Type}
+    (value : Option T) (failure : E) :
+    Aeneas.Std.lift (core.option.Option.ok_or value failure) =
+      Aeneas.Std.core.option.Option.ok_or value failure := by
+  cases value <;> rfl
+
+end SandproofOriginalSourceRowsRust
+
+#audit_controller_proof SandproofOriginalSourceRowsRust.option_ok_or_lift_matches_fixed_library

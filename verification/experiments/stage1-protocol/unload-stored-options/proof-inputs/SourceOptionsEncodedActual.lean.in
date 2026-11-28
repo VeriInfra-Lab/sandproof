@@ -1,0 +1,161 @@
+import SandproofCreateOptionsEncoded.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofCreateOptionsEncoded
+open SandproofFoundationsRust.IdentifierLibrary (stringBytes StringRepresentable)
+
+namespace SandboxModel.Stage1Protocol.SourceOptionsEncodedActual
+
+def allowedField (environment : Bool) (field : String × String) : Bool :=
+  !(decide (stringBytes field.1 = [])) &&
+  (!environment || !(decide (61#u8 ∈ stringBytes field.1))) &&
+  !(decide (0#u8 ∈ stringBytes field.1)) &&
+  !(decide (0#u8 ∈ stringBytes field.2))
+
+def representable (fields : List (String × String)) : Prop :=
+  ∀ field ∈ fields, StringRepresentable field.1 ∧ StringRepresentable field.2
+
+private theorem any_byte (byte : U8) (bytes : List U8) :
+    List.anyM (core.cmp.PartialEqU8.eq byte) bytes =
+      .ok (decide (byte ∈ bytes)) := by
+  induction bytes with
+  | nil => simp [List.anyM, pure]
+  | cons head tail ih =>
+    by_cases equal : byte = head <;> simp [List.anyM, pure, equal, ih]
+
+private theorem contains_byte (bytes : Slice U8) (byte : U8) :
+    core.slice.Slice.contains core.cmp.PartialEqU8 bytes byte =
+      .ok (decide (byte ∈ bytes.val)) := by
+  exact any_byte byte bytes.val
+
+theorem actual_next_field (environment : Bool) (field : String × String)
+    (tail : List (String × String)) (key : StringRepresentable field.1)
+    (value : StringRepresentable field.2) :
+    host_contract.valid_create_fields_loop.body (field :: tail) environment =
+      .ok (if allowedField environment field then .cont (tail, environment) else .done false) := by
+  rcases field with ⟨fieldName, text⟩
+  cases environment <;>
+    by_cases empty : stringBytes fieldName = [] <;>
+    by_cases equal : 61#u8 ∈ stringBytes fieldName <;>
+    by_cases nulKey : 0#u8 ∈ stringBytes fieldName <;>
+    by_cases nulValue : 0#u8 ∈ stringBytes text <;>
+    simp [host_contract.valid_create_fields_loop.body,
+      alloc.collections.btree.map.Iter.Insts.CoreIterTraitsIteratorIteratorPairSharedAKSharedAV.next,
+      alloc.string.String.is_empty, alloc.string.String.as_bytes, contains_byte, allowedField,
+      key, value, empty, equal, nulKey, nulValue]
+
+private theorem loop_accepts_exact_fields (environment : Bool) (fields : List (String × String))
+    (valid : representable fields) :
+    host_contract.valid_create_fields_loop fields environment =
+      .ok (fields.all (allowedField environment)) := by
+  induction fields with
+  | nil =>
+    unfold host_contract.valid_create_fields_loop
+    rw [loop]
+    simp [host_contract.valid_create_fields_loop.body,
+      alloc.collections.btree.map.Iter.Insts.CoreIterTraitsIteratorIteratorPairSharedAKSharedAV.next]
+  | cons field tail ih =>
+    have head := valid field (by simp)
+    have rest : representable tail := fun item member => valid item (by simp [member])
+    unfold host_contract.valid_create_fields_loop at ih ⊢
+    rw [loop]
+    simp only [actual_next_field environment field tail head.1 head.2]
+    by_cases allowed : allowedField environment field <;>
+      simp [allowed, ih rest]
+
+theorem actual_fields_accept_exactly (environment : Bool) (fields : List (String × String))
+    (valid : representable fields) :
+    host_contract.valid_create_fields fields environment =
+      .ok (fields.all (allowedField environment)) := by
+  simp [host_contract.valid_create_fields, alloc.collections.btree.map.BTreeMap.iter,
+    loop_accepts_exact_fields environment fields valid]
+
+variable [Representations] [Operations]
+
+def templateValid (options : host_contract.CreateOptions) : Result Bool :=
+  match options.template with
+  | none => .ok true
+  | some template => templates.TemplateBinding.is_valid template
+
+def resultFor (bytes : alloc.vec.Vec U8) :
+    core.result.Result (alloc.vec.Vec U8) host_contract.AdmissionError :=
+  if alloc.vec.Vec.len bytes > 65536#usize then .Err .InvalidCreateOptions else .Ok bytes
+
+theorem actual_encoding_after_template (options : host_contract.CreateOptions)
+    (template : templateValid options = .ok true)
+    (env : representable options.env_vars) (metadata : representable options.metadata) :
+    host_contract.CreateOptions.encoded options = (do
+      if options.env_vars.all (allowedField true) && options.metadata.all (allowedField false) then
+        let rendered ← host_contract.serialize_create_options options
+        .ok (match rendered with
+          | .Err _ => .Err .InvalidCreateOptions
+          | .Ok bytes => resultFor bytes)
+      else .ok (.Err .InvalidCreateOptions)) := by
+  have envRead := actual_fields_accept_exactly true options.env_vars env
+  have metaRead := actual_fields_accept_exactly false options.metadata metadata
+  cases ht : options.template
+  all_goals simp only [templateValid, ht] at template
+  all_goals
+    cases he : options.env_vars.all (allowedField true) <;>
+      cases hm : options.metadata.all (allowedField false) <;>
+      simp_all [host_contract.CreateOptions.encoded, core.option.Option.as_ref,
+        core.option.Option.is_some_and,
+        host_contract.CreateOptions.encoded.closure.Insts.CoreOpsFunctionFnOnceTupleSharedTemplateBindingBool.call_once]
+  all_goals
+    apply congrArg (fun continuation => host_contract.serialize_create_options options >>= continuation)
+    funext rendered
+    cases rendered <;>
+      simp [core.result.Result.map_err, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+        host_contract.CreateOptions.encoded.closure_1.Insts.CoreOpsFunctionFnOnceTupleErrorAdmissionError.call_once,
+        host_contract.CreateOptions.MAX_ENCODED_BYTES, resultFor]
+  all_goals split <;> simp_all
+
+theorem actual_rejects_invalid_template (options : host_contract.CreateOptions)
+    (template : templateValid options = .ok false) :
+    host_contract.CreateOptions.encoded options = .ok (.Err .InvalidCreateOptions) := by
+  cases ht : options.template <;> simp [templateValid, ht] at template
+  simp [host_contract.CreateOptions.encoded, ht, core.option.Option.as_ref,
+    core.option.Option.is_some_and, template,
+        host_contract.CreateOptions.encoded.closure.Insts.CoreOpsFunctionFnOnceTupleSharedTemplateBindingBool.call_once]
+
+theorem actual_environment_rejection_precedes_metadata (options : host_contract.CreateOptions)
+    (template : templateValid options = .ok true)
+    (environment : host_contract.valid_create_fields options.env_vars true = .ok false) :
+    host_contract.CreateOptions.encoded options = .ok (.Err .InvalidCreateOptions) := by
+  cases ht : options.template <;>
+    simp_all [templateValid, host_contract.CreateOptions.encoded,
+      core.option.Option.as_ref, core.option.Option.is_some_and,
+      host_contract.CreateOptions.encoded.closure.Insts.CoreOpsFunctionFnOnceTupleSharedTemplateBindingBool.call_once]
+
+theorem actual_metadata_rejection_precedes_serde (options : host_contract.CreateOptions)
+    (template : templateValid options = .ok true)
+    (environment : host_contract.valid_create_fields options.env_vars true = .ok true)
+    (metadata : host_contract.valid_create_fields options.metadata false = .ok false) :
+    host_contract.CreateOptions.encoded options = .ok (.Err .InvalidCreateOptions) := by
+  cases ht : options.template <;>
+    simp_all [templateValid, host_contract.CreateOptions.encoded,
+      core.option.Option.as_ref, core.option.Option.is_some_and,
+      host_contract.CreateOptions.encoded.closure.Insts.CoreOpsFunctionFnOnceTupleSharedTemplateBindingBool.call_once]
+
+theorem actual_encode_returns_complete_serialized_value (options : host_contract.CreateOptions)
+    (template : templateValid options = .ok true)
+    (env : representable options.env_vars) (metadata : representable options.metadata)
+    (envOK : options.env_vars.all (allowedField true) = true)
+    (metadataOK : options.metadata.all (allowedField false) = true)
+    (bytes : alloc.vec.Vec U8)
+    (rendered : host_contract.serialize_create_options options = .ok (.Ok bytes))
+    (within : bytes.val.length ≤ 65536) :
+    host_contract.CreateOptions.encoded options = .ok (.Ok bytes) := by
+  rw [actual_encoding_after_template options template env metadata]
+  simp [envOK, metadataOK, rendered, resultFor, within]
+
+end SandboxModel.Stage1Protocol.SourceOptionsEncodedActual
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOptionsEncodedActual.actual_next_field
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOptionsEncodedActual.actual_fields_accept_exactly
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOptionsEncodedActual.actual_encoding_after_template
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOptionsEncodedActual.actual_rejects_invalid_template
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOptionsEncodedActual.actual_encode_returns_complete_serialized_value
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOptionsEncodedActual.actual_environment_rejection_precedes_metadata
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceOptionsEncodedActual.actual_metadata_rejection_precedes_serde

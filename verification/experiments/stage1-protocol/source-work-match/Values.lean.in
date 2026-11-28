@@ -1,0 +1,59 @@
+import SandboxModel.Lifecycle.Protocol.SourceWorkMatch.Spec
+open Aeneas Aeneas.Std SandproofSourceWorkMatchRust
+namespace SandboxModel.Stage1Protocol.SourceWorkMatch.Values
+
+def digest : Array U8 32#usize := Array.from (List.replicate 32 (0#u8)) (by decide)
+def otherDigest : Array U8 32#usize := Array.from (List.replicate 32 (1#u8)) (by decide)
+def node : sandproof_protocol.internal.NodeIdentity := ⟨"deployment", "node", 1#u64⟩
+def bootstrap : capture.HostEpochRegistration := ⟨1#u16, "boot", digest⟩
+def source : capture.SourceProcessIdentity := ⟨1234#u32, 5678#u64, "boot"⟩
+def limits : capture.source.SourceObservationConfig :=
+  ⟨32768#u32, 1024#u32, 1048576#u64, 1048576#u64, 1048576#u64, 68719476736#u64⟩
+def create : sandproof_protocol.internal.lifecycle.CreateBinding :=
+  ⟨"template", digest, ⟨1#u64, 1#u64, 4096#u64, 4096#u64⟩,
+    alloc.vec.Vec.from [123#u8, 125#u8] (by scalar_tac), 1000#u64, 2000#u64, 3000#u64⟩
+def origin : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent :=
+  ⟨⟨⟨4#u16, node, "session", ⟨"deployment", "owner", 1#u64, 1#u64⟩, .Absent⟩,
+    .Create create 101#u64⟩, 1#u64, ⟨"deployment", "center"⟩, ⟨1#u16, 1#u64⟩⟩
+def request : sandproof_protocol.lifecycle.authority.AcceptedLifecycleIntent :=
+  { origin with request := ⟨{ origin.request.binding with
+      key := ⟨"deployment", "owner", 1#u64, 2#u64⟩, expected := .Version 1#u64 },
+    .Unload 101#u64 1#u64⟩, accepted_version := 2#u64 }
+def base : Work :=
+  ⟨⟨request, origin, ⟨1#u64, 2#u64, 3#u64⟩,
+      ⟨2#u64, .Running, false, 1#u64, 101#u64, some 5#u64, none,
+        some ⟨some 10#i64, 2010#i64, 3010#i64, 1010#i64, 4096#u64⟩,
+        alloc.vec.Vec.from [] (by scalar_tac)⟩,
+      none, node, bootstrap, source, digest, (1#u64, digest),
+      alloc.vec.Vec.from [] (by scalar_tac), alloc.vec.Vec.from [digest] (by scalar_tac)⟩,
+    ⟨digest, node, bootstrap, ⟨.Vm, "vm"⟩, source, limits⟩⟩
+
+def changedLimits : Work :=
+  { base with requirement := { base.requirement with
+    limits := { limits with max_configuration_bytes := 1025#u32 } } }
+def changedKey : Work :=
+  { base with requirement := { base.requirement with work_binding := otherDigest } }
+def changedCredential : Work :=
+  { base with anchor := { base.anchor with credential := (2#u64, digest) } }
+
+-- Digests are ordinary 32-byte values here; this does not compute an anchor hash.
+theorem limits_differ : base ≠ changedLimits := by
+  intro same
+  have h := congrArg (fun w : Work => w.requirement.limits.max_configuration_bytes) same
+  change (1024#u32) = 1025#u32 at h
+  exact (by decide : (1024#u32) ≠ 1025#u32) h
+
+theorem key_differs : base ≠ changedKey := by
+  intro same
+  have h := congrArg (fun w : Work => w.requirement.work_binding) same
+  exact (by decide : digest ≠ otherDigest) h
+
+theorem credential_differs : base ≠ changedCredential := by
+  intro same
+  have h := congrArg (fun w : Work => w.anchor.credential.1) same
+  change (1#u64) = 2#u64 at h
+  exact (by decide : (1#u64) ≠ 2#u64) h
+end SandboxModel.Stage1Protocol.SourceWorkMatch.Values
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Values.limits_differ
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Values.key_differs
+#audit_controller_proof SandboxModel.Stage1Protocol.SourceWorkMatch.Values.credential_differs

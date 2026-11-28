@@ -1,0 +1,82 @@
+import SandboxModel.Lifecycle.Protocol.CreateLoadOwnerBound
+import SandboxModel.Lifecycle.Protocol.CreateLoadFixture
+import SandboxModel.Lifecycle.Protocol.CreateInstallValues
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.internal_inbox.model
+namespace SandboxModel.Stage1Protocol.CreateLoadCapacity.Examples
+noncomputable section
+open InboxValidation.Values InboxLoad.Values
+
+abbrev inbox := InboxValidation.Values.recorded
+abbrev intent := SessionShape.Values.createIntent
+
+theorem represented : InboxLoad.DecodedStringsRepresentable (Fixture.ioFor inbox) := by
+  intro state input decoded after equation
+  simp only [Fixture.ioFor, effects, Result.ok.injEq, Prod.mk.injEq,
+    core.result.Result.Ok.injEq] at equation
+  rcases equation with ⟨same, _⟩
+  rw [← same]
+  exact fixture_representable
+
+theorem accepted : Inbox.validate_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic inbox = .ok (.Ok ()) := by
+  rw [InboxValidation.inbox_refines saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract inbox fixture_representable]
+  exact recorded_model_accepted saved terminal renewal unload
+
+theorem charged : LifecycleInboxConfig.required_bytes inbox.config = .ok 286720#u64 := by
+  rw [InboxLoad.budget_refines]
+  exact congrArg Result.ok normal_budget
+
+theorem loaded (trace : Trace) :
+    load_using saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+      ComposedConfig.standardGraphic (Fixture.ioFor inbox) trace =
+      .ok (.Ok (some inbox), trace ++ completeTrace inbox) := by
+  exact Fixture.actual_loaded saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic inbox accepted charged (by decide) trace
+
+theorem owner_limit : OwnerLimit inbox := by
+  exact actual_load_owner_limit saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract (Fixture.ioFor inbox)
+    represented [] (completeTrace inbox) inbox (by simpa using loaded [])
+
+theorem lookup_shape : InboxLookup.inboxSpec intent inbox.sessions.val 0 = .found 0 0 := by
+  classical
+  simp [inbox, intent, recorded, recordedSession, SessionShape.Values.normal,
+    SessionShape.Values.entry, SessionShape.Values.vector, InboxLookup.inboxSpec, InboxLookup.entrySpec]
+
+theorem selected : CreateSelection.run inbox intent = .ok (.Ok (0#usize, 0#usize, 2#u64)) := by
+  have outcome := InboxLookup.find_outcome inbox intent
+  rw [lookup_shape] at outcome
+  obtain ⟨s,e,sz,ez,found⟩ := outcome
+  have szero : s = 0#usize := by scalar_tac
+  have ezero : e = 0#usize := by scalar_tac
+  subst s
+  subst e
+  rw [CreateSelection.found inbox intent 0#usize 0#usize found (by decide)]
+  simp [CreateSelection.forSession, inbox, recorded, recordedSession, SessionShape.Values.normal,
+    SavedRetirement.Values.normal, SessionShape.Values.vector, intent,
+    SavedRetirement.Values.createIntent, EnvelopeValues.intent, Validation.Examples.createPayload]
+
+theorem loaded_selected_install (binding : InternalLocalBinding) :
+    ∃ (session : Session) (entry : Entry),
+      inbox.sessions.val[0]? = some session ∧ session.entries.val[0]? = some entry ∧
+      entry.intent = intent ∧ CreateInstall.run inbox 0#usize 0#usize binding ⦃ result =>
+        CreateInstall.Installed inbox 0#usize 0#usize session entry binding result ⦄ := by
+  exact actual_loaded_selected_install saved terminal (N := Unit) ⟨renewal⟩ (U := Unit) ⟨unload⟩
+    ComposedConfig.standardGraphic ComposedConfig.standard_graphic_contract (Fixture.ioFor inbox)
+    represented [] (completeTrace inbox) inbox (by simpa using loaded []) intent 0#usize 0#usize 2#u64 binding selected
+
+end
+end SandboxModel.Stage1Protocol.CreateLoadCapacity.Examples
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.Examples.represented
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.Examples.accepted
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.Examples.charged
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.Examples.loaded
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.Examples.owner_limit
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.Examples.lookup_shape
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.Examples.selected
+#audit_controller_proof SandboxModel.Stage1Protocol.CreateLoadCapacity.Examples.loaded_selected_install

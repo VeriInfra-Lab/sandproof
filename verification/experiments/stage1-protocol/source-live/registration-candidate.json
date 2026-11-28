@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "candidate_only": true,
+  "issue": 635,
+  "source_base": "2be04389e45482cb056c54e716dd097456d6168a",
+  "owned_component": "verification/experiments/stage1-protocol/source-live",
+  "proposed_independent_scope": "stage1-source-live",
+  "native_parent_requires": ["functional", "source-live"],
+  "native_component": "verification/experiments/stage1-protocol/source-live/native.py",
+  "native_views": ["original", "skip-version", "allow-expired", "ignore-startup", "restored"],
+  "native_assertions_per_view": 11,
+  "formal_component": "verification/experiments/stage1-protocol/source-live/formal.py",
+  "formal_views": ["correct", "skip-version", "allow-expired", "ignore-startup"],
+  "shared_obligations": [
+    "Register current-source native case and enforce full original inputs, commands, library/program identities and logs before public formal admission.",
+    "Connect the formal component and all four isolated views, every real file/import and complete dependency audits to the real stage1 checker.",
+    "Adopt root imports, public Lake/module lists, source freezes and coverage only after actual source review, extraction and required acceptance.",
+    "Retain existing scopes; do not reopen old 63 tasks or relabel another scope's receipt."
+  ],
+  "shared_configuration_modified": false,
+  "ning_acceptance": false,
+  "formal_batch_acceptance": false,
+  "full_V3": false
+}

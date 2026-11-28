@@ -1,0 +1,15 @@
+{
+  "source_base": "9c50da7cc9391518514f14405e6c779e5c5cbe2c",
+  "same_spec_sha256": "e7a917c9fd4bb4ae56ac1b7a482aed30435f7cc02e4464acf2236d5ebd4af63c",
+  "new_library_models": false,
+  "generic_iterator_proof_body_sha256": "bd3e3407dfab50715294287314898dbc860abacb1f0064f27daba4c6103575c4",
+  "generic_byte_array_vec_proof_body_sha256": "daf30eeea90011385bbd5b82efd1f20265845355e202d7c1b2018bb9c5174cec",
+  "reason_for_namespace_binding": "original Inbox helper requires an independent extraction view; importing original request Types collides on global generated discriminant declarations; bodies retained verbatim, no generated-body edits",
+  "providers": {
+    "verification/experiments/stage1-protocol/inbox-lookup/InboxLookupSupport.lean.in": "a5fe02daea8d672e5521d3aeb195540b3dbc0a30956153f5945952a55675ce34",
+    "SandboxModel/Lifecycle/Protocol/ReplayEquality.lean": "bb2a619f7ce5dad3c6c4effce17595d37a994508e4b64d1c5b246fd559f756ef",
+    "SandboxModel/Foundations/LoopCallbacks/Refinement.lean": "b4ba1236ea979e0124d5db188a4880f032349d891f1dc0649a8993da86b132fd",
+    "SandboxModel/Foundations/LoopCallbacks/Loop.lean": "749f692b56bfba325a1187e62fbf7b06f1f53ccf41c9b9f7f424ed8a1e27e670",
+    "verification/aeneas/loop-callbacks/SandproofLoopCallbacks/Funs.lean": "00aef5571e8c00ad2e91b88a53ce869f1faea84df3660f209a1d18a15f07b6cb"
+  }
+}

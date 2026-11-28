@@ -9,6 +9,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
 
+from tools.capture_acceptance import original_chroot
+
 
 SOURCE = Path(__file__).resolve().parents[2] / "tests/system/harbor_diagnostic_chain.py"
 TREE = ast.parse(SOURCE.read_text())
@@ -20,6 +22,7 @@ def observation_functions(**overrides):
     # resource entry and its platform/SDK imports are never executed here.
     names = ("save_identity", "no_exact_residual", "wait_destroyed", "run_original_task")
     namespace = {"Path": Path, "Sandbox": object, "json": json, "os": os,
+                 "original_chroot": original_chroot,
                  "time": SimpleNamespace(monotonic=Mock(), sleep=Mock())}
     namespace.update(overrides)
     selected = ast.Module(body=[FUNCTIONS[name] for name in names], type_ignores=[])
@@ -34,7 +37,11 @@ class HarborDiagnosticCompleteTests(unittest.TestCase):
         self.assertNotIn('"max_vm_id"', source)
         calls = [node for node in ast.walk(FUNCTIONS["exercise"]) if isinstance(node, ast.Call)]
         complete = next(node for node in calls if isinstance(node.func, ast.Name) and node.func.id == "complete_runtime")
-        self.assertEqual({value.arg: ast.literal_eval(value.value) for value in complete.keywords}, {"slots": 1})
+        keywords = {value.arg: value.value for value in complete.keywords}
+        self.assertEqual(set(keywords), {"slots", "inbox_sessions"})
+        self.assertEqual(ast.literal_eval(keywords["slots"]), 1)
+        self.assertEqual(ast.dump(keywords["inbox_sessions"]),
+                         ast.dump(ast.parse("len(selection) + 3", mode="eval").body))
         positions = {name: next(node.lineno for node in calls if ast.unparse(node.func) == name)
                      for name in ("complete_runtime", "RuntimeServices.prepare", "services.start")}
         self.assertLess(positions["complete_runtime"], positions["RuntimeServices.prepare"])
@@ -61,10 +68,18 @@ class HarborDiagnosticCompleteTests(unittest.TestCase):
 
     def test_saved_original_identity_is_private_and_survives_claim_retirement(self):
         with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
+            root = Path(temporary).resolve()
+            for directory in ("control", "db", "state", "p", "p/v", "p/v/.claims"):
+                (root / directory).mkdir(mode=0o700)
+            configuration = root / "control/host.json"
+            configuration.write_text(json.dumps({"native": {
+                "database": str(root / "db/controller.db"),
+                "node_state_dir": str(root / "state"), "chroot_base": str(root / "p/v")},
+                "capture": {"layout_parent": str(root / "p")}}))
+            configuration.chmod(0o600)
             name = "vm-" + "a" * 16 + "-9"
-            claim = root / "jails/.claims" / name
-            claim.mkdir(parents=True)
+            claim = original_chroot(root) / ".claims" / name
+            claim.mkdir(mode=0o700)
             (claim / "network.json").write_text(json.dumps({"resource_id": name, "namespace_inode": 31}))
             sandbox = SimpleNamespace(sandbox_id="sandbox-17")
             native = "sb-" + "a" * 16 + "-5"
@@ -104,11 +119,17 @@ class HarborDiagnosticCompleteTests(unittest.TestCase):
         path.__truediv__ = Mock(return_value=path)
         path.glob.return_value = []
         path.rglob.return_value = []
+        chroot = Mock()
+        chroot.__truediv__ = Mock(return_value=path)
+        original_layout = Mock(return_value=chroot)
         firecracker = SimpleNamespace(name="firecracker")
-        functions = observation_functions(Path=Mock(return_value=path), audit_gone=audit, processes_in_uid_range=uid)
+        functions = observation_functions(Path=Mock(return_value=path), original_chroot=original_layout,
+                                         audit_gone=audit, processes_in_uid_range=uid)
         functions["no_exact_residual"](path, "a" * 16, 10000, [identity], firecracker, path)
         audit.assert_called_once_with(path, firecracker, path, identity["resource_id"], identity=identity)
         uid.assert_called_once_with(10000, 10000)
+        original_layout.assert_called_once_with(path)
+        chroot.__truediv__.assert_called_once_with(firecracker.name)
         with self.assertRaisesRegex(AssertionError, "not saved"):
             functions["no_exact_residual"](path, "a" * 16, 10000, [], firecracker, path)
         audit.side_effect = AssertionError("original network inode still held")

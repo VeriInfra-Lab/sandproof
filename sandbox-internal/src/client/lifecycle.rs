@@ -4,6 +4,54 @@ use crate::lifecycle::REQUEST_BODY_BYTES;
 use sandproof_protocol::lifecycle::{AcceptedLifecycleIntent, RecordedLifecycleIntent};
 
 impl InternalClient {
+    /// Observe the same retained Resume through the original registered peer.
+    /// # Errors
+    /// Rejects wrong nodes, other operation kinds, excess bytes and changed
+    /// response envelopes. No failure permits retrying a different candidate.
+    pub async fn observe_lifecycle_resume(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+    ) -> Result<sandproof_protocol::lifecycle::ResumeObservation, TransportError> {
+        use sandproof_protocol::lifecycle::{
+            LifecycleOperation, RESUME_OBSERVATION_PATH, ResumeObservation,
+        };
+        intent
+            .request
+            .validate(&self.endpoint.node)
+            .map_err(|_| TransportError::Rejected)?;
+        if !matches!(intent.request.operation, LifecycleOperation::Resume { .. }) {
+            return Err(TransportError::Rejected);
+        }
+        let _permit = self
+            .calls
+            .try_acquire()
+            .map_err(|_| TransportError::Overloaded)?;
+        let work = async {
+            let encoded =
+                sandproof_controller_service::template_registry::evidence::encode_bounded(
+                    intent,
+                    REQUEST_BODY_BYTES,
+                )
+                .map_err(|_| TransportError::Rejected)?;
+            let bytes = self
+                .exchange_bytes(
+                    RESUME_OBSERVATION_PATH,
+                    encoded,
+                    REQUEST_BODY_BYTES,
+                    crate::lifecycle::RESUME_OBSERVATION_BODY_BYTES,
+                )
+                .await?;
+            let view: ResumeObservation =
+                serde_json::from_slice(&bytes).map_err(|_| TransportError::InvalidResponse)?;
+            if !view.matches_request(intent) {
+                return Err(TransportError::InvalidResponse);
+            }
+            Ok(view)
+        };
+        timeout(self.limits.request_timeout, work)
+            .await
+            .map_err(|_| TransportError::Deadline)?
+    }
     /// Send only a result already committed by the original center authority.
     /// # Errors
     /// Wrong shape, endpoint, bounded encoding or a changed/unknown ACK rejects.
@@ -279,6 +327,53 @@ impl InternalClient {
                 return Err(TransportError::InvalidResponse);
             }
             Ok(recorded)
+        };
+        timeout(self.limits.request_timeout, work)
+            .await
+            .map_err(|_| TransportError::Deadline)?
+    }
+    /// Read the original journal's retained Unload result through this peer.
+    /// # Errors
+    /// Pending, foreign or unavailable evidence never establishes Unloaded.
+    pub async fn observe_lifecycle_unload(
+        &self,
+        intent: &AcceptedLifecycleIntent,
+    ) -> Result<sandproof_protocol::lifecycle::UnloadObservation, TransportError> {
+        intent
+            .request
+            .validate(&self.endpoint.node)
+            .map_err(|_| TransportError::Rejected)?;
+        if !matches!(
+            intent.request.operation,
+            sandproof_protocol::lifecycle::LifecycleOperation::Unload { .. }
+        ) {
+            return Err(TransportError::Rejected);
+        }
+        let _permit = self
+            .calls
+            .try_acquire()
+            .map_err(|_| TransportError::Overloaded)?;
+        let work = async {
+            let encoded =
+                sandproof_controller_service::template_registry::evidence::encode_bounded(
+                    intent,
+                    REQUEST_BODY_BYTES,
+                )
+                .map_err(|_| TransportError::Rejected)?;
+            let bytes = self
+                .exchange_bytes(
+                    sandproof_protocol::lifecycle::UNLOAD_OBSERVATION_PATH,
+                    encoded,
+                    REQUEST_BODY_BYTES,
+                    sandproof_protocol::lifecycle::TERMINAL_RESULT_BODY_BYTES,
+                )
+                .await?;
+            let view: sandproof_protocol::lifecycle::UnloadObservation =
+                serde_json::from_slice(&bytes).map_err(|_| TransportError::InvalidResponse)?;
+            if !view.matches_request(intent) {
+                return Err(TransportError::InvalidResponse);
+            }
+            Ok(view)
         };
         timeout(self.limits.request_timeout, work)
             .await

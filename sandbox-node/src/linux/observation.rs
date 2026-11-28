@@ -38,8 +38,12 @@ impl LinuxWorker {
                 generation,
                 vm,
                 slot,
+                source,
                 ..
             } => {
+                if source.is_some() {
+                    return Err("restore observation requires original durable source work".into());
+                }
                 self.require_slot(*sandbox, *generation, *vm, *slot)?;
                 if self
                     .runtime(*sandbox, *vm)?
@@ -111,7 +115,7 @@ impl LinuxWorker {
                     return Err("activation VM binding mismatch".into());
                 }
                 let observed = self.running(*sandbox, *vm)?;
-                let token = self.secret(*sandbox)?.token;
+                let token = self.secret(*sandbox, *generation)?.token;
                 if self.guest_file_status(&self.vm_name(*vm), &token)? != "200" {
                     return Err("guest authentication not observed".into());
                 }
@@ -222,6 +226,19 @@ impl LinuxWorker {
         self.require_fence(sandbox, epoch, false)?;
         self.require_slot(sandbox, generation, vm, slot)?;
         self.running(sandbox, vm)?;
+        self.observe_network_after_candidate(sandbox, generation, vm, slot, policy)
+    }
+
+    // Caller has just checked this running or loaded-paused original candidate.
+    pub(super) fn observe_network_after_candidate(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+        vm: core::VmId,
+        slot: core::NetSlotId,
+        policy: &core::NetworkPolicy,
+    ) -> NodeResult<ObservedResult> {
+        self.require_slot(sandbox, generation, vm, slot)?;
         let name = self.vm_name(vm);
         let runtime = self.runtime(sandbox, vm)?;
         let namespace_inode = match policy {
@@ -273,6 +290,16 @@ impl LinuxWorker {
         }
         let vm = self.vm_for_workspace(sandbox, generation)?;
         self.running(sandbox, vm)?;
+        self.observe_private_disk_after_candidate(sandbox, generation)
+    }
+
+    // No execution or policy grant; same registered disk after candidate check.
+    pub(super) fn observe_private_disk_after_candidate(
+        &self,
+        sandbox: core::SandboxId,
+        generation: core::Generation,
+    ) -> NodeResult<ObservedResult> {
+        let vm = self.vm_for_workspace(sandbox, generation)?;
         let disk = self
             .config
             .chroot_base

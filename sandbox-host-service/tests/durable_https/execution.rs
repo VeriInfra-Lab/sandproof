@@ -221,7 +221,7 @@ async fn registered_builder_uses_original_internal_admission_without_private_win
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("db");
     let state = Arc::new(Mutex::new(local::state()));
-    let reserve = local::complete_fixture::CLEANUP_BYTES + 1000;
+    let reserve = local::current::CLEANUP_BYTES + 1000;
     let namespace = "0123456789abcdef";
     let mut host_config =
         local::complete_fixture::host(&path, namespace, 64, 2 * 1024 * 1024, reserve);

@@ -4,7 +4,7 @@
 
 本文用于证明开发批次。当前 V1 功能开发按[项目蓝图](project-blueprint.md)
 与[测试计划](testing-plan.md)推进，不要求新增功能逐项先完成证明。
-既有证明的适用版本和后续缺口必须准确记录；进入证明批次时仍执行下述完整验收。
+既有证明的适用版本和后续缺口必须准确记录。任务 PR 按影响范围验收，晋升前执行登记范围内的完整验收。
 
 ## 证明批次的组织顺序
 
@@ -27,7 +27,23 @@
 
 先固定本切片所需 V0 公共合同与 V9 最小系统不变量；中心、本地控制/执行、公开/数据三线按最小合同交付第一链路，V9持续核对邻接前提。不是先把所有叶子模块证明完再组合；同一crate的共享事务/状态须明确负责人和共同不变量，不各造一份模型。
 
-抽取/异步/Lua等可行性试验须报告实际支持范围、剩余桥接及失败原因。功能候选未冻结前仅做小试验，正式声明实现已验证必须绑定工程验收后的真实版本。
+抽取/异步/Lua 等可行性试验须报告实际支持范围、剩余桥接及失败原因。已存在的稳定同步函数可以按精确提交、调用闭包、输入域和合同独立开工；不要求先完成全部 V0、Resume/GC 或晋升 E2E。函数尚未实现或接口未确定的任务只能先做规格，不认领实现证明。
+
+每个并行包先检查原冻结输入差异、实际抽取能力与前提提供者，再证明真实生成体；输入变化不能只换摘要。各包独占模块证明、薄调用根及私有构建目录，公共生成物、根导入、依赖表、冻结清单和覆盖记录由同一集成负责人协调，不并发刷新。issue 无负责人时保持待认领，不虚构 Ready 或 assignee。
+
+每次交付分别报告以下事实，不合并成一个“完成”：
+
+- 功能实现：原生产入口、持久状态和驱动已接通。
+- 工程验收：某精确候选的普通/组件/实机判据已通过，写清实际执行与证据复用范围。
+- 局部证明：模型定理报告其内核检查和输入域；若声明实际实现对应，另列真实生成体、表示关系及对应定理，不能把条件模型当作 Rust 对应。
+- 公共证明接线：原生 case、正式任务、Lake/实际文件和总审计已登记，并取得对应范围的完整结果。
+- 系统组合：各自有条件已由实际提供方落实，满足 V9 的目标与验收；发布晋升另按开发指南。
+
+功能与有限工程验收已有结果时，后续待办应写“实现对应/组合未证”或具体未覆盖场景，
+不能重新标成“尚未开发”。历史冻结/路径失败保留原版本；后来已经修复的失败不继续
+列为当前阻断。可以继续有明确边界的局部工作，但不能跳过原完整入口来声明整套通过。
+实际状态仅在覆盖记录维护；工程合入、局部定理和一次普通入口通过都不自动完成公共
+证明接线或系统组合。发布仍满足开发指南的普通检查与 E2E，不因证明切片可开工而豁免。
 
 ### 骨架与未解义务
 
@@ -54,6 +70,13 @@
   在客户端重新加载前，可以通过
   `.tools/lean-mcp/bin/python tools/lean_session.py` 使用同一个服务的标准客户端。
   该客户端仅转发请求、记录版本和结果，不代替 Lean 检查证明。
+
+开始执行前先查本批私有环境交接，确认当前角色的固定 wrapper、实际工具/依赖、
+源码/缓存/证据目录及重任务锁。证明隔离环境显示的虚拟路径与宿主物理路径分别记录；
+虚拟旧路径存在不表示工具失效，宿主迁移也不授权重装或升级工具。私有账号、地址、
+物理根和凭据不写入仓库。已有固定入口可用时先复用；若预检失败，记录未启动及具体
+原因，不重新安装整套环境，也不把排队算作证明执行耗时。资源排程、保留与回收规则见
+[CI 运行环境](ci.md)。
 
 ## 每个证明的工作顺序
 
@@ -112,25 +135,35 @@
 默认构建成功不代表所有探索中的模块已通过，也不代表所有控制器输入已覆盖。
 不修改检查脚本来排除失败模块，不以占位证明、自定义假设或调试开关绕过检查。
 
-### 普通测试机与证明机的分工及证据交接
+### 手动 Rust 和 Lean 验收的环境及证据交接
 
-普通 CI 继续使用现有 ning 上的隔离 runner。普通 Rust/Python 测试、格式、
-Clippy、SDK、组件回归和错误实现的原生断言也都在 ning 执行。
-证明机（如 msra）仅运行证明所需的编译/MIR 捕获、固定 Charon/Aeneas 抽取、Lean 构建、
-形式反例、真实文件诊断和依赖审计；不在证明机安装或复制另一套 CI 环境。
+GitHub CI 使用现有的隔离 runner。手动验收宿主执行 Rust/Python 测试、Clippy、
+组件回归、错误实现的原生断言，以及固定 Charon/Aeneas 抽取、Lean 构建、形式反例、
+真实文件诊断和依赖审计。宿主的实际目录和设备配置由[运行环境](ci.md)约定。
 
-一次完整证明批次先在 ning 的确定提交上运行：
+模块验收先核对生产入口、Rust 和配置输入、抽取根、Lean 导入及下游合同。
+原生测试和使用独立固定输入的 Lean 检查可并行，写目录各自隔离。
+某条证明需要本次新抽取或原生结果时，等对应的前置任务通过后再运行。
+晋升所需的完整原生验收和登记范围内的 Stage1 使用同一个固定候选。
+
+晋升整批先在 msra 的数据盘准备原生证据，再运行登记的 Lean 任务。
+宿主入口分别设置独立 Rust 组件、轻量工具测试和正式证明的并发上限，
+具体配置、CPU 分配和可并行的条件见[分阶段验收](ci.md#stage1-手动分阶段验收)。
+
+以下示例是全项目原生入口。Stage1 晋升使用 `--scope stage1-protocol`。
 
 ```sh
-# 使用现有的固定 Rust、Python、离线 Cargo 和真实 Redis 环境。
+# 在原协调锁下使用固定 Rust、Python、离线 Cargo 和真实 Redis。
 export CARGO_NET_OFFLINE=true
 export SANDPROOF_REDIS_SERVER=/path/to/fixed/redis-server
 export SANDPROOF_SQLITE_STATEMENTS_SOURCE_ARCHIVE=/private/acceptance/sqlite-original.tar
 export SANDPROOF_CHILD_OBSERVATION_SOURCE_ARCHIVE=/private/acceptance/child-original.tar
 export SANDPROOF_WRITER_SOURCE_ARCHIVE=/private/acceptance/writer-original.tar.gz
 export SANDPROOF_LIBRARY_SOURCE_ARCHIVE=/private/acceptance/library-original.tar
-bash scripts/python-entry.sh tools/proof_native_suite.py run \
-  --output /private/acceptance/native-evidence
+bash scripts/python-entry.sh tools/native_task.py run \
+  --candidate "$(git rev-parse HEAD)" --scope all \
+  --output /private/acceptance/native-evidence \
+  --observer "$SANDPROOF_NATIVE_OBSERVER"
 ```
 
 这个入口包含完整 Linux `check-function.sh`，并运行原证明入口中的独立抽取
@@ -142,16 +175,182 @@ crate 测试/Clippy、任务持额、撤销、持额消息、Notify、JoinSet、
 移除错误版包缓存，保留其它依赖。原 Child 入口同样绑定实际同 crate 的业务测试程序，
 检查 package/manifest/src/fresh，并只清理 sandbox-runtime 自有包的变体缓存。源码时间较旧不能作为复用前一变体库的依据。
 SDK、Harbor、分布式合同继续由现有 CI 原入口检查，不能用这份证明批次记录替代。
-入口为测试夹具建立 0700 的私有临时目录；不放宽真实文件的属主、符号链接或
-祖先写权限检查。普通功能验收绑定全部跟踪输入，文档变化也必须重新检查，
+涉及整文件 CoW 的手动普通测试须把 `TMPDIR` 配在已具备 XFS 条件的安全父目录；
+入口保留该文件系统并新建 0700 私有子目录，逐级核对属主、模式和非符号链接，非法显式配置直接拒绝。
+稳定的父目录身份参与原生缓存判断，随机子目录名每轮独立。Lean 编译使用自己的私有构建目录。
+不放宽真实文件的属主、符号链接或祖先写权限检查。普通功能验收绑定全部跟踪输入，文档变化也必须重新检查，
 但这份文档检查的更新不会单独使未变化的 Lean 模块结果失效。
 源码副本应在 `umask 077` 下建立；入口只核对其祖先及跟踪目录，不自动 chmod
 工作区或共享父目录。权限不符合原用例要求时，在昂贵测试前失败。
 
-原始工作目录、二进制摘要和日志留在 ning。将完整的 `commands/`、`runtime.json`
-和 `complete.json` 交给证明机；不传 Cargo target。只有全部子检查成功后才写
+原始工作目录、二进制摘要和日志保存在验收证据目录。形式检查消费完整的 `commands/`、
+`runtime.json` 和 `complete.json`。Cargo target 按私有构建规则回收。宿主从已安装的原生环境提供
+`SANDPROOF_NATIVE_OBSERVER`。回收失败后沿用同一路径，以该命令的 `resume` 续办，
+先查原退出记录和收据再决定是否启动新验收。只有全部子检查成功后才写
 `complete.json`。证明机必须检查完整记录及其所有日志摘要，缺一个、被修改或
 未完成都拒绝入场，不能只信文件名或一个 `success` 字段。
+正式登记入口在同一批次共享已完整核对的原生封口。每个证明仍重新核对其输入键、
+收据摘要、适用范围和原始文件，正反版本的原验收条件保持。整批结束再次完整核对。
+
+V3 的独立交付使用显式 `--scope stage1-protocol`，仍执行完整 Linux 基础检查、
+原协议组件和已登记的全部 V3 原生正确/错误版。记录必须标明范围；任何必需组件缺失、
+失败或证据损坏均拒绝。该记录仅供 `verify-stage1-protocol.sh` 的原组件与全部登记证明消费，
+不是全项目验收。默认原生入口保持 `all` 的全部原义务，`verify-controller.sh` 及其它模块
+不能把 V3 限定记录当作全项目完成。全局旧首链或冻结失败如实保留；独立交付不删除它们、
+不修改其断言，也不自动完成其迁移。具体范围和命令见 [V3 组件入口](../verification/experiments/stage1-protocol/README.md#验收入口)。
+
+Create 的固定交付另用原生 `--scope stage1-create-delivery`，以及同一个证明脚本的
+显式参数 `--profile create-delivery`。它包含完整 Linux `functional`、固定发布的
+12 个 Create 包及其全部正确、错误和恢复测试，证明侧检查 42 个实际文件视图。
+这两类记录不能互相代替：Create 记录不满足 `stage1-protocol` 或 `all`，完整范围的
+记录也不能直接作为 Create 的交付记录；相同组件只能按原始键和完整证据严格复用。
+默认不带参数时仍保留原 126 项并加入新 12 项，不因环境变量缩小义务。
+旧全局输入失配仍拒绝，Create 通过不解决它，也不代表完整 V3、事务恢复或部署系统已证。
+
+执行 Create 时，外层操作者须保留已持有的协调锁，设置绝对路径
+`SANDPROOF_LOCK_FILE` 和仍打开的十进制 `SANDPROOF_LOCK_FD`。公共入口、登记器及
+子进程必须保留同一文件描述符；各层核对设备/inode 并非阻塞确认同一打开描述，
+不重新打开并等待父锁、不解开父锁。当前源码、工具、依赖、完整视图清单和原始
+内核/服务日志均进入记录；prepare-only、缺视图、缺审计或原始文件损坏一律不能通过。
+接口条件见[逐符号依赖](formal/dependencies.md#v3-create-同步流程的接口条件)，
+精确候选的验收结果在 #635 和覆盖记录中登记，入口和候选摘要本身不等于通过。
+
+该批另登记 `SANDPROOF_STAGE1_CREATE_SOURCE_ARCHIVE`：只有
+[清单](../verification/experiments/stage1-protocol/native-source-inputs.json)固定的六份 Aeneas
+后端 Lean 文本，供原库来源检查读取哈希。它不是工具安装包，普通机不会执行 Lean、
+Charon 或 Aeneas。原生入口在完整 `functional` 前核对整包和每个成员，只把缺失的
+六份源文件只读放入本次隔离源码的 `.tools` 相应位置，已有不同内容一律拒绝覆盖；
+结束时重核。证明机继续使用原真实工具，只核对同一归档和原工具中的六个实际源文件，
+允许原已准入的工具目录别名。缺包、缺成员、额外/重复/链接成员、坏哈希或实际文件
+不同均拒绝。原四份边界归档不改签；第五包沿原 `source_archives` 键进入本批四份
+原生封口，所以三个旧有限范围也保守地携带它，两机须设置同一变量/原字节。
+
+Create 及 protocol-convergence 的形式并行度允许值为
+1、2、4、8、12，默认仍为 1。父进程按实际获准 CPU 分成互不重叠的四核组，
+12 路须有 48 核、8 路须有 32 核；预算不足直接拒绝。每任务用新 Python 子进程
+设置并读回自己的四核组，再执行原驱动；多线程父进程不改自身 affinity，
+不使用 `preexec_fn`。同一锁 FD 继续贯穿，实际 CPU 准入记录进入原证据。
+每任务仍有独立构建、缓存和日志；首个失败后不再派发新任务，已启动任务保留结果。
+`full` 允许 1、2、4、8、64 路；64 路模式使用恰好 64 个获准逻辑 CPU。
+
+当前捕获调用方的独立入口使用固定 `--scope capture-caller`，只包含完整 Linux 基础检查
+`functional` 和原 `capture-caller` 组件。组件仍运行其最终清单中的正确/错误版、实际编译
+与原断言；案例数量不由外层写死。缺组件、错范围、重复组件或原源码归档缺失均拒绝。
+该记录不能作为 V3 或全项目原生封口，V3 记录也不能替代它。默认 `all` 保留原全部义务，
+并纳入此组件一次。形式入口只接当前六字段的真实 caller，不调用历史四字段值层 replay：
+
+```sh
+# 同一手动验收宿主、同一干净提交及本节固定普通环境。
+bash scripts/python-entry.sh tools/native_task.py run \
+  --candidate "$(git rev-parse HEAD)" --scope capture-caller \
+  --output /private/acceptance/capture-caller-native \
+  --observer "$SANDPROOF_NATIVE_OBSERVER"
+# 证明机：保留全部原 commands、runtime、complete 和 source.tar/源清单；不传 target。
+export SANDPROOF_ACCEPTANCE_ROLE=formal
+export SANDPROOF_NATIVE_EVIDENCE=/private/acceptance/capture-caller-native
+bash scripts/verify-capture-caller.sh
+```
+
+原源码归档通过已有干净提交归档器核对内容及执行位，再连接原生编译与当前证明。
+外层只持一次原协调锁，模块的 `--lock` 指向本次私有组件锁，不能再次锁同一个全局锁。
+正确生成库和独立错误版保持各自导入环境；总根不同时导入两者。公共登记、输入摘要、
+组件通过和整个 V4 完成分别记录，摘要更新本身不算验收通过。
+
+暂停发布切片使用独立 `--scope pause-publication`，固定包含完整 Linux `functional`
+及当前 `pause-publication` 原生组件；形式入口为 `scripts/verify-pause-publication.sh`。
+原组件及准备状态见[暂停发布入口](../verification/experiments/pause-publication/README.md)，
+实际验收结果见覆盖记录。不得以原捕获调用方或 V3 的封口替代本范围；默认 `all`
+保留原全部义务并登记本组件一次，有限交付不因此要求在本批启动 `all`。
+共享生成闭包受影响时，另运行原 `capture-caller` 有限入口，两份封口各自保持原范围。
+同一稳定源码和运行条件下，完整 `functional` 仅按原收据与全部原始文件的严格校验复用，
+不能改写键、标签或缺失证据来合并结果。
+
+普通暂停的登记与停止使用独立 `--scope pause-stop`，固定包含完整 Linux
+`functional` 及 `pause-stop` 原组件；形式入口为 `scripts/verify-pause-stop.sh`。
+接口和正错规则见[登记与 Stop 组件](../verification/experiments/pause-stop/README.md)，
+实际实测和待验收范围只在覆盖记录维护。原生正确、错误和恢复版均经实际
+`handle_worker`；错误版须真实编译并被同一许可性质拒绝，格式、编译或工具失败不能
+代替性质反例。最终文件、必需定理、冻结输入、实际生成物或审计缺失时拒绝入场，
+不以空清单或接线准备完成表示正式验收通过。默认 `all` 保留旧全部义务并登记本组件一次。
+公共总根仅导入参数化的 `PauseStop.Conditions`，独立 `PauseHandoffWrong` 库保留错误版
+命名空间；正例 `Audit`、错误证书及没有定理声明的 `Conditions` 页仍须进入实际文件
+诊断和冻结范围。关键定理子集用于防漏，不能替代全部声明和审计。
+
+这三个切片共享 `CaptureCaller` 正确生成环境。改变其实际根或生成闭包时，先核对
+`pause-stop`、`capture-caller`、`pause-publication` 的影响，再在同一稳定候选上验收
+所有受影响的有限范围。各范围分别保留原组件和原始封口；不能把其中一份改标签
+供另一范围使用，也不能拼成 `all` 或 V3 完成。完整 Linux `functional` 只在该稳定
+候选上执行一次；另两范围仅在原收据键、全部跟踪输入、依赖、工具、运行条件及
+完整原始证据仍通过既有校验时复用，否则重新执行受影响检查。
+共享正确根新增 `worker::pause_stop::record` 时，publication 错误版沿其实际同根配置
+重抽；原 capture-caller 错误版保持原独立抽取 crate 的两个迟到处理根及命名空间，
+不为表面统一而扩大范围。各自实际配置及逐字节生成物比较仍不可省略。
+
+卸载来源存活检查使用固定原生 `--scope stage1-source-live`，包含完整 Linux
+`functional` 及 `source-live` 原组件；形式入口为 `scripts/verify-source-live.sh`。
+五个真实 Rust 原生视图保留相同十一项断言，三个错误实现均须成功编译并在准确的
+拒绝断言失败。四个形式生成环境各自重抽、逐字节比较并检查每份真实文件、完整合同
+和全部依赖审计；公共正确根不导入错误版。默认 `all` 和原 V3 登记保留全部旧义务，
+并纳入此组件一次。本有限封口不能替代全 V3、事务来源、异步或物理资源验收。
+
+V3 原正式入口的登记子任务可通过 `SANDPROOF_STAGE1_JOBS=2` 并行执行；允许值为
+`1`、`2`、`4`、`8`、`64`，底层入口默认值为 `1`，按宿主实际预算选择，不因 CPU 空闲自动增加。
+每个任务使用独立进程、输出、Cargo target 和形式缓存，保留原清单、负例和汇总审计。
+入口接受的并行度、默认值和实际通过的并行资格分别记录；两任务/两路小样不能写成
+四路或全部登记任务已通过。操作者须同时核对外层 CPU 亲和性、内层 Lean 线程、内存
+与 I/O 预算，不因逻辑核空闲自行加路。等待准入、实际执行和结束后的资源回收分别计时，
+不取消他人的 CI 来取得锁。
+外层批次锁及 Lean 服务要求不变；首个任务失败后停止派发，在途任务完成后保留各自结果。
+
+V3 的固定成果批次另有显式 `protocol-convergence` 范围，定义只在
+`verification/experiments/stage1-protocol/convergence.py` 维护。普通入口指定
+`--scope stage1-protocol-convergence`，形式入口指定
+`scripts/verify-stage1-protocol.sh --profile protocol-convergence`；不提供任意选择
+子模块、只验正确版或减少原错误版的参数。该范围包括原恢复、来源、暂停、标准
+读写和摘要使用点、标准 Create 转发、完整 Create 同步流程与收件调用方，以及
+具体 JSON 组合和 SQLite 提交组件。普通入口仍要求当前全部跟踪输入的 Linux
+`functional`；每个组件的原断言、错误和恢复视图保留。固定只读源码归档仍须逐字节
+准入，不在普通机安装证明工具。
+
+这份有限封口不能替代 `full`、`create-delivery` 或默认 `all`，后者的原义务仍然
+保留；其它范围的绿色结果也不能改标签充当本范围封口。它支持显式 1、2、4、8、12
+个独立形式子任务，每个子进程固定四核，须符合外层实际准入预算；默认仍为一路。
+结果区分原任务执行与严格证据复用，保留原结果的提交、源输入及日志，不把旧结果
+改写为当前执行。缺少原始证据、消费闭包不符或尚未接入检查器时，必须停止并登记
+缺口，不能将开发局部结果升级为正式整套通过。该范围只交付其同步函数的条件合同，
+不由此推出异步端点、V5 事务来源、重启、物理资源或整个 V3 已经完成。
+
+同一候选中断后，可设置 `SANDPROOF_STAGE1_RESUME_FROM=/原批次/registered-result.json`
+再运行原入口；它仍执行原保留组件与准入，只对完整检查点所覆盖的登记子任务续验。
+基本续验要求同一已提交源码树、相同原生封口和工具/合同输入；完整日志、抽取物、
+内核及服务证据须仍在且校验通过，损坏或缺失的任务重跑。失败的父汇总不抹去已经成功
+封口的子任务，旧版没有检查点的裸结果也不能升级成可复用记录。结果逐项区分 `RUN` 与
+`REUSE`；原入口设置 `SANDPROOF_PROOF_RECOMPUTE=1` 时强制重跑，登记脚本的直接 CLI
+也接受 `formal --recompute`。该有限续验不解决跨版本的全部失效范围，
+也不把少量并行资格实测计为全部登记证明或 V0 通过。
+
+跨源码树仅有一个有限例外：具有 schema 2 来源上下文的完整检查点允许
+`docs/proof-coverage.md` 的内容改变后，
+复用已完整成功的 `inbox-state-correct` 和 `inbox-state-always-current` 两个精确任务。
+这里的版本指 `execution-inputs.json` 中的 `context.schema`；父结果的
+`execution_schema` 和 `checkpoint.json` 的 `schema` 仍为 1，不将它们混为同一格式。
+它逐项保存并核对全仓内容与 Git 文件模式；除该报告内容外，新增/删除文件、执行位、
+Rust、抽取、生成物、模型、合同、规则、驱动、工具及非 functional 原生输入变化均不能
+使用此例外。其它任务仍按同树规则处理；旧 schema 1 来源上下文不能补字段或改标签
+升级为跨报告证据，不因此一概拒绝 schema 1 格式的检查点。
+
+当前候选必须另有符合当前全部跟踪输入的完整普通准入；报告/链接检查和汇总审计重做，
+不复用旧报告检查。复用记录保留原结果的旧输入快照，并记录原/当前源码树、报告及
+functional 凭据的依据，不把旧结果改写为新执行。子结果缺失/损坏需要实际重跑时，
+若对应原生 case 仍绑定旧报告快照，原准入继续拒绝，须先取得当前 case 的新原生证据。
+本例外不覆盖其它 README、设计或工作流改动，也不表示全部 126 项可跨报告复用；
+具体已测范围与最终验收结果以本批 PR 为准。
+
+#743 对跨报告例外的验证限于确定性驱动回归；旧固定源上具有 schema 2 来源上下文的
+真实 RUN→同树 REUSE 小样须另外绑定原源码、原生凭据及实际新检查器，报告变化而仍用
+旧 functional 凭据须拒绝。这些小样不背书当前候选的全部登记义务。
+公共 `run_formal` 入口的跨报告成功仍留待 V3 下一正式批次实测，不能由回归夹具或
+旧源码资格小样标成已通过。
 
 然后在证明机的同一源码上运行：
 
@@ -174,7 +373,7 @@ bash scripts/verify-controller.sh --recompute
 
 MIR 捕获须通过 `v0_use_inventory.py check-published`；已有捕获仍适用于当前输入时
 不重做十组编译。清单是防漏证据，不能解释成全部调用或异步行为已经证明。
-各单模块入口仍可单独运行，原生步骤同样要求上述 ning 证据；不经批次协调时，
+各单模块入口仍可单独运行，原生步骤同样要求上述原生验收证据；不经批次协调时，
 公共抽取步骤会正常重新执行，不存在无凭据的“跳过检查”开关。
 
 ### 一批去重与跨批复用
@@ -227,6 +426,27 @@ BTreeSet 插入、Metadata 目录判断和 Tokio Mutex 各有独立原生 case�
 不得从外部 PR 或其它未知来源导入成功记录。共享缓存写入加锁；并行分支使用
 独立工作区和 `.lake/build`，不能共写一个构建目录。Lake 原有增量缓存继续保留，
 不删除 `.lake`，也不通过修改工具版本或内核检查选项换取通过。
+
+## 收件查找的定向验收
+
+从提交干净的检出运行[定向入口](../verification/experiments/stage1-protocol/inbox-lookup/module_acceptance.py)，用 `--base <基线提交> --plan` 查看变更和下游。计划允许局部验收时，用 `--output <新建私有证据路径>`、`--formal-lock <现有证明锁路径>` 替代 `--plan`。入口执行原 Rust 测试和两份原 Lean 检查，`module-result.json` 记录实际候选、执行和复用范围。共享生产入口、合同或未知输入变化时，按计划扩展验收。计划本身只列检查项。
+
+只修改没有下游消费者的 `InboxLookupWrong.lean.in` 以及其派生摘要时，可以复用独立的原生收据。用同一入口从干净基线运行 `--prepare-native --base HEAD --output <新建私有证据路径>`，实际执行四个原 Rust 变体并写入 `lookup-native-receipt.json`。再从后继提交用 `--base <原收据提交>`、`--reuse-native <收据路径>` 和 `--reuse-native-sha256 <收据摘要>` 运行，保留原结果及命令日志。复用限于已登记的固定工具与配置。后继仍实际运行原 Lean 正确版和错误版检查，所产收据只覆盖这个模块。
+
+使用宿主已安装的观察器时，独立验收可用[托管入口](../tools/ci_lookup_acceptance.py)直接运行。运行前登记两个抽取 `extract-target`。如果本轮新跑原生检查，也登记它创建的四个 Cargo `target`，复用原生收据时只处理本轮的两个抽取目录。原模块输出位于 `$run/module`，保留收据、源码、LLBC、日志和 `.lake`。收尾待办时，在相同候选上执行 `closeout`，只读回原证据并续办回收。
+
+```sh
+bash scripts/python-entry.sh -m tools.ci_lookup_acceptance run \
+  --base "$base" --formal-lock "$formal_lock" --output "$run" --observer "$observer"
+bash scripts/python-entry.sh -m tools.ci_lookup_acceptance closeout \
+  --output "$run" --observer "$observer"
+```
+
+若从升级后的收尾工具恢复旧工作，使用 `closeout --checkout <原候选检出>`。入口读回原候选提交、代码树、待清理目录及真实终态。
+
+如果计划列出 `registered_impact`，可用 `--registered-native <同一候选的原生证据目录>` 运行列出的登记证明。目前这些作业仍按原入口要求同一代码树的完整原生封印和 `functional` 收据。该路径可以省去未受影响的 Lean 作业，原生封印无法用单个 crate 的测试记录代替。
+
+正确版证明页或共享模型的证明段发生变化时，可以先用 `--lookup-only` 加上述复用参数检查 Lookup 本身和原错误版。共享模型的定义与完整查找合同须保持原字节一致。`lookup-local-result.json` 列出待检查的下游，即使这两份证明通过也返回 `2`，直至另行完成所有必需检查。
 
 ## 局部证明经验
 

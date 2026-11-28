@@ -1,0 +1,103 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadRawCorrespondence
+import SandboxModel.Lifecycle.Protocol.InboxLoadLibrary
+import SandboxModel.Lifecycle.Protocol.InboxLoadDigestLibrary
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.capture
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.renewal_confirmation
+open sandproof_controller_service.controller.lifecycle_inbox.unload_resolution
+
+namespace SandboxModel.Stage1Protocol.InboxLoad
+noncomputable section
+
+theorem raw_finish_eq {E : Type} (io : InboxLoadEffects E) (inbox : Inbox) (state : E) :
+    Raw.finishView io inbox state = finishView io inbox state := rfl
+
+theorem raw_validated_eq {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (inbox : Inbox) (reserve : U64) (state : E) :
+    Raw.validatedView io validate budget inbox reserve state =
+      validatedView io validate budget inbox reserve state := by
+  simp only [Raw.validatedView, validatedView, raw_finish_eq, Raw.corrupt, corrupt]
+  rfl
+
+theorem raw_canonical_eq {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (inbox : Inbox)
+    (bytes : alloc.vec.Vec U8) (reserve : U64) (state : E) :
+    Raw.canonicalView io validate budget inbox bytes reserve state =
+      canonicalView io validate budget inbox bytes reserve state := by
+  simp only [Raw.canonicalView, canonicalView, Raw.attempt, attempt,
+    raw_validated_eq, Raw.corrupt, corrupt]
+  rfl
+
+theorem raw_digest_eq {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (inbox : Inbox)
+    (bytes sha : alloc.vec.Vec U8) (reserve : U64) (state : E) :
+    Raw.digestView io validate budget inbox bytes sha reserve state =
+      digestView io validate budget inbox bytes sha reserve state := by
+  unfold Raw.digestView digestView
+  apply pair_continue_congr (io.digest state (alloc.vec.Vec.deref bytes))
+  intro digest after
+  exact (InboxLoadLibrary.digest_boundary_normalization digest sha (Raw.corrupt after)
+    (Raw.canonicalView io validate budget inbox bytes reserve after)).trans
+      (congrArg (fun next => if digest.val ≠ sha.val then corrupt after else next)
+        (raw_canonical_eq io validate budget inbox bytes reserve after))
+
+theorem raw_body_eq {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (reserve : U64) (state : E) :
+    Raw.bodyView io validate budget reserve state = bodyView io validate budget reserve state := by
+  simp only [Raw.bodyView, bodyView, Raw.attempt, attempt, raw_digest_eq, Raw.corrupt, corrupt]
+  rfl
+
+theorem raw_limits_eq {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (capacity : controller.capacity.CapacityConfig)
+    (length reserve : I64) (state : E) :
+    Raw.limitsView io validate budget capacity length reserve state =
+      limitsView io validate budget capacity length reserve state := by
+  simp only [Raw.limitsView, limitsView, raw_body_eq, Raw.maximumBytes, maximumBytes, Raw.corrupt, corrupt]
+
+theorem raw_capacity_eq {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (state : E) :
+    Raw.capacityView io validate budget state = capacityView io validate budget state := by
+  simp only [Raw.capacityView, capacityView, Raw.attempt, attempt, raw_limits_eq,
+    Raw.lengthsStatement, lengthsStatement, Raw.unsupported, unsupported]
+  rfl
+
+theorem raw_current_eq {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (state : E) :
+    Raw.currentView io validate budget state = currentView io validate budget state := by
+  simp only [Raw.currentView, currentView, Raw.attempt, attempt, raw_capacity_eq, Raw.corrupt, corrupt]
+  rfl
+
+theorem raw_load_eq {E : Type} (io : InboxLoadEffects E) (validate : Inbox → Check)
+    (budget : LifecycleInboxConfig → Result U64) (state : E) :
+    Raw.loadView io validate budget state = loadView io validate budget state := by
+  simp only [Raw.loadView, loadView, Raw.attempt, attempt, raw_current_eq, Raw.corrupt, corrupt]
+  rfl
+
+theorem load_control_flow_refines {R T N U B E : Type}
+    (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : RenewalEncoding N) (unload : UnloadEncoding U)
+    (graphic : GraphicBytes B) (io : InboxLoadEffects E) (state : E) :
+    load_using saved terminal renewal unload graphic io state =
+      loadView io (Inbox.validate_using saved terminal renewal unload graphic)
+        LifecycleInboxConfig.required_bytes state :=
+  (Raw.load_control_flow_refines saved terminal renewal unload graphic io state).trans
+    (raw_load_eq io _ _ state)
+
+end
+end SandboxModel.Stage1Protocol.InboxLoad
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.raw_finish_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.raw_validated_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.raw_canonical_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.raw_digest_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.raw_body_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.raw_limits_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.raw_capacity_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.raw_current_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.raw_load_eq
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoad.load_control_flow_refines

@@ -1,0 +1,16 @@
+import SandproofSourceQuestion.Types
+
+namespace SandproofUnloadFirstCollections
+
+abbrev sandbox_controller_core.model.EffectId :=
+  SandproofSourceQuestionRust.sandbox_controller_core.model.EffectId
+abbrev sandproof_protocol.TenantId := SandproofSourceQuestionRust.sandproof_protocol.TenantId
+abbrev sandproof_protocol.SandboxId := SandproofSourceQuestionRust.sandproof_protocol.SandboxId
+abbrev sandproof_protocol.OperationId := SandproofSourceQuestionRust.sandproof_protocol.OperationId
+abbrev sandproof_protocol.LogicalActionId :=
+  SandproofSourceQuestionRust.sandproof_protocol.LogicalActionId
+abbrev sandproof_protocol.ResourceRef := SandproofSourceQuestionRust.sandproof_protocol.ResourceRef
+abbrev sandproof_protocol.lifecycle.digest.ContentDigest :=
+  SandproofSourceQuestionRust.sandproof_protocol.lifecycle.digest.ContentDigest
+
+end SandproofUnloadFirstCollections

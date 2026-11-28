@@ -1,0 +1,3 @@
+import SandproofUnloadStartupJoint.Funs
+
+#print axioms SandproofUnloadStartupJoint.controller.lifecycle_inbox.readiness.snapshot.startup_records

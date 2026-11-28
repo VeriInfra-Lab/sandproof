@@ -1,0 +1,51 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxAppend
+open InboxRecord
+open scoped Classical
+
+theorem destroy_contract (inbox : Inbox) (s : Usize) (intent : AcceptedLifecycleIntent)
+    (bound : s.val < inbox.sessions.val.length) (operation : intent.request.operation = .Destroy) :
+    inbox.record_existing s intent ⦃ out =>
+      ExistingPost inbox s inbox.sessions.val[s.val] intent
+        (existingDecision inbox inbox.sessions.val[s.val] intent) out ⦄ := by
+  obtain ⟨⟨session, back⟩, indexed, same, callback⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_mut_usize_spec inbox.sessions s bound)
+  have restore : {inbox with sessions := back session} = inbox := by
+    rw [callback, same]
+    exact replace_read_preserves_all inbox s bound
+  rw [← same]
+  unfold Inbox.record_existing
+  rw [alloc.vec.Vec.index_mut_slice_index, indexed]
+  by_cases owner : session.owner ≠ intent.request.binding.key.owner
+  · simp [owner, restore, existingDecision, ExistingPost, Inbox.record_existing.closure]
+  · have owner_eq := Classical.not_not.mp owner
+    by_cases terminal : session.terminal = true
+    · simp [owner, terminal, restore, existingDecision, ExistingPost, Inbox.record_existing.closure]
+    · by_cases retention : session.retention ≠ intent.retention
+      · simp [owner, terminal, retention, restore, existingDecision, ExistingPost, Inbox.record_existing.closure]
+      · have retention_eq := Classical.not_not.mp retention
+        by_cases version : intent.accepted_version.val ≤ session.current_version.val
+        · simp [owner_eq, terminal, retention_eq, version, operation, isDestroy, UScalar.le_equiv,
+            restore, existingDecision, ExistingPost]
+        · by_cases capacity : inbox.config.max_operations_per_session.val ≤ session.entries.val.length
+          · simp [owner_eq, terminal, retention_eq, version, operation, isDestroy, UScalar.le_equiv, capacity,
+              restore, existingDecision, ExistingPost, lift]
+          · have room : session.entries.val.length < inbox.config.max_operations_per_session.val := by omega
+            obtain ⟨entries, index, pushed, subtracted, indexval, contents⟩ :=
+              append_push_outcome session intent inbox.config.max_operations_per_session room
+            dsimp [pendingEntry] at pushed
+            simp [owner_eq, terminal, retention_eq, version, operation, UScalar.le_equiv, capacity,
+              lift, sdk_renewal_spec, sdkRenewal, pushed, subtracted]
+            simp only [existingDecision, owner, terminal, retention, operation, isDestroy, UScalar.le_equiv,
+              Bool.not_true, Bool.false_and, Bool.false_eq_true, version, decide_false,
+              capacity, operationAllowed, Bool.not_true, sdkRenewal,
+              Bool.and_false, ↓reduceIte, ExistingPost]
+            exact ⟨entries, index, contents, indexval, by simp [replaceSession, appendedSession, callback, owner_eq, retention_eq]⟩
+
+end SandboxModel.Stage1Protocol.InboxAppend
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.destroy_contract

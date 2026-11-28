@@ -1,0 +1,23 @@
+import SandproofPauseRequest.Funs
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofPauseRequestRust
+namespace SandboxModel.Stage1Protocol.PauseRequest
+abbrev Work := controller.lifecycle_inbox.source_work.SourceWork
+abbrev Request := capture.work.PauseWorkRequest
+abbrev Inner := core.result.Result Request JournalError
+def Assembled (work : Work) (source : sandproof_protocol.lifecycle.identity.IncarnationId)
+    (capture : sandproof_protocol.lifecycle.identity.CaptureId) : Request :=
+  { binding := { operation := work.anchor.request.request.binding
+                 source_incarnation := source
+                 capture := capture }
+    source_work_binding := work.requirement.work_binding
+    node := work.requirement.node
+    source_resource := work.requirement.resource
+    source := work.requirement.source }
+def Expected (work : Work) : Inner :=
+  match work.anchor.request.request.operation with
+  | .Unload source capture => .Ok (Assembled work source capture)
+  | _ => .Err .Conflict
+def FullPauseContract (run : Work → Result Inner) : Prop :=
+  ∀ work, run work = .ok (Expected work)
+end SandboxModel.Stage1Protocol.PauseRequest

@@ -1,0 +1,126 @@
+import SandboxModel.Lifecycle.Protocol.InboxRecordValidationOrder
+import SandboxModel.Lifecycle.Protocol.InboxSaveBoundaries
+
+-- Decoded values and explicit encoding providers; no durable-acceptance or resource claim.
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.codec
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxRecordValidation
+noncomputable section
+open scoped Classical
+open SessionShape.Values (vector)
+open InboxSave.Values (saved terminal renewal unload)
+
+theorem selected (capture : U64) :
+    InboxAppend.ExistingSelection (inbox none) (next capture) 0#usize := by
+  simp [InboxAppend.ExistingSelection, InboxLookup.NoKey, InboxRecord.firstIndex,
+    inbox, session, entries, vector, created, resolved, InboxRecord.pendingEntry, first, next,
+    unloadIntent, create, SavedRetirement.Values.createIntent, EnvelopeValues.intent,
+    InboxValidation.Values.recordedSession, SessionShape.Values.normal, SavedRetirement.Values.normal]
+
+theorem append_decision (capture : U64) :
+    InboxAppend.existingDecision (inbox none) (session none) (next capture) = .append false := by
+  simp [InboxAppend.existingDecision, InboxAppend.isDestroy, InboxAppend.operationAllowed,
+    InboxRecord.entryAllowsRunning, InboxRecord.unloadHasResult, InboxRecord.sdkRenewal,
+    inbox, session, entries, vector, created, resolved, InboxRecord.pendingEntry, first, next,
+    unloadIntent, create, SavedRetirement.Values.createIntent, EnvelopeValues.intent,
+    InboxValidation.Values.recordedSession, SessionShape.Values.normal, SavedRetirement.Values.normal,
+    config, ConfigValidation.Values.fixture, ConfigBudget.Values.fixture, ConfigBudget.Values.small]
+
+theorem recorded_exact (capture : U64) :
+    (inbox none).record (next capture) = .ok (.Ok (0#usize, 2#usize), inbox (some capture)) := by
+  have contract := InboxRecordTotal.total_implies_existing Inbox.record InboxRecordTotal.record_contract
+    (inbox none) (next capture) 0#usize (selected capture)
+  have selectedSession : (inbox none).sessions.val[0#usize.val]'(InboxAppend.selected_bound
+      (inbox none) (next capture) 0#usize (selected capture)) = session none := by simp [inbox, vector]
+  simp only [selectedSession, append_decision] at contract
+  obtain ⟨out, returned, post⟩ := WP.spec_imp_exists contract
+  obtain ⟨es, index, values, indexValue, outcome⟩ := post
+  have sameEntries : es = entries (some capture) := by
+    apply alloc.vec.Vec.ext
+    simpa [session, entries, vector] using values
+  have sameIndex : index = 2#usize := by
+    apply UScalar.eq_of_val_eq
+    simpa [session, entries, vector] using indexValue
+  have appended : InboxAppend.appendedSession (session none) (next capture) false (entries (some capture)) =
+      session (some capture) := rfl
+  have updated : (inbox none).sessions.set 0#usize (session (some capture)) = (inbox (some capture)).sessions := by
+    apply alloc.vec.Vec.ext
+    simp [inbox, vector]
+  have replaced : InboxAppend.replaceSession (inbox none) 0#usize (session (some capture)) =
+      inbox (some capture) := by
+    unfold InboxAppend.replaceSession
+    rw [updated]
+    rfl
+  simpa only [outcome, sameEntries, sameIndex, appended, replaced] using returned
+
+/-- This extra preservation claim is refuted; it does not replace any exact function contract. -/
+def PreservesValidation (record : Inbox → AcceptedLifecycleIntent → Result InboxRecord.RecordReturn)
+    (validate : Inbox → InboxValidation.Check) : Prop :=
+  ∀ before intent si ei after,
+    ConfigValidation.Representable before.config →
+    validate before = .ok (.Ok ()) →
+    Validation.ValidEnvelope intent (InboxValidation.decodedContext before.config) →
+    record before intent = .ok (.Ok (si, ei), after) →
+    validate after = .ok (.Ok ())
+
+theorem validation_exact (later : Option U64) :
+    InboxValidation.runInbox saved terminal renewal unload (inbox later) = .ok (expected later) := by
+  rw [InboxValidation.full_inbox_contract saved terminal renewal unload (inbox later) config_representable]
+  exact inbox_result later
+
+theorem valid_before :
+    InboxValidation.runInbox saved terminal renewal unload (inbox none) = .ok (.Ok ()) :=
+  validation_exact none
+
+theorem record_does_not_preserve_validation :
+    ¬ PreservesValidation Inbox.record (InboxValidation.runInbox saved terminal renewal unload) := by
+  intro preserves
+  have promised := preserves (inbox none) (next 7#u64) 0#usize 2#usize (inbox (some 7#u64))
+    config_representable valid_before (next_envelope 7#u64) (recorded_exact 7#u64)
+  rw [validation_exact] at promised
+  simp [expected] at promised
+
+theorem stale_capture_save_rejected {E : Type} (capture : U64) (stale : capture ≤ 7#u64)
+    (io : InboxSaveEffects E) (state : E) :
+    InboxSave.runSave saved terminal renewal unload io (inbox (some capture)) state =
+      .ok (.Err .CorruptStore, state) := by
+  apply InboxSave.validation_error_preserves_state saved terminal renewal unload io
+    (inbox (some capture)) state config_representable .CorruptStore
+  simp [inbox_result, expected, stale]
+
+theorem fresh_capture_saved (capture : U64) (fresh : 7#u64 < capture) (trace : InboxSave.Values.Trace) :
+    InboxSave.runSave saved terminal renewal unload
+      (InboxSave.Values.effects InboxSave.Values.bytes (.Ok 1#usize)) (inbox (some capture)) trace =
+      .ok (.Ok (), trace ++ InboxSave.Values.completeTrace (inbox (some capture)) InboxSave.Values.bytes) := by
+  have checked : InboxValidation.inboxView saved terminal renewal unload (inbox (some capture)) = .ok (.Ok ()) := by
+    have noOld : ¬ capture ≤ 7#u64 := by scalar_tac
+    simp [inbox_result, expected, noOld]
+  rw [InboxSave.validated_save saved terminal renewal unload _ _ _ config_representable checked]
+  apply InboxSave.Values.encode_and_save_exact
+  exact InboxSave.Values.bytes_fit
+
+theorem fresh_gap_control :
+    (inbox none).record (next 10#u64) = .ok (.Ok (0#usize, 2#usize), inbox (some 10#u64)) ∧
+    InboxValidation.runInbox saved terminal renewal unload (inbox (some 10#u64)) = .ok (.Ok ()) ∧
+    InboxSave.runSave saved terminal renewal unload
+      (InboxSave.Values.effects InboxSave.Values.bytes (.Ok 1#usize)) (inbox (some 10#u64)) [] =
+      .ok (.Ok (), InboxSave.Values.completeTrace (inbox (some 10#u64)) InboxSave.Values.bytes) := by
+  refine ⟨recorded_exact _, ?_, ?_⟩
+  · simp [validation_exact, expected]
+  · simpa using fresh_capture_saved 10#u64 (by decide) []
+
+end
+end SandboxModel.Stage1Protocol.InboxRecordValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.selected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.append_decision
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.recorded_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.validation_exact
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.valid_before
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.record_does_not_preserve_validation
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.stale_capture_save_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.fresh_capture_saved
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxRecordValidation.fresh_gap_control

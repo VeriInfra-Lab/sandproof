@@ -1,0 +1,31 @@
+import SandboxModel.Lifecycle.Protocol.SavedLibrary
+import SandboxModel.Lifecycle.Protocol.SavedValues
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandbox_controller_core.ids
+namespace SandboxModel.Stage1Protocol.SavedRetirement.WrongOrder
+noncomputable section
+open scoped Classical
+
+theorem wrong_error : run Values.intentError Values.wrongLocal = .ok (.Err (.Json ⟨7⟩)) := by
+  simp only [run, validate_saved_using, last_saved_spec, local_option_ne, operation_option_ne,
+    destroy_spec, digest_ne, status_ne, bind_tc_ok]
+  simp [Values.wrongLocal, Values.normal, Values.entries, Values.entry, Values.receipt,
+    Values.binding, Values.destroyIntent, Values.intentError,
+    core.option.Option.ok_or, core.result.Result.Insts.CoreOpsTry.branch,
+    core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual,
+    JournalError.Insts.CoreConvertFromError.from]
+
+theorem violates_full_contract : ¬FullSavedContract run := by
+  intro contract
+  have mismatch := contract Values.intentError Values.wrongLocal
+  rw [wrong_error, Values.model_error_order.1] at mismatch
+  simp [corrupt] at mismatch
+
+end
+end SandboxModel.Stage1Protocol.SavedRetirement.WrongOrder
+
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.WrongOrder.wrong_error
+#audit_controller_proof SandboxModel.Stage1Protocol.SavedRetirement.WrongOrder.violates_full_contract

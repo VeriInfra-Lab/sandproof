@@ -1,0 +1,71 @@
+import SandboxModel.Lifecycle.Protocol.InboxAppendPredicates
+import SandboxModel.Lifecycle.Protocol.InboxAppendModel
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_protocol.lifecycle.authority sandproof_protocol.lifecycle.identity
+namespace SandboxModel.Stage1Protocol.InboxAppend
+open InboxRecord
+open scoped Classical
+
+set_option maxHeartbeats 800000 in
+theorem nonterminal_contract (inbox : Inbox) (s : Usize) (intent : AcceptedLifecycleIntent)
+    (bound : s.val < inbox.sessions.val.length) (nondestroy : isDestroy intent.request.operation = false) :
+    inbox.record_existing s intent ⦃ out =>
+      ExistingPost inbox s inbox.sessions.val[s.val] intent
+        (existingDecision inbox inbox.sessions.val[s.val] intent) out ⦄ := by
+  obtain ⟨⟨session, back⟩, indexed, same, callback⟩ := WP.spec_imp_exists
+    (alloc.vec.Vec.index_mut_usize_spec inbox.sessions s bound)
+  have restore : {inbox with sessions := back session} = inbox := by
+    rw [callback, same]
+    exact replace_read_preserves_all inbox s bound
+  rw [← same]
+  unfold Inbox.record_existing
+  rw [alloc.vec.Vec.index_mut_slice_index, indexed]
+  cases operation : intent.request.operation <;>
+    try (simp [operation, isDestroy] at nondestroy)
+  all_goals
+    by_cases owner : session.owner ≠ intent.request.binding.key.owner
+    · simp [owner, restore, existingDecision, ExistingPost]
+    · have owner_eq := Classical.not_not.mp owner
+      by_cases terminal : session.terminal = true
+      · simp [owner, terminal, restore, existingDecision, ExistingPost]
+      · by_cases retention : session.retention ≠ intent.retention
+        · simp [owner, terminal, retention, restore, existingDecision, ExistingPost]
+        · have retention_eq := Classical.not_not.mp retention
+          by_cases expected : intent.request.binding.expected ≠ .Version session.current_version
+          · simp [owner_eq, terminal, retention_eq, operation, isDestroy, expected,
+              restore, existingDecision, ExistingPost]
+          · have expected_eq := Classical.not_not.mp expected
+            by_cases capacity : inbox.config.max_operations_per_session.val ≤ session.entries.val.length
+            · simp [owner_eq, terminal, retention_eq, operation, isDestroy, expected_eq,
+                capacity, restore, existingDecision, ExistingPost,
+                lift, UScalar.le_equiv]
+            · have room : session.entries.val.length < inbox.config.max_operations_per_session.val := by omega
+              obtain ⟨next, added, nextval⟩ := reserve_add_total session inbox.config.max_operations_per_session room
+              by_cases reserved : inbox.config.max_operations_per_session.val ≤ session.entries.val.length + 1
+              · simp [owner_eq, terminal, retention_eq, operation, isDestroy, expected_eq,
+                  capacity, reserved, added, nextval, restore, existingDecision, ExistingPost,
+                  lift, UScalar.le_equiv]
+              · obtain ⟨entries, index, pushed, subtracted, indexval, contents⟩ :=
+                  append_push_outcome session intent inbox.config.max_operations_per_session room
+                dsimp [pendingEntry] at pushed
+                simp [owner_eq, terminal, retention_eq, expected_eq,
+                  capacity, reserved, added, nextval, lift, UScalar.le_equiv]
+                all_goals
+                  simp [operation, owner_eq, terminal, retention_eq, expected_eq, capacity, reserved,
+                    isDestroy, existingDecision, operationAllowed, sdk_renewal_spec, sdkRenewal,
+                    has_unconfirmed_sdk_spec, can_follow_running_spec, last_entry_spec,
+                    prior_unload_option, pushed, subtracted,
+                    UScalar.le_equiv, IScalar.le_equiv]
+                all_goals clear indexed same added pushed subtracted
+                all_goals
+                  simp_all [ExistingPost, replaceSession, appendedSession, Option.isSome_iff_ne_none]
+                all_goals
+                  split_ifs <;> simp_all
+                all_goals try omega
+                all_goals exact ⟨entries, contents, rfl⟩
+
+end SandboxModel.Stage1Protocol.InboxAppend
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxAppend.nonterminal_contract

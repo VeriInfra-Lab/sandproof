@@ -274,7 +274,10 @@ impl<H: ControllerHost> ControllerApplication<H> {
             .journal
             .create_options(sandbox)
             .map_err(map_admission)?;
-        if !inner.host.has_bound_launch_config(sandbox, &options)? {
+        if !inner
+            .host
+            .has_bound_launch_config(sandbox, generation, &options)?
+        {
             return Err(ApplicationError::Busy);
         }
         let actor = core::Actor::Tenant(record.owner);

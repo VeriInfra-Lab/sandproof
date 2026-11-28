@@ -1,0 +1,107 @@
+name = "sandbox-model"
+version = "0.1.0"
+defaultTargets = ["StartupProviderParent"]
+
+[[require]]
+name = "aeneas"
+git = { url = "https://github.com/AeneasVerif/aeneas", subDir = "backends/lean" }
+rev = "505b6ca35217e7be5c96c3e2f8045edfbdf47291"
+
+[[lean_lib]]
+name = "SandboxModel"
+
+[[lean_lib]]
+name = "SandproofFoundations"
+
+[[lean_lib]]
+name = "SandproofDigestArray32"
+
+[[lean_lib]]
+name = "SandproofSourceQuestion"
+
+[[lean_lib]]
+name = "SandproofUnloadFirstCollections"
+
+[[lean_lib]]
+name = "SandproofUnloadFirstObservation"
+
+[[lean_lib]]
+name = "SandproofUnloadStartupJoint"
+
+[[lean_lib]]
+name = "OriginalRowsDriver"
+
+[[lean_lib]]
+name = "OriginalRowsInvariant"
+
+[[lean_lib]]
+name = "ParentProof"
+
+[[lean_lib]]
+name = "ParentSuccess"
+
+[[lean_lib]]
+name = "ParentCompleteDraft"
+
+[[lean_lib]]
+name = "Collections"
+
+[[lean_lib]]
+name = "StartupRowsB4"
+
+[[lean_lib]]
+name = "StartupScanInvariant"
+
+[[lean_lib]]
+name = "ActualStartupOutput"
+
+[[lean_lib]]
+name = "ActualStartupRowChain"
+
+[[lean_lib]]
+name = "ReceiptDigestLink"
+
+[[lean_lib]]
+name = "ParentStartupSlot"
+
+[[lean_lib]]
+name = "ActualStartupParentRead"
+
+[[lean_lib]]
+name = "ActualStartupParentCompose"
+
+[[lean_lib]]
+name = "StartupCallBinding"
+
+[[lean_lib]]
+name = "StartupParentBound"
+
+[[lean_lib]]
+name = "SandproofOriginalSourceRows"
+
+[[lean_lib]]
+name = "SandproofLoadBlob"
+
+[[lean_lib]]
+name = "SandproofSqliteSession"
+
+[[lean_lib]]
+name = "SandproofSqliteStatements"
+
+[[lean_lib]]
+name = "SandproofSqlite"
+
+[[lean_lib]]
+name = "SourceStdTypes"
+
+[[lean_lib]]
+name = "OriginalSourceSqliteOps"
+
+[[lean_lib]]
+name = "StartupSqliteLink"
+
+[[lean_lib]]
+name = "StartupEvidenceLink"
+
+[[lean_lib]]
+name = "StartupProviderParent"

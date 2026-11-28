@@ -5,6 +5,11 @@ umask 022
 PROJECT_ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 cd "$PROJECT_ROOT"
 
+if [[ ${GITHUB_ACTIONS:-} != true && -n ${SANDPROOF_STAGE1_NATIVE_ENV:-} &&
+      ${SANDPROOF_REDIS_SYSTEM_TMP_ACTIVE:-} != 1 ]]; then
+  exec bash scripts/with-system-redis-test-tmp.sh bash scripts/check-distributed-contract.sh "$@"
+fi
+
 if [[ -z "${SANDPROOF_REDIS_SERVER:-}" || "${SANDPROOF_REDIS_SERVER}" != /* || ! -x "${SANDPROOF_REDIS_SERVER}" ]]; then
   echo 'Set SANDPROOF_REDIS_SERVER to the absolute executable of the locked Redis test build; no skip/fallback.' >&2
   exit 2
@@ -19,7 +24,30 @@ cargo test --locked -p sandproof-controller-service internal_inbox
 cargo clippy --locked -p sandproof-center-store --all-targets --all-features -- -D warnings
 cargo test --locked -p sandproof-center-store --features redis-tests --all-targets
 cargo clippy --locked -p sandproof-center-service --all-targets --all-features -- -D warnings
-cargo test --locked -p sandproof-center-service --features redis-tests --all-targets
+(
+  if [[ "${GITHUB_ACTIONS:-}" == true ]]; then
+    # The SDK runner's PrivateTmp isolates this directory. Center Redis tests
+    # require real fsync, while save-bundle tests elsewhere require loop XFS.
+    TMPDIR="$(mktemp -d /tmp/sandproof-center-redis.XXXXXXXX)"
+    export TMPDIR
+    trap '
+      test_status=$?
+      if ! rmdir -- "$TMPDIR" && (( test_status == 0 )); then
+        test_status=1
+      fi
+      exit "$test_status"
+    ' EXIT
+    if [[ "$(findmnt -n -o FSTYPE --target "$TMPDIR")" != ext4 ]]; then
+      echo 'Expected guest ext4 for the center Redis test fixtures.' >&2
+      exit 2
+    fi
+  fi
+  # Independent cases each start a real fsync-backed Redis and use the original
+  # 200ms application reply budget. Bound fixture competition on shared runners;
+  # this does not serialize the threads/barriers inside a concurrency test or
+  # extend any application, transport or test deadline.
+  cargo test --locked -p sandproof-center-service --features redis-tests --all-targets -- --test-threads=2
+)
 cargo clippy --locked -p sandproof-center --all-targets -- -D warnings
 cargo test --locked -p sandproof-center --all-targets
 cargo clippy --locked -p sandproof-server --all-targets -- -D warnings

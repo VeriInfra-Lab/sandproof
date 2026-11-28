@@ -22,11 +22,12 @@ pub(super) fn command_generation(command: &core::Command) -> Option<core::Genera
         | core::Command::ActivateVm { generation, .. }
         | core::Command::FreezeVm { generation, .. }
         | core::Command::SealSnapshot { generation, .. }
+        | core::Command::CommitSnapshot { generation, .. }
         | core::Command::ApplyFilePolicy { generation, .. }
         | core::Command::StopVm { generation, .. }
         | core::Command::CleanupVm { generation, .. }
         | core::Command::CleanupSlot { generation, .. } => Some(*generation),
-        _ => None,
+        core::Command::InstallFence { .. } => None,
     }
 }
 
@@ -36,6 +37,21 @@ pub(super) fn action_fields_match(action: &WorkAction<core::EffectId>, namespace
         && action.identity.epoch == command.epoch().unwrap_or(action.identity.epoch)
         && command_generation(command).is_none_or(|value| value == action.identity.generation)
         && action.identity.sandbox.as_str() == format!("sb-{namespace}-{}", command.sandbox().0)
+}
+
+// Identity only: occupied position, original source and material remain
+// separate mandatory checks at the actual execution/observation entry.
+pub(super) fn validate_action_identity(
+    action: &WorkAction<core::EffectId>,
+    namespace: &str,
+) -> NodeResult<()> {
+    action.identity.validate_version()?;
+    if !action_fields_match(action, namespace)
+        || action.identity.resource != command_resource(action.command.command(), namespace)?
+    {
+        return Err("host action identity mismatch".into());
+    }
+    Ok(())
 }
 
 pub(super) fn slot_coordinates_match(
@@ -105,6 +121,14 @@ pub(super) fn evidence_matches(observation: &HostObservation, command: &core::Co
                 disk_inode: namespace_inode,
             },
         ) => *namespace_inode != 0,
+        (
+            core::Command::SealSnapshot { .. },
+            ObservedResult::SnapshotSealed { material_bytes, .. },
+        )
+        | (
+            core::Command::CommitSnapshot { .. },
+            ObservedResult::SnapshotCommitted { material_bytes, .. },
+        ) => *material_bytes > 0,
         (core::Command::CleanupVm { .. }, ObservedResult::VmCleaned)
         | (core::Command::CleanupSlot { .. }, ObservedResult::SlotClosed)
         | (core::Command::AbortPrepare { .. }, ObservedResult::PrepareAborted) => true,
@@ -127,14 +151,12 @@ pub(super) fn command_resource(
         core::Command::ConfigureNetwork { slot, .. } | core::Command::CleanupSlot { slot, .. } => {
             (ResourceKind::NetworkSlot, "slot", slot.0)
         }
-        core::Command::SealSnapshot { snapshot, .. } => {
+        core::Command::SealSnapshot { snapshot, .. }
+        | core::Command::CommitSnapshot { snapshot, .. } => {
             (ResourceKind::Snapshot, "snapshot", snapshot.0)
         }
         core::Command::ApplyFilePolicy { workspace, .. } => {
             (ResourceKind::Workspace, "fs", workspace.0)
-        }
-        core::Command::CommitSnapshot { .. } => {
-            return Err("unsupported host resource command".into());
         }
     };
     Ok(ResourceRef {
@@ -212,7 +234,16 @@ mod tests {
                 digest: core::ManifestDigest(7),
             },
         };
-        for command in [&freeze, &seal] {
+        let commit = core::Command::CommitSnapshot {
+            sandbox: core::SandboxId(1),
+            epoch: 2,
+            generation: 3,
+            snapshot: core::SnapshotId(6),
+            manifest: core::SnapshotManifestRef {
+                digest: core::ManifestDigest(7),
+            },
+        };
+        for command in [&freeze, &seal, &commit] {
             let mut work = action(command.clone());
             assert!(action_fields_match(&work, "test"));
             work.identity.generation += 1;

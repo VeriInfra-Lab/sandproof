@@ -1,0 +1,108 @@
+import SandboxModel.Lifecycle.Protocol.ReplayEquality
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.admission
+open sandproof_protocol.lifecycle.identity sandproof_protocol.lifecycle.request
+namespace SandboxModel.Stage1Protocol.InboxLifetimes
+open scoped Classical
+noncomputable section
+
+structure LifetimeState where
+  priorEnd : Option I64
+  priorVersion : U64
+  lastApplied : Option I64
+
+inductive Rejection where
+  | missingStart | initialUnavailable | initialBound
+  | missingPrevious | previousBeforeStart | previousAfterMax
+  | appliedBeforeStart | appliedAfterMax | previousMismatch | finalMismatch
+  deriving DecidableEq
+
+def different : Option I64 → I64 → Bool
+  | none, _ => false
+  | some previous, value => decide (previous ≠ value)
+
+/-- A version mismatch severs only the remembered deadline predecessor.
+The separate retained-history validator determines whether the gap is legal. -/
+def predecessor (state : LifetimeState) (entry : Entry) : Option I64 :=
+  if state.priorVersion > 0#u64 ∧
+      entry.intent.request.binding.expected ≠ .Version state.priorVersion then none
+  else state.priorEnd
+
+/-- Ghost labels describe check order; the Rust API returns CorruptStore for all.
+Unapplied entries still advance priorVersion, and need not have empty metadata. -/
+def step (lifetime : Lifetime) (start : I64) (state : LifetimeState)
+    (entry : Entry) : Except Rejection LifetimeState :=
+  let before := predecessor state entry
+  match entry.applied_deadline with
+  | none => .ok ⟨before, entry.intent.accepted_version, state.lastApplied⟩
+  | some applied => match entry.previous_effective_end_at_ms with
+    | none => .error .missingPrevious
+    | some previous =>
+      if previous < start then .error .previousBeforeStart
+      else if previous > lifetime.max_deadline_ms then .error .previousAfterMax
+      else if applied < start then .error .appliedBeforeStart
+      else if applied > lifetime.max_deadline_ms then .error .appliedAfterMax
+      else if different before previous then .error .previousMismatch
+      else .ok ⟨some applied, entry.intent.accepted_version, some applied⟩
+
+def scan (lifetime : Lifetime) (start : I64) :
+    List Entry → LifetimeState → Except Rejection Unit
+  | [], state =>
+    if different state.lastApplied lifetime.deadline_ms
+    then .error .finalMismatch else .ok ()
+  | entry :: tail, state => match step lifetime start state entry with
+    | .error reason => .error reason
+    | .ok next => scan lifetime start tail next
+
+def initial (deadline : I64) : LifetimeState := ⟨some deadline, 0#u64, none⟩
+
+abbrev Return := core.result.Result Unit sandproof_controller_service.JournalError
+
+def observed : Except Rejection Unit → Return
+  | .ok () => .Ok ()
+  | .error _ => .Err .CorruptStore
+
+def cursor (values : Slice Entry) (index : Nat) : core.slice.iter.Iter Entry := ⟨values, index⟩
+abbrev LoopState := core.slice.iter.Iter Entry × Option I64 × U64 × Option I64
+
+def bodyResult (values : Slice Entry) (index : Nat) (lifetime : Lifetime)
+    (start : I64) (state : LifetimeState) (entry : Entry) : ControlFlow LoopState Return :=
+  match step lifetime start state entry with
+  | .error _ => .done (.Err .CorruptStore)
+  | .ok next => .cont (cursor values (index + 1), next.priorEnd, next.priorVersion, next.lastApplied)
+
+def FullAppliedContract (validate : Session → Lifetime → I64 → I64 → Result Return) : Prop :=
+  ∀ session lifetime start deadline,
+    validate session lifetime start deadline =
+      .ok (observed (scan lifetime start session.entries.val (initial deadline)))
+
+/-- The fixed standard conversion rejects values above signed i64::MAX. -/
+def duration (value : U64) : Option I64 :=
+  if (value.val : Int) ≤ I64.max then some (UScalar.hcast .I64 value) else none
+
+def fromEntry (start : I64) (entry : Entry) : Option I64 :=
+  match entry.intent.request.operation with
+  | .Create create _ => (duration create.timeout_ms).bind (I64.checked_add start)
+  | _ => none
+
+def initialDeadline (entries : List Entry) (start : I64) : Option I64 :=
+  entries.head?.bind (fromEntry start)
+
+/-- The initial Option chain maps absent/non-Create/overflow cases to the same
+Rust error. It does not impose unrelated Create or envelope validation. -/
+def validateView (session : Session) (lifetime : Lifetime) : Except Rejection Unit :=
+  match lifetime.started_at_ms with
+  | none => .error .missingStart
+  | some start => match initialDeadline session.entries.val start with
+    | none => .error .initialUnavailable
+    | some deadline =>
+      if deadline > lifetime.max_deadline_ms then .error .initialBound
+      else scan lifetime start session.entries.val (initial deadline)
+
+def FullLifetimeContract (validate : Session → Lifetime → Result Return) : Prop :=
+  ∀ session lifetime, validate session lifetime = .ok (observed (validateView session lifetime))
+
+end
+end SandboxModel.Stage1Protocol.InboxLifetimes

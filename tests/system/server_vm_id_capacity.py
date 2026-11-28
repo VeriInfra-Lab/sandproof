@@ -19,6 +19,7 @@ import importlib.metadata
 import json
 import os
 from pathlib import Path
+from tools.capture_acceptance import original_chroot
 import secrets
 import shutil
 import sqlite3
@@ -39,7 +40,7 @@ from server_unready_abort import wait_for
 def check_rejection(opener, url, key, database, root):
     before = idle_snapshot(database)
     slots = sorted((root / "state/slots").iterdir())
-    claims = sorted((root / "jails/.claims").iterdir())
+    claims = sorted((original_chroot(root) / ".claims").iterdir())
     status, _ = fetch(opener, url, "POST", "/v2/sandboxes", key,
                       {"templateID": "base", "allow_internet_access": False})
     assert status == 429, f"capacity refusal must be 429, got {status}"
@@ -48,7 +49,7 @@ def check_rejection(opener, url, key, database, root):
     assert after["states"] == before["states"] and after["actions"] == before["actions"], (
         "capacity refusal changed durable state/outbox")
     assert sorted((root / "state/slots").iterdir()) == slots, "refusal added a slot binding"
-    assert sorted((root / "jails/.claims").iterdir()) == claims, "refusal claimed a new VM"
+    assert sorted((original_chroot(root) / ".claims").iterdir()) == claims, "refusal claimed a new VM"
 
 
 def check_no_resources(root, namespace, firecracker, uid_base, identities=(), *, native):
@@ -64,12 +65,13 @@ def check_no_resources(root, namespace, firecracker, uid_base, identities=(), *,
     slots = native["bounded_host"]["maintenance"]["max_host_slots"]
     if type(slots) is not int or slots < 1 or uid_base + slots > 2**32:
         raise ValueError("invalid native physical UID range")
+    chroot=Path(native['chroot_base'])
     remaining = [json.loads((claim / "record.json").read_text())
-                 for claim in (root / "jails/.claims").iterdir() if (claim / "record.json").exists()]
+                 for claim in (chroot / '.claims').iterdir() if (claim / "record.json").exists()]
     for record in [*identities, *remaining]:
         assert record["resource_id"].startswith(f"vm-{namespace}-")
         assert process_start_ticks(record["pid"]) != record["start_time_ticks"]
-    for parent in (root / "jails" / firecracker.name, Path("/run/netns"), Path("/sys/fs/cgroup")):
+    for parent in (chroot / firecracker.name, Path("/run/netns"), Path("/sys/fs/cgroup")):
         assert not list(parent.rglob(f"vm-{namespace}-*")), f"resource remains under {parent}"
     assert not processes_in_uid_range(uid_base, uid_base + slots - 1)
 
@@ -100,10 +102,10 @@ def exercise(args):
     namespace = secrets.token_hex(8)
     names = [f"vm-{namespace}-{index}" for index in range(4)]
     firecracker = args.firecracker.resolve(strict=True)
-    if len(os.fsencode(root / "jails" / firecracker.name / names[-1] / "root/api.socket")) >= 108:
+    if len(os.fsencode(root / "p/v" / firecracker.name / names[-1] / "root/api.socket")) >= 108:
         root.rmdir()
         raise RuntimeError("test path too long for Firecracker socket")
-    for name in ("db", "state", "jails"):
+    for name in ("db", "state", "p"):
         (root / name).mkdir(mode=0o700)
     kernel, rootfs = (root / name for name in ("vmlinux", "rootfs.ext4"))
     for source, destination in ((args.kernel, kernel), (args.rootfs, rootfs)):
@@ -122,7 +124,7 @@ def exercise(args):
     settings = {
         "namespace": namespace, "database": str(database), "node_state_dir": str(root / "state"),
         "jailer": str(args.jailer.resolve(strict=True)), "firecracker": str(firecracker),
-        "chroot_base": str(root / "jails"), "kernel": str(kernel), "rootfs": str(rootfs),
+        "chroot_base": str(root / "p/v"), "kernel": str(kernel), "rootfs": str(rootfs),
         "uid_base": args.uid_base,
         "vcpu_count": 1, "memory_mib": 512,
         "file_policy_digest": 1, "templates": catalog,
@@ -132,12 +134,12 @@ def exercise(args):
         "startup_timeout_secs": 300, "public_ipv4_enabled": False,
         "default_timeout_secs": 300, "expiry_scan_seconds": 1,
     }
-    settings = complete_runtime(settings, slots=1)
+    settings = complete_runtime(settings, slots=1, inbox_sessions=8+settings["max_active_global"])
     registry = dict(root=str(root / "registry"), max_templates_global=1, max_templates_per_tenant=1,
         max_artifact_bytes_global=disk_bytes + kernel.stat().st_size,
         max_artifact_bytes_per_tenant=disk_bytes + kernel.stat().st_size, validation_timeout_secs=60)
     services = RuntimeServices.prepare(args, root, [settings], [catalog], key,
-        f"127.0.0.1:{port}", args.service_cgroup_record, job_count=8, registry_config=registry)
+        f"127.0.0.1:{port}", args.service_cgroup_record, retained_sessions=8 + settings['max_active_global'], registry_config=registry)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     url = f"http://127.0.0.1:{port}"
     owner = options(key, url, url)
@@ -157,7 +159,7 @@ def exercise(args):
         return native_id
 
     def record_identity(number):
-        record = json.loads((root / "jails/.claims" / names[number] / "record.json").read_text())
+        record = json.loads((original_chroot(root) / ".claims" / names[number] / "record.json").read_text())
         assert record["resource_id"] == names[number]
         assert process_start_ticks(record["pid"]) == record["start_time_ticks"]
         uid = next(line.split()[1] for line in Path(f"/proc/{record['pid']}/status").read_text().splitlines()

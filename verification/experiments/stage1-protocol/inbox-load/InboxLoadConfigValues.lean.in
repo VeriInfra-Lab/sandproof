@@ -1,0 +1,53 @@
+import SandboxModel.Lifecycle.Protocol.InboxLoadConfigComposition
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.capacity
+open sandproof_controller_service.controller.checkpoint.config
+
+namespace SandboxModel.Stage1Protocol.InboxLoadConfig.Values
+noncomputable section
+
+-- Exact synthetic configuration in controller-service/tests/support/complete_fixture.rs.
+-- Acceptance is a value-level validation fact, not evidence of provisioned storage.
+def capacity : CapacityConfig := {
+  max_live_sandboxes := 64#u64
+  max_sql_rows := 4096#u64
+  max_sql_bytes := 16777216#u64
+  max_sql_value_bytes := 262144#u64
+  max_receipt_bytes := 16384#u64
+  max_transaction_inputs := 4#u64
+  max_transaction_bytes := 32768#u64
+  max_database_bytes := 536870912#u64
+  max_wal_bytes := 545259520#u64
+  max_shm_bytes := 2097152#u64
+  checkpoint_scratch_bytes := 8388608#u64
+  max_online_storage_bytes := 1092616192#u64 }
+
+def normal : MaintenanceConfig := {
+  max_operations_per_sandbox := 3#u64
+  capacity := some capacity
+  retention_ms := 100#u64
+  max_checkpoint_bytes := 4194304#u64
+  max_records := 10000#u64
+  max_references := 1000000#u64
+  max_tail_inputs := 1000#u64
+  max_tail_bytes := 4194304#u64
+  max_input_bytes := 8192#u64
+  prune_batch_rows := 7#u64 }
+
+theorem normal_maintenance_fields :
+    ∀ value ∈ InboxLoadMaintenance.fields normal, InboxLoadCapacity.ScalarValid value := by
+  simp [InboxLoadMaintenance.fields, InboxLoadCapacity.ScalarValid, normal]
+  scalar_tac
+
+theorem normal_capacity_fields :
+    ∀ value ∈ InboxLoadCapacity.fields capacity, InboxLoadCapacity.ScalarValid value := by
+  simp [InboxLoadCapacity.fields, InboxLoadCapacity.ScalarValid, capacity]
+  scalar_tac
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadConfig.Values
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.Values.normal_maintenance_fields
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.Values.normal_capacity_fields

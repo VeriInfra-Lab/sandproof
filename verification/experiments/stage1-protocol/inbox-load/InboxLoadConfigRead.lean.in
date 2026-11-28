@@ -1,0 +1,131 @@
+import SandproofStage1Request.Funs
+import SandboxModel.ProofAuditCommand
+
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service
+open sandproof_controller_service.controller.checkpoint.config
+
+namespace SandboxModel.Stage1Protocol.InboxLoadConfig
+noncomputable section
+
+def formatStatement : Str := SandproofStage1RequestRust.toStr "PRAGMA user_version"
+def configStatement : Str := SandproofStage1RequestRust.toStr
+  "SELECT config_json FROM controller_maintenance_config WHERE id=1"
+
+abbrev Outcome (E : Type) := Result ((core.result.Result (Option MaintenanceConfig) JournalError) × E)
+
+-- This is a control-flow view, not an independent specification of config
+-- validation. The actual transparent business validator remains an explicit
+-- computation. Its business characterization is a separate obligation.
+def readView {E : Type} (io : ReadConfigEffects E) (state : E) : Outcome E := do
+  let (format, afterFormat) ← io.query_i64 state formatStatement
+  match format with
+  | .Err error => .ok (.Err error, afterFormat)
+  | .Ok version =>
+    if version ≠ journal.MAINTAINED_FORMAT_VERSION then
+      .ok (.Err .UnsupportedStore, afterFormat)
+    else do
+      let (encoded, afterBytes) ← io.query_bytes afterFormat configStatement
+      match encoded with
+      | .Err error => .ok (.Err error, afterBytes)
+      | .Ok bytes =>
+        let (decoded, afterDecode) ← io.decode_maintenance afterBytes (alloc.vec.Vec.deref bytes)
+        match decoded with
+        | .Err error => .ok (.Err error, afterDecode)
+        | .Ok config =>
+          let validated ← MaintenanceConfig.validate config
+          match validated with
+          | .Err error => .ok (.Err error, afterDecode)
+          | .Ok () => .ok (.Ok (some config), afterDecode)
+
+theorem read_refines {E : Type} (io : ReadConfigEffects E) (state : E) :
+    read_using io state = readView io state := by
+  unfold read_using readView
+  simp only [formatStatement, configStatement]
+  apply congrArg (fun continuation => Bind.bind (io.query_i64 state formatStatement) continuation)
+  funext queried
+  rcases queried with ⟨result, afterFormat⟩
+  cases result with
+  | Err error => simp [core.result.Result.Insts.CoreOpsTry.branch,
+      core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+  | Ok version =>
+    simp [core.result.Result.Insts.CoreOpsTry.branch]
+    by_cases unsupported : version.val ≠ journal.MAINTAINED_FORMAT_VERSION.val
+    · simp [unsupported]
+    · have supported : version.val = journal.MAINTAINED_FORMAT_VERSION.val := Classical.not_not.mp unsupported
+      simp only [supported, ↓reduceIte]
+      apply congrArg (fun continuation => Bind.bind (io.query_bytes afterFormat configStatement) continuation)
+      funext queried
+      rcases queried with ⟨result, afterBytes⟩
+      cases result with
+      | Err error => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+      | Ok bytes =>
+        simp
+        apply congrArg (fun continuation => Bind.bind
+          (io.decode_maintenance afterBytes (alloc.vec.Vec.deref bytes)) continuation)
+        funext decoded
+        rcases decoded with ⟨result, afterDecode⟩
+        cases result with
+        | Err error => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+        | Ok config =>
+          simp
+          apply congrArg (fun continuation => Bind.bind (MaintenanceConfig.validate config) continuation)
+          funext validated
+          cases validated with
+          | Err error => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+          | Ok value => cases value; simp
+
+theorem format_error {E : Type} (io : ReadConfigEffects E) (state after : E) (error : JournalError)
+    (queried : io.query_i64 state formatStatement = .ok (.Err error, after)) :
+    read_using io state = .ok (.Err error, after) := by
+  rw [read_refines]
+  simp [readView, queried]
+
+theorem format_rejected {E : Type} (io : ReadConfigEffects E) (state after : E) (version : I64)
+    (queried : io.query_i64 state formatStatement = .ok (.Ok version, after))
+    (unsupported : version ≠ journal.MAINTAINED_FORMAT_VERSION) :
+    read_using io state = .ok (.Err .UnsupportedStore, after) := by
+  rw [read_refines]
+  have differentValue : version.val ≠ journal.MAINTAINED_FORMAT_VERSION.val :=
+    by simpa [IScalar.eq_equiv] using unsupported
+  simp [readView, queried, differentValue]
+
+theorem bytes_error {E : Type} (io : ReadConfigEffects E) (state afterFormat after : E)
+    (error : JournalError)
+    (format : io.query_i64 state formatStatement = .ok (.Ok journal.MAINTAINED_FORMAT_VERSION, afterFormat))
+    (queried : io.query_bytes afterFormat configStatement = .ok (.Err error, after)) :
+    read_using io state = .ok (.Err error, after) := by
+  rw [read_refines]
+  simp [readView, format, queried]
+
+theorem decode_error {E : Type} (io : ReadConfigEffects E) (state afterFormat afterBytes after : E)
+    (bytes : alloc.vec.Vec U8) (error : JournalError)
+    (format : io.query_i64 state formatStatement = .ok (.Ok journal.MAINTAINED_FORMAT_VERSION, afterFormat))
+    (queried : io.query_bytes afterFormat configStatement = .ok (.Ok bytes, afterBytes))
+    (decoded : io.decode_maintenance afterBytes (alloc.vec.Vec.deref bytes) = .ok (.Err error, after)) :
+    read_using io state = .ok (.Err error, after) := by
+  rw [read_refines]
+  simp [readView, format, queried, decoded]
+
+theorem decoded_continuation {E : Type} (io : ReadConfigEffects E)
+    (state afterFormat afterBytes after : E) (bytes : alloc.vec.Vec U8) (config : MaintenanceConfig)
+    (format : io.query_i64 state formatStatement = .ok (.Ok journal.MAINTAINED_FORMAT_VERSION, afterFormat))
+    (queried : io.query_bytes afterFormat configStatement = .ok (.Ok bytes, afterBytes))
+    (decoded : io.decode_maintenance afterBytes (alloc.vec.Vec.deref bytes) = .ok (.Ok config, after)) :
+    read_using io state = (do
+      let validated ← MaintenanceConfig.validate config
+      match validated with
+      | .Err error => .ok (.Err error, after)
+      | .Ok () => .ok (.Ok (some config), after)) := by
+  rw [read_refines]
+  simp [readView, format, queried, decoded]
+
+end
+end SandboxModel.Stage1Protocol.InboxLoadConfig
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.read_refines
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.format_error
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.format_rejected
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.bytes_error
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.decode_error
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxLoadConfig.decoded_continuation

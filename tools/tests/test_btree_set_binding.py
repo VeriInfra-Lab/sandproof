@@ -11,6 +11,9 @@ import unittest
 
 from tools import check_btree_set_binding as binding
 from tools import check_btree_set_binding_components as native
+from tools.tests.proof_input_fixture import reference_root
+
+REFERENCE_ROOT = reference_root()
 
 
 class BtreeSetAdmissionTests(unittest.TestCase):
@@ -87,7 +90,7 @@ class BtreeSetAdmissionTests(unittest.TestCase):
             self.check_record([])
 
     def test_mutation_changes_only_original_str_return_and_rejects_ambiguity(self):
-        source = (binding.ROOT / binding.SOURCE).read_text()
+        source = (REFERENCE_ROOT / binding.SOURCE).read_text()
         changed = binding.mutate(source, "invert-flag")
         self.assertEqual(changed.replace("    !seen.insert(value)", "    seen.insert(value)"), source)
         self.assertEqual(changed.count("    !seen.insert(value)"), 1)
@@ -142,18 +145,18 @@ class BtreeSetFrozenContractTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
-        self.environment = json.loads((binding.ROOT / binding.ENVIRONMENT).read_text())
+        self.environment = json.loads((REFERENCE_ROOT / binding.ENVIRONMENT).read_text())
         for name in self.environment["inputs"] + [binding.FREEZE]:
             path = self.root / name
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes((binding.ROOT / name).read_bytes())
+            path.write_bytes((REFERENCE_ROOT / name).read_bytes())
 
     def reseal(self):
         lines = [binding.sha(self.root / name) + "  " + name + "\n"
                  for name in self.environment["inputs"]]
         (self.root / binding.FREEZE).write_text("".join(lines))
 
-    def test_current_full_contract_is_admitted(self):
+    def test_frozen_reference_full_contract_is_admitted(self):
         self.assertEqual(binding.check(self.root)["positive_audits"], binding.POSITIVE)
 
     def test_new_allocator_promise_rejected_even_after_hash_refresh(self):
@@ -223,7 +226,7 @@ class BtreeSetFrozenContractTests(unittest.TestCase):
 
 class BtreeSetReplayViewTests(unittest.TestCase):
     def test_private_views_accept_exact_registered_library_and_reject_duplicates(self):
-        file = binding.ROOT / binding.EXPERIMENT / "replay.py"
+        file = REFERENCE_ROOT / binding.EXPERIMENT / "replay.py"
         spec = importlib.util.spec_from_file_location("btree_set_component_replay", file)
         replay = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(replay)

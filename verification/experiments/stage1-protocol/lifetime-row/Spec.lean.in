@@ -1,0 +1,29 @@
+import SandproofLifetimeRow.Types
+import SandproofFoundations.IdentifierLibrary
+import SandboxModel.ProofAuditCommand
+open Aeneas Aeneas.Std SandproofLifetimeRowRust
+namespace SandboxModel.Stage1Protocol.LifetimeRow
+abbrev Row := String × I64 × I64 × Option I64 × I64 × I64
+
+def Valid (owner : Str) (row : Row) : Prop :=
+  SandproofFoundationsRust.IdentifierLibrary.stringBytes row.1 = owner.val ∧
+  0 ≤ row.2.1.val ∧ 0 ≤ row.2.2.2.2.2.val ∧ 0 < row.2.2.1.val ∧
+  row.2.1.val ≤ row.2.2.2.2.1.val ∧
+  (match row.2.2.2.1 with | none => True | some t => 0 ≤ t.val ∧ t.val ≤ row.2.1.val)
+
+instance (owner : Str) (row : Row) : Decidable (Valid owner row) := by
+  unfold Valid
+  cases row.2.2.2.1 <;> infer_instance
+
+def Projected (row : Row) : controller.admission.Lifetime :=
+  { started_at_ms := row.2.2.2.1, deadline_ms := row.2.1,
+    max_deadline_ms := row.2.2.2.2.1, startup_deadline_ms := row.2.2.2.2.2,
+    disk_bytes := IScalar.hcast .U64 row.2.2.1 }
+
+def Expected (owner : Str) (row : Row) : core.result.Result controller.admission.Lifetime host_contract.AdmissionError :=
+  if Valid owner row then .Ok (Projected row) else .Err .CorruptLifetime
+
+def FullRowContract (implementation : Str → Row → Result (core.result.Result controller.admission.Lifetime host_contract.AdmissionError)) : Prop :=
+  ∀ owner row, implementation owner row = .ok (Expected owner row)
+
+end SandboxModel.Stage1Protocol.LifetimeRow

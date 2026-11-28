@@ -270,6 +270,59 @@ fn validation_original_success_and_no_activation_failure_require_exact_release()
     }
 }
 
+fn assert_wrong_validation_bindings(
+    journal: &ControllerJournal,
+    create: &AcceptedLifecycleIntent,
+    terminal: &sandproof_protocol::lifecycle::TerminalLifecycleObservation,
+    value: &Publication,
+) {
+    for index in 0..9 {
+        let mut wrong = create.clone();
+        match index {
+            0 => wrong.request.binding.key.owner = "2".try_into().unwrap(),
+            1 => wrong.request.binding.node.node_generation = 2.try_into().unwrap(),
+            2 => wrong.request.binding.node.node_id = "wrong".try_into().unwrap(),
+            3 => wrong.request.binding.session = "wrong".try_into().unwrap(),
+            4 => wrong.request.binding.key.sequence = 9.try_into().unwrap(),
+            5 => wrong.accepted_version = 2,
+            6 => wrong.request.binding.key.window = 2.try_into().unwrap(),
+            7 => wrong.retention.window = 2.try_into().unwrap(),
+            _ => wrong.center.center = "foreign".try_into().unwrap(),
+        }
+        assert!(
+            journal
+                .lifecycle_validation_evidence(
+                    &wrong,
+                    terminal,
+                    revision(create),
+                    value,
+                    &context()
+                )
+                .is_err()
+        );
+    }
+    for index in 0..4 {
+        let mut wrong = value.clone();
+        match index {
+            0 => wrong.binding.owner = Some(2),
+            1 => wrong.binding.kernel.path = "/untrusted-do-not-open/remote".into(),
+            2 => wrong.binding.rootfs.sha256 = "d".repeat(64),
+            _ => wrong.checked = true,
+        }
+        assert!(
+            journal
+                .lifecycle_validation_evidence(
+                    create,
+                    terminal,
+                    revision(create),
+                    &wrong,
+                    &context()
+                )
+                .is_err()
+        );
+    }
+}
+
 #[test]
 fn validation_identity_descriptor_and_unknown_mapping_never_issue_evidence() {
     let dir = tempfile::tempdir().unwrap();
@@ -312,51 +365,7 @@ fn validation_identity_descriptor_and_unknown_mapping_never_issue_evidence() {
     release(&mut journal, local, &terminal);
     let before = journal.world().unwrap();
     let changes = journal.journal.connection.total_changes();
-    for index in 0..9 {
-        let mut wrong = create.clone();
-        match index {
-            0 => wrong.request.binding.key.owner = "2".try_into().unwrap(),
-            1 => wrong.request.binding.node.node_generation = 2.try_into().unwrap(),
-            2 => wrong.request.binding.node.node_id = "wrong".try_into().unwrap(),
-            3 => wrong.request.binding.session = "wrong".try_into().unwrap(),
-            4 => wrong.request.binding.key.sequence = 9.try_into().unwrap(),
-            5 => wrong.accepted_version = 2,
-            6 => wrong.request.binding.key.window = 2.try_into().unwrap(),
-            7 => wrong.retention.window = 2.try_into().unwrap(),
-            _ => wrong.center.center = "foreign".try_into().unwrap(),
-        }
-        assert!(
-            journal
-                .lifecycle_validation_evidence(
-                    &wrong,
-                    &terminal,
-                    revision(&create),
-                    &value,
-                    &context()
-                )
-                .is_err()
-        );
-    }
-    for index in 0..4 {
-        let mut wrong = value.clone();
-        match index {
-            0 => wrong.binding.owner = Some(2),
-            1 => wrong.binding.kernel.path = "/untrusted-do-not-open/remote".into(),
-            2 => wrong.binding.rootfs.sha256 = "d".repeat(64),
-            _ => wrong.checked = true,
-        }
-        assert!(
-            journal
-                .lifecycle_validation_evidence(
-                    &create,
-                    &terminal,
-                    revision(&create),
-                    &wrong,
-                    &context()
-                )
-                .is_err()
-        );
-    }
+    assert_wrong_validation_bindings(&journal, &create, &terminal, &value);
     assert!(
         journal
             .lifecycle_validation_evidence(

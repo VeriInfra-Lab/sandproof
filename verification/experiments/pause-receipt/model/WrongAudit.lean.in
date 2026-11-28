@@ -1,0 +1,7 @@
+import SandboxModel.ProofAuditCommand
+import SandboxModel.Lifecycle.PauseReceipt.WrongOutcome
+
+#audit_controller_proof SandboxModel.Lifecycle.PauseReceipt.WrongOutcome.first_receipt
+#audit_controller_proof SandboxModel.Lifecycle.PauseReceipt.WrongOutcome.no_success_evidence
+#audit_controller_proof SandboxModel.Lifecycle.PauseReceipt.WrongOutcome.actual_wrong_accepts
+#audit_controller_proof SandboxModel.Lifecycle.PauseReceipt.WrongOutcome.same_property_rejects
