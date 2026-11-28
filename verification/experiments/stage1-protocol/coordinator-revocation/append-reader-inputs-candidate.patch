@@ -1,0 +1,26 @@
+diff --git a/verification/experiments/stage1-protocol/inbox-append/inventory.json b/verification/experiments/stage1-protocol/inbox-append/inventory.json
+index ce9690fa..1cdcc5c3 100644
+--- a/verification/experiments/stage1-protocol/inbox-append/inventory.json
++++ b/verification/experiments/stage1-protocol/inbox-append/inventory.json
+@@ -81,7 +81,7 @@
+     "controller-service/src/template_registry/state/tests.rs": "4ae3c8c1585f1196059c3053b17204d56b50eaba306a76516314e9a0649e3c11",
+     "controller-service/src/application/coordinator/lifecycle_unload.rs": "43637bd1f494d159d527a9fa91ad3e581fdaf892038eb6577ef775410cc2f89f",
+     "controller-service/src/application/coordinator/physical_storage.rs": "c151aeb9fa668b54bc4e40390ae448178c8612be3d5894a4c3ae40aee173e1d6",
+-    "controller-service/src/application/coordinator/lifecycle_intent.rs": "2277e296f74dfaa340423bdc5b62427e32f42e2a6d354045b6227e36c832d5dd",
++    "controller-service/src/application/coordinator/lifecycle_intent.rs": "ff56d460fa987e09463783986742de6be6773ee75a05c88291c96afa0a2cd897",
+     "controller-service/src/application/coordinator/template_commands.rs": "db7288cc67fffbeba3f15f0d286cc3436c244ffc5b7cc6a39824e1ffd0dab901",
+     "controller-service/src/application/coordinator/data_access.rs": "ecd49e57f260934b9e03a00a0de610df42714e27d1d1a4ac42ce782dcb6913e1",
+     "controller-service/src/application/coordinator/recovery.rs": "ce6878321cfe02f614dcf2f1e3edb48b8dcdff8f431fca357a439a64a26ff0fe",
+diff --git a/verification/stage1-protocol-inputs.sha256 b/verification/stage1-protocol-inputs.sha256
+index 76816468..946b2540 100644
+--- a/verification/stage1-protocol-inputs.sha256
++++ b/verification/stage1-protocol-inputs.sha256
+@@ -366,7 +366,7 @@ aed094380c914a06f6f3169eae788f6e741952f8aa6fe054eaa7be182bc89689  verification/e
+ ec9d5550e1524e6cb7d71745564aabc021f316ec3090614264b9f05852b46226  verification/experiments/stage1-protocol/inbox-append/admission_tests.py
+ aec2be8a13bc2d0cccf2c61431457c6257d322982c9200c1af6df62991ae35c6  verification/experiments/stage1-protocol/inbox-append/coordinator-candidate.patch
+ 2e2c1e44fb5dbfd3c2c9a9a4c233a617b6e55bf3c9ad38db401c7d3900d8f43c  verification/experiments/stage1-protocol/inbox-append/formal.py
+-af58824f2c2f49251eb2e6f57b611b126ad1edcf251a50ef92e93f3f936a200d  verification/experiments/stage1-protocol/inbox-append/inventory.json
++db5e2035340f4edf767b1c30345be2c89ba5220d215404a8e605c88b44093f89  verification/experiments/stage1-protocol/inbox-append/inventory.json
+ bf94c5565203f4029fdcaab3cf7dffd452fbf0151bcdd2a7840b380cac3ec923  verification/experiments/stage1-protocol/inbox-append/native.py
+ e12347f9dc0ff5cd7dbff63ec21eb36d6bbc488315798c90192cf3e26b5803ea  verification/experiments/stage1-protocol/inbox-append/native_tests.rs
+ b1cba6b3d306f9a4c1d30cdfbd70a37252939905f221d058aaa785f6a7e635af  verification/experiments/stage1-protocol/inbox-append/prepare.py
