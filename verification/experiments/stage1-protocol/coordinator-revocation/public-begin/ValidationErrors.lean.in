@@ -1,0 +1,367 @@
+import SandproofActualRecord.PublicUnloadSave
+import SandboxModel.Lifecycle.Protocol.InboxCompositionValues
+import SandboxModel.Lifecycle.Protocol.InboxCompositionProofs
+
+section
+open Aeneas Aeneas.Std SandproofStage1RequestRust
+open sandproof_controller_service sandproof_controller_service.controller.lifecycle_inbox.model
+open sandproof_controller_service.controller.lifecycle_inbox.native_retirement
+open sandproof_protocol.lifecycle.authority
+namespace SandboxModel.Stage1Protocol.InboxValidation
+noncomputable section
+open scoped Classical
+set_option autoImplicit false
+
+/-- A normal refusal from decoded Inbox validation can report malformed state
+or the error returned while encoding a nested protocol value. -/
+def ValidationError : JournalError → Prop
+  | .CorruptStore | .Json _ => True
+  | _ => False
+
+private def classified {α : Type} (r : Result (core.result.Result α JournalError)) : Prop :=
+  match r.match with
+  | .ok (.Err e) => ValidationError e
+  | _ => True
+
+private theorem observe {α β : Type} (r : Result α) (f : α → Result (core.result.Result β JournalError))
+    (next : ∀ a, classified (f a)) : classified (r >>= f) := by
+  cases r <;> simp_all [classified]
+
+private theorem continueChecked {α β : Type} (r : Result (core.result.Result α JournalError))
+    (checked : classified r) (f : core.result.Result α JournalError → Result (core.result.Result β JournalError))
+    (next : ∀ a, classified (.ok a) → classified (f a)) : classified (r >>= f) := by
+  cases r with
+  | ret reply => simpa only [bind_tc_ok] using next reply checked
+  | vis i k => simp [classified]
+  | div => simp [classified]
+
+private theorem receiptErrors {E : Type} (encoding : RetirementEncoding E) (receipt : NativeRetirementReceipt) :
+    classified (SavedRetirement.checkReceipt encoding receipt) := by
+  unfold SavedRetirement.checkReceipt
+  apply observe
+  intro encoded
+  cases encoded with
+  | Err _ => trivial
+  | Ok _ => dsimp only; split <;> trivial
+
+private theorem bindingErrors {E : Type} (encoding : RetirementEncoding E) (receipt : NativeRetirementReceipt)
+    (last : Entry) : classified (SavedRetirement.checkBinding encoding receipt last) := by
+  unfold SavedRetirement.checkBinding
+  apply observe
+  intro encoded
+  cases encoded with
+  | Err _ => trivial
+  | Ok bytes =>
+    apply observe
+    intro digest
+    split
+    · exact receiptErrors encoding receipt
+    · trivial
+
+private theorem savedErrors {E : Type} (encoding : RetirementEncoding E) (session : Session) :
+    classified (SavedRetirement.validateView encoding session) := by
+  unfold SavedRetirement.validateView
+  split
+  · trivial
+  · split
+    · trivial
+    · split
+      · apply bindingErrors
+      · trivial
+
+private theorem confirmedErrors {E : Type} (encoding : TerminalEncoding E) (session : Session) :
+    classified (SessionShape.checkConfirmed encoding session) := by
+  unfold SessionShape.checkConfirmed
+  split
+  · trivial
+  · split
+    · apply observe
+      intro encoded
+      cases encoded with
+      | Err _ => trivial
+      | Ok _ => dsimp only; split <;> trivial
+    · trivial
+
+private theorem shapeErrors {R T : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (inbox : Inbox) (index : Usize) (session : Session) :
+    classified (SessionShape.validateView saved terminal inbox index session) := by
+  unfold SessionShape.validateView
+  apply continueChecked _ (savedErrors saved session)
+  intro reply known
+  cases reply
+  case Err => exact known
+  case' Ok passed => dsimp only
+  repeat' first | trivial | (solve | simp [classified]) | apply confirmedErrors | split
+
+private theorem renewalErrors (renewal : InboxRenewal.Encoding) (session : Session) :
+    classified (InboxRenewal.validateView renewal session) := by
+  unfold InboxRenewal.validateView
+  split
+  · split <;> trivial
+  · split
+    · apply observe
+      intro encoded
+      cases encoded with
+      | Err _ => trivial
+      | Ok _ =>
+        unfold InboxRenewal.afterEncoding
+        repeat' first | trivial | (solve | simp [classified]) | split
+    · trivial
+
+private theorem unloadErrors (unload : UnloadResolution.Encoding) (entry : Entry) :
+    classified (UnloadResolution.validateView unload entry) := by
+  unfold UnloadResolution.validateView
+  split
+  · trivial
+  · split
+    · apply observe
+      intro encoded
+      cases encoded with
+      | Err _ => trivial
+      | Ok _ =>
+        unfold UnloadResolution.afterEncoding
+        repeat' first | trivial | (solve | simp [classified]) | split
+    · trivial
+
+private theorem entryErrors (unload : UnloadResolution.Encoding) (inbox : Inbox) (session : Session)
+    (entry : Entry) (context : AuthenticatedCenterContext) :
+    classified (InboxEntry.entryView unload inbox session entry context) := by
+  unfold InboxEntry.entryView
+  apply continueChecked _ (unloadErrors unload entry)
+  intro reply known
+  cases reply
+  case Err => exact known
+  case' Ok passed => dsimp only
+  split
+  · trivial
+  · apply observe
+    intro count
+    split
+    · trivial
+    · unfold InboxEntry.operationResult
+      repeat' first | trivial | (solve | simp [classified]) | split
+
+private theorem countErrors (state : EntrySummary) (version : U64) (kind : Usize) :
+    classified (incrementKind state version kind) := by
+  unfold incrementKind
+  dsimp only
+  repeat' first | trivial | (solve | simp [classified]) | split
+
+private theorem entriesErrors (unload : UnloadResolution.Encoding) (inbox : Inbox) (session : Session)
+    (context : AuthenticatedCenterContext) (entries : List Entry) (summary : EntrySummary) :
+    classified (entryScan unload inbox session context entries summary) := by
+  induction entries generalizing summary with
+  | nil => trivial
+  | cons entry tail ih =>
+    unfold entryScan
+    split
+    · trivial
+    · split
+      · trivial
+      · apply continueChecked _ (entryErrors unload inbox session entry context)
+        intro reply known
+        cases reply
+        case Err => exact known
+        case' Ok kind => dsimp only
+        apply continueChecked _ (countErrors summary entry.intent.accepted_version kind)
+        intro reply known
+        cases reply
+        case Err => exact known
+        case' Ok updated => dsimp only
+        exact ih updated
+
+private theorem sessionErrors {R T : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding) (inbox : Inbox)
+    (index : Usize) (session : Session) (context : AuthenticatedCenterContext) :
+    classified (sessionView saved terminal renewal unload inbox index session context) := by
+  unfold sessionView
+  apply continueChecked _ (shapeErrors saved terminal inbox index session)
+  intro reply known
+  cases reply
+  case Err => exact known
+  case' Ok passed => dsimp only
+  apply continueChecked _ (renewalErrors renewal session)
+  intro reply known
+  cases reply
+  case Err => exact known
+  case' Ok passed => dsimp only
+  apply continueChecked _ (entriesErrors unload inbox session context session.entries.val initialSummary)
+  intro reply known
+  cases reply
+  case Err => exact known
+  case' Ok summary => dsimp only
+  unfold InboxLineage.expectedResult
+  cases InboxLineage.scan session.incarnation session.entries.val InboxLineage.initial with
+  | error _ => trivial
+  | ok a =>
+    cases a
+    dsimp only [InboxLineage.observed]
+    split <;> trivial
+
+private theorem sessionsErrors {R T : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : InboxRenewal.Encoding) (unload : UnloadResolution.Encoding) (inbox : Inbox)
+    (context : AuthenticatedCenterContext) (sessions : List Session) (index : Usize) :
+    classified (sessionsView saved terminal renewal unload inbox context sessions index) := by
+  induction sessions generalizing index with
+  | nil => trivial
+  | cons session tail ih =>
+    unfold sessionsView
+    apply observe
+    intro next
+    apply continueChecked _ (sessionErrors saved terminal renewal unload inbox index session context)
+    intro reply known
+    cases reply
+    case Err => exact known
+    case' Ok passed => dsimp only
+    exact ih next
+
+/-- Classify the actual decoded Inbox validator's normal error without a
+success assumption on any codec. This preserves the original outer effects. -/
+theorem validate_error {R T N U B : Type} (saved : RetirementEncoding R) (terminal : TerminalEncoding T)
+    (renewal : controller.lifecycle_inbox.renewal_confirmation.RenewalEncoding N)
+    (unload : controller.lifecycle_inbox.unload_resolution.UnloadEncoding U) (graphic : capture.GraphicBytes B)
+    (inbox : Inbox) (error : JournalError)
+    (refused : Inbox.validate_using saved terminal renewal unload graphic inbox = .ok (.Err error)) :
+    ValidationError error := by
+  have all : classified (Inbox.validate_using saved terminal renewal unload graphic inbox) := by
+    unfold Inbox.validate_using
+    apply observe
+    intro config
+    cases config
+    · trivial
+    simp only [↓reduceIte, lift, bind_tc_ok]
+    split
+    · trivial
+    split
+    · trivial
+    apply observe
+    intro context
+    split
+    · trivial
+    apply observe
+    intro badLane
+    cases badLane
+    case true => trivial
+    rw [RetiredIdentity.candidate_retired_contract]
+    cases RetiredIdentity.remainingConflict inbox 0
+    case true =>
+      simp [RetiredIdentity.validationResult, core.result.Result.Insts.CoreOpsTry.branch,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, classified, ValidationError]
+    simp only [RetiredIdentity.validationResult, Bool.false_eq_true, ↓reduceIte, bind_tc_ok,
+      core.result.Result.Insts.CoreOpsTry.branch, core.option.Option.as_ref, SandproofFoundationsRust.core.option.Option.as_ref]
+    apply observe
+    intro badHost
+    cases badHost
+    case true => trivial
+    rw [owners_result_spec]
+    by_cases owners : OwnersValid inbox
+    · simp only [owners, ↓reduceIte, bind_tc_ok,
+        core.slice.Slice.iter, core.iter.traits.iterator.Iterator.enumerate.trait_default,
+        core.iter.traits.iterator.Iterator.enumerate.default]
+      change classified (sessionsLoop saved terminal renewal unload inbox context
+        (RetiredIdentity.enumCursor (alloc.vec.Vec.deref inbox.sessions) 0#usize))
+      rw [sessions_loop_refines]
+      apply sessionsErrors
+    · simp [owners,
+        core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual, classified, ValidationError]
+  rw [refused] at all
+  simpa [classified] using all
+
+end
+end SandboxModel.Stage1Protocol.InboxValidation
+
+end
+
+open Aeneas Aeneas.Std
+open SandboxModel.Stage1Protocol SandproofParentCommitRust.ErrorTransport
+namespace SandproofActualRecordRust.PublicSaveValidation
+open controller.lifecycle_inbox recording PublicBegin PublicReplay SourceFlowLink InboxAppend PublicUnload
+noncomputable section
+set_option autoImplicit false
+
+variable [PublicCalls]
+
+/-- The concrete dictionaries selected by the public journal satisfy this
+error classification for every appended Inbox, including arbitrary JSON replies. -/
+theorem save_validation_error (inbox : model.Inbox) (err : SandproofStage1RequestRust.sandproof_controller_service.JournalError)
+    (refused : saveValidation inbox = .ok (.Err err)) : InboxValidation.ValidationError err :=
+  InboxValidation.validate_error _ _ _ _ _ inbox err refused
+
+/-- Keep the actual codec dictionaries fixed across both witnesses. Changing just
+the session capacity of the accepted inbox to zero yields the real store error. -/
+theorem validation_witnesses :
+    let normal := InboxValidation.Values.normal
+    let invalid := {normal with config := {normal.config with max_sessions := 0#u16}}
+    saveValidation normal = .ok (.Ok ()) ∧
+    saveValidation invalid = .ok (.Err .CorruptStore) := by
+  intro normal invalid
+  have represented : ConfigValidation.Representable invalid.config := InboxValidation.Values.fixture_representable
+  have bad : ¬ ConfigValidation.Valid invalid.config := by
+    intro valid
+    exact (by decide : ¬ (1 : Nat) ≤ (0#u16).val) valid.2.2.1
+  constructor
+  · unfold saveValidation
+    apply Eq.trans (InboxValidation.inbox_refines _ _ _ _ (oldGraphic graphic) ComposedConfig.standard_graphic_contract normal InboxValidation.Values.fixture_representable)
+    apply InboxValidation.Values.normal_model_accepted
+  · unfold saveValidation
+    apply Eq.trans (InboxValidation.inbox_refines _ _ _ _ (oldGraphic graphic) ComposedConfig.standard_graphic_contract invalid represented)
+    simp [InboxValidation.inboxView, bad, InboxValidation.rejected]
+
+variable [SandproofStandardRecordCodec.DecodeCalls]
+
+/-- A freshly appended Unload whose saved Inbox fails validation returns the
+original journal error without selecting a targeted or broadcast revocation.
+An outer failure or divergence of validation ends the public call before dispatch. -/
+theorem fresh_validation_refusal [FileHandle] (journal : controller.ControllerJournal)
+    (intent : Intent) (context : Context) (begun : SandproofUnloadWorldBegin.controller.transaction.WorldTransaction)
+    (after : UnloadWorldBegin.Conn) (ns : Str)
+    (started : UnloadWorldBegin.begin (initial journal) journal.committed_world = .ok (.Ok begun, after))
+    (borrowed : alloc.string.String.Insts.CoreOpsDerefDerefStr.deref journal.«namespace» = .ok ns)
+    (inbox : model.Inbox) (afterLoad : StandardRecord Unit) (s : Usize)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+    (config : InboxAdmission.ContextMatches inbox context) (valid : Validation.ValidEnvelope intent context)
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (selected : ExistingSelection inbox intent s)
+    (accept : existingDecision inbox (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent =
+      .append false) :
+    let returned := {journal with journal := ⟨after.base⟩}
+    ∃ (next : model.Inbox) (e : Usize), inbox.record intent = .ok (.Ok (s,e), next) ∧
+      next.state s e = .ok (appendedState (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent) ∧
+      (∀ err, saveValidation next = .ok (.Err err) →
+        InboxValidation.ValidationError err ∧
+        journalDecision journal intent context = .ok ((.Err (fromRequest err), returned, ()), .None)) ∧
+      (∀ err, saveValidation next = .fail err → journalDecision journal intent context = .fail err) ∧
+      (saveValidation next = .div → journalDecision journal intent context = .div) := by
+  dsimp only
+  obtain ⟨next, e, appended, state, refuse, _⟩ :=
+    fresh_save_refusal journal intent context begun after ns started borrowed inbox afterLoad s
+      loaded config valid op selected accept
+  refine ⟨next, e, appended, state, ?_, ?_⟩
+  · intro err stopped
+    have allowed := save_validation_error next err stopped
+    refine ⟨allowed, ?_⟩
+    have result := refuse err stopped
+    cases err <;> first | exact result | contradiction
+  · have recorded := RecordCodecPorts.record_stops begun ns intent context inbox next afterLoad s e loaded
+      ((InboxAdmission.accepts_iff inbox intent context).mpr ⟨config, valid⟩)
+      ((InboxLookup.find_none_iff inbox intent).mpr selected.1) op appended
+    have publicRun := RecordCodecPorts.journal_stops journal intent context begun after ns started borrowed
+    constructor
+    · intro error failed
+      apply publicRun.1 _ (recorded.1 _ ?_)
+      unfold saveValidation at failed
+      unfold originalSave SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.save_using
+      simp only [failed, bind_tc_fail]
+    · intro diverged
+      apply publicRun.2 (recorded.2 ?_)
+      unfold saveValidation at diverged
+      unfold originalSave SandproofStage1RequestRust.sandproof_controller_service.controller.lifecycle_inbox.codec.save_using
+      simp only [diverged, bind_tc_div]
+
+end
+end SandproofActualRecordRust.PublicSaveValidation
+
+#audit_controller_proof SandboxModel.Stage1Protocol.InboxValidation.validate_error
+#audit_controller_proof SandproofActualRecordRust.PublicSaveValidation.save_validation_error
+#audit_controller_proof SandproofActualRecordRust.PublicSaveValidation.validation_witnesses
+#audit_controller_proof SandproofActualRecordRust.PublicSaveValidation.fresh_validation_refusal
