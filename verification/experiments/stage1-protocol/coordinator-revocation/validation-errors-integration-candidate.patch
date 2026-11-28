@@ -1,0 +1,52 @@
+diff --git a/docs/proof-coverage.md b/docs/proof-coverage.md
+index 8fc2be53..8869db7b 100644
+--- a/docs/proof-coverage.md
++++ b/docs/proof-coverage.md
+@@ -244,7 +244,7 @@ V5 的真实事务、V6 的物理宿主事实、V9 的历史与进展连接仍
+ | V0 公共底座 | 类型/算术、容器、JSON/Writer、并发/任务、存储与 OS 已有指定版本公共合同及局部证明 | 按实际调用补最小公共能力与实例连接；T0–T8 及 V0 未全部闭合，不先建设完整标准库或异步翻译器 |
+ | V1/V2 中心决定与 Redis | 正式生命周期、继续/确定丢失、续期后再次卸载已接通；#683/#693/#700/#712 有对应工程证据。#729 已优化 Unloaded 查询，七个生命周期确认方法的无变化路径也已采用 | 新选择规则、原 Lua/CAS 参数与 Redis 调用、确认/未知提交、重启及纯决定到存储调用的对应仍须证明；工程结果不证明任意存储故障下可用 |
+ | V3 协议与收件 | 唯一同步 load→完整查找/record→validate→save 链已采用；本批固定收敛沿用实际 Rust 和原证明提供方，SQL/摘要/memo 的局部结果见下表 | `protocol-convergence` 固定20包+3额外入口、27形式任务；完整封口还须同一候选的22 native组件、完整functional和公共形式入口，实际结果按 #635 的精确提交与原记录核对。该有限范围不替代原full/all，也不表示全部V3完成 |
+-| V3 收件与应用协调器 | 生产代码沿用 `4356b5d4`。从原 `Inbox::find` 命中推出所读会话、条目及完整意图，再连接同一生成视图中的 `Inbox::state` 与锁内撤销选择。历史命中及查找冲突均无动作，当前 Unload 命中可选择实际映射的 sandbox。对 journal 的具体 `NeverCrash::hit` 和两版父函数、锁及候选发送对象的接线沿用实测检查。[组件范围](../verification/experiments/stage1-protocol/coordinator-revocation/README.md) | 协调器组件检查覆盖 27 个真实 Lean 文件与 100 项审计。事务包的 `JournalReplayState` 从载入、配置、封套和首次全文命中推出实际父调用返回的完整状态，认证拒绝或首次冲突返回原 `Conflict`。`JournalLoadExit` 将真实载入错误、空库和 header 查询首错接到原录入，保留出错状态、完整错误及原钩子。在实际 StandardRecord 上，布尔及有符号整数读使用同一存活事务的读取视图并返回完整原 holder。准备第一条查询出错时保留 Sqlite 载荷；三个正常头查询可推出所有提前终止布局的精确错误。V0/V5 提供这些有限 SQLite 调用观察和物理事务事实。原 BEGIN 返回的 owner 与录入 owner 已按完整投影组合；所有满足表示关系的调用者在同一 raw 连接的首次 prepare 错误上返回同一 Sqlite 载荷。物理对象和公开方法具体字典的对应仍由提供方验证。公开 journal 的 BEGIN 失败早退和成功后的命名空间、StandardRecord、五个具体字典及原实参由同份 Charon 产物核对，固定 Aeneas 已生成真实公开方法。原 BEGIN 和公开 journal 现按同一返回连接、完整 memo、原租约字段与故障钩子组合。已证 World 读取、写入准备、SQLite BEGIN、分配器和版本拒绝，以及 BEGIN 成功后同一 raw 首条 SQL 的 prepare 失败；每项只依赖所到达的调用。公开 journal 选定的两个具体读取方法已接到原事务回调。任意存活事务中，维护配置或收件箱的原完整切片在既有 Serde 合同下正常返回时，读取保留全部值或 JSON 错误与整个 holder。编码方法、派生字节语义及物理事务身份仍待验。从该次 BEGIN 构造的 owner 完整载入后，公开 journal 的全文重放和认证或同键冲突均已连接原锁内决策，含实际 NeverCrash 及同一返回值。两代合法 Unload 分别无动作和定向选择本地 sandbox，同键异 capture 返回 Conflict 且无动作。以同次原 Rust load_using 的普通返回为起点，可直接证明完整重放、认证和同键冲突、空库及载入错误的公开返回与撤销选择。首次 Unload 未命中后，原追加位置给出实际当前版本和同一会话映射，保存首错及对保存返回 owner 的提交结果已连接到公开撤销选择。校验新收件箱被拒时保留原 holder。校验通过后，同一事务连接的编码返回 JSON 错误，或编码成功但长度严格超过预算，分别返回原 Json 错误和 MaintenanceCapacity，两者均无撤销动作。预算内的完整字节和 32 字节摘要连接到同一事务的更新调用。原 SQLite 错误或影响行数异于一时无撤销动作，恰好一行时提交接收写入后的 owner。同一完整 Inbox 和 holder 上，载入与保存的编码端口返回相同的完整抽取结果。新收件值通过校验后，若事务槽已空，原解引用 panic；若编码外层失败或发散，首次 Unload 将该结果传播到公开协调器，尚未到达更新、提交和撤销选择。现有会话拒绝首次 Unload 时，追加保留原收件箱，录入交回载入结束时的 holder，公开调用保留首错并选择不撤销。查无目标会话时，原新会话判定产生 Conflict、MaintenanceCapacity 或 UnsupportedInput，沿同次载入传播且均不撤销。同一保存后事务的四项 V5 校验首错直接到达协调器。首次 Unload 的四项校验通过后，SQLite 正常成功或报错直接决定当前映射或广播，所需借用条件逐分支给出。调用若在抽取语义中失败或发散，公开入口传播相同结果，未返回撤销动作。实际提交状态单元仍依赖 V5 的独立观察。此后段和从 SQL 解释这次载入的证明分别登记。载入和事务物理语义仍依赖各提供方。公共登记、ning 原生回执及整套验收按集成候选另记。认证、事务提交、watch 送达及网关关闭仍由对应提供方验证。 |
++| V3 收件与应用协调器 | 生产代码沿用 `4356b5d4`。从原 `Inbox::find` 命中推出所读会话、条目及完整意图，再连接同一生成视图中的 `Inbox::state` 与锁内撤销选择。历史命中及查找冲突均无动作，当前 Unload 命中可选择实际映射的 sandbox。对 journal 的具体 `NeverCrash::hit` 和两版父函数、锁及候选发送对象的接线沿用实测检查。[组件范围](../verification/experiments/stage1-protocol/coordinator-revocation/README.md) | 协调器组件检查覆盖 27 个真实 Lean 文件与 100 项审计。事务包的 `JournalReplayState` 从载入、配置、封套和首次全文命中推出实际父调用返回的完整状态，认证拒绝或首次冲突返回原 `Conflict`。`JournalLoadExit` 将真实载入错误、空库和 header 查询首错接到原录入，保留出错状态、完整错误及原钩子。在实际 StandardRecord 上，布尔及有符号整数读使用同一存活事务的读取视图并返回完整原 holder。准备第一条查询出错时保留 Sqlite 载荷；三个正常头查询可推出所有提前终止布局的精确错误。V0/V5 提供这些有限 SQLite 调用观察和物理事务事实。原 BEGIN 返回的 owner 与录入 owner 已按完整投影组合；所有满足表示关系的调用者在同一 raw 连接的首次 prepare 错误上返回同一 Sqlite 载荷。物理对象和公开方法具体字典的对应仍由提供方验证。公开 journal 的 BEGIN 失败早退和成功后的命名空间、StandardRecord、五个具体字典及原实参由同份 Charon 产物核对，固定 Aeneas 已生成真实公开方法。原 BEGIN 和公开 journal 现按同一返回连接、完整 memo、原租约字段与故障钩子组合。已证 World 读取、写入准备、SQLite BEGIN、分配器和版本拒绝，以及 BEGIN 成功后同一 raw 首条 SQL 的 prepare 失败；每项只依赖所到达的调用。公开 journal 选定的两个具体读取方法已接到原事务回调。任意存活事务中，维护配置或收件箱的原完整切片在既有 Serde 合同下正常返回时，读取保留全部值或 JSON 错误与整个 holder。编码方法、派生字节语义及物理事务身份仍待验。从该次 BEGIN 构造的 owner 完整载入后，公开 journal 的全文重放和认证或同键冲突均已连接原锁内决策，含实际 NeverCrash 及同一返回值。两代合法 Unload 分别无动作和定向选择本地 sandbox，同键异 capture 返回 Conflict 且无动作。以同次原 Rust load_using 的普通返回为起点，可直接证明完整重放、认证和同键冲突、空库及载入错误的公开返回与撤销选择。首次 Unload 未命中后，原追加位置给出实际当前版本和同一会话映射，保存首错及对保存返回 owner 的提交结果已连接到公开撤销选择。校验新收件箱被拒时保留原 holder。校验通过后，同一事务连接的编码返回 JSON 错误，或编码成功但长度严格超过预算，分别返回原 Json 错误和 MaintenanceCapacity，两者均无撤销动作。预算内的完整字节和 32 字节摘要连接到同一事务的更新调用。原 SQLite 错误或影响行数异于一时无撤销动作，恰好一行时提交接收写入后的 owner。同一完整 Inbox 和 holder 上，载入与保存的编码端口返回相同的完整抽取结果。新收件值通过校验后，若事务槽已空，原解引用 panic；若编码外层失败或发散，首次 Unload 将该结果传播到公开协调器，尚未到达更新、提交和撤销选择。对任意解码后的 Inbox 和实际校验字典，保存前校验正常返回的 Rust 错误仅为 CorruptStore 或原 Json 错误。首次 Unload 的同一次追加若在此处被拒绝，公开协调器返回原错误并选择 None。现有会话拒绝首次 Unload 时，追加保留原收件箱，录入交回载入结束时的 holder，公开调用保留首错并选择不撤销。查无目标会话时，原新会话判定产生 Conflict、MaintenanceCapacity 或 UnsupportedInput，沿同次载入传播且均不撤销。同一保存后事务的四项 V5 校验首错直接到达协调器。首次 Unload 的四项校验通过后，SQLite 正常成功或报错直接决定当前映射或广播，所需借用条件逐分支给出。调用若在抽取语义中失败或发散，公开入口传播相同结果，未返回撤销动作。实际提交状态单元仍依赖 V5 的独立观察。此后段和从 SQL 解释这次载入的证明分别登记。载入和事务物理语义仍依赖各提供方。公共登记、ning 原生回执及整套验收按集成候选另记。认证、事务提交、watch 送达及网关关闭仍由对应提供方验证。 |
+ | V4 本地决定 | Pause/Resume、多代检查点、失败继续、未知恢复中的终止及已释放执行的 Destroy 均有生产路径；#748/#749/#750 的有限证明已交付，真实 Stop 派发与回执已接入，本片固定五项原生范围通过 | 一般派发绑定与同一轨迹正常接受见证已在原 3150 候选上通过四个有限范围的公共形式验收；完整 reducer/World、全部转换与 V4 系统范围仍未闭合 |
+ | V5 SQLite 与编排 | 原事务已接 capture 授权/完成、唯一恢复、材料责任和精确终止；#712 的有限丢回执/重启代表已验收 | 实际 SQL、同事务快照、回调、提交未知、恢复/引用/退休以及原生动作的连接仍须证明；数据库行不自证物理效果 |
+ | V6 真实宿主 | Full、旧 VMM 退出、LoadPaused、原候选激活、确定退出、精确回收均已接通；#693/#700/#712 提供有限真实 KVM 证据 | 文件/进程/围栏算法及实际调用的形式对应、未覆盖准备断点与其它 I/O 故障组合仍开放；不重复列为主体功能未开发 |
+diff --git a/verification/experiments/stage1-protocol/registered.py b/verification/experiments/stage1-protocol/registered.py
+index 16777b2d..2b24d968 100644
+--- a/verification/experiments/stage1-protocol/registered.py
++++ b/verification/experiments/stage1-protocol/registered.py
+@@ -393,8 +393,8 @@ NATIVE_DRIVERS = (
+ CRATE_CASES = ('schema-leaves', 'envelope-schema', 'envelope-bytes', 'json-wire')
+ NATIVE_CASES = tuple(label for label, _, _ in NATIVE_DRIVERS) + tuple(
+     'stage1-protocol-'+name for name in CRATE_CASES)
+-AUDIT_TEMPLATE_COUNT = 689
+-AUDIT_DECLARATION_COUNT = 3024
++AUDIT_TEMPLATE_COUNT = 690
++AUDIT_DECLARATION_COUNT = 3028
+
+
+ def native_labels(profile='full'):
+diff --git a/verification/stage1-protocol-inputs.sha256 b/verification/stage1-protocol-inputs.sha256
+index 579be3fd..726775ca 100644
+--- a/verification/stage1-protocol-inputs.sha256
++++ b/verification/stage1-protocol-inputs.sha256
+@@ -229,8 +229,9 @@ c5b015cbdcc080d5e266544ef3d6ab0125e22eb934d8bb7108617f521a90d05a  verification/e
+ 25cd52dc1b137a9bd2dfdaa28418e0a9d28c28c3ed20e08b6665c931746df3c2  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/PublicUnloadRefusal.lean.in
+ d5d5be5959369d9aa23c4bbf20ecff7a54ebb2aa23fccb88013a11cf099958d7  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/PublicUnloadSave.lean.in
+ 246edeb2af70cd61abd63a72cc3e70c6a650fea511cae0343ae882d05903ed51  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/RecordCodecPorts.lean.in
++9541759969d291610f6a2475ff8aee75ae9da9409c93a0a978e616f35b5e843c  verification/experiments/stage1-protocol/coordinator-revocation/public-begin/ValidationErrors.lean.in
+ 00b9c3d4a94d227d4a7ddec2a727f6ffa85d5e6feecea5165315e2ce0d714a30  verification/experiments/stage1-protocol/coordinator-revocation/public-journal-root.rs.in
+-509b5cf80bfefb0dba14ef0c61cfe2afb7d17b6721681de1654077438ec38d14  verification/experiments/stage1-protocol/coordinator-revocation/public_begin.py
++003a19cc82b4dd4196a35848cd7f517db041a677b1975ee5833f431073b10466  verification/experiments/stage1-protocol/coordinator-revocation/public_begin.py
+ 95b39faf6f366e8ccccd859476fb704a01392b44596e5b08c09cce24ed137d93  verification/experiments/stage1-protocol/coordinator-revocation/root.rs.in
+ 80bb1fbb55d7deb1fa60f8f2a3c1d4266caa87fc12a7ffcca7127e5bf12ebf4f  verification/experiments/stage1-protocol/coordinator-revocation/sender_binding.py
+ b25117f600cc44be1951f668ecebbf125248280a86319c7eae2dd71cd76ed9b9  verification/experiments/stage1-protocol/coordinator-revocation/sender_binding_regressions.py
+@@ -905,7 +906,7 @@ b99e41ddf8777effe8089861034ee4d2eaf4f1b843cdb83b2b183e879a11abcf  verification/e
+ 71424a9b885ae1c5bae01fe3b1589f1f4ff7015b9abc51e4bffc30a1dd59ff08  verification/experiments/stage1-protocol/parser-binding/tests.rs
+ 6e81bc457ab04091eb1ee39b388ef93030ca924d6b01017b8f319e326e872d30  verification/experiments/stage1-protocol/protocol-record/evidence.py
+ 1f90402c3990cc7f5f16894f0ce94cea67412be4d82e3c0f5a8f37ed2612746a  verification/experiments/stage1-protocol/protocol-record/inventory.json
+-c0b54e9cd6f66272f038e1f4fbdc30f004cb706387194ea2893edb67a511fe7c  verification/experiments/stage1-protocol/registered.py
++d728e1adcecf15503130cdca92f34dca47fdac6671b0187c7cd6cac7d59ff86f  verification/experiments/stage1-protocol/registered.py
+ 397e631948d00d712937def8c4fcb275e2efda42adb1ffbe50d319803978fdd5  verification/experiments/stage1-protocol/registry_identity.py
+ a5307afee147cf203d295ba45aeb8d2f67f27329b5a656ea143ede533979be55  verification/experiments/stage1-protocol/renewal-confirmation/NegativeRenewalDeadline.lean.in
+ fb0123edb755e968618caa5fa8b898cfec7664b068ff57cad7adae8ed60c2fd9  verification/experiments/stage1-protocol/renewal-confirmation/NegativeRenewalFirst.lean.in
