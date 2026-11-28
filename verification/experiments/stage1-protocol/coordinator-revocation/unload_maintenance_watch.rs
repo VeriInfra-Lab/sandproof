@@ -97,6 +97,69 @@ fn stored_inbox(journal: &ControllerJournal) -> (Vec<u8>, Vec<u8>, i64) {
         .unwrap()
 }
 
+#[path = "unload_checkpoint_publication.rs"]
+mod publication;
+
+fn record_with_fault(
+    app: &ControllerApplication<TestHost>,
+    creates: &[AcceptedLifecycleIntent; 2],
+    unload: &AcceptedLifecycleIntent,
+    durable: bool,
+) {
+    let [target, peer] = creates.each_ref().map(|create| open_route(app, create));
+    HOUSEKEEPING_FAILURE.with(|slot| assert!(slot.replace(Some(durable)).is_none()));
+    assert!(matches!(
+        app.record_lifecycle_intent(unload, &lifecycle::context()),
+        Err(JournalError::CommitUncertain(rusqlite::Error::InvalidQuery))
+    ));
+    HOUSEKEEPING_FAILURE.with(|slot| assert!(slot.get().is_none()));
+    assert!(*target.revocation.borrow());
+    assert!(*peer.revocation.borrow());
+}
+
+fn assert_unrecorded(
+    journal: &ControllerJournal,
+    creates: &[AcceptedLifecycleIntent; 2],
+    unload: &AcceptedLifecycleIntent,
+) {
+    let context = lifecycle::context();
+    assert!(matches!(
+        journal.lifecycle_work_state(unload, &context),
+        Err(JournalError::Conflict)
+    ));
+    for create in creates {
+        assert!(
+            journal
+                .lifecycle_work_state(create, &context)
+                .unwrap()
+                .current
+        );
+    }
+}
+
+fn retry_unload(
+    app: &ControllerApplication<TestHost>,
+    creates: &[AcceptedLifecycleIntent; 2],
+    unload: &AcceptedLifecycleIntent,
+) {
+    let context = lifecycle::context();
+    let [target, peer] = creates.each_ref().map(|create| open_route(app, create));
+    let accepted = app.record_lifecycle_intent(unload, &context).unwrap();
+    assert_eq!(&accepted.intent, unload);
+    assert!(accepted.current);
+    assert!(*target.revocation.borrow());
+    assert!(!*peer.revocation.borrow());
+    assert_eq!(
+        app.lifecycle_work_state(unload, &context).unwrap(),
+        accepted
+    );
+    assert!(
+        app.lifecycle_work_state(&creates[1], &context)
+            .unwrap()
+            .current
+    );
+}
+
 fn check_maintenance_failure(path: &Path, durable: bool) {
     let host = Arc::new(Mutex::new(State {
         epoch: TestEpoch::Matching,
@@ -105,7 +168,6 @@ fn check_maintenance_failure(path: &Path, durable: bool) {
     let app = lifecycle::application(path, host.clone(), true);
     let creates = start_sessions(&app);
     let unload = next_unload(&creates[0]);
-    let context = lifecycle::context();
     drop(app);
 
     // Leave a published, covered prefix for the next writer. Opening the
@@ -119,16 +181,8 @@ fn check_maintenance_failure(path: &Path, durable: bool) {
     drop(journal);
 
     let app = lifecycle::application(path, host.clone(), false);
-    let [target, peer] = creates.each_ref().map(|create| open_route(&app, create));
-    HOUSEKEEPING_FAILURE.with(|slot| assert!(slot.replace(Some(durable)).is_none()));
-    assert!(matches!(
-        app.record_lifecycle_intent(&unload, &context),
-        Err(JournalError::CommitUncertain(rusqlite::Error::InvalidQuery))
-    ));
-    HOUSEKEEPING_FAILURE.with(|slot| assert!(slot.get().is_none()));
-    assert!(*target.revocation.borrow());
-    assert!(*peer.revocation.borrow());
-    drop((target, peer, app));
+    record_with_fault(&app, &creates, &unload, durable);
+    drop(app);
 
     // Before retry, check the outcome on a reopened store. Only the covered
     // prefix may move. Neither the input high-water mark nor the inbox advanced.
@@ -145,37 +199,12 @@ fn check_maintenance_failure(path: &Path, durable: bool) {
     assert_eq!(after.input_high_water, before.input_high_water);
     assert_eq!(journal.world().unwrap(), world);
     assert_eq!(stored_inbox(&journal), inbox);
-    assert!(matches!(
-        journal.lifecycle_work_state(&unload, &context),
-        Err(JournalError::Conflict)
-    ));
-    for create in &creates {
-        assert!(
-            journal
-                .lifecycle_work_state(create, &context)
-                .unwrap()
-                .current
-        );
-    }
+    assert_unrecorded(&journal, &creates, &unload);
     drop(journal);
 
     // Retrying the same Unload after recovery targets only its own sandbox.
     let app = lifecycle::application(path, host, false);
-    let [target, peer] = creates.each_ref().map(|create| open_route(&app, create));
-    let accepted = app.record_lifecycle_intent(&unload, &context).unwrap();
-    assert_eq!(accepted.intent, unload);
-    assert!(accepted.current);
-    assert!(*target.revocation.borrow());
-    assert!(!*peer.revocation.borrow());
-    assert_eq!(
-        app.lifecycle_work_state(&unload, &context).unwrap(),
-        accepted
-    );
-    assert!(
-        app.lifecycle_work_state(&creates[1], &context)
-            .unwrap()
-            .current
-    );
+    retry_unload(&app, &creates, &unload);
 }
 
 #[test]

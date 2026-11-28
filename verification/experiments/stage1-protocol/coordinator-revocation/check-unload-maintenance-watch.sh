@@ -14,7 +14,9 @@ output=$(cd -- "$1" && pwd -P)
 source_dir="$output/source"
 pkg=verification/experiments/stage1-protocol/coordinator-revocation
 suite=controller-service/src/controller/checkpoint/tests.rs
-test_name=controller::checkpoint::tests::unload_revocation::maintenance_commit_uncertainty_revokes_both_routes_before_unload_is_recorded
+module=controller::checkpoint::tests::unload_revocation
+cleanup=$module::maintenance_commit_uncertainty_revokes_both_routes_before_unload_is_recorded
+publication=$module::publication::uncertain_root_publication_revokes_both_routes_before_unload_is_recorded
 
 git init --quiet "$source_dir"
 cd "$source_dir"
@@ -29,7 +31,8 @@ git diff --cached -- "$suite" > "$output/test-registration.diff"
 export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$output/target}"
 export CARGO_TERM_COLOR=never
 cargo --config scripts/check-profiles.toml test --locked --offline \
-  -p sandproof-controller-service --lib "$test_name" -- --exact --test-threads=1 \
+  -p sandproof-controller-service --lib "${module}::" -- --test-threads=1 \
   2>&1 | tee "$output/cargo.log"
-grep -Fxq "test $test_name ... ok" "$output/cargo.log"
-grep -Eq '^test result: ok\. 1 passed; 0 failed; 0 ignored;' "$output/cargo.log"
+grep -Fxq "test $cleanup ... ok" "$output/cargo.log"
+grep -Fxq "test $publication ... ok" "$output/cargo.log"
+grep -Eq '^test result: ok\. 2 passed; 0 failed; 0 ignored; 0 measured; [0-9]+ filtered out;' "$output/cargo.log"
