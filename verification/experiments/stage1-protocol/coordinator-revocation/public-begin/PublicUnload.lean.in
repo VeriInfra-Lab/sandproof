@@ -264,6 +264,100 @@ theorem fresh_sqlite_outcome (inbox : model.Inbox) (afterLoad : StandardRecord U
       afterSave.tx.parent raw world error observed live present checks available failed physical
     exact ⟨finish afterSave saved (.Err (.CommitUncertain error)) reply, seen⟩
 
+open SandproofStage1RequestRust.sandproof_controller_service.application.coordinator.lifecycle_intent in
+/-- The public decision consumes the ordinary result of the commit on the recorded holder.
+An outer failure or divergence propagates through the bind without an action value. -/
+theorem recorded_commit_dispatch (afterSave : StandardRecord Unit) (value : model.LifecycleWorkState)
+    (recorded : record_using retirement terminal renewal unload graphic reads (holder begun ns) intent context =
+      .ok (.Ok (.Recorded value), afterSave)) :
+    journalDecision journal intent context = (do
+      let committed ← SandproofParentCommitRust.controller.transaction.WorldTransaction.commit afterSave.tx.parent
+      let reply : core.result.Result model.LifecycleWorkState JournalError := match committed with
+        | .Ok () => .Ok value | .Err error => .Err error
+      let action ← data_revocation intent.request.operation (toRequestRustResult reply)
+      .ok ((reply, {journal with journal := ⟨after.base⟩}, ()), action)) := by
+  have okBegin : controller.transaction.WorldTransaction.begin journal.journal.connection journal.committed_world =
+      .ok (.Ok (env.onOwner (SandproofUnloadWorldBegin.originalOwner begun)).val, after.base) := by
+    unfold controller.transaction.WorldTransaction.begin
+    rw [show (⟨journal.journal.connection, env.observation⟩ : UnloadWorldBegin.Conn) = initial journal from rfl, started]
+    simp
+  unfold journalDecision proof_public_journal ControllerJournal.record_lifecycle_intent
+  simp [okBegin, core.result.Result.Insts.CoreOpsTry.branch, borrowed]
+  change (do
+    let entry ← record_transaction_using retirement terminal renewal unload graphic
+      (CallerBranches.actualEffects codec) hook (holder begun ns) intent context ()
+    let returned ← (let (reply, c) := entry
+      Result.ok (reply, {journal with journal := ⟨after.base⟩}, c))
+    let action ← data_revocation intent.request.operation (toRequestRustResult returned.1)
+    .ok (returned, action)) = _
+  unfold record_transaction_using
+  rw [show (CallerBranches.actualEffects codec).RecordEffectsInst = reads from rfl, recorded]
+  simp [core.result.Result.Insts.CoreOpsTry.branch, hook_return]
+  congr 1
+  funext reply
+  cases reply with
+  | Ok u => cases u; simp
+  | Err error => simp [core.result.Result.Insts.CoreOpsTryTraitFromResidualResultInfallible.from_residual]
+
+/-- In the first accepted Unload, the original save supplies the transaction sent to
+SQLite. A normal SQL error returns its payload and a broadcast decision. Failure and
+divergence of the call propagate through the public journal and decision. -/
+theorem fresh_sqlite_dispatch (inbox : model.Inbox) (afterLoad : StandardRecord Unit) (s : Usize)
+    (loaded : PublicLoaded.originalLoad begun ns = .ok (.Ok (some inbox), afterLoad))
+    (config : InboxAdmission.ContextMatches inbox context) (valid : Validation.ValidEnvelope intent context)
+    (op : ∃ source capture, intent.request.operation = .Unload source capture)
+    (selected : ExistingSelection inbox intent s)
+    (accept : existingDecision inbox
+      (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)) intent = .append false) :
+    let session := inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)
+    let value := appendedState session intent
+    let returned := {journal with journal := ⟨after.base⟩}
+    let run := journalDecision journal intent context
+    ∃ (next : model.Inbox) (e : Usize), inbox.record intent = .ok (.Ok (s,e), next) ∧
+      next.state s e = .ok value ∧
+      ∀ afterSave, originalSave next afterLoad = .ok (.Ok (), afterSave) →
+        let owner := afterSave.tx.parent
+        ∀ (raw : Raw) (world : SandproofParentCommitRust.World), owner.transaction = some raw →
+          SandboxModel.InboxTransaction.CurrentWorldRead.CandidateAt
+            (SandproofParentCommitRust.CurrentViews.ownerToRead owner) world →
+          SandproofParentCommitRust.ParentResults.ChecksReturnedOk owner raw world →
+          owner.committed.value.beforeBorrowCount = 0 →
+          let sql := SandproofParentCommitRust.rusqlite.transaction.Transaction.commit raw
+          (owner.candidate.beforeBorrowCount = 0 → sql = .ok (.Ok ()) →
+            run = .ok ((.Ok value, returned, ()), match session.local with
+              | some binding => .Sandbox binding.sandbox | none => .None)) ∧
+          (∀ err, sql = .ok (.Err err) → run = .ok ((.Err (.CommitUncertain err), returned, ()), .All)) ∧
+          (∀ err, sql = .fail err → run = .fail err) ∧ (sql = .div → run = .div) := by
+  dsimp only
+  obtain ⟨next, e, appended, read⟩ := append_current inbox intent s selected accept
+  refine ⟨next, e, appended, read, ?_⟩
+  intro afterSave saved raw world live present checks available
+  let owner := afterSave.tx.parent
+  have admitted := (InboxAdmission.accepts_iff inbox intent context).mpr ⟨config, valid⟩
+  have absent := (InboxLookup.find_none_iff inbox intent).mpr selected.1
+  have recorded := record_after_save begun ns intent context inbox next afterLoad afterSave s e _
+    loaded admitted absent op appended read (.Ok ()) saved
+  rw [recorded_commit_dispatch journal intent context begun after ns started borrowed afterSave _ recorded,
+    SandproofParentCommitRust.ParentResults.actual_commit_reaches_same_finisher owner raw world live present checks]
+  obtain ⟨source, capture, operation⟩ := op
+  have ends : CoordinatorRevocation.endsAccess intent.request.operation = true := by
+    simp [operation, CoordinatorRevocation.endsAccess]
+  refine ⟨?_, ?_, ?_, ?_⟩
+  · intro candidateFree ok
+    rw [SandproofParentCommitRust.ActualFinish.actual_finish_success owner raw live available candidateFree ok]
+    simp [toRequestRustResult, CoordinatorRevocation.success, CoordinatorRevocation.selected,
+      appendedState, InboxState.workState, InboxRecord.pendingEntry, ends]
+    cases (inbox.sessions.val[s.val]'(selected_bound inbox intent s selected)).local <;> rfl
+  · intro err refused
+    rw [SandproofParentCommitRust.ActualFinish.actual_finish_unknown owner raw err live available refused]
+    simp [toRequestRustResult, toRequest, CoordinatorRevocation.failure, ends]
+  · intro err failed
+    rw [SandproofParentCommitRust.ActualFinish.actual_finish_fail owner raw err live available failed]
+    simp only [bind_tc_fail]
+  · intro diverged
+    rw [SandproofParentCommitRust.ActualFinish.actual_finish_div owner raw live available diverged]
+    simp only [bind_tc_div]
+
 omit started borrowed [FileHandle] [PublicCalls] [SandproofStandardRecordCodec.DecodeCalls] in
 /-- The original valid Unload from the append suite is absent from a mapped running session.
 The real record call appends it and state returns its full current version and original local. -/
@@ -290,3 +384,5 @@ end SandproofActualRecordRust.PublicUnload
 #audit_controller_proof SandproofActualRecordRust.PublicUnload.mapped_append_witness
 #audit_controller_proof SandproofActualRecordRust.PublicUnload.commit_validation_error
 #audit_controller_proof SandproofActualRecordRust.PublicUnload.fresh_sqlite_outcome
+#audit_controller_proof SandproofActualRecordRust.PublicUnload.recorded_commit_dispatch
+#audit_controller_proof SandproofActualRecordRust.PublicUnload.fresh_sqlite_dispatch
