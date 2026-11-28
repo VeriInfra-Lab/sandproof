@@ -19,12 +19,12 @@ import journal_decision
 from wiring import require
 
 RECORD = Path('verification/aeneas/actual-record/SandproofActualRecord')
-PAGE = str(RECORD/'UnloadCommitOrigin.lean')
-MODULE = 'SandproofActualRecord.UnloadCommitOrigin'
+PAGE = str(RECORD/'PublicUnloadBroadcast.lean')
+MODULE = 'SandproofActualRecord.PublicUnloadBroadcast'
 PKG = codec.PACKAGE/'public-begin'
 NEW = ('PublicHandle', 'PublicCalls', 'PublicBegin', 'PublicReplay', 'PublicLoaded', 'PublicUnload',
        'PublicUnloadRefusal', 'RecordCodecPorts', 'PublicUnloadSave', 'ValidationErrors', 'LoadValidation', 'LoadErrors',
-       'UnloadCommitOrigin')
+       'UnloadCommitOrigin', 'PublicUnloadBroadcast')
 AUDITS = {'SandproofActualRecordRust.PublicBegin.'+n for n in (
     'begin_refusal', 'world_refusal', 'preparation_refusal', 'sqlite_refusal', 'allocator_refusal',
     'changed_version_refusal', 'started_reply', 'first_record_read_refusal')}
@@ -57,6 +57,11 @@ AUDITS.update('SandproofActualRecordRust.PublicLoadErrors.'+n for n in (
 
 AUDITS.update('SandproofActualRecordRust.UnloadCommitOrigin.'+n for n in (
     'save_errors', 'record_errors', 'broadcast_iff_commit', 'before_begin_witness'))
+
+AUDITS.update('SandboxModel.Stage1Protocol.UnloadWorldBegin.'+n for n in (
+    'constructor_errors', 'early_uncertainty_iff'))
+AUDITS.update('SandproofActualRecordRust.PublicUnloadBroadcast.'+n for n in (
+    'broadcast_iff', 'preparation_broadcast', 'open_refusal', 'preparation_first_error_witness'))
 
 APPEND_WITNESSES = {
     str(journal_decision.PROTOCOL/(name+'.lean')): codec.AREA/'inbox-append'/(name+'.lean.in')
