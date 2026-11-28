@@ -174,6 +174,12 @@ BEGIN 成功后，`started_reply` 连接该次返回的原 owner、实际命名�
 
 主控在应用保存编码的登记增量后，采用本段的[登记候选](save-update-integration-candidate.patch)。完整事务作业通过 `PublicUnloadSave` 引入先前的拒绝页和本段的四项审计。
 
+### 载入与保存的编码调用
+
+公开 journal 的实际读取和保存字典在接收同一个完整 Inbox 和同一个事务持有者时，得到相同的编码结果。有存活事务时，每次调用都把完整 Inbox 交给该连接上的编码器，并保留返回的字节或 JSON 错误以及原持有者。[编码调用证明](public-begin/RecordCodecPorts.lean.in)
+
+在同一次 BEGIN、载入、准入、追加和保存校验通过后，若事务槽已空，原解引用产生 panic。编码的外层失败或发散沿原保存、录入和公开协调器传播，此时尚未执行 UPDATE、提交或撤销分派。正常返回的 JSON 错误及行数结果仍由前述证明连接。具体编码器调用和 Serde 的字节语义继续由相应提供方验证。主控在保存更新候选之后采用[编码接线登记增量](codec-ports-integration-candidate.patch)。
+
 ### 首次 Unload 在追加前被拒绝
 
 从同一次 BEGIN、命名空间借用和真实 `load_using` 的完整返回开始，若信封与配置通过认证、整个收件箱没有该键且存在同一会话，录入会选择首个同会话行。`fresh_refusal` 使用原 `record_existing_contract` 的有序判定。该判定拒绝 Unload 时，`Inbox::record` 返回原收件箱，`record_using` 交回载入结束时的完整 holder，公开 journal 返回相同的首错，协调器选择不撤销。这个分支只可能返回 `Conflict` 或 `UnsupportedInput`。证明无需提供保存、提交或通知的执行结果。[首错与协调器决定](public-begin/PublicUnloadRefusal.lean.in)

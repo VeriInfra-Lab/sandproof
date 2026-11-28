@@ -1,4 +1,5 @@
 import SandproofActualRecord.PublicUnloadRefusal
+import SandproofActualRecord.RecordCodecPorts
 
 open Aeneas Aeneas.Std
 open SandboxModel.Stage1Protocol SandproofParentCommitRust.ErrorTransport
@@ -82,7 +83,9 @@ theorem bounded_save_result (inbox : model.Inbox) (before : StandardRecord Unit)
     simp only [payload, alloc.vec.Vec.deref, Slice.from_val]
     have := ConfigBudget.total_bound inbox.config
     omega
-  have enc := save_encode_returned before inbox raw live (.Ok bytes) encoded
+  have enc := RecordCodecPorts.live_encode before inbox raw live
+  rw [encoded] at enc
+  simp only [bind_tc_ok] at enc
   have hash := save_digest_returned before raw live (payload bytes) normal
   have put := save_update_returned before raw live InboxSave.statement (payload bytes) (digestBlob bytes) reply view write
   obtain ⟨budget, cost, exactCost⟩ := ConfigBudget.required_bytes_refines inbox.config
